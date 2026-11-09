@@ -22,6 +22,7 @@
 #include <fstream>
 #include <map>
 #include <memory>
+#include <climits>
 #include <set>
 #include <span>
 #include <string>
@@ -30,6 +31,7 @@
 #include "housefire/expression.h"
 #include "housefire/library.h"
 #include "housefire/world.h"
+#include "housefire/primitives.h"
 #include "housefire/interp.h"
 
 using namespace housefire;
@@ -744,6 +746,99 @@ int main(int argc, char** argv) {
             for (const auto& [w, n] : m) top.push_back({n, w});
             std::sort(top.rbegin(), top.rend());
             for (size_t j = 0; j < top.size() && j < 4; j++) std::printf("    %6ld  %s\n", top[j].first, top[j].second.c_str());
+        }
+    }
+
+    // ---- SetToNext on a world loaded from the lot ----
+    //
+    // For each lot the log shows (a new lot: 20 or more objects never seen before ask for
+    // variables in one tick), the disc's lot whose objects best match the ids seen then,
+    // loaded natively; the objects that appear at the load and are not in the lot's table
+    // (two in the club) go in front, not Sims. Each SetToNext step the original took on the
+    // stack object is run natively on that world, from the step's frame.
+    {
+        const auto lots = read_lots(d.read("Runtime/default.ngh"));
+        std::vector<std::set<int16_t>> lot_ids;
+        for (const LotChunks& l : lots) {
+            std::set<int16_t> ids;
+            for (const LotObject& o : read_lot_objects(*l.find("ObjM")).objects) ids.insert(o.id);
+            lot_ids.push_back(std::move(ids));
+        }
+        // Which lot: the one whose table order the original's longest walk over every object
+        // (SetToNext kind 0 from 0 on the stack object) follows furthest. Object ids are
+        // small numbers every lot reuses, so they do not tell lots apart; the order does.
+        std::vector<int16_t> walk, cur;
+        bool walking = false;
+        for (const StepRec& s : log.steps) {
+            if (s.look != 'X' || !s.t || s.t->tree != s.tree || s.node * 12u >= s.t->raw.size()) continue;
+            const uint8_t* raw = s.t->raw.data() + 12 * s.node;
+            if (((raw[0] << 8 | raw[1]) & 0x7FFF) != 31 || (raw[8] & 0x7F) != 0 || raw[9] != 0x0A || raw[2] == raw[3]) continue;
+            if (s.stack_object == 0) { cur.clear(); walking = true; }
+            if (!walking) continue;
+            if (s.after == raw[2]) { cur.push_back(s.stack_object_after); if (cur.size() > walk.size()) walk = cur; }
+            else walking = false;
+        }
+        size_t best = 0, best_n = 0;
+        std::vector<std::vector<int16_t>> orders;
+        for (const LotChunks& l : lots) {
+            std::vector<int16_t> o;
+            for (const LotObject& x : read_lot_objects(*l.find("ObjM")).objects) o.push_back(x.id);
+            orders.push_back(std::move(o));
+        }
+        for (size_t k = 0; k < lots.size(); k++) {
+            size_t n = 0;
+            for (int16_t id : walk) {
+                if (!lot_ids[k].count(id)) continue;
+                if (n < orders[k].size() && orders[k][n] == id) n++; else break;
+            }
+            if (n > best_n) { best = k; best_n = n; }
+        }
+        {
+            const uint32_t from = 0, to = UINT32_MAX;
+            const std::set<int16_t> seen(walk.begin(), walk.end());
+            World lw(lib);
+            lw.load_lot(lots[best]);
+            // Objects made at load: in the walk but not in the lot, in front in the walk's order.
+            std::vector<int16_t> made;
+            for (int16_t id : walk) if (!lot_ids[best].count(id)) made.push_back(id);
+            for (auto it = made.rbegin(); it != made.rend(); ++it) {
+                auto o = std::make_unique<Object>();
+                o->data.resize(kDataObjectId + 1);
+                o->data[kDataObjectId] = *it;
+                lw.add(std::move(o), true);
+            }
+            char lb[96];
+            std::snprintf(lb, sizeof lb, "SetToNext: the disc's lot %zu (the walk of %zu follows its order for %zu)", best, walk.size(), best_n);
+            note(lb);
+            Object me;
+            for (size_t i = 0; i < log.steps.size(); i++) {
+                const StepRec& s = log.steps[i];
+                if (s.tick < from || s.tick >= to || s.look != 'X' || !s.t || s.t->tree != s.tree) continue;
+                const uint8_t* raw = s.t->raw.data() + 12 * s.node;
+                if (((raw[0] << 8 | raw[1]) & 0x7FFF) != 31 || s.node * 12u >= s.t->raw.size()) continue;
+                if (raw[2] == raw[3]) continue;
+                // The disc's node (its operand in the file's order).
+                const Tree* tree = step_object[i] ? lib.tree(step_object[i], s.tree) : nullptr;
+                if (!tree || s.node >= tree->nodes.size()) continue;
+                const Node& node = tree->nodes[s.node];
+                if ((node.operand[4] & 0x80) && node.operand[5] != (uint8_t)Scope::StackObject) continue;
+                Frame f;
+                f.params = s.params;
+                f.locals = s.locals;
+                f.stack_object = s.stack_object;
+                ScriptVariables vars(lw, me, f);
+                const PrimResult r = set_to_next(node, lw, vars);
+                const bool orig_true = s.after == raw[2];
+                const std::string kind = "SetToNext kind " + std::to_string(node.operand[4] & 0x7F);
+                if (r == PrimResult::Stop) { note(kind + ": not modelled"); continue; }
+                const bool same = (r == PrimResult::True) == orig_true && (!orig_true || f.stack_object == s.stack_object_after);
+                char ex[128];
+                std::snprintf(ex, sizeof ex, "tick %u from %d: original %s %d, native %s %d", s.tick, s.stack_object,
+                              orig_true ? "true" : "false", s.stack_object_after, r == PrimResult::True ? "true" : "false", f.stack_object);
+                // In the first ticks the objects made at load are still being made (the native
+                // world has them from the start): counted apart.
+                note(kind + (same ? ": same" : s.tick < 3 ? ": different while the lot loads (ticks 0-2)" : ": DIFFERENT"), ex);
+            }
         }
     }
 

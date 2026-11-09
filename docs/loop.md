@@ -371,3 +371,22 @@ the new-game route, in a 4 GB scope at low priority, at most 330 s, one run at a
 - **`docs/lots.md`** writes the format up.
 - **Next:** iteration 7, SetToNext natively (chunk 1) on a world loaded from the club lot:
   its kinds against the logged steps, the order and definitions now the lot's.
+
+**Iteration 7** (chunk 1, SetToNext, on a lot-loaded world):
+- **Native `set_to_next`** (`engine/src/primitives.cpp`): kinds 0 (any), 1 (Sims), 2 (not
+  Sims) and 4 (a GUID) on the world's list. The target is the stack object or the variable
+  the operand names. A lot's objects with no definition on the disc are Sims.
+- **The lockstep runs it** on a world loaded from the lot, picked by the order of the
+  original's longest walk. Ids can't pick it: every lot reuses small ids.
+  - Kinds 0, 1 and 4: 36,063 steps the same.
+  - 52 differ, all in ticks 0-6 while the lot loads, before objects the original makes
+    then exist natively.
+  - Kinds 3, 5 and 6 are not modelled (2,745 steps).
+- **Found:** this session's first lot is the club too (its walk is the club's table), loaded
+  at tick 0 and again at 2799, each time with two objects not in the lot (179, 180, not
+  Sims, not people for kind 1) made in front.
+- **Kind 6 is open.** It finds the DJ booth for operand 0x0BE8F446, which is no definition's
+  GUID, and no definition or data field equals temp 0 or the parameter.
+- **Next:** iteration 8, chunk 2: the objects made and removed (CreateObject 42, KillObject
+  18, and those the engine makes at load), so that the native world has them when the
+  original does.

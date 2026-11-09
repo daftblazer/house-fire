@@ -7,7 +7,7 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE RelWithDebInfo)
 endif()
 
-add_library(housefire src/iff.cpp src/bhav.cpp src/interp.cpp src/disc.cpp src/expression.cpp src/library.cpp src/world.cpp src/save.cpp)
+add_library(housefire src/iff.cpp src/bhav.cpp src/interp.cpp src/disc.cpp src/expression.cpp src/library.cpp src/world.cpp src/save.cpp src/primitives.cpp)
 target_include_directories(housefire PUBLIC include)
 target_compile_options(housefire PRIVATE -Wall -Wextra)
 

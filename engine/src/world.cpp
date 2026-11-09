@@ -27,7 +27,8 @@ int World::load_lot(const LotChunks& lot) {
             o->guid = t->second->guid;
             o->definition = lib_.definition(o->guid, &o->file);
         }
-        if (!o->definition) missing++;
+        // No definition on the disc: a character, whose definition is made at run time.
+        if (!o->definition) { missing++; o->person = true; }
         o->data.resize(kDataObjectId + 1);
         o->data[kDataObjectId] = lo.id;
         add(std::move(o));

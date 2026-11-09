@@ -94,3 +94,31 @@ Left over:
 How many attributes, object data and person data fields an object has is not taken from the
 game yet: the native tables grow to the highest index used. Object data fields seen go up to
 61, person data up to 74 (80 fit before the motives); motives up to 15.
+
+## SetToNext (primitive 31) and the object list
+
+The world's objects are in a list. A lot's objects come in its table's order
+(`lots.md`), and objects made later go in front of them all. SetToNext gives the next
+object after the target's in that order, or the first if the target is 0, of a kind:
+
+| Kind | | Checked (a session of the new-game route) |
+|---|---|---|
+| 0 | any object | 23,016 same |
+| 1 | a Sim (here: an object whose definition is not on the disc, a character) | 2,144 same |
+| 2 | not a Sim | not run in the session |
+| 3 | the other part of a multi-tile object | not modelled (89 steps) |
+| 4 | an object of the GUID in operand bytes 0-3 | 10,903 same |
+| 5 | neighbours, ascending | not modelled (468 steps) |
+| 6 | (open: in the club it finds the DJ booth; the operand's 0x0BE8F446 is no definition's GUID, and no definition or data field of the objects found equals temp 0) | not modelled (2,188 steps) |
+
+The target is the stack object, or with flag 0x80 in operand byte 4 the variable of scope
+byte 5, datum byte 7. The step is true with the target set, or false if there is no next.
+
+Checked on a world loaded natively from the club lot (`World::load_lot`). The lot is picked
+by the order of the original's longest walk; object ids are reused between lots and don't
+tell them apart. In this session the club lot is loaded at tick 0 and again at 2799, each
+time with two objects the lot does not list (179, 180, not Sims) made in front.
+
+52 steps differ, all at ticks 0-6 while the lot loads: objects the original has made by
+then (the two in front, and others such as 141) are not yet made natively. That is chunk 2's
+(the objects made and removed).
