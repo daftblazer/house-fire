@@ -39,7 +39,8 @@ other game gets the same kind of reference from its own recompilation later.
 The port's own redrawn interface (its "HD UI": `src/hud_read.cpp`, `hud_pieces.h`,
 `hud_draw.cpp`, `BUSTIN_HDUI`) is not part of House Fire. The menus and HUD here are the
 games' own (the `Apt` movies in `flashes.arc`, their fonts and textures), played natively
-and drawn at the window's resolution. What may come over is what is about the engine and
+and drawn at the window's resolution. Nor is the port's launcher (`launcher/`, its settings
+window and `settings.ini`): House Fire gets its own front end, designed for it. What may come over is what is about the engine and
 not about one port: the renderer's work for the ERC command stream and materials, the
 picture options, the audio mixing.
 
