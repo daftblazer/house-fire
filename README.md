@@ -56,6 +56,8 @@ tools/dispatch.py IMAGE...      # the opcodes each game's interpreter accepts, f
 tools/tree_log.py LOG IMAGE     # a log of the recompiled game's interpreter: its trees on the disc, its steps
 tools/ngh.py IMAGE [--dump]     # the neighbourhood file the lots come from: its blocks unpacked
 tools/lot.py IMAGE              # the lots in it: chunk tables and object types
+tools/objm.py IMAGE             # each lot's objects (ObjM): the table in list order, the sections
+tools/recon_trace.py LOG SYMBOLS  # a trace of the recompiled game's save stream (BUSTIN_RECON_LOG)
 tools/variables.py LOG          # the variable scopes, from a log of the original's lookups
 tools/locals_check.py IMAGE [LOG]  # scripts that read a local before writing it (and what the original read)
 tools/capped.sh CMD...          # run CMD with at most 2 GB and no swap (use it for everything)

@@ -332,3 +332,26 @@ the new-game route, in a 4 GB scope at low priority, at most 330 s, one run at a
   the fifth value.
 - **Next:** iteration 5, `fn_801FDE80` followed exactly (the version-80 path, the object
   loop and what it calls per object), until all 16 lots' ObjM streams decode to their ends.
+
+**Iteration 5** (chunk 1b, part four: the lots' objects):
+- **The save stream, traced.** The observer wraps Bustin' Out's ReconBuffer functions
+  (`BUSTIN_RECON_LOG`: each outermost call's kind, caller, position and values;
+  `tools/recon_trace.py` names the callers). One run of the new-game route shows exactly
+  what the loader reads, in place of reading every version branch of its code.
+- **ObjM decoded** (`tools/objm.py`):
+  - A bool (compression), then the object table in the world's list order. Each entry is
+    the object id (16), two 32-bit values, a count (8) with that many 32-bit values, and
+    the object's type (16), ended by id 0.
+  - Then a chain of marks (each the position of the next) around each object's section
+    (`fn_801F1E30`'s header first), and one more section for the lot itself.
+  - All 16 lots decode to their ends: 4,572 objects, one section each plus the lot's.
+- **The type is objt's field 4:** all 4,572 objects resolve to an object type, so to a GUID
+  and a definition.
+- **Checked against the running game.** The club (the last lot in the file) has 178
+  objects. The object list the game walked (SetToNext, in the tree log) is the lot's table
+  in exactly its order (164 of 164 compared), with the two objects made at load (179, 180,
+  the household's Sims) at its front: new objects go first.
+- **Next:** iteration 6, the native lot loader in the engine (C++: the container, LZSS,
+  the stream reader, objt, the ObjM table), making the World's objects with their ids,
+  order and definitions. Then each object section's data fields (`fn_801F1F20`), checked
+  against the lockstep's first-seen values.

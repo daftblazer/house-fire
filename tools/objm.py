@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+"""A lot's objects (its ObjM chunk), decoded from the engine's save stream (tools/recon.py).
+
+Usage: objm.py IMAGE
+
+Layout, as Bustin' Out's loader (fn_801FDE80) reads it; traced on the recompiled game
+(BUSTIN_RECON_LOG, tools/recon_trace.py):
+
+- 12 bytes: 0, the version (80), "MjbO". Stream positions below count from after them.
+- A bool: compression on.
+- The object table, in the world's object list order (the order SetToNext walks), each
+  entry: object id (16), two 32-bit values, a count (8) and that many 32-bit values, the
+  object's type (16, streamed by fn_801F92D0). Ended by an object id of 0.
+- A mark (a plain 32-bit word: the position of the next mark), then each object's section,
+  ended by a mark. Each section begins with the object's header (fn_801F1E30: six 32-bit
+  values, an int, a 16-bit value) and goes on with its data, its tree stack and, for Sims,
+  the rest; the marks let a reader step from object to object. After the last object's
+  section comes one more: the lot's own.
+
+For every lot this reads the table and walks the mark chain, which must step forward and
+end at the stream's end, with one section per object of the table and one more.
+"""
+import sys, struct, collections, pathlib
+sys.path.insert(0, str(pathlib.Path(__file__).parent))
+from disc import Disc
+import lot, recon
+
+START = 12
+
+
+def read(m):
+    if m[8:12] != b'MjbO': raise ValueError('not an ObjM')
+    r = recon.Reader(m, START)
+    r.compressed = r.rbool()
+    table = []
+    while True:
+        oid = r.r16()
+        if oid == 0: break
+        a, b, n = r.r32(), r.r32(), r.r8()
+        extra = [r.r32() for _ in range(n & 0xFF)]
+        table.append(dict(id=oid, a=a, b=b, extra=extra, type=r.r16()))
+    sections = []
+    mark_at = r.pos - START
+    nxt = r.mark()
+    while True:
+        start = mark_at + 4
+        if nxt <= mark_at or START + nxt + 4 > len(m):
+            sections.append((start, len(m) - START))  # the last: to the stream's end
+            break
+        sections.append((start, nxt))
+        mark_at = nxt
+        nxt = struct.unpack_from('<I', m, START + nxt)[0]
+    return r.compressed, table, sections
+
+
+def header(m, start):
+    """A section's object header (fn_801F1E30)."""
+    r = recon.Reader(m, START + start)
+    r.compressed = True
+    return [r.r32() for _ in range(6)] + [r.r32(), r.r16()]
+
+
+def main(argv):
+    d = Disc(argv[1])
+    res = collections.Counter()
+    for off, cs in lot.lots(d):
+        m = cs['ObjM']
+        comp, table, sections = read(m)
+        ok = len(sections) == len(table) + 1  # one per object, then the lot's own part
+        res['lots'] += 1
+        res['sections match the table'] += ok
+        types = lot.object_types(cs['objt'])
+        by4 = {f[4] for g, f, n in types}
+        res['types found as objt field 4'] += sum(1 for t in table if t['type'] in by4)
+        res['types found as objt position'] += sum(1 for t in table if 0 <= t['type'] < len(types))
+        res['objects'] += len(table)
+        print(f'lot {off:#08x}: {len(table)} objects, {len(sections)} sections '
+              f'({"same" if ok else "DIFFERENT"}), first ids {[t["id"] for t in table[:6]]}, '
+              f'first header {header(m, sections[0][0])}')
+    print(dict(res))
+
+
+if __name__ == '__main__':
+    main(sys.argv)
