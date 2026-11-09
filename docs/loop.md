@@ -224,6 +224,9 @@ the new-game route, in a 4 GB scope at low priority, at most 330 s, one run at a
 
 1. **SetToNext (31).** Its operand, its search kinds, and its writes (the stack object
    and others), natively, checked step by step.
+1b. **Lots.** The house files: objt, ObjM, HOUS and the arrays; the native world made from
+   a house file (each object's definition, id, data, attributes, the list's order), checked
+   against the logged club's objects.
 2. **Objects made and removed.** CreateObject (42), KillObject (18) and how ids are
    given out; the world's object lifecycle, so the 16 differences of `objects.md` go.
 3. **Table sizes from the definitions.** Attribute, object data and person data counts
@@ -240,4 +243,31 @@ the new-game route, in a 4 GB scope at low priority, at most 330 s, one run at a
 
 ## Progress
 
-(none yet)
+**Iteration 1** (chunk 1, SetToNext; re-planned):
+- **The operand.** Byte 4: the search kind in the low 7 bits; 0x80: the target is the
+  variable of scope byte 5, datum byte 7 (else the stack object). Bytes 0-3: a GUID for
+  kind 4. From its code (`fn_8020C024`, reached through the object switch's case 31) and
+  45,000 logged steps.
+- **The kinds seen:**
+  - 0: every object, in the world's object list order (not by id: a full walk of the club
+    is 179 objects, 178, 177, ... 127, 2, 57, 168, ...);
+  - 1: Sims;
+  - 3: the other part of a multi-tile object;
+  - 4: objects of a GUID;
+  - 5: neighbours, ascending;
+  - 6: a category.
+  The step ends false when there is no next.
+- **The dependency found.** The kinds that filter need each object's definition, and the
+  order is the object list's: both come from how a lot loads its objects. Objects do not
+  keep a plain pointer to their definition row: a scan of each object's memory found one
+  only for the 9 Sims, whose rows are made at run time and are on no file
+  (`tools/definitions.py`, the observer's 'O' records).
+- **The disc's lots** are PC-format house files (`Runtime/StoryData/Houses/House00-11.iff`,
+  `ChalData`, `Neighborhood.iff`): HOUS, objt (object types by GUID), ObjM (each object's
+  state), Arry, SIMI, FAMI. A native lot loader gives every object its definition, id and
+  place in the list.
+- **Engine:** the library now reads the OBJD chunks (`Definition`, by GUID).
+- **Re-planned:** lot loading becomes chunk 1b, before SetToNext's kinds, the object
+  lifecycle and the table sizes.
+- **Next:** iteration 2, the house files' chunks (objt, ObjM, HOUS), read on every house
+  file of the disc, and the club's objects matched to the logged ones (ids, order).

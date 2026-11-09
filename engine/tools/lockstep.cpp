@@ -90,6 +90,18 @@ bool read_log(const char* path, Log& log) {
     while (p < b.size()) {
         const char k = (char)b[p++];
         if (k == 'K') { if (p + 4 > b.size()) break; u32(); log.ticks++; }
+        else if (k == 'O') {  // where an object keeps its definition (tools/definitions.py)
+            if (p + 4 > b.size()) break;
+            p += 4;
+            bool ended = false;
+            while (p + 2 <= b.size()) {
+                const int16_t off = (int16_t)u16();
+                if (off == 0x7FFF) { ended = true; break; }
+                if (p + 202 > b.size()) break;
+                p += 202;
+            }
+            if (!ended) break;
+        }
         else if (k == 'V') {
             if (p + 27 > b.size()) break;
             LookupRec v;

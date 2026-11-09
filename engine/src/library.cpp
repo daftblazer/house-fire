@@ -42,6 +42,15 @@ Library Library::bustin_out(const Disc& d) {
             f->constants[(uint16_t)c->id] = std::move(vals);
         }
         for (const Chunk* c : f->iff.of("GLOB")) f->glob = glob_name(c->data);
+        for (const Chunk* c : f->iff.of("OBJD")) {
+            Reader r(c->data, o);
+            Definition d;
+            d.id = c->id;
+            if (r.left() < 4) continue;
+            d.version = r.u32();
+            while (r.left() >= 2) d.fields.push_back(r.u16());
+            f->definitions.push_back(std::move(d));
+        }
         const size_t slash = path.rfind('/');
         lib.by_name_.emplace(lower(path.substr(slash + 1, path.size() - slash - 5)), f.get());  // the first of a name
         lib.files_.push_back(std::move(f));
@@ -52,6 +61,9 @@ Library Library::bustin_out(const Disc& d) {
         if (!g.empty()) f->semi = lib.find(g);
     }
     lib.global_ = lib.find("global");
+    for (const auto& f : lib.files_)
+        for (size_t k = 0; k < f->definitions.size(); k++)
+            lib.by_guid_.emplace(f->definitions[k].guid(), std::make_pair(f.get(), k));
     return lib;
 }
 
@@ -81,6 +93,13 @@ std::optional<int16_t> Library::constant(const ObjectFile* object, int16_t data)
     auto t = f->constants.find(id);
     if (t == f->constants.end() || entry >= (int)t->second.size()) return std::nullopt;
     return t->second[entry];
+}
+
+const Definition* Library::definition(uint32_t guid, const ObjectFile** file) const {
+    auto it = by_guid_.find(guid);
+    if (it == by_guid_.end()) return nullptr;
+    if (file) *file = it->second.first;
+    return &it->second.first->definitions[it->second.second];
 }
 
 }  // namespace housefire

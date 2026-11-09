@@ -28,6 +28,16 @@ def records(path):
         if k == b'K':
             if p + 4 > n: break
             yield 'K', struct.unpack_from('<I', b, p)[0]; p += 4
+        elif k == b'O':
+            if p + 4 > n: break
+            obj = struct.unpack_from('<I', b, p)[0]; p += 4
+            rows = []
+            while p + 2 <= n:
+                off = struct.unpack_from('<h', b, p)[0]; p += 2
+                if off == 0x7FFF: break
+                inner, ptr = struct.unpack_from('<HI', b, p); p += 6
+                rows.append(((off, inner), ptr, b[p:p + 196])); p += 196
+            yield 'O', (obj, rows)
         elif k == b'V':
             if p + 27 > n: break
             f = struct.unpack_from('<IIhhhBIII', b, p); p += 27
