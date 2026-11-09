@@ -34,22 +34,27 @@ static Tree tree(int16_t id, std::vector<Node> nodes, uint8_t args = 0, uint16_t
 }
 
 // Primitive 1 answers what `answers` says next; primitive 2 yields once, then answers true;
-// primitive 3 sets local 0 to parameter 0 and answers true.
+// primitive 3 sets local 0 to parameter 0 and answers true; primitives 4 and 5 answer whether
+// local 1 (4) or local 0 (5) is zero.
 struct TestHost : Host {
     std::map<uint16_t, Tree> trees;
     std::vector<PrimResult> answers;
     std::vector<int16_t> defaults;
     size_t next = 0;
     int yields = 0;
-    PrimResult primitive(Interpreter&, Frame& f, const Node& n) override {
+    PrimResult primitive(Interpreter& in, Frame& f, const Node& n) override {
         switch (n.opcode) {
             case 1: return next < answers.size() ? answers[next++] : PrimResult::Stop;
             case 2: return yields++ == 0 ? PrimResult::Yield : PrimResult::True;
-            case 3: if (!f.locals.empty() && !f.params.empty()) f.locals[0] = f.params[0]; return PrimResult::True;
+            case 3: if (!f.params.empty()) in.set_local(f, 0, f.params[0]); return PrimResult::True;
+            case 4: return in.local(f, 1) == 0 ? PrimResult::True : PrimResult::False;
+            case 5: return in.local(f, 0) == 0 ? PrimResult::True : PrimResult::False;
             default: return PrimResult::Stop;
         }
     }
     std::span<const int16_t> default_params() override { return defaults; }
+    std::vector<int> unset_reads;
+    void unset_local(const Frame&, int k) override { unset_reads.push_back(k); }
     const Tree* tree(uint16_t id) override {
         auto it = trees.find(id);
         return it == trees.end() ? nullptr : &it->second;
@@ -119,6 +124,22 @@ int main() {
         in.restore({in.stack()[0]});
         in.top().node = 2;
         CHECK(in.step() == Step::Stop && in.error() == Error::CallFailed);
+    }
+    {   // locals start at zero; reading one before it is written is reported, after it is not
+        TestHost h;
+        Tree t = tree(0x1000, {node(4, 1, kReturnFalse), node(3, 2, kReturnFalse), node(5, kReturnFalse, kReturnTrue)}, 1, 2);
+        Interpreter in(h, Interpreter::Mode::Check);
+        in.start(&t, {5});
+        in.run();
+        CHECK(in.done() && in.result() == true);   // local 1 read as zero; local 0 then 5
+        CHECK(h.unset_reads.size() == 1 && h.unset_reads[0] == 1);
+    }
+    {   // a tree with no nodes cannot start
+        TestHost h;
+        Tree t = tree(0x1000, {});
+        Interpreter in(h, Interpreter::Mode::Check);
+        in.start(&t);
+        CHECK(in.done() && in.error() == Error::CallFailed && in.step() == Step::Stop);
     }
     {   // errors: target 253, a missing node, a missing tree, the iteration limit
         TestHost h;

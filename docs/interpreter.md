@@ -68,7 +68,13 @@ tree id, node 0, +4 from the caller, +8 zero, +12 the file, the counts from the 
   there: the values of frames that were there before, or their headers. Measured: of 11,644
   calls whose locals were not zero, 11,337 hold exactly the values earlier frames left
   there, and most of the rest look like header words (a tree id, 254). The native
-  interpreter zeroes them for now.
+  interpreter starts them at zero, by design (`plan.md`, "Same game, new engine"), and
+  reports a read of one not yet written (`Host::unset_local`). `tools/locals_check.py`
+  finds the scripts that can do that: on Bustin' Out's disc 60 reads in about 25 of the
+  3,506 trees with locals (for example "Start Jealousy" tests local 1 at its first node),
+  and 324 more past primitives it does not decode yet. In the logged session the original
+  ran 442 such reads and every one read zero, so zero is also what the game does in
+  practice.
 
 ## Semi-global files
 

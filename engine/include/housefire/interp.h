@@ -27,6 +27,11 @@ struct Frame {
     const Tree* tree = nullptr;
     uint16_t node = 0;
     std::vector<int16_t> params, locals;
+    // Locals start at zero (the original leaves whatever its stack's memory held: see
+    // docs/interpreter.md, "The call"). Bit k is set while local k has not been written in
+    // this frame, so that a read of one is reported (Host::unset_local) and a script that
+    // depends on the original's left-over values can be found. Locals past 63 are not tracked.
+    uint64_t unset = 0;
 };
 
 class Interpreter;
@@ -41,6 +46,9 @@ public:
     // set up (TreeSimImpl::Initialize keeps a pointer at +44; Bustin' Out's call, fn_8023EE1C,
     // copies from it). In the PC game they are the object's temporaries.
     virtual std::span<const int16_t> default_params() { return {}; }
+    // A primitive read local k of `f` before anything wrote it (tools/locals_check.py finds
+    // the scripts that can do this; on the disc they read zero in the original too).
+    virtual void unset_local(const Frame& f, int k) { (void)f; (void)k; }
 };
 
 enum class Step { Go, Yield, Stop };
@@ -71,6 +79,17 @@ public:
     Step step();
     // Steps until the tree yields or stops; then the number of steps run.
     int run(int max_steps = 1 << 20);
+
+    // A frame's locals, for the primitives: reads report an unset local to the host.
+    int16_t local(Frame& f, int k) {
+        if (k < 64 && (f.unset >> k & 1)) host_.unset_local(f, k);
+        return k < (int)f.locals.size() ? f.locals[k] : 0;
+    }
+    void set_local(Frame& f, int k, int16_t v) {
+        if (k >= (int)f.locals.size()) return;
+        f.locals[k] = v;
+        if (k < 64) f.unset &= ~(uint64_t(1) << k);
+    }
 
     bool done() const { return finished_; }
     bool result() const { return last_result_; }  // the last return (or a check tree's answer)

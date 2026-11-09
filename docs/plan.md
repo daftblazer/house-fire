@@ -34,6 +34,23 @@ other game gets the same kind of reference from its own recompilation later.
    Urbz's reputation and districts, The Sims 2's wants and fears, Pets' pets).
 5. **The other games,** each as its data and its own module of primitives and modes.
 
+## Same game, new engine
+
+The games must play and look the same; the engine under them is new, written to be clean
+and light, not a copy of the original's code. What a player sees (what Sims and objects do
+and when, the picture, the sound) is matched against the recompiled game; how the engine
+does it (memory layout, data structures, loading, the engine's own bookkeeping) is ours.
+
+Where the original's behaviour is a bug, it is kept unless it is changed on purpose, and
+each change is listed here so that the lockstep check skips exactly it and keeps proving
+the rest. Crashes and corruption are fixed without a listing.
+
+Deliberate differences:
+
+| | The original | Here | Why it does not change play |
+|---|---|---|---|
+| A new frame's locals | what the stack's memory held | zero | the scripts that read one first read zero in practice (`interpreter.md`, "The call"); reads are reported |
+
 ## What does not come over from Bustin' Out's port
 
 The port's own redrawn interface (its "HD UI": `src/hud_read.cpp`, `hud_pieces.h`,
@@ -49,8 +66,6 @@ picture options, the audio mixing.
 The node step, calls and returns agree with the recompiled Bustin' Out in lockstep
 (`interpreter.md`, "Checked against the original"). Next:
 
-- Keep the tree stack as the engine lays it out in memory, so that new frames' locals
-  hold what the original's do (they are not cleared), or decide that zero is close enough.
 - The expression primitive, checked the same way: the log has every frame's values before
   and after each step.
 - The frames the engine pushes itself (+8 set) and the stack resets outside the node step:

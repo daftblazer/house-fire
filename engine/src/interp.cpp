@@ -7,7 +7,9 @@ void Interpreter::start(const Tree* t, const std::vector<int16_t>& params) {
     finished_ = false;
     error_ = Error::None;
     iterations_ = 0;
-    push(t, params.data(), (int)params.size());
+    // A tree that cannot start (none, no nodes, a type-4 tree's negative node) ends at once,
+    // as a call to it fails.
+    if (!push(t, params.data(), (int)params.size())) fail(Error::CallFailed);
 }
 
 // The engine's call (Bustin' Out's fn_8023EE1C, TreeSimImpl::Gosub): the frame's header is
@@ -26,10 +28,10 @@ bool Interpreter::push(const Tree* t, const int16_t* params, int count) {
     }
     if (node < 0 || node >= (int)t->nodes.size()) return false;
     f.node = (uint16_t)node;
-    // The engine does not clear a new frame's locals: they are what the stack's memory held
-    // (measured: 11,267 of 11,554 calls whose locals were not zero). Zero here until the
-    // stack is kept as the engine's memory is (docs/interpreter.md).
+    // The original does not clear a new frame's locals: they are what its stack's memory
+    // held. Here they are zero, and marked unset until written (Frame::unset).
     f.locals.assign(t->locals, 0);
+    f.unset = t->locals >= 64 ? ~uint64_t(0) : (uint64_t(1) << t->locals) - 1;
     stack_.push_back(std::move(f));
     return true;
 }

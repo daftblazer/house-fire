@@ -376,7 +376,11 @@ int main(int argc, char** argv) {
                 "; callee params native " + vals(callee.params) + " original " + vals(next->params) +
                 ", locals native " + vals(callee.locals) + " original " + vals(next->locals);
             note(callee.params == next->params ? "call: parameters the same" : "call: parameters DIFFERENT", ev);
-            note(callee.locals == next->locals ? "call: locals the same" : "call: locals DIFFERENT", ev);
+            // A new frame's locals are zero here and left-over memory in the original: by
+            // design (docs/interpreter.md, "The call"), so counted but not a difference.
+            const bool zero = std::all_of(next->locals.begin(), next->locals.end(), [](int16_t v) { return v == 0; });
+            note(callee.locals == next->locals ? "call: locals the same"
+                 : zero ? "call: locals DIFFERENT" : "call: locals left over in the original (zero here, by design)", ev);
             // Are the original's values what the stack's memory held there before?
             auto left_over = [&](size_t first, const std::vector<int16_t>& v) {
                 int known = 0, same = 0;
@@ -404,7 +408,7 @@ int main(int argc, char** argv) {
                 note(std::string("  parameters (none given, differ): ") + where, ev + "; stack" + stack_vals);
             }
             if (callee.locals != next->locals)
-                note(std::string("  locals (differ): ") + left_over(next->params.size(), next->locals), ev);
+                note(std::string("  locals left over: ") + left_over(next->params.size(), next->locals), ev);
         } else if (n) {
             const char* what = s.result == 1 ? "yield" : s.result == 2 ? "stop" : "transition";
             std::snprintf(ex, sizeof ex, "tree %#x node %u op %u result %u: native node %u, original %u",
