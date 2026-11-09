@@ -39,7 +39,7 @@ game: every step works from the discs and the executables at rest.
 
 ## Progress
 
-Iteration: 2
+Iteration: 3
 
 - **Iteration 1: IFF chunks, done.** `tools/chunks.py` reads strings (STR#, CTSS, TTAs),
   BHAV, BCON, GLOB, OBJf, OBJD, TTAB, TPRP, SLOT, and the editor's TREE and TRCN as far as
@@ -73,3 +73,19 @@ Iteration: 2
   semi-global trees. Expression is 68-72% of all primitive nodes.
 
   Next: chunk 3, where the v3.0 games keep their object definitions and interactions.
+- **Iteration 3: quick data, the container.** The v3.0 games keep object data out of IFF,
+  in `quickdat.arc`, and so do The Sims and Bustin' Out (beside its IFFs): one format in all
+  five, read as The Sims 2's `ERQuickdata` reads it (`LoadXImage`, `ReloadXImage`,
+  `applyFixups`, `getTable`, `getStartAddr`; disassembled in `work/`, described in
+  `tools/quickdata.py`). An entry is a relocatable image of the engine's tables: 24-byte
+  records (the main image, then one image a language, 11 to 21), a fix-up stream of four
+  kinds giving the pointers, and a directory of named tables (name, rows, row names, count,
+  row size) in two header layouts (v2.0 games and v3.0). All 35 entries on the five discs
+  read, every pointer inside its image. `SimsObjects` has the same tables in every game:
+  `ObjDefinition` (196-byte rows: The Sims 954, Bustin' Out 1,778, The Urbz 1,368, The Sims 2
+  1,069, Pets 1,066), `ObjDefinition::ResData`, `ResFile`, `AnimRef`, `PropRef`, the
+  sound tables.
+
+  Next: the rows. `ObjDefinition` and `ResFile` against Bustin' Out's IFF files (its OBJD,
+  TTAB, OBJf), which say what each field holds; then chunk 4 is mostly done, since The
+  Sims' objects are the same tables.
