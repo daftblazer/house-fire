@@ -68,9 +68,9 @@ A session of the new-game route (the dream lot, then the club from tick 2799; 20
 
 | | Same | Different |
 |---|---|---|
-| Literals, constants, parameters, locals, the stack object id | 191,898 | 0 |
-| Values read from objects' and shared tables (scopes 0-4, 6, 8, 14-22, 34) | 135,000 or so | 0 |
-| Where a variable is (each cell one address and back) | 98,000 or so | 16 |
+| Literals, constants, parameters, locals, the stack object id | 191,994 | 0 |
+| Values read from objects' and shared tables (scopes 0-4, 6, 8, 14-22, 34) | 122,184 | 0 |
+| Where a variable is (each cell one address and back) | 88,684 | 9 |
 | Stack object resolved to the same object | 28,084 | 7 |
 
 Changed between the scripts' own accesses ("changed by the engine"):
