@@ -10,8 +10,10 @@ game: every step works from the discs and the executables at rest.
 - Checked on real data: a reader must read every instance on every disc that has it, with
   the failures counted and explained; code with unit tests that pass.
 - No game code or data in the repository: extracted files and dumps go to `work/`.
-- Nothing runs the game or its recompilation. Python and builds run with `nice -n 19`,
-  small, one at a time; `/tmp` stays small.
+- Nothing runs the game or its recompilation. Every script and build runs through
+  `tools/capped.sh` (2 GB, no swap, nice 19), one at a time; `/tmp` stays small. (A reader
+  bug once ran away with the user's memory: a misread count, and a bit reader that read
+  zeros past the end. Readers now bound their counts and stop at the end of their data.)
 - Stop after iteration 10, when the chunks are done, or when two iterations in a row end
   without a commit (the reason written here).
 
@@ -37,4 +39,24 @@ game: every step works from the discs and the executables at rest.
 
 ## Progress
 
-Iteration: 0
+Iteration: 1
+
+- **Iteration 1: IFF chunks, done.** `tools/chunks.py` reads strings (STR#, CTSS, TTAs),
+  BHAV, BCON, GLOB, OBJf, OBJD, TTAB, TPRP, SLOT, and the editor's TREE and TRCN as far as
+  their headers; each reader must account for every byte (padding 0x00, 0xA3 or 0xCD).
+  `tools/check_chunks.py` over each disc: Bustin' Out 54,000 chunks of 13 types, none
+  failing, every interaction's string present in its TTAs; The Urbz 10,192 BHAV, The Sims
+  2 10,318, Pets 10,744, none failing. What was learnt:
+  - BHAV: 12-byte header and 12-byte nodes, signatures 0x8000-0x8002 only, in both byte
+    orders; the v3.0 games swap each operand field by its own width, so operands stay raw
+    until a primitive's layout reads them.
+  - TTAB has six layouts on one disc: versions 2-3 (16-bit count and flags, a delta per
+    motive, the string index implied), 4-6 (no attenuation code), 7-8 (three fields per
+    motive), and 9-11 bit-packed in the order of 7-8; version 10 is 9's, and 11 opens with
+    one 16-bit field for the whole table (meaning not known yet). An empty table may still
+    carry a version and a packing code.
+  - The first run of the check ate the user's memory: a misread count and a bit reader
+    that read zeros past the end. Readers now bound their counts and stop at the end, and
+    every run goes through `tools/capped.sh` (2 GB, no swap).
+
+  Next: chunk 2, the scripts as text and the opcodes each game uses.

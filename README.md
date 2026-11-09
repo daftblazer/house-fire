@@ -32,8 +32,10 @@ part of this engine is checked against it before it takes over.
 Python 3. `.rvz` images are read through decomp-toolkit (`DTK=/path/to/dtk`); `.iso` directly.
 
 ```sh
-tools/survey.py IMAGE...      # IFF chunk types on each disc, and where they are
+tools/survey.py IMAGE...        # IFF chunk types on each disc, and where they are
+tools/check_chunks.py IMAGE...  # read every chunk the engine uses; non-zero exit on a failure
+tools/capped.sh CMD...          # run CMD with at most 2 GB and no swap (use it for everything)
 ```
 
 `tools/disc.py` (disc images), `tools/arc.py` (the `.arc` archives), `tools/iff.py` (Maxis
-IFF 2.5).
+IFF 2.5), `tools/chunks.py` (the chunk types).
