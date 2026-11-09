@@ -38,6 +38,7 @@ tools/bhav_text.py [--dump] IMAGE...  # check every script; --dump writes them a
 tools/quickdata.py IMAGE [ENTRY] # the tables in each quick data entry (quickdat.arc)
 tools/objects.py check IMAGE    # object definitions in quick data (check: against Bustin' Out's IFFs)
 tools/resfile.py check IMAGE    # object resource files in quick data (check: against Bustin' Out's IFFs)
+tools/interactions.py check|trees IMAGE  # interaction tables in quick data
 tools/dispatch.py IMAGE...      # the opcodes each game's interpreter accepts, from its executable
 tools/capped.sh CMD...          # run CMD with at most 2 GB and no swap (use it for everything)
 ```

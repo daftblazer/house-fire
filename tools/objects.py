@@ -43,7 +43,7 @@ def definitions(img):
 
 def sims_objects(disc):
     b = dict(quickdata.entries_of(disc))['SimsObjects']
-    return quickdata.Image(b, quickdata.records(b)[0])
+    return quickdata.Image(b, quickdata.records(b))
 
 
 def check(disc):

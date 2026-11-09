@@ -78,12 +78,23 @@ def fixup_offsets(b, rec):
 
 
 class Image:
-    """One image, its pointers read back as offsets into it."""
+    """The main image with one language's image after it (as the engine loads them: the
+    language's at the main image's size rounded up to 4, both built for the same address),
+    its pointers read back as offsets into the whole. `lang` counts from 1, the first
+    language image; 0 loads none."""
 
-    def __init__(self, b, rec):
-        self.data = b[rec['offset']:rec['offset'] + rec['size']]
-        self.base = rec['base']
-        self.pointers = set(fixup_offsets(b, rec))
+    def __init__(self, b, recs, lang=1):
+        if isinstance(recs, dict):
+            recs, lang = [recs], 0
+        main = recs[0]
+        self.data = b[main['offset']:main['offset'] + main['size']]
+        self.base = main['base']
+        self.pointers = set(fixup_offsets(b, main))
+        if lang and lang < len(recs):
+            L = recs[lang]
+            at = (len(self.data) + 3) & ~3
+            self.data = self.data + bytes(at - len(self.data)) + b[L['offset']:L['offset'] + L['size']]
+            self.pointers |= {at + p for p in fixup_offsets(b, L)}
         for p in self.pointers:
             if p + 4 > len(self.data):
                 raise QuickError(f'pointer at {p:#x} outside the image')
@@ -106,6 +117,13 @@ class Image:
     def cstr(self, o):
         e = self.data.index(b'\0', o)
         return self.data[o:e].decode('latin-1')
+
+    def wstr(self, o):
+        """A UTF-16 big-endian string ending in a zero unit."""
+        e = o
+        while e + 2 <= len(self.data) and self.data[e:e + 2] != b'\0\0':
+            e += 2
+        return self.data[o:e].decode('utf-16-be', errors='replace')
 
     def layout(self):
         """(header version, count offset, first descriptor offset)"""

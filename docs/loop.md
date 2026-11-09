@@ -39,7 +39,7 @@ game: every step works from the discs and the executables at rest.
 
 ## Progress
 
-Iteration: 5
+Iteration: 6
 
 - **Iteration 1: IFF chunks, done.** `tools/chunks.py` reads strings (STR#, CTSS, TTAs),
   BHAV, BCON, GLOB, OBJf, OBJD, TTAB, TPRP, SLOT, and the editor's TREE and TRCN as far as
@@ -115,3 +115,22 @@ Iteration: 5
 
   Next: the elements: an interaction table's 36-byte entries against TTAB (action, guard,
   motives, the name from TTAs), constants against BCON, function tables against OBJf.
+- **Iteration 6: interactions in quick data.** An interaction table's entries are 28 bytes
+  in the v2.0 games, 32 in The Urbz, 36 in The Sims 2 and Pets (`tools/interactions.py`):
+  action and guard, motives (only those changed: personality, minimum, delta, motive index),
+  attenuation, flags, order and autonomy threshold, joining and string index, and the name
+  through the table's list of names in the language image (UTF-16). Quick data needed the
+  language images loaded after the main image (`tools/quickdata.py`, as the engine does).
+  Checks: The Sims 2 and Pets, 6 of 2,823 and 3,923 actions and guards name an own tree the
+  object's script file lacks (two shared objects); The Urbz 192 of 2,669. Bustin' Out: 597
+  of 921 tables identical to its IFF field by field (the tool sets flag 0x200 and renumbers
+  the names), the rest an older revision in the IFF (names absent from its TTAs).
+  - **Found:** Bustin' Out's `Runtime/` IFF files are not its full scripts. Its quick
+    interactions call 2,570 own trees those files lack (`abduction` has 0x1000-0x1001 and
+    calls 0x1005). Bustin' Out's trees must be in quick data too, probably the ResFile slot
+    still unnamed (+0). Everything about scripts so far (iteration 2) holds for what is in
+    the IFF files; whether those files are what the game runs is open.
+
+  Next: Bustin' Out's trees in quick data (ResFile slot +0 and `GlobalResFile`), against its
+  IFF BHAVs where both exist; then the rest of chunk 3 (constants against BCON, function
+  tables against OBJf).
