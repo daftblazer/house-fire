@@ -12,7 +12,15 @@ with only the assets and scripts coming from the disc.
 | The Sims 2 (2005) | `G4ZE69` | EOR/Maxis Engine v3.0 |
 | The Sims 2: Pets (2006) | `G4OE69` | EOR/Maxis Engine v3.0 |
 
-Status: started. `docs/survey.md` is what the discs hold, `docs/plan.md` how the engine
+Status: started. `engine/` is the C++ engine (readers and the interpreter's core so far):
+
+```sh
+CXX=clang++ cmake -S engine -B work/build -G Ninja && ninja -C work/build
+work/build/test_interp                                      # the node step's rules
+HOUSEFIRE_BUSTIN_ISO=/path/to/G4ME69.iso work/build/test_disc  # every script on your disc
+```
+
+ `docs/survey.md` is what the discs hold, `docs/plan.md` how the engine
 is to be built, `docs/primitives.md` the script primitives found so far, `docs/loop.md` the work under way.
 
 The reference for what the engine must do is the recompiled game

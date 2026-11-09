@@ -46,6 +46,5 @@ picture options, the audio mixing.
 
 ## Next
 
-Bustin' Out's interpreter in its executable: the node step, the stack layout and the
-primitives' parameters, named through The Sims 2's map, and the lockstep hook in the
-recompiled game (an observer that changes nothing, so its replays stay identical).
+`loop.md`, "Where it ended": the expression primitive, then the interpreter checked in
+lockstep against the recompiled Bustin' Out (which needs the game running).

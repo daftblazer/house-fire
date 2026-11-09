@@ -39,7 +39,7 @@ game: every step works from the discs and the executables at rest.
 
 ## Progress
 
-Iteration: 9
+Iteration: 10 (the last; the loop stopped here)
 
 - **Iteration 1: IFF chunks, done.** `tools/chunks.py` reads strings (STR#, CTSS, TTAs),
   BHAV, BCON, GLOB, OBJf, OBJD, TTAB, TPRP, SLOT, and the editor's TREE and TRCN as far as
@@ -170,3 +170,28 @@ Iteration: 9
 
   Next: chunk 6, the C++ library: IFF and BHAV readers and the interpreter's core (frames,
   the node step as written up, the expression primitive) with tests on real scripts.
+- **Iteration 10: the engine's start.** `engine/`, a C++20 library (CMake): the IFF and
+  BHAV readers (both byte orders), tree kinds by id, a disc reader for .iso, and the
+  interpreter's core: frames, calls (the operand as parameters), returns, the node step's
+  transitions, results and five error codes as `docs/interpreter.md` has them, with
+  primitives and tree lookup left to a host (each object's). Tests: `test_interp` (the
+  step's rules on trees written in the test: targets, returns, calls and parameters, yield,
+  each error, the iteration limit) passes; `test_disc` reads all 9,529 BHAVs of the
+  player's Bustin' Out disc and runs every tree with a fixed-rule host, all 9,529 ending
+  (6,150 returning, the rest the step's errors, as a host that answers at random leads to
+  calls with no tree and 253 exits). The expression primitive is not in: its operand
+  layout and variable scopes (The Sims 2's `cXObjectImpl::InterpWriteValue`, `TryExpression`)
+  are the next thing to read.
+
+## Where it ended
+
+Ten iterations, ten commits, every chunk started and chunks 1-3 and 5 done as planned; 4
+done for the object data (The Sims' interactions and strings read with the same code, its
+scripts not found yet); 6 started (the core, not the expression primitive).
+
+What the next steps need that this loop could not do: confirming the interpreter against
+the original needs the recompiled Bustin' Out running (an observer hook at its node step,
+`8023F1FC`, that leaves replays identical, then the native interpreter in lockstep); that
+waits for the user, since nothing here ran a game. Open questions it would settle: the
+own-to-semi-global + 0x1000 rule for interactions, what a callee's parameters are when a
+call passes none, and how locals start.
