@@ -3,6 +3,7 @@
 // are a host's: each object (and person) answers them, and finds the trees it may call.
 #pragma once
 #include <cstdint>
+#include <span>
 #include <vector>
 
 #include "housefire/bhav.h"
@@ -36,6 +37,10 @@ public:
     virtual PrimResult primitive(Interpreter& in, Frame& f, const Node& n) = 0;
     // The tree a call names (tree_kind says which file); nullptr if there is none.
     virtual const Tree* tree(uint16_t id) = 0;
+    // The parameters a call that gives none passes: the interpreter's own, given when it is
+    // set up (TreeSimImpl::Initialize keeps a pointer at +44; Bustin' Out's call, fn_8023EE1C,
+    // copies from it). In the PC game they are the object's temporaries.
+    virtual std::span<const int16_t> default_params() { return {}; }
 };
 
 enum class Step { Go, Yield, Stop };
@@ -51,9 +56,17 @@ public:
 
     // Start `t` as the bottom frame with these parameters.
     void start(const Tree* t, const std::vector<int16_t>& params = {});
-    // Push a call (what a call node does, and what a primitive may do before Continue).
-    // Parameters: the given ones, or none (empty; see push's note in interp.cpp).
+    // Push a call (what a call node does, and what a primitive may do before Continue), with
+    // these parameters (the tree's count of them is taken, the rest zero). A tree of type 4
+    // starts at the node its first parameter names (the last if past the end); false if
+    // that is negative or the tree has no nodes.
     bool push(const Tree* t, const int16_t* params, int count);
+    // Take over a stack as it stands (a saved game's, or the original's in a lockstep check).
+    void restore(std::vector<Frame> frames) {
+        stack_ = std::move(frames);
+        finished_ = false;
+        error_ = Error::None;
+    }
 
     Step step();
     // Steps until the tree yields or stops; then the number of steps run.

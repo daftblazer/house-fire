@@ -32,21 +32,51 @@ the semi-global file; above 9000 none. A call's id picks the file this way, and 
 then found in it by id. No fallback from own to semi-global here: the + 0x1000 rule above is
 found elsewhere, if in the engine at all.
 
-## Frames (The Sims 2's `StackElem`, the same code in Bustin' Out)
+## Frames (Bustin' Out's `StackElem`; The Sims 2's header is 4 bytes longer)
 
-A frame on a tree stack (`TreeStack`, frames end to end):
+A frame on a tree stack (`TreeStack`, frames end to end, the bottom one first):
 
 | Offset | |
 |---|---|
 | +0 | tree id, 16 bits (the top bit is a flag, cleared when the id is read; -1 none) |
-| +2, +4 | 16 bits each, copied on a push (the node and the caller's details; to be named) |
+| +2 | the current node, 16 bits |
+| +4 | 16 bits, the caller's +4 on a call (to be named) |
 | +6 | locals count (8 bits) |
 | +7 | parameter count (8 bits) |
-| +8, +16 | 32 bits each, copied on a push |
-| +20 | parameters (16 bits each), then locals |
+| +8 | 32 bits, 0 on a call; frames the engine pushes itself have it set, and a return into such a frame takes no transition (the node step returns 0 after the pop) |
+| +12 | the object's resource file, 32 bits: the file a call's tree id is found in |
+| +16 | parameters (16 bits each), then locals |
 
-Its size is 20 + ((parameters + locals + 3) * 2 rounded down to a multiple of 8). A push
-copies the frame's header and the parameters given (`StackElem::Setup`, `TreeStack::Push`).
+Its size is 16 + ((parameters + locals + 3) * 2 rounded down to a multiple of 8)
+(`fn_8023FC9C`; the values' address is `fn_8023FC80`). In The Sims 2 the header is 20 bytes
+and the values start at +20. Measured on the recompiled game: callee frames sit exactly
+that far above their callers.
+
+## The call (Bustin' Out's `fn_8023EE1C`, The Sims 2's `TreeSimImpl::Gosub`)
+
+Arguments: the interpreter, a file (0: the caller's, +12), the parameters (0: none given),
+the tree id. The tree is found in the file (none: the call fails). A header is made: the
+tree id, node 0, +4 from the caller, +8 zero, +12 the file, the counts from the tree. Then:
+
+- **No parameters given** (a call node whose operand is all -1): the parameters are copied
+  from the array the interpreter was set up with (`TreeSimImpl::Initialize(int, short *)`
+  keeps its pointer at +44). Not the caller's. In the PC game these are the object's
+  temporaries. Measured: all 48,248 calls of a session agree once this is modelled.
+- **A tree of type 4** starts at the node its first parameter names, the last node if that
+  is past the end; a negative one fails the call.
+- **Locals are not cleared.** A new frame's locals are whatever the stack's memory held
+  there: the values of frames that were there before, or their headers. Measured: of 11,644
+  calls whose locals were not zero, 11,337 hold exactly the values earlier frames left
+  there, and most of the rest look like header words (a tree id, 254). The native
+  interpreter zeroes them for now.
+
+## Semi-global files
+
+A file's GLOB chunk names its semi-global file, as a length-prefixed string (the
+characters' files: `\rPersonGlobals`) or a zero-ended one (the objects': `person_sg`). The
+characters' files name PersonGlobals, but the game runs trees for them that only
+`person_sg.iff` has (`0x2032`, `0x204F`, ...): their semi-global file is `person_sg`, as
+`template_person.iff` names it. `PersonGlobals.iff` is on the disc but not used for them.
 
 ## Bustin' Out's interpreter
 
@@ -90,12 +120,12 @@ the current frame and says what next: 0 go on, 1 the tree yields for this tick, 
 
 - The current node (frame +2) above 250 is a return: 254 true, 255 false, anything else
   error 1100. Returning from the bottom frame is error 1001. Otherwise the frame is popped,
-  the result kept (+44), and the caller's node moves to that node's true or false target;
+  the result kept (+44 in The Sims 2, +40 in Bustin' Out), and the caller's node moves to that node's true or false target;
   a target of 253 is error 1100.
 - Else the node is read (`Behavior::GetNodeRef`; none: error 1102) and an iteration
   counted (+4 of the interpreter; past the limit, error 1101).
 - Opcode (15 bits) above 255: a call. The node's 8 operand bytes are the parameters, or
-  none if both their words are -1 (`TreeSimImpl::Gosub`). A failed call is error 1000 if
+  none if both their words are -1, and then the interpreter's own (`TreeSimImpl::Gosub`; "The call" above). A failed call is error 1000 if
   the tree exists, 1102 if not.
 - Else a primitive: the object's `TryElement` (frame, opcode, operand) gives a result:
   1 true, 0 false (the node's true or false target becomes the current node; 253 there is
@@ -106,3 +136,31 @@ the current frame and says what next: 0 go on, 1 the tree yields for this tick, 
 
 Node targets 253, 254 and 255 are therefore error, return true and return false, as in the
 PC game.
+
+## Checked against the original (`tools/lockstep`)
+
+The recompiled Bustin' Out logs its interpreter when `BUSTIN_TREE_LOG=<file>` is set
+(`src/tree_log.cpp` there; it only reads memory). `engine/tools/lockstep.cpp` reads such a
+log with the disc: each step the original took is given to the native interpreter, with the
+stack as the log has it and the primitive answering what the original's answered, and the
+native stack after it is compared with the original's next step.
+
+A session of the new-game route (blank card, the dream and the club, 5,130 ticks, 366,558
+steps, 286 trees, 85 objects; 2026-11-09):
+
+| | same | different |
+|---|---|---|
+| primitive: the true or false target | 224,909 | 0 |
+| primitive: a yield (the node stays) | 36,273 | 0 |
+| primitive: a stop | 2,471 | 0 |
+| return: the caller's next node | 48,066 | 0 |
+| call: the callee's tree, found by the native lookup, same nodes | 48,248 | 0 |
+| call: the callee's parameters | 48,248 | 0 |
+| call: the callee's locals | 36,604 | 11,644 (not cleared, above) |
+
+Not compared: 67 calls whose callee was replaced from outside the node step before it ran
+(a new action), 6,336 returns from the bottom of a check stack, 73 returns into frames the
+engine pushed (+8 set), 128 steps of objects run before any tree of theirs could identify
+them. Every tree the game ran was found on the disc with the same nodes. Which object a
+frame belongs to is found from the trees run under its file pointer, since memory is
+reused: the file pointer can name different objects over a session.

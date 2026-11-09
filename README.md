@@ -18,7 +18,11 @@ Status: started. `engine/` is the C++ engine (readers and the interpreter's core
 CXX=clang++ cmake -S engine -B work/build -G Ninja && ninja -C work/build
 work/build/test_interp                                      # the node step's rules
 HOUSEFIRE_BUSTIN_ISO=/path/to/G4ME69.iso work/build/test_disc  # every script on your disc
+work/build/lockstep LOG G4ME69.iso   # the native interpreter against a log of the recompiled game's
 ```
+
+A log comes from the recompiled Bustin' Out run with `BUSTIN_TREE_LOG=<file>`
+(`docs/interpreter.md`, "Checked against the original").
 
  `docs/survey.md` is what the discs hold, `docs/plan.md` how the engine
 is to be built, `docs/primitives.md` the script primitives found so far, `docs/loop.md` the work under way.
@@ -48,6 +52,7 @@ tools/objects.py check IMAGE    # object definitions in quick data (check: again
 tools/resfile.py check IMAGE    # object resource files in quick data (check: against Bustin' Out's IFFs)
 tools/interactions.py check|trees IMAGE  # interaction tables in quick data
 tools/dispatch.py IMAGE...      # the opcodes each game's interpreter accepts, from its executable
+tools/tree_log.py LOG IMAGE     # a log of the recompiled game's interpreter: its trees on the disc, its steps
 tools/capped.sh CMD...          # run CMD with at most 2 GB and no swap (use it for everything)
 ```
 

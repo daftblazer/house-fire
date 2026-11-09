@@ -10,17 +10,25 @@ void Interpreter::start(const Tree* t, const std::vector<int16_t>& params) {
     push(t, params.data(), (int)params.size());
 }
 
-// The engine copies the parameters given into the new frame (StackElem::Setup); a call
-// node whose operand is all -1 gives none, and the engine then copies nothing. What the
-// callee then sees in its parameters is not yet known (to be checked against the
-// recompiled game); here they are zero.
+// The engine's call (Bustin' Out's fn_8023EE1C, TreeSimImpl::Gosub): the frame's header is
+// made from the tree (its parameter and local counts), the parameters given are copied in,
+// and the first node is 0, or for a tree of type 4 the first parameter.
 bool Interpreter::push(const Tree* t, const int16_t* params, int count) {
     if (!t) return false;
     Frame f;
     f.tree = t;
-    f.node = 0;
     f.params.assign(t->args, 0);
     for (int i = 0; i < count && i < (int)f.params.size(); i++) f.params[i] = params[i];
+    int node = 0;
+    if (t->type == 4) {
+        node = count > 0 ? params[0] : 0;
+        if (node >= (int)t->nodes.size()) node = (int)t->nodes.size() - 1;
+    }
+    if (node < 0 || node >= (int)t->nodes.size()) return false;
+    f.node = (uint16_t)node;
+    // The engine does not clear a new frame's locals: they are what the stack's memory held
+    // (measured: 11,267 of 11,554 calls whose locals were not zero). Zero here until the
+    // stack is kept as the engine's memory is (docs/interpreter.md).
     f.locals.assign(t->locals, 0);
     stack_.push_back(std::move(f));
     return true;
@@ -73,7 +81,8 @@ Step Interpreter::step() {
         for (uint8_t b : n.operand) none = none && b == 0xFF;
         int16_t p[4];
         for (int i = 0; i < 4; i++) p[i] = (int16_t)n.operand16(i);
-        if (!push(t, none ? nullptr : p, none ? 0 : 4)) return fail(Error::CallFailed);
+        const std::span<const int16_t> d = host_.default_params();
+        if (!push(t, none ? d.data() : p, none ? (int)d.size() : 4)) return fail(Error::CallFailed);
         return Step::Go;
     }
 

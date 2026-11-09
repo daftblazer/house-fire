@@ -46,5 +46,12 @@ picture options, the audio mixing.
 
 ## Next
 
-`loop.md`, "Where it ended": the expression primitive, then the interpreter checked in
-lockstep against the recompiled Bustin' Out (which needs the game running).
+The node step, calls and returns agree with the recompiled Bustin' Out in lockstep
+(`interpreter.md`, "Checked against the original"). Next:
+
+- Keep the tree stack as the engine lays it out in memory, so that new frames' locals
+  hold what the original's do (they are not cleared), or decide that zero is close enough.
+- The expression primitive, checked the same way: the log has every frame's values before
+  and after each step.
+- The frames the engine pushes itself (+8 set) and the stack resets outside the node step:
+  what starts an action, which is where the + 0x1000 interaction rule would show.

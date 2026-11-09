@@ -17,3 +17,7 @@ foreach(t test_interp test_disc)
   target_link_libraries(${t} housefire)
   add_test(NAME ${t} COMMAND ${t})
 endforeach()
+
+# The native interpreter in lockstep with a log of the recompiled Bustin' Out's.
+add_executable(lockstep tools/lockstep.cpp)
+target_link_libraries(lockstep housefire)

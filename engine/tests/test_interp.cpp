@@ -38,6 +38,7 @@ static Tree tree(int16_t id, std::vector<Node> nodes, uint8_t args = 0, uint16_t
 struct TestHost : Host {
     std::map<uint16_t, Tree> trees;
     std::vector<PrimResult> answers;
+    std::vector<int16_t> defaults;
     size_t next = 0;
     int yields = 0;
     PrimResult primitive(Interpreter&, Frame& f, const Node& n) override {
@@ -48,6 +49,7 @@ struct TestHost : Host {
             default: return PrimResult::Stop;
         }
     }
+    std::span<const int16_t> default_params() override { return defaults; }
     const Tree* tree(uint16_t id) override {
         auto it = trees.find(id);
         return it == trees.end() ? nullptr : &it->second;
@@ -88,14 +90,35 @@ int main() {
         CHECK(in.step() == Step::Go);                      // the return (false)
         CHECK(in.stack().size() == 1 && in.stack()[0].node == 1);
     }
-    {   // a call whose operand is all -1 passes no parameters
+    {   // a call whose operand is all -1 passes the interpreter's own parameters
         TestHost h;
+        h.defaults = {17, 2, 3};
         h.trees[0x1001] = tree(0x1001, {node(0, kReturnTrue, kReturnTrue)}, 2);
-        Tree t = tree(0x1000, {node(0x1001, kReturnTrue, kReturnTrue, -1, -1, -1, -1)});
+        Tree t = tree(0x1000, {node(0x1001, kReturnTrue, kReturnTrue, -1, -1, -1, -1)}, 3);
+        Interpreter in(h, Interpreter::Mode::Check);
+        in.start(&t, {65, 7, 9});
+        in.step();
+        CHECK(in.stack().size() == 2 && in.stack()[1].params.size() == 2);
+        CHECK(in.stack()[1].params[0] == 17 && in.stack()[1].params[1] == 2);
+    }
+    {   // a tree of type 4 starts at the node its first parameter names, the last if past it
+        TestHost h;
+        Tree c = tree(0x1001, {node(0, kReturnTrue, kReturnTrue), node(0, kReturnTrue, kReturnTrue), node(0, kReturnTrue, kReturnTrue)}, 1);
+        c.type = 4;
+        h.trees[0x1001] = c;
+        Tree t = tree(0x1000, {node(0x1001, kReturnTrue, kReturnTrue, 1), node(0x1001, kReturnTrue, kReturnTrue, 9),
+                               node(0x1001, kReturnTrue, kReturnTrue, -2)});
         Interpreter in(h, Interpreter::Mode::Check);
         in.start(&t);
         in.step();
-        CHECK(in.stack().size() == 2 && in.stack()[1].params[0] == 0 && in.stack()[1].params[1] == 0);
+        CHECK(in.stack().size() == 2 && in.stack()[1].node == 1);
+        in.restore({in.stack()[0]});
+        in.top().node = 1;
+        in.step();
+        CHECK(in.stack().size() == 2 && in.stack()[1].node == 2);
+        in.restore({in.stack()[0]});
+        in.top().node = 2;
+        CHECK(in.step() == Step::Stop && in.error() == Error::CallFailed);
     }
     {   // errors: target 253, a missing node, a missing tree, the iteration limit
         TestHost h;
