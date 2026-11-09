@@ -34,8 +34,11 @@ Python 3. `.rvz` images are read through decomp-toolkit (`DTK=/path/to/dtk`); `.
 ```sh
 tools/survey.py IMAGE...        # IFF chunk types on each disc, and where they are
 tools/check_chunks.py IMAGE...  # read every chunk the engine uses; non-zero exit on a failure
+tools/bhav_text.py [--dump] IMAGE...  # check every script; --dump writes them as text to work/scripts/
+tools/dispatch.py IMAGE...      # the opcodes each game's interpreter accepts, from its executable
 tools/capped.sh CMD...          # run CMD with at most 2 GB and no swap (use it for everything)
 ```
 
 `tools/disc.py` (disc images), `tools/arc.py` (the `.arc` archives), `tools/iff.py` (Maxis
-IFF 2.5), `tools/chunks.py` (the chunk types).
+IFF 2.5), `tools/chunks.py` (the chunk types), `tools/primitives.py` (the primitives' names and each
+game's opcodes), `tools/ppc.py` (reading switches in the executables).

@@ -39,7 +39,7 @@ game: every step works from the discs and the executables at rest.
 
 ## Progress
 
-Iteration: 1
+Iteration: 2
 
 - **Iteration 1: IFF chunks, done.** `tools/chunks.py` reads strings (STR#, CTSS, TTAs),
   BHAV, BCON, GLOB, OBJf, OBJD, TTAB, TPRP, SLOT, and the editor's TREE and TRCN as far as
@@ -60,3 +60,16 @@ Iteration: 1
     every run goes through `tools/capped.sh` (2 GB, no swap).
 
   Next: chunk 2, the scripts as text and the opcodes each game uses.
+- **Iteration 2: scripts as text, done.** Each game's interpreter switches found and read
+  (`tools/ppc.py`, `tools/dispatch.py`): Bustin' Out, The Urbz, The Sims 2 (by its map) and
+  Pets (by the switch's shape and by matching The Sims 2's person switch). The switch reader
+  first missed cases (a value left alone in its range after an equals test was not
+  recognised), which showed as The Sims 2's scripts using primitives "not accepted"; fixed
+  by carrying the values ruled out, and the default's own cases dropped. The numbering is
+  one across the games (`docs/primitives.md`), names in `tools/primitives.py`.
+  `tools/bhav_text.py` checks every script (targets, primitives accepted, own-tree calls)
+  and writes them as text to `work/scripts/`: 24,856 trees, 268,627 primitive nodes, no
+  failure; one dead script in Pets (opcode 54, dropped), four own-tree calls from
+  semi-global trees. Expression is 68-72% of all primitive nodes.
+
+  Next: chunk 3, where the v3.0 games keep their object definitions and interactions.
