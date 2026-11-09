@@ -39,7 +39,7 @@ game: every step works from the discs and the executables at rest.
 
 ## Progress
 
-Iteration: 3
+Iteration: 4
 
 - **Iteration 1: IFF chunks, done.** `tools/chunks.py` reads strings (STR#, CTSS, TTAs),
   BHAV, BCON, GLOB, OBJf, OBJD, TTAB, TPRP, SLOT, and the editor's TREE and TRCN as far as
@@ -89,3 +89,16 @@ Iteration: 3
   Next: the rows. `ObjDefinition` and `ResFile` against Bustin' Out's IFF files (its OBJD,
   TTAB, OBJf), which say what each field holds; then chunk 4 is mostly done, since The
   Sims' objects are the same tables.
+- **Iteration 4: object definitions in quick data.** An `ObjDefinition` row is an OBJD:
+  version, then its first 96 fields big-endian, the three 32-bit pairs (12-13 the GUID,
+  68-69, 70-71) stored as 32-bit words; the tool's own fields are 92 (an id), 94-95 (a
+  pointer to an `ObjDefinition::ResData` row) and 0xFFFF in field 6 of some parts of
+  multi-tile objects (`tools/objects.py`). Checked on Bustin' Out: all 1,747 objects that
+  are in both its quick data and its IFF files identical, field for field. Every game's rows
+  are version 138: The Sims 954 objects, Bustin' Out 1,778 rows (1,748 GUIDs), The Urbz
+  1,368, The Sims 2 1,069, Pets 1,066. So chunk 4's objects are read too; The Sims' object
+  definitions are the same table.
+
+  Next: `ResFile` (72-byte rows, one per object file: slots by resource type, the
+  interactions, strings, function table and so on), from the engine's `QuickResFile`
+  (The Sims 2's map: `GetByID`, `GetIndType`, `Count`), checked against Bustin' Out's IFFs.
