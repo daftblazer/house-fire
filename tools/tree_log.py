@@ -28,6 +28,11 @@ def records(path):
         if k == b'K':
             if p + 4 > n: break
             yield 'K', struct.unpack_from('<I', b, p)[0]; p += 4
+        elif k == b'E':
+            if p + 28 > n: break
+            f = struct.unpack_from('<hhhhBBhhhIII', b, p); p += 28
+            yield 'E', dict(zip(('lhs_scope', 'lhs_data', 'rhs_scope', 'rhs_data', 'op', 'flags', 'rhs',
+                                 'lhs', 'lhs_after', 'lhs_float', 'lhs_float_after', 'result'), f))
         elif k == b'T':
             if p + 12 > n: break
             nodes, tree, count, file = struct.unpack_from('<IHHI', b, p); p += 12

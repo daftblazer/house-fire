@@ -143,6 +143,47 @@ the current frame and says what next: 0 go on, 1 the tree yields for this tick, 
 Node targets 253, 254 and 255 are therefore error, return true and return false, as in the
 PC game.
 
+## The expression primitive (opcode 2; Bustin' Out's `fn_80213890`)
+
+The operand: left datum (16 bits, bytes 0-1), right datum (bytes 2-3), a byte the primitive
+never reads (4), the operator (5), the left scope (6), the right scope (7); the 16-bit
+fields in the file's order. Each side is looked up by scope and datum (`fn_80214110`, The
+Sims 2's `cXObjectImpl::InterpValue`), the right first: its 16-bit value, and for the left
+a pointer to the variable, 16-bit or float (motives are floats).
+
+| Operator | | Operator | |
+|---|---|---|---|
+| 0 | `>` | 9 | set flag |
+| 1 | `<` | 10 | clear flag |
+| 2 | `==` | 11 | `++`, then `<` |
+| 3 | `+=` | 12 | `%=` |
+| 4 | `-=` | 13 | `&=` |
+| 5 | `:=` | 14 | `>=` |
+| 6 | `*=` | 15 | `<=` |
+| 7 | `/=` | 16 | `!=` |
+| 8 | flag set? | 17 | `--`, then `>` |
+
+- Comparisons take the 16-bit values, float variables included.
+- Arithmetic on a float variable is done in single precision, with the right side
+  converted. A float result in a motive scope (14, 15, 17) is kept between -100 and 100
+  (the constants at `802CB630`).
+- `%=` works on absolute values. `%=`, `&=` and the flag writes need a 16-bit variable.
+- Flag n is bit n - 1. A flag above 16 is error 13. Flag 0 shifts out of range and tests
+  the sign.
+- Errors (stored at +48 of the interpreter, the primitive then stops): 1 an unknown
+  operator, 13 a flag above 16, 19 a left side that cannot be written, 38 division by zero.
+- `++`/`--` on a float variable: the original compares a 16-bit word read through a null
+  pointer. The native one compares the new value instead (`plan.md`, deliberate
+  differences).
+
+The recompiled game's log records each expression: what the lookups found and the left
+side after. `tools/lockstep` runs the native expression on those values. In a session of
+the new-game route, all 169,010 expressions agree: results, 16-bit values written and float
+values written, bit for bit, over every operator but none of the errors.
+`engine/tests/test_expression.cpp` covers the rules the session does not reach.
+
+What the lookups themselves are, scope by scope, belongs to the object model: next.
+
 ## Checked against the original (`tools/lockstep`)
 
 The recompiled Bustin' Out logs its interpreter when `BUSTIN_TREE_LOG=<file>` is set

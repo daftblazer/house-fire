@@ -26,6 +26,7 @@
 #include <string>
 
 #include "housefire/disc.h"
+#include "housefire/expression.h"
 #include "housefire/interp.h"
 
 using namespace housefire;
@@ -59,6 +60,14 @@ std::string glob_name(std::span<const uint8_t> d) {
 // ---- The log ----
 
 struct TreeRec { uint32_t nodes; uint16_t tree; uint32_t file; std::vector<uint8_t> raw; };
+// The original's expression during a step: what its variable lookup found for each side.
+struct ExprRec {
+    int16_t lhs_scope, lhs_data, rhs_scope, rhs_data;
+    uint8_t op, flags;  // flags: 1 a 16-bit pointer on the left, 2 a float one, 4/8 a lookup failed
+    int16_t rhs, lhs, lhs_after;
+    uint32_t lhs_float, lhs_float_after, result;
+};
+
 struct StepRec {
     uint32_t sim, frame, file, nodes;
     uint16_t tree, node, after, error;
@@ -66,6 +75,8 @@ struct StepRec {
     std::vector<int16_t> params, locals, params_after, locals_after;
     int16_t defaults[8] = {};  // the interpreter's own parameters (its +44), for calls giving none
     const TreeRec* t = nullptr;  // the tree GetNodeRef found, as loaded at the time
+    bool has_expr = false;
+    ExprRec expr{};
 };
 
 struct Log {
@@ -83,9 +94,21 @@ bool read_log(const char* path, Log& log) {
     auto u16 = [&] { uint16_t v; std::memcpy(&v, &b[p], 2); p += 2; return v; };
     auto u32 = [&] { uint32_t v; std::memcpy(&v, &b[p], 4); p += 4; return v; };
     std::map<uint32_t, const TreeRec*> at;
+    ExprRec pending{};
+    bool have_pending = false;
     while (p < b.size()) {
         const char k = (char)b[p++];
         if (k == 'K') { if (p + 4 > b.size()) break; u32(); log.ticks++; }
+        else if (k == 'E') {
+            if (p + 28 > b.size()) break;
+            ExprRec e;
+            e.lhs_scope = (int16_t)u16(); e.lhs_data = (int16_t)u16(); e.rhs_scope = (int16_t)u16(); e.rhs_data = (int16_t)u16();
+            e.op = u8(); e.flags = u8();
+            e.rhs = (int16_t)u16(); e.lhs = (int16_t)u16(); e.lhs_after = (int16_t)u16();
+            e.lhs_float = u32(); e.lhs_float_after = u32(); e.result = u32();
+            pending = e;
+            have_pending = true;
+        }
         else if (k == 'T') {
             if (p + 12 > b.size()) break;
             auto t = std::make_unique<TreeRec>();
@@ -110,6 +133,7 @@ bool read_log(const char* path, Log& log) {
             for (int i = 0; i < 8; i++) s.defaults[i] = (int16_t)u16();
             auto it = at.find(s.nodes);
             if (it != at.end()) s.t = it->second;
+            if (have_pending) { s.has_expr = true; s.expr = pending; have_pending = false; }
             log.steps.push_back(std::move(s));
         } else {
             std::printf("bad record at %zu\n", p - 1);
@@ -137,6 +161,37 @@ bool same_shape(const Tree& t, const std::vector<uint8_t>& raw) {
 }
 
 // ---- The native side ----
+
+// The variables as the original's lookup found them: the right side is asked for first,
+// then the left (as TryExpression does); a write is kept.
+struct LoggedVariables : Variables {
+    const ExprRec& e;
+    int asked = 0;
+    bool wrote = false, wrote_float = false;
+    int16_t written = 0;
+    float written_float = 0;
+    explicit LoggedVariables(const ExprRec& r) : e(r) {}
+    std::optional<Variable> get(uint8_t, int16_t) override {
+        const int i = asked++;
+        if (i == 0) return (e.flags & 8) ? std::nullopt : std::optional<Variable>(Variable{e.rhs, {}});
+        if (e.flags & 4) return std::nullopt;
+        Variable v{e.lhs, {}};
+        if ((e.flags & 3) == 2) { float f; std::memcpy(&f, &e.lhs_float, 4); v.f = f; }
+        return v;
+    }
+    bool set(uint8_t, int16_t, int16_t v) override {
+        if (!(e.flags & 1)) return false;  // the original's left side has no 16-bit pointer
+        wrote = true;
+        written = v;
+        return true;
+    }
+    bool set_float(uint8_t, int16_t, float v) override {
+        if (!(e.flags & 2)) return false;
+        wrote_float = true;
+        written_float = v;
+        return true;
+    }
+};
 
 struct Lookup {
     const File* own = nullptr;
@@ -410,6 +465,40 @@ int main(int argc, char** argv) {
             if (callee.locals != next->locals)
                 note(std::string("  locals left over: ") + left_over(next->params.size(), next->locals), ev);
         } else if (n) {
+            if (n->opcode == 2) {
+                // The native expression on the values the original read.
+                if (!s.has_expr) note("expression: no record");
+                else {
+                    const ExprRec& e = s.expr;
+                    LoggedVariables vars(e);
+                    const ExpressionOperand op = ExpressionOperand::of(*n);
+                    const ExprResult er = expression(op, vars);
+                    const PrimResult r = er.result;
+                    char d[220];
+                    std::snprintf(d, sizeof d, "op %u lhs %d:%d=%d rhs %d:%d=%d flags %u: original result %d after %d, native result %d error %d wrote %d(%d)",
+                                  e.op, e.lhs_scope, e.lhs_data, e.lhs, e.rhs_scope, e.rhs_data, e.rhs, e.flags, (int)h.answer,
+                                  e.lhs_after, (int)r, (int)er.error, vars.wrote, vars.written);
+                    const std::string key = "expression op " + std::to_string(e.op);
+                    const bool either = n->true_target == n->false_target;
+                    if (op.op != e.op || op.lhs_scope != (uint8_t)e.lhs_scope || op.rhs_scope != (uint8_t)e.rhs_scope ||
+                        op.lhs_data != e.lhs_data || op.rhs_data != e.rhs_data)
+                        note("expression: operand read differently", d);
+                    else {
+                        // The result, unless both targets are the same node (then the step
+                        // does not show it), and the value written.
+                        const bool same_result = either || r == h.answer;
+                        bool same_value;
+                        if ((e.flags & 3) == 2) {
+                            uint32_t bits = e.lhs_float;
+                            if (vars.wrote_float) std::memcpy(&bits, &vars.written_float, 4);
+                            same_value = bits == e.lhs_float_after;
+                        } else
+                            same_value = !(e.flags & 1) || (vars.wrote ? vars.written == e.lhs_after : e.lhs == e.lhs_after);
+                        const std::string kind = (e.flags & 3) == 2 ? " (float)" : "";
+                        note(key + kind + (same_result && same_value ? ": same" : same_result ? ": value DIFFERENT" : ": result DIFFERENT"), d);
+                    }
+                }
+            }
             const char* what = s.result == 1 ? "yield" : s.result == 2 ? "stop" : "transition";
             std::snprintf(ex, sizeof ex, "tree %#x node %u op %u result %u: native node %u, original %u",
                           s.tree, s.node, n->opcode, s.result, in.stack().empty() ? 0 : in.stack().back().node, s.after);

@@ -50,6 +50,7 @@ Deliberate differences:
 | | The original | Here | Why it does not change play |
 |---|---|---|---|
 | A new frame's locals | what the stack's memory held | zero | the scripts that read one first read zero in practice (`interpreter.md`, "The call"); reads are reported |
+| `++`/`--` then compare, on a float variable | compares a word read through a null pointer | compares the new value | a crash-class bug; no script in the logged session does it |
 
 ## What does not come over from Bustin' Out's port
 
@@ -66,7 +67,7 @@ picture options, the audio mixing.
 The node step, calls and returns agree with the recompiled Bustin' Out in lockstep
 (`interpreter.md`, "Checked against the original"). Next:
 
-- The expression primitive, checked the same way: the log has every frame's values before
-  and after each step.
+- The variables, scope by scope (the object model): what each expression's lookups read
+  and write. The expression itself agrees with the original (`interpreter.md`).
 - The frames the engine pushes itself (+8 set) and the stack resets outside the node step:
   what starts an action, which is where the + 0x1000 interaction rule would show.
