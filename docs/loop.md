@@ -308,3 +308,27 @@ the new-game route, in a 4 GB scope at low priority, at most 330 s, one run at a
 - **Next:** iteration 4, `ReconBuffer`'s encoding, from The Sims 2's code and Bustin'
   Out's (matched by their code). Checked by decoding the 16 lots' ObjM streams to their ends
   with a first object layout.
+
+**Iteration 4** (chunk 1b, part three: the save streams' encoding):
+- **`ReconBuffer`, from The Sims 2's code** (Recon8/16/32/Float/Bool/CmprInt/Bits/Mark and
+  the static initialiser that builds the schemes), written as `tools/recon.py`:
+  - Bits are read from the top of each byte.
+  - A compressed value is 0 (bit 0), or bit 1, a two-bit code and that many bits,
+    sign-extended. Widths: 8-bit 2/4/6/8, 16-bit 5/8/13/16, 32-bit 6/11/21/32. The 16- and
+    32-bit widths are the PC's field encoding.
+  - Floats go as their 32 bits; a bool as an 8-bit value.
+  - A mark pads to a byte and is a plain 32-bit length.
+  - Every call takes a count (an array).
+- **Bustin' Out's** (found by the schemes' constants in its initialiser at `80231730`):
+  - the schemes at `8035AFEC` / `8035B00C` / `8035B02C`;
+  - `Recon8` `fn_8023037C`, `Recon16` `fn_80230530`, `Recon32` `fn_802306D0`,
+    `ReconFloat` `fn_8023085C`, with the bool, int, mark and string calls beside them.
+  Its ObjM loader is `fn_801FDE80`, found by its calls, which begin like The Sims 2's
+  `ObjectModuleImpl::DoStream`: a bool (compression on), then 16/32/32/8/32/16/32/32/8/32/16,
+  a mark, an int, ...
+- **Measured:** on all 16 lots the first values decode sensibly (122, 4, 5; 107, 431,
+  432; 269, 408, 409; ...). But the loader branches on the stream's version (46, 64, 66,
+  67; the lots are 80) and loops over a list of objects, so a flat header is wrong after
+  the fifth value.
+- **Next:** iteration 5, `fn_801FDE80` followed exactly (the version-80 path, the object
+  loop and what it calls per object), until all 16 lots' ObjM streams decode to their ends.
