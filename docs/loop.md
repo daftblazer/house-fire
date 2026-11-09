@@ -39,7 +39,7 @@ game: every step works from the discs and the executables at rest.
 
 ## Progress
 
-Iteration: 4
+Iteration: 5
 
 - **Iteration 1: IFF chunks, done.** `tools/chunks.py` reads strings (STR#, CTSS, TTAs),
   BHAV, BCON, GLOB, OBJf, OBJD, TTAB, TPRP, SLOT, and the editor's TREE and TRCN as far as
@@ -102,3 +102,16 @@ Iteration: 4
   Next: `ResFile` (72-byte rows, one per object file: slots by resource type, the
   interactions, strings, function table and so on), from the engine's `QuickResFile`
   (The Sims 2's map: `GetByID`, `GetIndType`, `Count`), checked against Bustin' Out's IFFs.
+- **Iteration 5: object resource files in quick data.** `QuickResFile` turned out to be
+  stubs; the readers are per type (`TreeTableQuickData`, `ObjFnTableQuickData`, ...), each
+  finding its array in a `ResFile` row through `FindRes<T>`. Their callers give the row's
+  twelve slots and element sizes (`tools/resfile.py`). Checked on Bustin' Out's 559 object
+  files: every quick string set and interaction table is the IFF chunk of the same id, and
+  the counts of constants (1,569), slots (641), function tables (1,671) and sounds (6,022)
+  equal the files' BCON, SLOT, OBJf and FWAV; what the tool left out is string sets 129,
+  130, 304 and a few more (labels the game does not read) and 18 unused interaction tables.
+  The same layout reads in all five games (The Sims 199 files, The Urbz 547, The Sims 2
+  508, Pets 568).
+
+  Next: the elements: an interaction table's 36-byte entries against TTAB (action, guard,
+  motives, the name from TTAs), constants against BCON, function tables against OBJf.
