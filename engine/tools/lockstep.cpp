@@ -27,35 +27,12 @@
 
 #include "housefire/disc.h"
 #include "housefire/expression.h"
+#include "housefire/library.h"
 #include "housefire/interp.h"
 
 using namespace housefire;
 
 namespace {
-
-struct File {
-    std::string name;
-    std::vector<uint8_t> bytes;
-    IffFile iff;
-    std::map<uint16_t, Tree> trees;
-    std::string glob;
-    const File* semi = nullptr;
-};
-
-std::string lower(std::string s) {
-    for (char& c : s) c = (char)std::tolower((unsigned char)c);
-    return s;
-}
-
-// A GLOB names the semi-global file: as a length-prefixed string ("\rPersonGlobals", the
-// characters' files) or a zero-ended one ("person_sg", the objects').
-std::string glob_name(std::span<const uint8_t> d) {
-    if (d.empty()) return {};
-    if (d[0] < 0x20) return d[0] + 1u <= d.size() ? std::string((const char*)d.data() + 1, d[0]) : std::string();
-    size_t n = 0;
-    while (n < d.size() && d[n]) n++;
-    return std::string((const char*)d.data(), n);
-}
 
 // ---- The log ----
 
@@ -193,37 +170,21 @@ struct LoggedVariables : Variables {
     }
 };
 
-struct Lookup {
-    const File* own = nullptr;
-    const File* global = nullptr;
-    const Tree* find(uint16_t id) const {
-        const File* f = nullptr;
-        switch (tree_kind(id)) {
-            case TreeKind::Global: f = global; break;
-            case TreeKind::Own: f = own; break;
-            case TreeKind::SemiGlobal: f = own ? own->semi : nullptr; break;
-            default: return nullptr;
-        }
-        if (!f) return nullptr;
-        auto it = f->trees.find(id);
-        return it == f->trees.end() ? nullptr : &it->second;
-    }
-};
-
 // Answers the one primitive of the step as the original did.
 struct LogHost : Host {
-    Lookup lookup;
+    const Library* lib = nullptr;
+    const ObjectFile* object = nullptr;
     PrimResult answer = PrimResult::Stop;
     std::vector<int16_t> defaults;
     PrimResult primitive(Interpreter&, Frame&, const Node&) override { return answer; }
     std::span<const int16_t> default_params() override { return defaults; }
-    const Tree* tree(uint16_t id) override { return lookup.find(id); }
+    const Tree* tree(uint16_t id) override { return lib->tree(object, id); }
 };
 
 struct FrameState {
     uint16_t tree, node;
     std::vector<int16_t> params, locals;
-    const struct File* object;  // each frame its own: a Sim runs an object's interaction on its stack
+    const ObjectFile* object;  // each frame its own: a Sim runs an object's interaction on its stack
 };
 
 }  // namespace
@@ -235,44 +196,37 @@ int main(int argc, char** argv) {
     Disc d(argv[2]);
     if (!d.ok() || d.id() != "G4ME69") { std::printf("%s is not Bustin' Out\n", argv[2]); return 1; }
 
-    std::vector<std::unique_ptr<File>> all;
-    std::map<std::string, File*> by_name;
-    for (const auto& [path, where] : d.files()) {
-        if (path.rfind("Runtime/", 0) != 0 || path.size() < 5 || path.substr(path.size() - 4) != ".iff") continue;
-        auto f = std::make_unique<File>();
-        f->name = path;
-        f->bytes = d.read(path);
-        f->iff = read_iff(f->bytes);
-        const Order o = bhav_order(f->iff);
-        for (const Chunk* c : f->iff.of("BHAV")) {
-            try { f->trees[(uint16_t)c->id] = read_bhav(*c, o); } catch (const FormatError&) {}
-        }
-        for (const Chunk* c : f->iff.of("GLOB")) f->glob = glob_name(c->data);
-        const size_t slash = path.rfind('/');
-        by_name.emplace(lower(path.substr(slash + 1, path.size() - slash - 5)), f.get());
-        all.push_back(std::move(f));
-    }
-    // The characters' files name PersonGlobals, but the game runs trees for them that only
-    // person_sg has (seen in the log: 0x2032, 0x204F, ...): their semi-global file is
-    // person_sg, as template_person's GLOB names. PersonGlobals.iff is not used.
-    for (auto& f : all) {
-        std::string g = lower(f->glob);
-        if (g == "personglobals") g = "person_sg";
-        if (!g.empty() && by_name.count(g)) f->semi = by_name[g];
-    }
-    const File* global = by_name.count("global") ? by_name["global"] : nullptr;
-
+    const Library lib = Library::bustin_out(d);
+    const auto& all = lib.files();
     // Each object's file: the disc file under which every tree the original ran for it is
     // found with the same nodes. Memory is reused, so a file pointer's trees are taken in
     // order and split where no one disc file has them all (another object at that address);
     // each part is an object.
-    auto fits = [&](const File* f, const TreeRec* t) {
-        const Tree* nt = Lookup{f, global}.find(t->tree);
+    auto fits = [&](const ObjectFile* f, const TreeRec* t) {
+        const Tree* nt = lib.tree(f, t->tree);
         return nt && same_shape(*nt, t->raw);
     };
+    // A constant (scope 26), as the library finds it; `where` says where it looked.
+    auto constant = [&](const ObjectFile* object, int16_t data, std::string* where = nullptr) {
+        if (where) {
+            char w[96];
+            std::snprintf(w, sizeof w, "datum %#x in %s", (uint16_t)data, object ? object->path.c_str() : "-");
+            *where = w;
+        }
+        return lib.constant(object, data);
+    };
+    // The constants a step's expression read, as (datum, value).
+    auto constants_read = [](const StepRec& s) {
+        std::vector<std::pair<int16_t, int16_t>> out;
+        if (!s.has_expr) return out;
+        if (s.expr.rhs_scope == 26 && !(s.expr.flags & 8)) out.push_back({s.expr.rhs_data, s.expr.rhs});
+        if (s.expr.lhs_scope == 26 && !(s.expr.flags & 4)) out.push_back({s.expr.lhs_data, s.expr.lhs});
+        return out;
+    };
+
     // The sightings are the steps: each names its object's file pointer and the tree run (a
     // tree is logged once, under the first object that ran it, but every step has its own).
-    struct Part { std::vector<const File*> files; };
+    struct Part { std::vector<const ObjectFile*> files; };
     std::vector<Part> parts;
     std::map<uint32_t, size_t> part_now;                 // file pointer -> its current part
     std::vector<long> step_part(log.steps.size(), -1);
@@ -284,8 +238,8 @@ int main(int argc, char** argv) {
             continue;
         }
         if (it != part_now.end()) {
-            std::vector<const File*> keep;
-            for (const File* f : parts[it->second].files) if (fits(f, s.t)) keep.push_back(f);
+            std::vector<const ObjectFile*> keep;
+            for (const ObjectFile* f : parts[it->second].files) if (fits(f, s.t)) keep.push_back(f);
             if (!keep.empty()) {
                 parts[it->second].files = std::move(keep);
                 step_part[i] = (long)it->second;
@@ -298,7 +252,19 @@ int main(int argc, char** argv) {
         step_part[i] = (long)parts.size();
         parts.push_back(std::move(p));
     }
-    std::vector<const File*> step_object(log.steps.size(), nullptr);
+    // Variants of an object share their trees but not always their constants: the constants
+    // each part's steps read narrow it further (where some file has them all).
+    for (size_t i = 0; i < log.steps.size(); i++) {
+        if (step_part[i] < 0) continue;
+        Part& p = parts[step_part[i]];
+        for (auto [data, value] : constants_read(log.steps[i])) {
+            if ((uint16_t)data >> 7 >= 64) continue;  // only the object's own tables tell variants apart
+            std::vector<const ObjectFile*> keep;
+            for (const ObjectFile* f : p.files) if (constant(f, data) == value) keep.push_back(f);
+            if (!keep.empty()) p.files = std::move(keep);
+        }
+    }
+    std::vector<const ObjectFile*> step_object(log.steps.size(), nullptr);
     for (size_t i = 0; i < log.steps.size(); i++)
         if (step_part[i] >= 0 && !parts[step_part[i]].files.empty()) step_object[i] = parts[step_part[i]].files[0];
     size_t found_parts = 0;
@@ -357,14 +323,15 @@ int main(int argc, char** argv) {
 
         // The native stack, as the log has it.
         LogHost h;
-        h.lookup = {step_object[i], global};
+        h.lib = &lib;
+        h.object = step_object[i];
         h.defaults.assign(s.defaults, s.defaults + 8);
         std::vector<Frame> native;
         bool ok = true;
         for (uint32_t fp : st) {
             const FrameState& fs = frames[fp];
             Frame f;
-            f.tree = fs.object ? Lookup{fs.object, global}.find(fs.tree) : nullptr;
+            f.tree = fs.object ? lib.tree(fs.object, fs.tree) : nullptr;
             if (!f.tree) { ok = false; break; }
             f.node = fs.node;
             f.params = fs.params;
@@ -372,7 +339,7 @@ int main(int argc, char** argv) {
             native.push_back(std::move(f));
         }
         if (!ok) {
-            std::string e = "object " + step_object[i]->name + ", stack:";
+            std::string e = "object " + step_object[i]->path + ", stack:";
             for (uint32_t fp : st) { char b[32]; std::snprintf(b, sizeof b, " %#x@%x", frames[fp].tree, fp); e += b; }
             note("a frame's tree not found by the native lookup", e);
             continue;
@@ -472,6 +439,12 @@ int main(int argc, char** argv) {
                     const ExprRec& e = s.expr;
                     LoggedVariables vars(e);
                     const ExpressionOperand op = ExpressionOperand::of(*n);
+                    for (auto [data, value] : constants_read(s)) {
+                        std::string where;
+                        const std::optional<int16_t> found = constant(step_object[i], data, &where);
+                        where += ": native " + (found ? std::to_string(*found) : std::string("none")) + ", original " + std::to_string(value);
+                        note(!found ? "constant: not found by the native lookup" : *found == value ? "constant: same" : "constant: DIFFERENT", where);
+                    }
                     const ExprResult er = expression(op, vars);
                     const PrimResult r = er.result;
                     char d[220];

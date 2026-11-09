@@ -182,7 +182,19 @@ the new-game route, all 169,010 expressions agree: results, 16-bit values writte
 values written, bit for bit, over every operator but none of the errors.
 `engine/tests/test_expression.cpp` covers the rules the session does not reach.
 
-What the lookups themselves are, scope by scope, belongs to the object model: next.
+What the lookups themselves are, scope by scope, belongs to the object model
+(`engine/include/housefire/library.h` so far).
+
+## Constants (scope 26)
+
+A constant's datum is a table and an entry: its top 9 bits the table, its low 7 bits the
+entry. Tables 0-63 are the object's own BCON chunks from id 4096, 64-127 its semi-global
+file's from 8192, and 128 on the global file's from 256 (the PC game's rule). A BCON chunk
+is a count, a flags byte, then the 16-bit values. Checked against the recompiled game: all
+19,245 constant reads of a session agree (`Library::constant`).
+
+Variants of an object (the sinks, the beds) share their trees but not always their
+constants, so which variant an object is shows only in the constants it reads.
 
 ## Checked against the original (`tools/lockstep`)
 
