@@ -67,7 +67,8 @@ picture options, the audio mixing.
 The node step, calls and returns agree with the recompiled Bustin' Out in lockstep
 (`interpreter.md`, "Checked against the original"). Next:
 
-- The variables, scope by scope (the object model): what each expression's lookups read
-  and write. The expression itself agrees with the original (`interpreter.md`).
+- The object model's next parts (`objects.md`): the scopes not modelled yet, the object
+  primitives (create, remove, SetToNext), and the sizes of each object's tables from its
+  definition.
 - The frames the engine pushes itself (+8 set) and the stack resets outside the node step:
   what starts an action, which is where the + 0x1000 interaction rule would show.

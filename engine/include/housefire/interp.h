@@ -32,6 +32,12 @@ struct Frame {
     // this frame, so that a read of one is reported (Host::unset_local) and a script that
     // depends on the original's left-over values can be found. Locals past 63 are not tracked.
     uint64_t unset = 0;
+    // The stack object (scope 10): an object id, the frame's own, a call's taken from its
+    // caller (the original keeps it in the frame's header, +4).
+    int16_t stack_object = 0;
+    // The object file the frame's trees are found in and its constants read from (the
+    // original's +12): a call's is its caller's.
+    const struct ObjectFile* file = nullptr;
 };
 
 class Interpreter;
@@ -63,7 +69,7 @@ public:
         : host_(host), mode_(mode), max_iterations_(max_iterations) {}
 
     // Start `t` as the bottom frame with these parameters.
-    void start(const Tree* t, const std::vector<int16_t>& params = {});
+    void start(const Tree* t, const std::vector<int16_t>& params = {}, const struct ObjectFile* file = nullptr);
     // Push a call (what a call node does, and what a primitive may do before Continue), with
     // these parameters (the tree's count of them is taken, the rest zero). A tree of type 4
     // starts at the node its first parameter names (the last if past the end); false if

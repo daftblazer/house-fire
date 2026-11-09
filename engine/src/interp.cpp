@@ -2,7 +2,7 @@
 
 namespace housefire {
 
-void Interpreter::start(const Tree* t, const std::vector<int16_t>& params) {
+void Interpreter::start(const Tree* t, const std::vector<int16_t>& params, const ObjectFile* file) {
     stack_.clear();
     finished_ = false;
     error_ = Error::None;
@@ -10,6 +10,7 @@ void Interpreter::start(const Tree* t, const std::vector<int16_t>& params) {
     // A tree that cannot start (none, no nodes, a type-4 tree's negative node) ends at once,
     // as a call to it fails.
     if (!push(t, params.data(), (int)params.size())) fail(Error::CallFailed);
+    else stack_.back().file = file;
 }
 
 // The engine's call (Bustin' Out's fn_8023EE1C, TreeSimImpl::Gosub): the frame's header is
@@ -30,6 +31,8 @@ bool Interpreter::push(const Tree* t, const int16_t* params, int count) {
     f.node = (uint16_t)node;
     // The original does not clear a new frame's locals: they are what its stack's memory
     // held. Here they are zero, and marked unset until written (Frame::unset).
+    f.stack_object = stack_.empty() ? 0 : stack_.back().stack_object;
+    f.file = stack_.empty() ? nullptr : stack_.back().file;
     f.locals.assign(t->locals, 0);
     f.unset = t->locals >= 64 ? ~uint64_t(0) : (uint64_t(1) << t->locals) - 1;
     stack_.push_back(std::move(f));

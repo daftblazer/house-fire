@@ -28,6 +28,10 @@ def records(path):
         if k == b'K':
             if p + 4 > n: break
             yield 'K', struct.unpack_from('<I', b, p)[0]; p += 4
+        elif k == b'V':
+            if p + 27 > n: break
+            f = struct.unpack_from('<IIhhhBIII', b, p); p += 27
+            yield 'V', dict(zip(('object', 'lr', 'scope', 'data', 'value', 'flags', 'ptr', 'fptr', 'fvalue'), f))
         elif k == b'E':
             if p + 28 > n: break
             f = struct.unpack_from('<hhhhBBhhhIII', b, p); p += 28
@@ -46,12 +50,14 @@ def records(path):
             if p + 4 * c > n: break
             before = struct.unpack_from(f'<{c}h', b, p); p += 2 * c
             aft = struct.unpack_from(f'<{c}h', b, p); p += 2 * c
-            if p + 16 > n: break
+            if p + 20 > n: break
             defaults = struct.unpack_from('<8h', b, p); p += 16
+            stack_object, stack_object_after = struct.unpack_from('<hh', b, p); p += 4
             yield 'S', dict(sim=sim, frame=frame, file=file, nodes=nodes, tree=tree & 0x7FFF,
                             flag=tree >> 15, node=node, after=after, look=look, res=res, err=err,
                             params=before[:np_], locals=before[np_:],
-                            params_after=aft[:np_], locals_after=aft[np_:], defaults=defaults)
+                            params_after=aft[:np_], locals_after=aft[np_:], defaults=defaults,
+                            stack_object=stack_object, stack_object_after=stack_object_after)
         else:
             raise SystemExit(f'bad record {k!r} at {p - 1}')
 

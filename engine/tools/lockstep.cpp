@@ -22,12 +22,14 @@
 #include <fstream>
 #include <map>
 #include <memory>
+#include <set>
 #include <span>
 #include <string>
 
 #include "housefire/disc.h"
 #include "housefire/expression.h"
 #include "housefire/library.h"
+#include "housefire/world.h"
 #include "housefire/interp.h"
 
 using namespace housefire;
@@ -45,15 +47,26 @@ struct ExprRec {
     uint32_t lhs_float, lhs_float_after, result;
 };
 
+// A variable lookup of the original's (any primitive's).
+struct LookupRec {
+    uint32_t object, caller;
+    int16_t scope, data, value;
+    uint8_t flags;  // 1 found, 2 a 16-bit pointer, 4 a float one
+    uint32_t ptr, fptr, fvalue;
+};
+
 struct StepRec {
     uint32_t sim, frame, file, nodes;
     uint16_t tree, node, after, error;
     uint8_t look, result;
     std::vector<int16_t> params, locals, params_after, locals_after;
     int16_t defaults[8] = {};  // the interpreter's own parameters (its +44), for calls giving none
+    int16_t stack_object = 0, stack_object_after = 0;  // the frame's (+4), before and after
     const TreeRec* t = nullptr;  // the tree GetNodeRef found, as loaded at the time
     bool has_expr = false;
     ExprRec expr{};
+    std::vector<LookupRec> lookups;  // made during the step, in order
+    uint32_t tick = 0;
 };
 
 struct Log {
@@ -73,9 +86,18 @@ bool read_log(const char* path, Log& log) {
     std::map<uint32_t, const TreeRec*> at;
     ExprRec pending{};
     bool have_pending = false;
+    std::vector<LookupRec> pending_lookups;
     while (p < b.size()) {
         const char k = (char)b[p++];
         if (k == 'K') { if (p + 4 > b.size()) break; u32(); log.ticks++; }
+        else if (k == 'V') {
+            if (p + 27 > b.size()) break;
+            LookupRec v;
+            v.object = u32(); v.caller = u32();
+            v.scope = (int16_t)u16(); v.data = (int16_t)u16(); v.value = (int16_t)u16();
+            v.flags = u8(); v.ptr = u32(); v.fptr = u32(); v.fvalue = u32();
+            pending_lookups.push_back(v);
+        }
         else if (k == 'E') {
             if (p + 28 > b.size()) break;
             ExprRec e;
@@ -106,11 +128,16 @@ bool read_log(const char* path, Log& log) {
             for (int i = 0; i < nl; i++) s.locals.push_back((int16_t)u16());
             for (int i = 0; i < np; i++) s.params_after.push_back((int16_t)u16());
             for (int i = 0; i < nl; i++) s.locals_after.push_back((int16_t)u16());
-            if (p + 16 > b.size()) break;
+            if (p + 20 > b.size()) break;
             for (int i = 0; i < 8; i++) s.defaults[i] = (int16_t)u16();
+            s.stack_object = (int16_t)u16();
+            s.stack_object_after = (int16_t)u16();
             auto it = at.find(s.nodes);
             if (it != at.end()) s.t = it->second;
             if (have_pending) { s.has_expr = true; s.expr = pending; have_pending = false; }
+            s.tick = log.ticks;
+            s.lookups = std::move(pending_lookups);
+            pending_lookups.clear();
             log.steps.push_back(std::move(s));
         } else {
             std::printf("bad record at %zu\n", p - 1);
@@ -483,6 +510,231 @@ int main(int argc, char** argv) {
             note("node not in the tree", std::to_string(s.node));
         }
     }
+    // ---- The variables: the native object model against the original's lookups ----
+    //
+    // A native object for each object the original asks for or names as a stack object.
+    // Each variable cell takes its value from the log the first time it is seen; after that
+    // the native value must be what the log reads, unless something other than a script's
+    // expression wrote it (the engine, or a primitive not modelled yet: counted apart). And
+    // each cell must always be the same address in the original, and each address the same
+    // cell: that checks what the scopes name.
+    {
+        World world(lib);
+        std::map<uint32_t, Object*> native;     // the original's object pointer -> native object
+        std::map<std::pair<const void*, int>, uint32_t> cell_addr;
+        std::map<uint32_t, std::pair<const void*, int>> addr_cell;
+        std::map<std::pair<const void*, int>, bool> seen;
+        std::map<uint32_t, uint32_t> last_writer;  // address -> the caller that last had its pointer
+        std::map<std::pair<const void*, int>, const Object*> cell_owner;
+        std::map<uint32_t, size_t> addr_used;        // address -> the last step that reached it
+        std::map<const Object*, size_t> last_used;   // native object -> the last step that used it
+        // The object whose storage a lookup reached (frame and shared tables: none).
+        auto owner_object = [&](const LookupRec& v, Object& me, const Frame& f) -> const Object* {
+            switch (v.scope) {
+                case 0: case 3: case 8: case 14: case 18: case 30: return &me;
+                case 1: case 4: case 15: case 19: case 22: return world.find(f.stack_object);
+                default: return nullptr;
+            }
+        };
+        // Forget an object that is gone: its native object, its cells and their addresses.
+        auto drop = [&](const Object* o) {
+            for (auto it = cell_owner.begin(); it != cell_owner.end();) {
+                if (it->second == o) {
+                    auto ca = cell_addr.find(it->first);
+                    if (ca != cell_addr.end()) { addr_cell.erase(ca->second); cell_addr.erase(ca); }
+                    seen.erase(it->first);
+                    it = cell_owner.erase(it);
+                } else ++it;
+            }
+            for (auto it = native.begin(); it != native.end();) it = it->second == o ? native.erase(it) : std::next(it);
+            world.remove(o);
+        };
+        const uint32_t kExprLhs = 0x80213900, kExprRhs = 0x802138C8;
+        std::map<std::string, std::map<std::string, long>> why;  // a difference -> (tick band, caller) counts
+        uint32_t loaded_at = UINT32_MAX;  // the tick the current lot started loading
+        auto differ = [&](const std::string& k0, const StepRec& s, const LookupRec& v) {
+            // While a lot loads the engine sets its objects up itself (their ids among them):
+            // counted apart.
+            const bool loading = loaded_at != UINT32_MAX && s.tick >= loaded_at && s.tick < loaded_at + 25;
+            const std::string k = loading ? k0.substr(0, k0.find(" DIFFERENT")) + " (while a lot loads)" : k0;
+            note(k);
+            char b[64];
+            std::snprintf(b, sizeof b, "tick %u-%u caller %x", s.tick / 20 * 20, s.tick / 20 * 20 + 19, v.caller);
+            why[k][b]++;
+        };
+        auto object_at = [&](uint32_t ptr, const ObjectFile* file) -> Object& {
+            auto it = native.find(ptr);
+            if (it != native.end()) return *it->second;
+            auto o = std::make_unique<Object>();
+            o->file = file;
+            Object& r = world.add(std::move(o));
+            native[ptr] = &r;
+            return r;
+        };
+        // Where a stack-object scope's variable is in the original: back from its address to
+        // the object's (the layouts in docs/objects.md).
+        auto owner_of = [](const LookupRec& v) -> std::optional<uint32_t> {
+            const uint32_t a = v.ptr ? v.ptr : v.fptr;
+            if (!a) return std::nullopt;  // the value alone was asked for
+            switch (v.scope) {
+                case 4: return a - 0x26 - 2 * (uint32_t)v.data;
+                case 15: return a + 0x598 - 4 * (uint32_t)v.data;
+                case 19: return a + 0x638 - 2 * (uint32_t)v.data;
+                default: return std::nullopt;
+            }
+        };
+        // A lot loaded: the ticks at which 20 or more objects never seen before ask for
+        // variables (the dream at 0, the club at 2799 in the new-game route).
+        std::set<uint32_t> lot_ticks;
+        {
+            std::set<uint32_t> seen_objects;
+            std::map<uint32_t, int> fresh;
+            for (const StepRec& s : log.steps)
+                for (const LookupRec& v : s.lookups)
+                    if (seen_objects.insert(v.object).second) fresh[s.tick]++;
+            for (const auto& [t, n] : fresh) if (n >= 20) lot_ticks.insert(t);
+        }
+        uint32_t lot_tick = UINT32_MAX;
+        for (size_t i = 0; i < log.steps.size(); i++) {
+            const StepRec& s = log.steps[i];
+            if (s.lookups.empty()) continue;
+            // (a load's objects may come over two ticks: one lot)
+            if (lot_ticks.count(s.tick) && (lot_tick == UINT32_MAX || s.tick > lot_tick + 1)) {
+                if (lot_tick != UINT32_MAX) note("variables: a lot loaded (the native world cleared)");
+                world.clear();
+                native.clear(); cell_addr.clear(); addr_cell.clear(); seen.clear(); last_writer.clear();
+                cell_owner.clear(); last_used.clear(); addr_used.clear();
+            }
+            if (lot_ticks.count(s.tick)) {
+                if (lot_tick == UINT32_MAX || s.tick > lot_tick + 1) loaded_at = s.tick;
+                lot_tick = s.tick;
+            }
+            Frame frame;
+            frame.params = s.params;
+            frame.locals = s.locals;
+            frame.stack_object = s.stack_object;
+            frame.file = step_object[i];
+            for (const LookupRec& v : s.lookups) {
+                Object& me = object_at(v.object, step_object[i]);
+                me.person = me.person || v.scope == 14 || v.scope == 18;
+                last_used[&me] = i;
+                if (Object* so = world.find(s.stack_object)) last_used[so] = i;
+                ScriptVariables vars(world, me, frame);
+                const std::string sc = "scope " + std::to_string(v.scope);
+                if (!(v.flags & 1)) { note("variables: " + sc + ": the original's lookup failed"); continue; }
+                if (v.scope == 7 || v.scope == 26) {
+                    if (v.caller != kExprLhs && v.caller != kExprRhs) continue;
+                    const auto g = vars.get((uint8_t)v.scope, v.data);
+                    if (g && g->value == v.value) note("variables: " + sc + ": same"); else differ("variables: " + sc + ": DIFFERENT", s, v);
+                    continue;
+                }
+                // A stack object the native world does not have yet: made from the original's.
+                if (auto q = owner_of(v)) {
+                    Object* so = world.find(s.stack_object);
+                    if (!so) {
+                        Object& n = object_at(*q, nullptr);
+                        if (n.data.size() <= kDataObjectId) n.data.resize(kDataObjectId + 1);
+                        n.data[kDataObjectId] = s.stack_object;
+                        world.reindex(n);
+                        so = &n;
+                    }
+                    so->person = so->person || v.scope == 15 || v.scope == 19;
+                    auto bound = native.find(*q);
+                    if (bound != native.end() && bound->second == so) note("variables: stack object the same");
+                    else {
+                        differ("variables: stack object DIFFERENT", s, v);
+                        static int shown = 0;
+                        if (shown++ < 6)
+                            std::printf("  stack object %d: by id native %p (id %d), at the original's address %x native %p (id %d); scope %d caller %x\n",
+                                        s.stack_object, (void*)so, so->id(), *q, bound == native.end() ? nullptr : (void*)bound->second,
+                                        bound == native.end() ? -1 : bound->second->id(), v.scope, v.caller);
+                    }
+                    if (bound == native.end()) native[*q] = so;
+                }
+                const auto c = vars.cell((uint8_t)v.scope, v.data);
+                if (!c) { note("variables: " + sc + ": not modelled yet"); continue; }
+                const uint32_t addr = v.ptr ? v.ptr : v.fptr;
+                const std::pair<const void*, int> key{c->table, c->index};
+                // Frame variables are the step's own: rebuilt from the log each step.
+                const bool in_frame = v.scope == 9 || v.scope == 25 || v.scope == 10;
+                if (addr && !in_frame) {
+                    auto ca = cell_addr.find(key);
+                    auto ac = addr_cell.find(addr);
+                    // A binding unused for a long time is stale: the memory was reused, or the
+                    // object at a pointer replaced (another lot loaded). Forget it.
+                    auto stale = [&](uint32_t a) { auto u = addr_used.find(a); return u == addr_used.end() || i - u->second > 20000; };
+                    if (ac != addr_cell.end() && ac->second != key && stale(addr)) {
+                        cell_addr.erase(ac->second); seen.erase(ac->second); addr_cell.erase(ac);
+                        note("variables: memory reused");
+                    }
+                    ca = cell_addr.find(key);
+                    if (ca != cell_addr.end() && ca->second != addr && stale(ca->second)) {
+                        addr_cell.erase(ca->second); seen.erase(key); cell_addr.erase(ca);
+                        note("variables: object replaced");
+                    }
+                    ca = cell_addr.find(key);
+                    ac = addr_cell.find(addr);
+                    addr_used[addr] = i;
+                    if (ca == cell_addr.end() && ac == addr_cell.end()) { cell_addr[key] = addr; addr_cell[addr] = key; cell_owner[key] = owner_object(v, me, frame); }
+                    else if ((ca != cell_addr.end() && ca->second != addr) || (ac != addr_cell.end() && ac->second != key))
+                        differ("variables: " + sc + ": where DIFFERENT", s, v);
+                    else note("variables: " + sc + ": where the same");
+                }
+                if (in_frame) {
+                    if (v.caller != kExprLhs && v.caller != kExprRhs) continue;  // the address only
+                    const auto g = vars.get((uint8_t)v.scope, v.data);
+                    if (g && g->value == v.value) note("variables: " + sc + ": value the same"); else differ("variables: " + sc + ": value DIFFERENT", s, v);
+                    continue;
+                }
+                // The value: seeded once, then the native one must hold. Only the
+                // expression asks for the value; other primitives take the address alone (the
+                // log's value is then not one).
+                if (v.caller != kExprLhs && v.caller != kExprRhs) {
+                    if (addr && (v.flags & 6)) last_writer[addr] = v.caller;
+                    seen[key] = false;  // it may write there: take the next value read as the new one
+                    continue;
+                }
+                const bool is_float = (v.flags & 4) && !(v.flags & 2);
+                auto get = vars.get((uint8_t)v.scope, v.data);
+                if (!seen[key]) {
+                    if (is_float) { float f; std::memcpy(&f, &v.fvalue, 4); vars.set_float((uint8_t)v.scope, v.data, f); }
+                    else vars.set((uint8_t)v.scope, v.data, v.value);
+                    seen[key] = true;
+                    note("variables: " + sc + ": first seen");
+                } else {
+                    bool same;
+                    if (is_float) { uint32_t bits; float f = get && get->f ? *get->f : 0; std::memcpy(&bits, &f, 4); same = bits == v.fvalue; }
+                    else same = get && get->value == v.value;
+                    if (same) note("variables: " + sc + ": value the same");
+                    else {
+                        const auto w = last_writer.find(addr);
+                        const bool other = w != last_writer.end() && w->second != kExprLhs && w->second != kExprRhs;
+                        note("variables: " + sc + (other ? ": changed by a primitive not modelled yet" : ": changed by the engine"));
+                        if (is_float) { float f; std::memcpy(&f, &v.fvalue, 4); vars.set_float((uint8_t)v.scope, v.data, f); }
+                        else vars.set((uint8_t)v.scope, v.data, v.value);
+                    }
+                }
+                if (addr && (v.flags & 6)) last_writer[addr] = v.caller;
+            }
+            // The expression's write: the native cell takes the value after (the expression
+            // itself is checked above).
+            if (s.has_expr && !s.lookups.empty() && s.lookups.back().caller == kExprLhs) {
+                const LookupRec& v = s.lookups.back();
+                Object& me = object_at(v.object, step_object[i]);
+                ScriptVariables vars(world, me, frame);
+                if (s.expr.flags & 1) vars.set((uint8_t)v.scope, v.data, s.expr.lhs_after);
+                else if (s.expr.flags & 2) { float f; std::memcpy(&f, &s.expr.lhs_float_after, 4); vars.set_float((uint8_t)v.scope, v.data, f); }
+            }
+        }
+        for (const auto& [k, m] : why) {
+            std::printf("%s:\n", k.c_str());
+            std::vector<std::pair<long, std::string>> top;
+            for (const auto& [w, n] : m) top.push_back({n, w});
+            std::sort(top.rbegin(), top.rend());
+            for (size_t j = 0; j < top.size() && j < 4; j++) std::printf("    %6ld  %s\n", top[j].first, top[j].second.c_str());
+        }
+    }
+
     for (const auto& [k, v] : out) {
         std::printf("  %-62s %ld\n", k.c_str(), v);
         if ((k.find("DIFFERENT") != std::string::npos || k[0] == ' ') && example.count(k)) std::printf("      e.g. %s\n", example[k].c_str());
