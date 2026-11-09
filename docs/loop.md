@@ -39,7 +39,7 @@ game: every step works from the discs and the executables at rest.
 
 ## Progress
 
-Iteration: 7
+Iteration: 8
 
 - **Iteration 1: IFF chunks, done.** `tools/chunks.py` reads strings (STR#, CTSS, TTAs),
   BHAV, BCON, GLOB, OBJf, OBJD, TTAB, TPRP, SLOT, and the editor's TREE and TRCN as far as
@@ -148,3 +148,14 @@ Iteration: 7
 
   Next: chunk 5, the interpreter in Bustin' Out: the node step, frames, the tree lookup
   (this rule), named through The Sims 2's map.
+- **Iteration 8: the interpreter's map and frames.** From The Sims 2's code: tree ids by
+  range (`Behavior::GetTreeClass`, `GetResFileID`: global 256-4095, own 4096-8191,
+  semi-global 8192-9000), with no fallback from own to semi-global there; the frame
+  (`StackElem`: tree id, counts of locals and parameters, header words, parameters then
+  locals, its size rule) and the stack (`TreeStack::Push`). Bustin' Out's interpreter
+  functions placed by matching code and by the source file's order: 25 functions, its node
+  step `8023F1FC`, in `docs/interpreter.md`.
+
+  Next: the node step itself (`DoNodeAction`, The Sims 2 `80147FD8`, Bustin' Out
+  `8023F1FC`): what it reads from a node, how it calls and returns, what it passes a
+  primitive; then chunk 6, the C++ library's start.
