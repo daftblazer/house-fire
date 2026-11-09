@@ -82,9 +82,27 @@ file's order where a function changed.
 | `8021242C` | `cXObjectImpl::TryElement` (the object primitives) | by its switch |
 | `802246B0` | `cXPersonImpl::TryElement` (the person primitives) | by its switch |
 
-## Node step (to come)
+## The node step (The Sims 2's `TreeSimImpl::DoNodeAction`, `80147FD8`)
 
-`TreeSimImpl::DoNodeAction` in The Sims 2 (`80147FD8`) takes the frame, gets the node
-(`Behavior::GetNodeRef`), handles calls (`TreeSimImpl::Gosub`) and returns (true 254,
-false 253, error 255) and hands primitives to the object's `TryElement` through a virtual
-call. Bustin' Out's is `8023F1FC`; what it does, node by node, is next (chunk 5 of `loop.md`).
+Read from its code; Bustin' Out's (`8023F1FC`) compares with the same values and uses the
+same error codes and results, so it is taken to be the same step. One call runs one node of
+the current frame and says what next: 0 go on, 1 the tree yields for this tick, 2 stop.
+
+- The current node (frame +2) above 250 is a return: 254 true, 255 false, anything else
+  error 1100. Returning from the bottom frame is error 1001. Otherwise the frame is popped,
+  the result kept (+44), and the caller's node moves to that node's true or false target;
+  a target of 253 is error 1100.
+- Else the node is read (`Behavior::GetNodeRef`; none: error 1102) and an iteration
+  counted (+4 of the interpreter; past the limit, error 1101).
+- Opcode (15 bits) above 255: a call. The node's 8 operand bytes are the parameters, or
+  none if both their words are -1 (`TreeSimImpl::Gosub`). A failed call is error 1000 if
+  the tree exists, 1102 if not.
+- Else a primitive: the object's `TryElement` (frame, opcode, operand) gives a result:
+  1 true, 0 false (the node's true or false target becomes the current node; 253 there is
+  error 1100), 2 the tree yields this tick, 3 go on without a transition (the primitive
+  changed the stack itself, as a call does), anything else stop.
+- An error stores its code (+52 of the interpreter), sets a global flag and calls the
+  interpreter's error handler; the step returns 2.
+
+Node targets 253, 254 and 255 are therefore error, return true and return false, as in the
+PC game.

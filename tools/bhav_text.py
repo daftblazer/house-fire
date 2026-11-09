@@ -16,7 +16,7 @@ import chunks, primitives
 from check_chunks import iff_files, byte_order
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-RET = {253: 'false', 254: 'true', 255: 'error'}
+RET = {253: 'error', 254: 'true', 255: 'false'}   # TreeSimImpl::DoNodeAction
 
 # Primitives a game's scripts use that its interpreter no longer accepts: dead scripts.
 KNOWN_DEAD = {

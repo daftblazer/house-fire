@@ -11,8 +11,8 @@ cXObjectImpl). Read from the executables by tools/dispatch.py, which has the swi
 addresses.
 
 Opcodes 256 and up call another tree: 256-4095 global, 4096-8191 the object's own,
-8192 and up its semi-global file. Node targets 253, 254, 255 are return false, return
-true and error.
+8192-9000 its semi-global file. Node targets 253, 254, 255 are error, return true and
+return false (TreeSimImpl::DoNodeAction).
 """
 
 NAMES = {

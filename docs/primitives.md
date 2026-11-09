@@ -27,7 +27,7 @@ fears (66, 67); Pets 68-71, not named yet.
 ## What the scripts use (`tools/bhav_text.py`)
 
 Every script on the four discs checked: node targets are nodes of their tree or a return
-(253 false, 254 true, 255 error), every primitive used is one its game accepts (one dead
+(253 error, 254 true, 255 false), every primitive used is one its game accepts (one dead
 script in Pets names the Game Boy link, 54, which Pets dropped), and every call to an
 object's own tree finds it (four from semi-global trees, which resolve in the calling
 object).

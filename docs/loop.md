@@ -39,7 +39,7 @@ game: every step works from the discs and the executables at rest.
 
 ## Progress
 
-Iteration: 8
+Iteration: 9
 
 - **Iteration 1: IFF chunks, done.** `tools/chunks.py` reads strings (STR#, CTSS, TTAs),
   BHAV, BCON, GLOB, OBJf, OBJD, TTAB, TPRP, SLOT, and the editor's TREE and TRCN as far as
@@ -159,3 +159,14 @@ Iteration: 8
   Next: the node step itself (`DoNodeAction`, The Sims 2 `80147FD8`, Bustin' Out
   `8023F1FC`): what it reads from a node, how it calls and returns, what it passes a
   primitive; then chunk 6, the C++ library's start.
+- **Iteration 9: the node step.** Read from The Sims 2's `DoNodeAction` and written up in
+  `docs/interpreter.md`: returns (254 true, 255 false), calls (the operand as parameters
+  unless all -1), primitives (results 0 false, 1 true, 2 yield, 3 go on, else stop), the
+  iteration limit and the five error codes (1000, 1001, 1100, 1101, 1102). Bustin' Out's
+  `8023F1FC` compares with the same values and uses the same codes and results. It
+  corrected an earlier reading: node target 253 is error and 255 return false, not the
+  other way round (`tools/bhav_text.py`, `primitives.py`, `primitives.md` fixed; the checks'
+  counts do not change, since 253-255 were all accepted as targets).
+
+  Next: chunk 6, the C++ library: IFF and BHAV readers and the interpreter's core (frames,
+  the node step as written up, the expression primitive) with tests on real scripts.
