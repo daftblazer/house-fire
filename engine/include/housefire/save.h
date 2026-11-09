@@ -1,0 +1,83 @@
+// The engine's saved data: the neighbourhood file (Bustin' Out's Runtime/default.ngh), its
+// lots, and the save stream they are written in (docs/lots.md; tools/ngh.py, recon.py,
+// lot.py and objm.py are the same, in Python).
+#pragma once
+#include <cstdint>
+#include <span>
+#include <string>
+#include <vector>
+
+namespace housefire {
+
+// The save stream (The Sims 2's ReconBuffer): bits from the top of each byte; with
+// compression on, a value is 0 (bit 0) or bit 1, a two-bit width code and that many bits,
+// sign-extended (8-bit 2/4/6/8, 16-bit 5/8/13/16, 32-bit 6/11/21/32); a mark pads to a
+// byte and is a plain 32-bit word. Reads past the end throw FormatError.
+class SaveStream {
+public:
+    SaveStream(std::span<const uint8_t> d, size_t pos = 0) : d_(d), pos_(pos) {}
+    bool compressed = false;
+    int32_t r8();
+    int32_t r16();
+    int32_t r32();
+    bool rbool() { return r8() != 0; }
+    float rfloat();
+    uint32_t mark();  // a plain little-endian word
+    size_t pos() const { return pos_; }
+
+private:
+    int bit();
+    uint32_t bits(int n);
+    int32_t packed(int size);
+    uint32_t raw(int n);
+    std::span<const uint8_t> d_;
+    size_t pos_;
+    uint8_t cur_ = 0, mask_ = 0;
+};
+
+// LZSS as the neighbourhood file packs its blocks: flag bytes (low bit first, 1 a literal),
+// references of a 12-bit position and a length of 3-18, a 4096-byte ring from 0xFEE.
+std::vector<uint8_t> unpack_lzss(std::span<const uint8_t> packed, size_t size, size_t* used = nullptr);
+
+// One lot of the neighbourhood: its chunks by FourCC (Arry x3, objt, ObjM).
+struct LotChunks {
+    uint32_t block = 0;  // its block's offset in the file
+    std::vector<std::pair<std::string, std::vector<uint8_t>>> chunks;
+    const std::vector<uint8_t>* find(const std::string& type) const;
+};
+
+// The neighbourhood file's blocks: section, count, unpacked data. Throws FormatError on a
+// block that does not unpack to exactly its stated size.
+struct NeighbourhoodBlock {
+    uint32_t offset, section, count;
+    std::vector<uint8_t> data;
+};
+std::vector<NeighbourhoodBlock> read_neighbourhood(std::span<const uint8_t> file);
+// Its lots (section 3), each by its chunk table.
+std::vector<LotChunks> read_lots(std::span<const uint8_t> file);
+
+// An object type of a lot (objt): its GUID, six 16-bit fields (field 4 is the type number
+// the lot's objects name) and its name.
+struct ObjectType {
+    uint32_t guid = 0;
+    uint16_t fields[6] = {};
+    std::string name;
+};
+std::vector<ObjectType> read_object_types(std::span<const uint8_t> objt);
+
+// A lot's object as its table gives it, in the world's list order.
+struct LotObject {
+    int16_t id = 0;
+    int32_t a = 0, b = 0;            // two 32-bit values (to be named)
+    std::vector<int32_t> extra;      // counted 32-bit values
+    int16_t type = 0;                // objt field 4
+    size_t section = 0, section_end = 0;  // its section of the stream
+};
+struct LotObjects {
+    std::vector<LotObject> objects;
+    size_t lot_section = 0, lot_section_end = 0;  // the lot's own part, after the objects
+};
+// ObjM: the table, then the mark chain (one section per object, then the lot's).
+LotObjects read_lot_objects(std::span<const uint8_t> objm);
+
+}  // namespace housefire

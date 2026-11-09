@@ -18,6 +18,7 @@ Status: started. `engine/` is the C++ engine (readers and the interpreter's core
 CXX=clang++ cmake -S engine -B work/build -G Ninja && ninja -C work/build
 work/build/test_interp                                      # the node step's rules
 work/build/test_expression                                  # the expression primitive's rules
+HOUSEFIRE_BUSTIN_ISO=/path/to/G4ME69.iso work/build/test_lots  # every lot of your disc, as a world
 HOUSEFIRE_BUSTIN_ISO=/path/to/G4ME69.iso work/build/test_disc  # every script on your disc
 work/build/lockstep LOG G4ME69.iso   # the native interpreter against a log of the recompiled game's
 ```
@@ -25,7 +26,7 @@ work/build/lockstep LOG G4ME69.iso   # the native interpreter against a log of t
 A log comes from the recompiled Bustin' Out run with `BUSTIN_TREE_LOG=<file>`
 (`docs/interpreter.md`, "Checked against the original").
 
- `docs/survey.md` is what the discs hold, `docs/objects.md` what the scripts' variables are, `docs/plan.md` how the engine
+ `docs/survey.md` is what the discs hold, `docs/objects.md` what the scripts' variables are, `docs/lots.md` where the world comes from, `docs/plan.md` how the engine
 is to be built, `docs/primitives.md` the script primitives found so far, `docs/loop.md` the work under way.
 
 The reference for what the engine must do is the recompiled game

@@ -355,3 +355,19 @@ the new-game route, in a 4 GB scope at low priority, at most 330 s, one run at a
   the stream reader, objt, the ObjM table), making the World's objects with their ids,
   order and definitions. Then each object section's data fields (`fn_801F1F20`), checked
   against the lockstep's first-seen values.
+
+**Iteration 6** (chunk 1b, part five: the native lot loader):
+- **The engine reads the lots** (`engine/src/save.cpp`):
+  - the neighbourhood file's blocks and LZSS;
+  - the save stream (`SaveStream`);
+  - each lot's chunk table, object types (objt) and object table and sections (ObjM).
+- **`World::load_lot`** makes a lot's objects in its table's order, each with its id, GUID,
+  definition and file. `World::add(..., front)` puts objects made later in front, as the
+  original's list has them.
+- **`tests/test_lots.cpp` on the player's disc:** 35 blocks, 16 lots, 2,000 object types,
+  4,572 objects (53 without a definition on the disc: the characters), and the club's first
+  objects 178, 177, 176, 174, 172, 171. The same as the Python tools and the running game.
+  The other tests pass.
+- **`docs/lots.md`** writes the format up.
+- **Next:** iteration 7, SetToNext natively (chunk 1) on a world loaded from the club lot:
+  its kinds against the logged steps, the order and definitions now the lot's.

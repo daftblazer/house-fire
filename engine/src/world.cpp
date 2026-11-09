@@ -4,11 +4,35 @@
 
 namespace housefire {
 
-Object& World::add(std::unique_ptr<Object> o) {
+Object& World::add(std::unique_ptr<Object> o, bool front) {
     Object& r = *o;
-    objects_.push_back(std::move(o));
+    if (front) objects_.insert(objects_.begin(), std::move(o));
+    else objects_.push_back(std::move(o));
     reindex(r);
     return r;
+}
+
+int World::load_lot(const LotChunks& lot) {
+    const std::vector<uint8_t>* objt = lot.find("objt");
+    const std::vector<uint8_t>* objm = lot.find("ObjM");
+    if (!objt || !objm) throw FormatError("a lot without objt or ObjM");
+    const std::vector<ObjectType> types = read_object_types(*objt);
+    std::map<int, const ObjectType*> by_number;  // objt field 4
+    for (const ObjectType& t : types) by_number[t.fields[4]] = &t;
+    int missing = 0;
+    for (const LotObject& lo : read_lot_objects(*objm).objects) {
+        auto o = std::make_unique<Object>();
+        auto t = by_number.find(lo.type);
+        if (t != by_number.end()) {
+            o->guid = t->second->guid;
+            o->definition = lib_.definition(o->guid, &o->file);
+        }
+        if (!o->definition) missing++;
+        o->data.resize(kDataObjectId + 1);
+        o->data[kDataObjectId] = lo.id;
+        add(std::move(o));
+    }
+    return missing;
 }
 
 void World::remove(const Object* o) {

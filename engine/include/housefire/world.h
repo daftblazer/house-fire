@@ -12,6 +12,7 @@
 #include "housefire/expression.h"
 #include "housefire/interp.h"
 #include "housefire/library.h"
+#include "housefire/save.h"
 
 namespace housefire {
 
@@ -28,6 +29,8 @@ enum : int { kDataObjectId = 11 };
 
 struct Object {
     const ObjectFile* file = nullptr;
+    const Definition* definition = nullptr;
+    uint32_t guid = 0;
     std::array<int16_t, 8> temps{};   // scope 8
     std::vector<int16_t> data;        // scope 3 (11: the object's id)
     std::vector<int16_t> attributes;  // scope 0
@@ -43,7 +46,15 @@ public:
     explicit World(const Library& lib) : lib_(lib) {}
     const Library& library() const { return lib_; }
 
-    Object& add(std::unique_ptr<Object> o);
+    // Objects are kept in the original's list order (the order SetToNext walks): a lot's in
+    // its table's order, an object made later in front of them all.
+    Object& add(std::unique_ptr<Object> o, bool front = false);
+    const std::vector<std::unique_ptr<Object>>& objects() const { return objects_; }
+
+    // A lot's objects, as its table lists them: each with its id, its definition (by its
+    // type's GUID) and its file. Returns how many had no definition on the disc (the
+    // characters, whose definitions are made at run time).
+    int load_lot(const LotChunks& lot);
     // A lot unloaded: every object gone, the shared tables kept.
     void clear() { objects_.clear(); by_id_.clear(); }
     void remove(const Object* o);
