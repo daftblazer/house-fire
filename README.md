@@ -54,6 +54,7 @@ tools/resfile.py check IMAGE    # object resource files in quick data (check: ag
 tools/interactions.py check|trees IMAGE  # interaction tables in quick data
 tools/dispatch.py IMAGE...      # the opcodes each game's interpreter accepts, from its executable
 tools/tree_log.py LOG IMAGE     # a log of the recompiled game's interpreter: its trees on the disc, its steps
+tools/ngh.py IMAGE [--dump]     # the neighbourhood file the lots come from: its blocks unpacked
 tools/variables.py LOG          # the variable scopes, from a log of the original's lookups
 tools/locals_check.py IMAGE [LOG]  # scripts that read a local before writing it (and what the original read)
 tools/capped.sh CMD...          # run CMD with at most 2 GB and no swap (use it for everything)

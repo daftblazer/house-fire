@@ -271,3 +271,21 @@ the new-game route, in a 4 GB scope at low priority, at most 330 s, one run at a
   lifecycle and the table sizes.
 - **Next:** iteration 2, the house files' chunks (objt, ObjM, HOUS), read on every house
   file of the disc, and the club's objects matched to the logged ones (ids, order).
+
+**Iteration 2** (chunk 1b, part one: where the lots are):
+- **Not the house files.** The game never reads `Runtime/*/Houses/*.iff`. The run's disc
+  reads, mapped to files, show the lots come from `Runtime/default.ngh` (and the small
+  `levels.arc`).
+- **`default.ngh` is the engine's container:** 4 KB blocks, each data block a 28-byte
+  header (section, 28, unpacked size, packed size, checksum, 4, count) then LZSS (flag bytes
+  low bit first, 12-bit positions, lengths 3-18, a 4096-byte ring from 0xFEE). FourCCs are
+  stored backwards.
+- **`tools/ngh.py` reads it:** 35 blocks, all 35 unpack to exactly their stated size from
+  exactly their packed size.
+  - Section 0 is the directory: 16 SIMI/HOUS pairs.
+  - Section 1 is the neighbourhood: NGBH, NBRS, the FAMI records.
+  - Section 2 is 17 thumbnails (THMB).
+  - Section 3 is the 16 lots. Each starts with a chunk table (Arry x3, objt, ObjM, with
+    offsets and sizes), the PC house format inside.
+- **Next:** iteration 3, a lot's chunk table and its objt and ObjM (the PC field encoding),
+  read on all 16 lots, and the club's objects matched to the logged ones.
