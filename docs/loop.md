@@ -289,3 +289,22 @@ the new-game route, in a 4 GB scope at low priority, at most 330 s, one run at a
     offsets and sizes), the PC house format inside.
 - **Next:** iteration 3, a lot's chunk table and its objt and ObjM (the PC field encoding),
   read on all 16 lots, and the club's objects matched to the logged ones.
+
+**Iteration 3** (chunk 1b, part two: the lots' chunks):
+- **`tools/lot.py`.** A lot block's chunk table: n FourCCs, n offsets (from the block's
+  start in the file, header included), n sizes. Arry x3, objt, ObjM.
+- **objt, the object types:** a GUID, six 16-bit fields and an even-padded name each, ended
+  by a zero GUID. All 16 lots read to exactly their end: 2,000 types, 1,947 of them
+  definitions on the disc (the rest are characters).
+- **ObjM (version 80) is not the PC's field encoding.** It's the engine's own object
+  stream. The Sims 2's map names it:
+  - `ObjectModuleImpl::DoStream(ReconBuffer *)`, through `DoReconObject` / `DoReconPerson`
+    to each object's `cXObjectImpl::ReconStream` (`ReconHeader`, `ReconSlots`,
+    `EdithVariableSet::ReconStream`);
+  - `TreeStack::ReconStream`, so running scripts are saved too.
+  `ReconBuffer` writes `Recon16` / `Recon32` / `ReconFloat` / `ReconCmprInt` (with a
+  compression `Scheme`) / `ReconBits` / marks. The same framework saves families, the house,
+  the neighbourhood, relationships and the simulator: the memory card's saves too.
+- **Next:** iteration 4, `ReconBuffer`'s encoding, from The Sims 2's code and Bustin'
+  Out's (matched by their code). Checked by decoding the 16 lots' ObjM streams to their ends
+  with a first object layout.
