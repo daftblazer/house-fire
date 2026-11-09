@@ -195,3 +195,49 @@ the original needs the recompiled Bustin' Out running (an observer hook at its n
 waits for the user, since nothing here ran a game. Open questions it would settle: the
 own-to-semi-global + 0x1000 rule for interactions, what a callee's parameters are when a
 call passes none, and how locals start.
+
+# The second loop
+
+Started 2026-11-09, after the interpreter, the expression and the object model agreed with
+the recompiled Bustin' Out (`interpreter.md`, `objects.md`). The user allows game runs now,
+in this setup only: headless gamescope at the game's native 640 x 480 and 30 fps, muted,
+the new-game route, in a 4 GB scope at low priority, at most 330 s, one run at a time.
+
+## Rules for each iteration
+
+- Read this section's Progress first; bump the iteration; do ONE chunk, or one
+  well-defined part of one.
+- Check it against the original: `tools/lockstep` on a log of the recompiled game
+  (`BUSTIN_TREE_LOG`). Extend the observer (`../bustin-out-recomp/src/tree_log.cpp`,
+  read-only hooks) when a chunk needs more of the original's state, and re-run the game
+  only then. Unit tests for the rules a session does not reach.
+- The rule in `~/.claude/CLAUDE.md`: the same game, a new engine. Match what the player
+  sees, write the internals anew, list every deliberate difference in `plan.md`.
+- Commit each repository's work with a one-line message, never pushed. Bustin' Out's
+  observer changes are committed there (on main; the submodule untouched).
+- Every build and script through `tools/capped.sh` (or the 12 GB scope for the recomp's
+  build), one at a time; logs in `work/`, `/tmp` kept small.
+- Stop after iteration 12, when the chunks are done, or when two iterations in a row end
+  without a commit (the reason written here).
+
+## Chunks, in order
+
+1. **SetToNext (31).** Its operand, its search kinds, and its writes (the stack object
+   and others), natively, checked step by step.
+2. **Objects made and removed.** CreateObject (42), KillObject (18) and how ids are
+   given out; the world's object lifecycle, so the 16 differences of `objects.md` go.
+3. **Table sizes from the definitions.** Attribute, object data and person data counts
+   taken from each object's OBJD (and the Sims'), not grown on use.
+4. **The scopes not modelled.** 12, 16, 20, 21 (the stack object's definition: OBJD
+   fields), 23, 24, 32, 40: what each reaches, checked like the rest.
+5. **The next primitives by use.** Idle (0), Animate (44: what scripts see of it),
+   Dialog (36), CompleteGoal (56), IdleForInput (17) and the others the session runs:
+   their operands, results and variable writes, checked step by step; each one's work
+   outside the scripts noted for its system.
+6. **Frames the engine starts.** The frames with +8 set, the stack resets outside the
+   node step, and what starts an action: where the interaction tables' trees are looked
+   up (the + 0x1000 question).
+
+## Progress
+
+(none yet)
