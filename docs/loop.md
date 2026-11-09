@@ -39,7 +39,7 @@ game: every step works from the discs and the executables at rest.
 
 ## Progress
 
-Iteration: 6
+Iteration: 7
 
 - **Iteration 1: IFF chunks, done.** `tools/chunks.py` reads strings (STR#, CTSS, TTAs),
   BHAV, BCON, GLOB, OBJf, OBJD, TTAB, TPRP, SLOT, and the editor's TREE and TRCN as far as
@@ -134,3 +134,17 @@ Iteration: 6
   Next: Bustin' Out's trees in quick data (ResFile slot +0 and `GlobalResFile`), against its
   IFF BHAVs where both exist; then the rest of chunk 3 (constants against BCON, function
   tables against OBJf).
+- **Iteration 7: where Bustin' Out's trees are.** Not in quick data: ResFile slot +0 is
+  the file's object definitions (pointers to `ObjDefinition` rows). Not anywhere else on
+  the disc either: `scripts.arc` is 4 bytes, `datasets.arc` holds graphics and houses, and
+  no other archive (`samples.arc` included) has IFF data; the executable loads
+  `GameData/Objects/` IFF files. The missing trees are in the semi-global files: of the
+  2,624 own-tree actions and guards Bustin' Out's interaction tables name but their files
+  lack, 2,312 are the semi-global file's tree at id + 0x1000 (variants keep their shared
+  trees there); 145 belong to objects without a semi-global file (leftovers), 167 are not
+  explained. Written up as the first part of `docs/interpreter.md`; to be confirmed in the
+  engine's code and by the recompiled game. So the scripts on the discs are complete as far
+  as can be told, and iteration 2's findings stand.
+
+  Next: chunk 5, the interpreter in Bustin' Out: the node step, frames, the tree lookup
+  (this rule), named through The Sims 2's map.
