@@ -48,6 +48,8 @@ int World::load_lot(const LotChunks& lot) {
         o->data = lo.data;
         o->attributes = lo.attributes;
         for (int k = 0; k < kObjectTemps && k < (int)lo.temps.size(); k++) o->temps[(size_t)k] = lo.temps[(size_t)k];
+        if (lo.saved_class == SavedClass::Part || lo.saved_class == SavedClass::Door)
+            o->leader = lo.leader ? lo.leader : lo.id;
         if (lo.saved_class == SavedClass::Sim) {
             o->person_data = lo.person_data;
             o->motives = lo.motives;

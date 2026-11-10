@@ -44,9 +44,23 @@ PrimResult set_to_next(const Node& n, World& world, ScriptVariables& vars) {
             default: return false;
         }
     };
-    if (kind != 0 && kind != 1 && kind != 2 && kind != 4) return PrimResult::Stop;
+    if (kind != 0 && kind != 1 && kind != 2 && kind != 3 && kind != 4) return PrimResult::Stop;
     const std::optional<Variable> cur = vars.get(scope, data);
     if (!cur) return PrimResult::Stop;
+    if (kind == 3) {
+        // The next part of the target's multi-tile object, in the list's order, round from the
+        // last part to the first; false if the target is not a part of one.
+        const Object* t = world.find(cur->value);
+        if (!t || !t->leader) return PrimResult::False;
+        const auto& list = world.objects();
+        size_t at = 0;
+        while (at < list.size() && list[at].get() != t) at++;
+        for (size_t k = 1; k < list.size(); k++) {
+            const Object& x = *list[(at + k) % list.size()];
+            if (x.leader == t->leader) return vars.set(scope, data, x.id()) ? PrimResult::True : PrimResult::Stop;
+        }
+        return PrimResult::False;
+    }
     const auto& list = world.objects();
     size_t i = 0;
     if (cur->value != 0)

@@ -517,7 +517,7 @@ without a commit.
 
 ## Progress
 
-Iteration 10 of 12.
+Iteration 11 of 12.
 
 - **Iteration 1, chunk 1 (the tree stack and the base object).** Read the loader's code for
   everything after an object's data: the tree stack and its frames, the +192 member, the
@@ -601,3 +601,11 @@ Iteration 10 of 12.
   first: all 116 uses in the session go false without a call (the tree not found or not
   run), too little to read its other path from; left for a session that calls one.
   Next: chunk 6, SetToNext's open kinds.
+
+- **Iteration 11, chunk 6 (SetToNext kind 3).** The replay's SetToNext differences by kind:
+  3 (141), 5 (468), 6 (2,188), and 8 of kind 4 (the dance floor). Kind 3 read from the log:
+  the next part of the target's multi-tile object in list order, round; the engine keeps
+  each part's leader from the save. Native: all 141 the same. Castaway's
+  `cXObject::TrySetToNext` names the rest: kind 5 is the next neighbour by id; kind 6 shares
+  its case with 0 and 2 (its operand is the boombox's GUID, read little-endian; it finds
+  other stereos). Next (the last iteration): kinds 5 and 6.

@@ -216,9 +216,23 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
         else got = set_to_next(n, r.world, vars);
         if (r.bench) (n.opcode == 2 ? r.bench->expression_us : r.bench->set_to_next_us) += us(t0, Clock::now());
         const PrimResult want = logged();
-        const std::string k = n.opcode == 2 ? "primitives: expression" : "primitives: SetToNext";
+        std::string k = n.opcode == 2 ? "primitives: expression" : "primitives: SetToNext";
+        if (n.opcode == 31) k += " kind " + std::to_string(n.operand[4] & 0x7F);
         if (got == want) note(k + ": the same natively");
-        else { note(k + ": DIFFERENT (the log's taken)"); got = want; }
+        else {
+            note(k + ": DIFFERENT (the log's taken)");
+            static std::map<int, int> shown;
+            const int kind = n.operand[4] & 0x7F;
+            if (n.opcode == 31 && getenv("REPLAY_SHOW_STN") && shown[kind]++ < 6) {
+                std::printf("kind %d at %d:%d by %d operand", kind, s.tree, s.node, me.id());
+                for (uint8_t b : n.operand) std::printf(" %02x", b);
+                std::printf(": so %d -> %d, %s;", s.stack_object, s.stack_object_after, want == PrimResult::True ? "true" : "false");
+                for (int16_t id : {s.stack_object, s.stack_object_after})
+                    if (const Object* x = r.world.find(id)) std::printf(" [%d guid %08x person %d data 0..2 %d %d %d]", id, x->guid, x->person, x->data[0], x->data[1], x->data[2]);
+                std::printf("\n");
+            }
+            got = want;
+        }
         // The frame as the original's after it (a SetToNext target, a local the expression
         // wrote are checked through the next step's lookups).
         return got;

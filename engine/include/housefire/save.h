@@ -116,6 +116,8 @@ struct LotObject {
     // loader's int at the end of the section.
     size_t base_end = 0;
     SavedClass saved_class = SavedClass::Object;
+    // A multi-tile object's part: its leader's id (0 for the leader itself).
+    int16_t leader = 0;
     // A Sim's own part: its person data (scope 18), its motives (scope 14), a second table
     // of 16 floats (to be named), the entry it is on and its queue.
     std::vector<int16_t> person_data;

@@ -35,6 +35,9 @@ struct Object {
     std::vector<int16_t> data;        // scope 3, 72 fields (11: the object's id)
     std::vector<int16_t> attributes;  // scope 0, as many as the save gives (a lot's objects)
     bool person = false;
+    // A multi-tile object's parts: the id of its leader (the leader's own id for itself); 0
+    // for a single-tile object.
+    int16_t leader = 0;
     std::vector<int16_t> person_data; // scope 18
     std::vector<float> motives;       // scope 14, kept between -100 and 100
     // Its tree stack, bottom first: a lot's objects' as the lot saved it (a frame whose tree

@@ -256,10 +256,11 @@ void read_sim(SaveStream& r, LotObject& o) {
     no_elements(r, "ObjM: a Sim's +1120 list is not empty");
 }
 
-// A multi-tile object's part (fn_801D3F50) and a door's (fn_8022DE18): read past.
-void read_part(SaveStream& r, bool door) {
+// A multi-tile object's part (fn_801D3F50) and a door's (fn_8022DE18): its leader's id kept,
+// the rest read past (its tile offsets among it).
+void read_part(SaveStream& r, LotObject& o, bool door) {
     for (int i = 0; i < 6; i++) r.r32();
-    r.r16();
+    o.leader = (int16_t)r.r16();
     if (!door) return;
     const int32_t n = count(r, 4096, "ObjM: a door's values out of range");
     for (int32_t i = 0; i < n; i++) r.rfloat();
@@ -319,8 +320,8 @@ LotObjects read_lot_objects(std::span<const uint8_t> m, const std::function<Save
         o.saved_class = class_of(o.type);
         switch (o.saved_class) {
             case SavedClass::Object: break;
-            case SavedClass::Part: read_part(h, false); break;
-            case SavedClass::Door: read_part(h, true); break;
+            case SavedClass::Part: read_part(h, o, false); break;
+            case SavedClass::Door: read_part(h, o, true); break;
             case SavedClass::Sim: read_sim(h, o); break;
         }
         h.r32();  // the loader's int
