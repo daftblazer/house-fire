@@ -133,6 +133,7 @@ struct Replay {
     std::set<int16_t> natively_delivered;
     std::set<int16_t> present;  // the objects on the lot this tick (the log's list)
     std::set<size_t> deferred;  // nested records already used out of order (calls')
+    bool card_lot = false;      // the lot is a save's (--card)
 
     // Brings the native world's variables to what the original's lookups found, counting
     // those that were already the same.
@@ -550,6 +551,7 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
     }
 
     Replay rp{lib, world};
+    rp.card_lot = card_lot;
     rp.bench = bench;
     rp.log = &log;
     std::set<size_t> consumed;  // log steps a native primitive's checks have stepped
@@ -678,9 +680,11 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
                     const auto& est = ein.stack();
                     const Node* en = !ein.done() && !est.empty() && est.back().tree && est.back().node < est.back().tree->nodes.size()
                                          ? &est.back().tree->nodes[est.back().node] : nullptr;
-                    // Native only with REPLAY_EVALUATION set, until its checks run through whole
-                    // (opcode 28's calls inside them are not native yet).
-                    static const bool evaluation = getenv("REPLAY_EVALUATION") != nullptr;
+                    // Native where it is checked: the save's lot (Mom's house, all three
+                    // evaluations exact); not the disc's club, whose evaluations look otherwise
+                    // (docs/simulation.md, "Autonomy"). REPLAY_EVALUATION=0 or 1 overrides.
+                    const char* ev = getenv("REPLAY_EVALUATION");
+                    const bool evaluation = ev ? ev[0] == '1' : rp.card_lot;
                     if (evaluation && en && en->opcode == 3 && !(s.tree == (uint16_t)est.back().tree->id && s.node == est.back().node)) {
                         size_t k = i;
                         std::vector<size_t> nest;
@@ -691,6 +695,23 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
                             if (log.steps[j].tree == (uint16_t)est.back().tree->id && log.steps[j].node == est.back().node &&
                                 log.steps[j].frame < s.frame) { k = j; break; }  // (its lookup is its last check's)
                             nest.push_back(j);
+                        }
+                        // The checks of an object the native world does not have (made during the
+                        // session: the replay does not make objects natively yet) are set aside: from
+                        // its check's start in the bottom frame to the next check's start.
+                        {
+                            const uint32_t bottom = log.steps[i].frame;
+                            std::vector<size_t> kept;
+                            bool skipping = false;
+                            size_t skipped = 0;
+                            for (size_t j : nest) {
+                                const StepRec& ns = log.steps[j];
+                                if (ns.frame == bottom && ns.node == 0) skipping = world.find(ns.stack_object) == nullptr;
+                                if (skipping) { skipped++; consumed.insert(j); continue; }
+                                kept.push_back(j);
+                            }
+                            if (skipped) note("autonomy: an evaluation's steps of objects not in the native world, set aside", skipped);
+                            nest = kept;
                         }
                         if (k != i && nest.size() >= 20) {
                             rp.present.clear();

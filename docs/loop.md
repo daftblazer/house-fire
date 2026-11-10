@@ -1038,7 +1038,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 4 of 16.
+Iteration 5 of 16.
 
 - **Iteration 1, chunk 1 (a table's first tree per table; PushAction by the object's
   table).** Object 198 is the group meal, whose table has action 4201 twice (guards 4202 and
@@ -1066,3 +1066,9 @@ Iteration 4 of 16.
   (the paper girl's guard was missed). Checked (`REPLAY_EVALUATION`): 410 of 433 check results
   as the log's (3 different, 20 unfinished), one evaluation exactly; the defaults and the club
   unchanged. Next: the last differences, so it can be on by default.
+
+- **Iteration 5, chunk 2 done (the evaluation, native).** The last differences were an object
+  made during the session (201), which the native world lacks; its checks are set aside.
+  Checked: all 433 check results the same, all three evaluations exactly the log's steps; on
+  by default for the save's lot (matching steps 566,983 vs 566,104 without, differing 2,334 vs
+  2,858), off for the club (worse there; open). Next: chunk 3, the score.

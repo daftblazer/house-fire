@@ -337,7 +337,15 @@ three evaluations' 433 checks give the log's result, 3 do not, 20 do not finish;
 evaluation uses exactly the log's steps; 4,531 check steps as the log's, 296 not. Still off
 by default (with it the replay's matching steps total 160 fewer, the differing 228 fewer).
 
-Still to come: the checks' last differences, and the score of those that pass (the
+The last differences were an object made during the session (201, after the save) that the
+native world lacks: the replay sets its checks aside (74 steps). Then all **433 checks give
+the log's result, and all three evaluations use exactly the log's steps** (5,585 check steps,
+none different). It is on by default for the save's lot (`replay --card`): the replay's
+matching steps total 566,983 against 566,104 without it, the differing 2,334 against 2,858.
+At the club it is off: there it makes the figures worse (the bursts noted above are not
+evaluations as at Mom's house), so `REPLAY_EVALUATION=1` turns it on there only by hand.
+
+Still to come: the score of those that pass (the
 adverts, the motives, the distance, the tuning table), checked as each choice among the native
 best four.
 
