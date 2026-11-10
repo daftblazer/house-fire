@@ -52,6 +52,39 @@ Deliberate differences:
 | A new frame's locals | what the stack's memory held | zero | the scripts that read one first read zero in practice (`interpreter.md`, "The call"); reads are reported |
 | `++`/`--` then compare, on a float variable | compares a word read through a null pointer | compares the new value | a crash-class bug; no script in the logged session does it |
 
+## The CPU budget
+
+The recompiled Bustin' Out was too heavy for an RK3566 (four Cortex-A55 at 1.8 GHz), for
+reasons this engine does not have:
+- every load and store through the emulated memory, byte-swapped;
+- exact float rounding;
+- a clock tick and an interrupt check at every backward branch;
+- one emulated thread.
+
+The original's logic ran at 30 fps on one 485 MHz Gekko with much else beside it, so native
+code doing the same work should fit in a fraction of one A55 core. That is made a target from
+the start, not an afterthought:
+
+- **Budget:** the game logic under 5 ms of each 33 ms tick (30 ticks a second) on one A55
+  core of an RK3566, with the club lot's busiest scene. The game logic is the scripts,
+  routing, autonomy and the simulation's own updates. Rendering, animation and sound are
+  measured apart, with their own budgets once they exist.
+- **Benchmark:** a headless tool runs a lot's simulation natively, with no window, and reports
+  milliseconds per tick for each system (scripts, routing, autonomy, the rest) and the worst
+  tick. It runs on the PC, and on the player's RK3566 device: the user gives SSH access when
+  asked.
+- **Checked whenever a system comes in,** like the lockstep: a system that passes the
+  lockstep but breaks the budget is not done.
+- **Designs that suit a small CPU:** data laid out for the cache, routing incremental and
+  cached, autonomy scores cached and updated as they change rather than recomputed for every
+  Sim each tick, animation evaluated only for what is on screen. Work independent between
+  objects can go to the other cores, which the original never used, as long as the result is
+  the same.
+
+Where the cost goes is measured, not guessed. The scripts are cheap: the logged session ran
+about 71 steps a tick. The heavy parts are expected in routing, autonomy, animation and
+skinning, the systems still to come.
+
 ## What does not come over from Bustin' Out's port
 
 The port's own redrawn interface (its "HD UI": `src/hud_read.cpp`, `hud_pieces.h`,
