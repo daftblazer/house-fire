@@ -1251,7 +1251,7 @@ without a commit (record why here). Then the eighth loop resumes.
 
 ## Progress
 
-Iteration 3 of 16.
+Iteration 4 of 16.
 
 - **Iteration 1, chunk 1 (the crate and the readers).** The C++ engine moved to
   `engine-cpp/` (built with clang from there, its home-log replay output the very same as
@@ -1274,3 +1274,12 @@ Iteration 3 of 16.
   (to 32 bits, then the low 16), an unknown operator an `Option` from the byte. Checked:
   `test_expression`'s 26 checks as a Rust test, all passing (the C++ `test_expression: ok`);
   clippy clean. Next: `primitives` and `test_primitives`.
+
+- **Iteration 4, chunk 3 (the save's readers).** `primitives` works on the world and the
+  library, so it moves after chunk 3 (with `test_primitives`). `save` ported: the save stream,
+  the LZSS blocks, the chunk tables, the memory card's file, the arrays, the neighbours, the
+  object types and ObjM's objects, each reader a `Result`. Checked against `test_lots`'s
+  figures that need no library: 35 blocks, 16 lots, 2,000 object types, 48 arrays of 64 by 64,
+  51 neighbours with ids 3 to 63, and the card's save of 1,318,912 bytes with 16 lots, all the
+  C++ ones; clippy clean. Next: `library` (with `test_disc` entire), then `world`
+  (`test_lots`' objects and classes), then `primitives`.

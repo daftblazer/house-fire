@@ -6,6 +6,7 @@ pub mod disc;
 pub mod expression;
 pub mod iff;
 pub mod interp;
+pub mod save;
 
 /// A tree, by its place in the trees a host keeps (the library's, or a test's).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
