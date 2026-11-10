@@ -1185,7 +1185,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 2 of 16.
+Iteration 3 of 16.
 
 - **Iteration 1, chunk 1 (the rooms and their doors).** The third array is not the rooms (1
   inside, 7 outside); the rooms are the regions the walls close (`Walls::room`, a door left
@@ -1203,6 +1203,17 @@ Iteration 2 of 16.
   natively); the plans' starts all the Sim's place; figures unchanged (561,398, 338,305,
   68,202, lockstep 7,902). Next: the plan's goal from the slot (the object's place, its
   directions and proximity, the side nearest the Sim) against the 17 plans' ends.
+
+- **Iteration 3, chunk 2 (an object's facing; the plan's last leg).** Resumed after the Rust
+  port. A plan to an object ends with two waypoints: the tile the Sim stands on, then the
+  object's own place (it turns to face it). An object's facing is its data field 1, in eighths
+  (`Object::facing`); the tile in front (`routing::front`): 0 towards -x (the fridge, the
+  counters, the stove), 6 towards -y (the easel), 2 and 4 by the turn between (not in the log).
+  Checked on the home log: of the 7 plans that end at their routing step's object, 5 come from
+  the tile in front of it; the other 2 are the dining chair's (approached from its side, to sit:
+  its own slots' offsets); 10 plans end elsewhere (a door, a slot's side, the lot's edge).
+  Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902); clippy clean. Next: the
+  sitting and the any-side slots (the chair, the global slot 1's nearest side).
 
 
 ## The eighth loop paused

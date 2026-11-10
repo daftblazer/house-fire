@@ -535,6 +535,14 @@ target object's place (the counter, the meal, the chair being sat on) or a tile 
 (the chair's global slot 1, the side nearest the Sim), and a door's crossing ends a sixteenth
 short of the far tile's middle.
 
+**The last leg: an object's front.** A plan to an object ends with the tile the Sim stands on,
+then the object's own place (the Sim turns to it). The tile is in front of the object, one tile
+away, by the object's facing: its data field 1, in eighths of a turn (`Object::facing`,
+`routing::front`), 0 towards -x (the fridge, the counters, the stove), 6 towards -y (the easel),
+2 and 4 by the turn between them (no logged walk ends at one). Checked: 5 of the 7 plans that
+end at their routing step's object; the other 2 are to the dining chair, approached from its
+side to sit down.
+
 ## Still open
 
 - What wakes a sleeping stack early (23 of 2,833 sleeps).

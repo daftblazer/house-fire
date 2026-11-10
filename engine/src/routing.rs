@@ -23,6 +23,20 @@ fn key(x: i32, y: i32, bit: u8) -> u32 {
     (x as u32) << 16 | (y as u32) << 8 | bit as u32
 }
 
+/// The tile in front of an object of this facing (`Object::facing`): 0 towards -x, 2 towards
+/// +y, 4 towards +x, 6 towards -y (an odd facing, between two: `None`). Measured on the home
+/// log's walks: a Sim stands at the -x side of the fridge, the counters and the stove (0), at the
+/// -y side of the easel (6); 2 and 4 by the turn between them.
+pub fn front(facing: i16) -> Option<(i32, i32)> {
+    match facing & 7 {
+        0 => Some((-1, 0)),
+        2 => Some((0, 1)),
+        4 => Some((1, 0)),
+        6 => Some((0, -1)),
+        _ => None,
+    }
+}
+
 /// A tile, (x, y).
 pub type Tile = (i32, i32);
 

@@ -46,7 +46,7 @@ use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
-use housefire::routing::Tile;
+use housefire::routing::{Tile, front};
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
 use housefire::tree_log::{Log, PassRec, StepRec, read_log, same_shape};
@@ -1988,7 +1988,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
     // Routing: each Sim's logged step from one tile to the next ('P'), against the lot's walls
     // and the doors' openings (Walls). Measured on the save's lot.
     if !bench_on && !log.places.is_empty() {
-        routing(log, lib, world, counts);
+        routing(log, lib, world, counts, &ids);
     }
 
     // The motives' own update (update_motives), on each person's logged motives ('N' records):
@@ -2062,7 +2062,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
 
 /// The routing checks: the Sims' steps, the original's plans, its routing steps' slots, and the
 /// walks against the native route.
-fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts) {
+fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &BTreeMap<u32, i16>) {
     let walls = &world.walls;
     let show = has("REPLAY_SHOW_ROUTING");
     counts.add("routing: the lot's wall edges (each seen from both tiles)", walls.wall_edges());
@@ -2206,6 +2206,84 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts) {
             (true, false) => "routing: a routing step's slot found natively (the global one)",
             _ => "routing: a routing step's slot NOT found natively",
         });
+    }
+    // A plan that ends at its routing step's object (the step's stack object, in the plan's
+    // tick, at the plan's last point): the waypoint before it the tile in front of the object
+    // (`front`, by its facing), one tile away; the Sim walks there, then turns to the object.
+    for pl in &log.plans {
+        if pl.points.len() < 3 {
+            continue;
+        }
+        let end = pl.points[pl.points.len() - 1];
+        let stand = pl.points[pl.points.len() - 2];
+        let target = log.steps.iter().filter(|s| s.tick == pl.tick).find_map(|s| {
+            let t = log.tree_of(s).filter(|t| t.tree == s.tree)?;
+            let at = s.node as usize * 12;
+            let op = u16::from_be_bytes([*t.raw.get(at)?, *t.raw.get(at + 1)?]) & 0x7FFF;
+            let o = world.find_object(s.stack_object)?;
+            (matches!(op, 27 | 45) && (o.x16, o.y16) == end).then_some(o)
+        });
+        let Some(o) = target else {
+            counts.note("routing: a plan not ending at its routing step's object");
+            continue;
+        };
+        let want = front(o.facing()).map(|(dx, dy)| (o.x16 + 16 * dx, o.y16 + 16 * dy));
+        counts.note(if want == Some(stand) {
+            "routing: a plan ending at its object, from the tile in front of it (its facing)"
+        } else {
+            "routing: a plan ending at its object, NOT from the tile in front of it"
+        });
+        if want != Some(stand) && show {
+            println!(
+                "plan at tick {} to object {} (facing {}): from {},{}, in front {:?}",
+                pl.tick,
+                o.id(),
+                o.facing(),
+                stand.0,
+                stand.1,
+                want
+            );
+        }
+    }
+    // Each plan with the routing primitives its Sim ran in its tick (study: REPLAY_SHOW_PLANS):
+    // opcode 27 or 45, the stack object and its place, the operand, the result.
+    if has("REPLAY_SHOW_PLANS") {
+        for pl in &log.plans {
+            let (Some(a), Some(b)) = (pl.points.first(), pl.points.last()) else { continue };
+            let who = world.objects().find(|o| o.person && (o.x16, o.y16) == *a).map_or(-1, |o| o.id() as i32);
+            println!("plan tick {} from {},{} to {},{} ({} points), Sim at its start {who}", pl.tick, a.0, a.1, b.0, b.1, pl.points.len());
+            for s in log.steps.iter().filter(|s| s.tick == pl.tick) {
+                let Some(t) = log.tree_of(s) else { continue };
+                let at = s.node as usize * 12;
+                if at + 12 > t.raw.len() || t.tree != s.tree {
+                    continue;
+                }
+                let raw = &t.raw[at..at + 12];
+                let op = u16::from_be_bytes([raw[0], raw[1]]) & 0x7FFF;
+                if op != 27 && op != 45 {
+                    continue;
+                }
+                let o = world.find_object(s.stack_object);
+                let mut l = format!(
+                    "   op {op} by {} in {}:{} on {} ({} at {},{}) operand",
+                    ids.get(&s.sim).map_or(-1, |&i| i as i32),
+                    s.tree,
+                    s.node,
+                    s.stack_object,
+                    o.and_then(|o| o.file).map_or("-".to_string(), |f| file_name(lib, f)),
+                    o.map_or(0, |o| o.x16),
+                    o.map_or(0, |o| o.y16)
+                );
+                for x in &raw[4..12] {
+                    l += &format!(" {x:02x}");
+                }
+                l += &format!(" -> {} result {}; params", s.after, s.result);
+                for p in &s.params {
+                    l += &format!(" {p}");
+                }
+                println!("{l}");
+            }
+        }
     }
     // The routing steps (GotoRoutingSlot, opcode 45): the slot they name, of the stack object's
     // SLOT, against the next plan's end (study: REPLAY_SHOW_SLOTS).

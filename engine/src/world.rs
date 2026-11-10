@@ -42,6 +42,8 @@ pub mod scope {
 
 /// The object data field the engine relies on: the object's id.
 pub const DATA_OBJECT_ID: usize = 11;
+/// The object data field that holds the way it faces (in eighths of a turn).
+pub const DATA_FACING: usize = 1;
 /// The person data field the engine relies on: a Sim's neighbour id (its NBRS id).
 pub const PERSON_NEIGHBOUR_ID: usize = 31;
 
@@ -97,6 +99,10 @@ impl Object {
     }
     pub fn on_lot(&self) -> bool {
         self.x16 >= 0 && self.y16 >= 0
+    }
+    /// The way it faces: data field 1, in eighths of a turn (`routing::front`).
+    pub fn facing(&self) -> i16 {
+        self.data.get(DATA_FACING).copied().unwrap_or(0)
     }
 }
 
