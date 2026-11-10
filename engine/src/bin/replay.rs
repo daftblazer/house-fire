@@ -46,7 +46,7 @@ use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
-use housefire::routing::{BLOCKS, Tile, footprint, front, obstacle, slot_places};
+use housefire::routing::{BLOCKS, Tile, footprint, front, obstacle, overlaps, slot_places, ungrown};
 use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
@@ -2450,7 +2450,20 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         // each not a person by `routing::obstacle`, a person as the log keeps it (6 on a side
         // round its logged place, grown); against the logged list where it has as many (not
         // dropping one that overlaps the Sim: not yet native), rectangle by rectangle.
-        if !kept.is_empty() && kept.len() == pl.obstacles.len() {
+        if !kept.is_empty() {
+            // the Sim that plans: the person nearest the plan's start (its place as logged, within
+            // a tile); its footprint 6 on a side round its place
+            let start = pl.points.first().copied();
+            let sim_rect = start.and_then(|s| {
+                world
+                    .objects()
+                    .filter(|o| o.person)
+                    .filter_map(|o| place_at(o.id(), pl.tick))
+                    .map(|p| ((p.0 - s.0).pow(2) + (p.1 - s.1).pow(2), p))
+                    .filter(|&(d, _)| d <= 256)
+                    .min()
+                    .map(|(_, p)| [p.0 - 3, p.1 - 3, p.0 + 3, p.1 + 3])
+            });
             let native: Vec<[i32; 5]> = pl
                 .tested
                 .iter()
@@ -2463,6 +2476,8 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                     }
                     obstacle(o, world.definition(o).map_or(0, |d| d.field(75)), half)
                 })
+                // one whose footprint (before it is grown) overlaps the Sim's is dropped
+                .filter(|r| *r == [0; 5] || !sim_rect.is_some_and(|s| overlaps(&ungrown(r, half), &s)))
                 .collect();
             let hit = native.iter().zip(&pl.obstacles).filter(|(a, b)| a == b).count();
             let unknown = native.iter().filter(|a| **a == [0; 5]).count();
@@ -2471,6 +2486,9 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 for (a, b) in native.iter().zip(&pl.obstacles).filter(|(a, b)| a != b && **a != [0; 5]) {
                     println!("   native obstacle {a:?}, the planner's {b:?}");
                 }
+            }
+            if show_obstacles {
+                println!("   native list tick {}: {} rects, the planner's {}, kept {}, the Sim's {sim_rect:?}, {hit} the same", pl.tick, native.len(), pl.obstacles.len(), kept.len());
             }
             counts.add("routing: obstacles of objects not in the native world (the log's kept)", unknown);
             counts.add("routing: obstacles natively the planner's, rectangle by rectangle", hit);

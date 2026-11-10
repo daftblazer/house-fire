@@ -632,6 +632,15 @@ natively, in the loop's order, against the 12 logged lists of as many as it kept
 rectangles exactly the planner's, 7 of objects not native, 34 the footprints not yet found (the
 chairs, the tron, the trunk).
 
+**The one by the Sim** (`routing::overlaps`). Before it grows a footprint, the loop intersects
+it with the planning Sim's own (`fn_80248DD8` with the rectangle at its +8, the Sim's +696
+footprint: 6 on a side round its place) and drops the object if they share any area. Natively:
+the Sim the person nearest the plan's start (its logged place, within a tile). Checked on all 17
+lists of the home log: the lengths now the planner's in 16 (the 5 that dropped one, as it did);
+the 17th (tick 1220) drops the paper girl, who is not in the native world. 623 rectangles
+exactly the planner's, 9 of objects not native, 78 not (44 the known footprints, 34 tick 1220's
+shifted by one).
+
 ## Still open
 
 - What wakes a sleeping stack early (23 of 2,833 sleeps).

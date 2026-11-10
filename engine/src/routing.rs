@@ -103,6 +103,16 @@ pub fn obstacle(o: &crate::world::Object, mask: u16, half: i32) -> Option<[i32; 
     Some(if flags & 0x10 != 0 { [f[0], f[1], f[2], f[3], WALK_THROUGH] } else { [f[0] - half, f[1] - half, f[2] + half, f[3] + half, BLOCKS] })
 }
 
+/// An obstacle's footprint before it was grown: a blocking one less `half` on each side.
+pub fn ungrown(r: &[i32; 5], half: i32) -> [i32; 4] {
+    if r[4] == BLOCKS { [r[0] + half, r[1] + half, r[2] - half, r[3] - half] } else { [r[0], r[1], r[2], r[3]] }
+}
+
+/// Whether two rectangles {x0, y0, x1, y1} share some area (touching edges do not).
+pub fn overlaps(a: &[i32; 4], b: &[i32; 4]) -> bool {
+    a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
+}
+
 /// A tile, (x, y).
 pub type Tile = (i32, i32);
 

@@ -1185,7 +1185,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 9 of 16.
+Iteration 10 of 16.
 
 - **Iteration 1, chunk 1 (the rooms and their doors).** The third array is not the rooms (1
   inside, 7 outside); the rooms are the regions the walls close (`Walls::room`, a door left
@@ -1281,6 +1281,14 @@ Iteration 9 of 16.
   footprint misses. Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy
   clean. Next: the persons' rule and the one dropped as overlapping the Sim (then the whole list
   native), or the chairs' footprint; then the search itself.
+
+- **Iteration 10, chunk 3 (the obstacle by the Sim).** The loop's drop made native: an object
+  whose footprint, before it is grown, overlaps the planning Sim's (6 on a side round its place)
+  is not an obstacle (`routing::overlaps`, `ungrown`). Checked on all 17 logged lists: lengths
+  the planner's in 16 (the 17th drops the paper girl, not native); 623 rectangles exact, 9 of
+  objects not native, 78 not (44 the known footprints, 34 the 17th's shifted). Figures unchanged
+  (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next: the persons' rule (the
+  loop's kind-2 branch), or the chairs' footprint; then the search over the obstacles.
 
 
 ## The eighth loop paused
