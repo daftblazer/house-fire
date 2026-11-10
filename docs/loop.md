@@ -517,7 +517,7 @@ without a commit.
 
 ## Progress
 
-Iteration 11 of 12.
+Iteration 12 of 12 (the loop ended).
 
 - **Iteration 1, chunk 1 (the tree stack and the base object).** Read the loader's code for
   everything after an object's data: the tree stack and its frames, the +192 member, the
@@ -609,3 +609,37 @@ Iteration 11 of 12.
   `cXObject::TrySetToNext` names the rest: kind 5 is the next neighbour by id; kind 6 shares
   its case with 0 and 2 (its operand is the boombox's GUID, read little-endian; it finds
   other stereos). Next (the last iteration): kinds 5 and 6.
+
+- **Iteration 12, chunk 6 (kinds 5 and 6, open).** Kind 5 walks the neighbourhood's 51
+  neighbours by id (3-63, with gaps), false after the last. They are NBRS's 51 records
+  (`objects.md`, "The neighbours"), the PC's layout; the id field of a record is not found
+  yet, so kind 5 is not native. Kind 6 (2,188 steps) is still open: its operand is a GUID
+  (the boombox) and it finds other stereos, through a case Castaway shares with kinds 0
+  and 2.
+
+## Where the third loop ended
+
+All 12 iterations ran, each with a commit. Done:
+- **Chunk 1, the saved state:** every object's whole section and the lot's own part, for
+  all 16 lots, classes from the definitions (`lots.md`); the tree stacks restored onto the
+  world's objects; the Sims' motives and person data loaded.
+- **Chunk 2, the native tick:** the pass by id with its cursor, stopped by a waiting dialog;
+  Idle counting passes (`simulation.md`); `replay` runs the club natively over a log and
+  agrees on every turn and stop.
+- **Chunk 3, the benchmark:** 8.7 µs a tick on the PC, 125 µs on one RK3566 core before the
+  pass was made cheap (`plan.md`, "The CPU budget"); the RK3566 to be measured again.
+- **Chunk 4, Castaway's object stream:** all 28 lots decode to their ends.
+- **Chunk 5, primitives:** TestObjectType and Random native (Random's numbers the engine's
+  own, a listed difference).
+- **Chunk 6, SetToNext:** kind 3 native.
+
+Open, for the next loop:
+- SetToNext kinds 5 (NBRS's id field) and 6, and the dance floor's 8 kind-4 steps;
+- CallNamedTree (only its false path in the logs), and the systems behind the most-used
+  primitives still answered from the log: Animate, Dialog, CompleteGoal, IdleForInput,
+  routing (GotoRoutingSlot, GotoRelative), LookTowards;
+- the frames the engine pushes on a Sim's stack (its interactions), the replay's remaining
+  step differences, and what the engine sets as a lot loads (person data 27 and 32, motive
+  13; main trees restarted, e.g. the dance floor's 8216 for its saved 8220);
+- Castaway's object definitions (its files have no OBJD), its persons' and portals' parts;
+- the RK3566 benchmark again, with the cheap pass.

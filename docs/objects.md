@@ -131,7 +131,7 @@ object after the target's in that order, or the first if the target is 0, of a k
 | 2 | not a Sim | not run in the session |
 | 3 | the next part of the target's multi-tile object, in list order, round from the last part to the first (false if the target is not a part); a part's object is its saved leader (`lots.md`, "The classes") | 141 same (`replay`) |
 | 4 | an object of the GUID in operand bytes 0-3 | 10,903 same |
-| 5 | the next neighbour, by neighbour id (Castaway's `Neighborhood::GetNextNeighborID`) | not modelled (468 steps) |
+| 5 | the next neighbour, by neighbour id (Castaway's `Neighborhood::GetNextNeighborID`); after the last, false with the target 0. The neighbours are the neighbourhood file's NBRS records (below) | not modelled (468 steps) |
 | 6 | (open) objects akin to the GUID in bytes 0-3, read little-endian as the files are: 0x46F4E80B is the boombox, and in the club it finds the DJ booth's parts and the music controller, other stereos (in Castaway, kinds 0, 2 and 6 share one case of the search) | not modelled (2,188 steps) |
 
 The target is the stack object, or with flag 0x80 in operand byte 4 the variable of scope
@@ -145,6 +145,18 @@ time with two objects the lot does not list (179, 180, not Sims) made in front.
 52 steps differ, all at ticks 0-6 while the lot loads: objects the original has made by
 then (the two in front, and others such as 141) are not yet made natively. That is chunk 2's
 (the objects made and removed).
+
+### The neighbours (SetToNext kind 5)
+
+In the session the walk is over 51 neighbour ids, ascending: 3-7, 9-11, 13-17, 19, 21-26,
+28, 29, 34, 36-63; after 63 the step is false and the target 0. They come from the
+neighbourhood file (`lots.md`), section 1, a chunk table like a lot's: NGBH, NBRS, then FAMI
+and "User" chunks. NBRS is the PC's layout, not the save stream: 0, its version (80),
+"SRBN", a count of 63 slots, then each slot: a word 0 if empty, else 1, a version (4), a
+name (zero-ended: "template_person", "grimreaper", "robot", "officer2" ...) and the
+neighbour's data. There are 51 records, one for each id walked, in the same order. The id
+of each is still to be found (it is at no fixed offset from the record's start or its name's
+end: the records' person data varies in length), and with it kind 5.
 
 ## Objects made and removed
 
