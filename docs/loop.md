@@ -878,7 +878,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 11 of 16.
+Iteration 12 of 16.
 
 - **Iteration 1, chunk 1 (Mom's house read from the save).** The card's save is the
   neighbourhood file with big-endian block headers and chunk tables (`lots.md`, "Saves");
@@ -956,3 +956,9 @@ Iteration 11 of 16.
   checks over ~41 objects by id, each object's interactions in table order (ticks 186, 1443
   for Sim 12, 1847 for Sim 237; the same sequence both times for Sim 12). Next: the
   evaluation's candidates and guard checks natively, checked step by step against these.
+
+- **Iteration 12, chunk 3 (the evaluation's candidates).** The 145 checks measured against
+  the tables: objects by id, each one's advertising interactions in reverse table order, a
+  version-11 table's first tree before them: 23 of 41 objects exactly. Open: the parts'
+  tables (field 5 0xFFFF: the master's) and which interactions take part (flags, minimum,
+  threshold). No engine code yet: the rule is not complete enough to check.

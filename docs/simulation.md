@@ -266,6 +266,20 @@ stack object the candidate. The same objects and guards each time for Sim 12 (18
 run the same 145). Next to build natively: that sequence (the candidates and their guards,
 `Host::run_check`), then the score of those that pass.
 
+**The evaluation's candidates, measured** (Sim 12 at tick 186, its 145 top-level checks, the
+starts at node 0 in the bottom check frame). By object, id ascending; for an object, its
+table's interactions that advertise, in **reverse** table order (the fridge's table is 8216,
+8218, 8213, 8233 and four that advertise nothing; the checks run 8233, 8213, 8218, 8216);
+a version-11 table's first tree (463) before its guards. That predicts 23 of the 41 objects
+exactly. The others:
+- a multi-tile object's parts (beds 29 and 34, sofas 7, 10, 13, 147) have field 5 = 0xFFFF:
+  their table is the multi-tile object's (its master definition's, by the master id in
+  field 8), and the single-tile objects with 0xFFFF there too (the mailbox 33, the trash
+  compactor 139) use their file's one table;
+- which interactions take part is more than "advertises": some that advertise nothing are
+  checked (40: 8219, 8235, 8237, 8243) and two that do are not (25: 8208, 8239), so the
+  autonomy flags, the minimums or the threshold decide it.
+
 **The advertisements** (the interaction tables, TTAB; `Interaction`, `Library` keeps every
 file's by chunk id). A file can have several tables (a fridge's for cheap, moderate and
 expensive models); an object uses the one its definition's field 5 names. Each interaction
