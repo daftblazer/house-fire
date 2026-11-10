@@ -109,7 +109,14 @@ with its stack, rebuilt only when the world's objects change (`World::version`),
 walks a vector instead of looking up every id in two maps. On the PC the pass went from
 5.2 µs to 1.6 µs a tick (most of what is left is the replay's own list of the pass for its
 checks) and a tick from 12.3 µs to 8.7 µs on average; every check of the replay unchanged.
-The RK3566 is to be measured again the next time it is on.
+Measured again on the RK3566 (2026-11-10, the same device, log and settings, two runs within
+2%), with the fifth loop's primitives native as well (the queue's deliveries and checks,
+PushAction, Dialog): 118 µs a tick on average (was 125), 58 µs median (was 80), 1.15 ms at
+the 99th percentile, 2.2 ms at worst past the load (was 1.8), and 8.9 ms for tick 2 (was
+7.7). The pass went from 59 µs to 32 µs a tick; the scripts rose from 67 µs to 85 µs, as more
+of their work is now native rather than answered from the log. The ticks past the load fit
+the budget with room; tick 2, which builds every object's stack, does not (8.9 ms of 5): to
+be spread or made cheaper, or done during the load, before the systems to come add to it.
 
 ## What does not come over from Bustin' Out's port
 
