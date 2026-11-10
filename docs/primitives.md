@@ -143,6 +143,18 @@ Measured on the recompiled game, a session of the new-game route: 23,811 steps, 
   continuations would explain.
 
 This is the contract the animation system must keep (each animation's length in ticks and
-its events, from the animation data, which is not decoded yet). The primitive is a thin
+its events, from the animation data, which is not decoded yet).
+
+Where the animations are (the fifth loop): the object files' "animations" string tables
+(STR# 128) are empty on the consoles. An Animate operand's first 16 bits index the quick
+data's `AnimRef` table (`SimsObjects`: 2,891 rows of 12 bytes, a 32-bit id, a 32-bit value,
+an empty name), which `AnimRefName` (2,840 pointers into it) also reaches. The animations
+themselves are `animatio.arc`'s 4,013 entries, by name ("a2a-tickler-stop-laugh" ...). Which
+entry an AnimRef id names is not found yet: the id is not the archive's own name hash, nor
+CRC-32, FNV-1/1a, djb, sdbm, ELF or a ×31/37/131/65599 hash of the name (as is, lower or
+upper case, with or without an extension), and the row's value does not follow the run's
+length (0xA6A for 16 ticks, 0x514 for 17). Castaway's ELF has `EAnimManager` (resources by
+32-bit id) to read it from. Until then each animation's length cannot be checked, and
+Animate stays the log's. The primitive is a thin
 wrapper over that system, so it waits for it. Animate steps also make the effect objects
 (`objects.md`, "Objects made and removed").

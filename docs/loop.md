@@ -766,7 +766,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 3 of 16.
+Iteration 4 of 16.
 
 - **Iteration 1, chunk 1 (the queue's entries and their delivery).** The engine keeps each
   Sim's saved queue (`Object::current`, `queue`); an entry's fields named from the log: the
@@ -791,3 +791,9 @@ Iteration 3 of 16.
   more delivery native (6), 101 check steps the same. Open: operand bytes 2-3, repeated
   pushes. Chunk 1 is as far as the logs show it; the Sims with nothing queued are autonomy's
   (a later system). Next: chunk 2, Animate as the scripts see it.
+
+- **Iteration 4, chunk 2 (Animate: where the animations are).** Animate's index is the quick
+  data's AnimRef row; the animations are animatio.arc's 4,013 named entries; the AnimRef id
+  to name mapping is not found (`primitives.md`, "Animate": nine hashes ruled out). Without
+  it no animation's length can be checked, so Animate is set aside, recorded. Next: chunk 3,
+  the motives.
