@@ -59,6 +59,11 @@ struct PassRec { uint32_t from = 0, stopped_at = 0; };
 // tile, and its level; -16, -16 off the lot.
 struct PlaceRec { uint32_t tick; int16_t id; int32_t x, y, level; };
 
+// An autonomy score's call (the 'A' record): the motives it read, the adverts (16 of
+// personality, minimum, delta; big-endian in the record), its score; and a base score ('B').
+struct ScoreRec { uint32_t tick; float score; std::array<float, 16> motives; std::array<std::array<int16_t, 3>, 16> adverts; };
+struct BaseRec { uint32_t tick; float score; };
+
 // A person's 16 motives when they changed, at the start of a tick (the 'N' record).
 struct MotiveRec { uint32_t tick; int16_t id; std::array<float, 16> motives; };
 
@@ -69,6 +74,8 @@ struct Log {
     std::vector<StepRec> steps;
     std::vector<PlaceRec> places;  // logs with 'P' records
     std::vector<MotiveRec> motives;  // logs with 'N' records
+    std::vector<ScoreRec> scores;    // logs with 'A' records
+    std::vector<BaseRec> bases;      // logs with 'B' records
     uint32_t ticks = 0;
 };
 
@@ -107,7 +114,14 @@ inline bool read_log(const char* path, Log& log) {
             log.passes[log.ticks].stopped_at = u32();
             in_pass = false;
         }
-        else if (k == 'B') { if (p + 8 > b.size()) break; p += 8; }
+        else if (k == 'B') {
+            if (p + 8 > b.size()) break;
+            u32();
+            BaseRec r{log.ticks, 0};
+            const uint32_t w = u32();
+            std::memcpy(&r.score, &w, 4);
+            log.bases.push_back(r);
+        }
         else if (k == 'W') {  // an evaluator's curves (tools/tree_log.py)
             if (p + 6 > b.size()) break;
             p += 4;
@@ -115,9 +129,18 @@ inline bool read_log(const char* path, Log& log) {
             if (p + (size_t)cnt * (8 + 256 + 128) > b.size()) break;
             p += (size_t)cnt * (8 + 256 + 128);
         }
-        else if (k == 'A') {  // an autonomy score (tools/tree_log.py)
+        else if (k == 'A') {  // an autonomy score
             if (p + 12 + 64 + 132 > b.size()) break;
-            p += 12 + 64 + 132;
+            ScoreRec r{log.ticks, 0, {}, {}};
+            u32(); u32();
+            uint32_t w = u32();
+            std::memcpy(&r.score, &w, 4);
+            for (float& m : r.motives) { w = u32(); std::memcpy(&m, &w, 4); }
+            const uint8_t* a = &b[p];
+            for (int m = 0; m < 16; m++)
+                for (int k2 = 0; k2 < 3; k2++) r.adverts[(size_t)m][(size_t)k2] = (int16_t)(a[4 + 8 * m + 2 * k2] << 8 | a[4 + 8 * m + 2 * k2 + 1]);
+            p += 132;
+            log.scores.push_back(r);
         }
         else if (k == 'U') {  // a call of the motive update's gate (tools/tree_log.py)
             if (p + 7 > b.size()) break;

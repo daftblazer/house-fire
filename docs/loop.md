@@ -1038,7 +1038,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 9 of 16.
+Iteration 10 of 16.
 
 - **Iteration 1, chunk 1 (a table's first tree per table; PushAction by the object's
   table).** Object 198 is the group meal, whose table has action 4201 twice (guards 4202 and
@@ -1093,3 +1093,8 @@ Iteration 9 of 16.
   curves (`W`) and the base score (`B`); a new home log, the same steps. The score recomputed
   from the curves: 105 of 111 bit for bit, 6 by the last bit. Next: the score native in the
   engine (and where the curves come from in the game's data), then the choice.
+
+- **Iteration 10, chunk 3 (the score, native).** The curves are the global file's STR# 501
+  ("InteractionScoreCurves", text points); `score_curves`, `interaction_score`. Checked: all
+  111 logged scores bit for bit, the 3 base scores too. Next: the value and the choice
+  natively (the candidates' adverts from the tables, the distance from the places).

@@ -1030,6 +1030,41 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
         }
     }
 
+    // Autonomy's scores ('A', 'B' records): each recomputed natively (interaction_score, the
+    // curves from STR# 501) from the motives and adverts it read; the person is the one whose
+    // evaluation it was (the Sim of that tick's evaluation: Sim 12's or Sim 237's motives).
+    if (!bench && !log.scores.empty()) {
+        const auto curves = score_curves(lib);
+        note("autonomy: score curves from the global file", curves.size());
+        for (const BaseRec& br : log.bases) {
+            const ScoreRec* sr = nullptr;
+            for (const ScoreRec& x : log.scores) if (x.tick == br.tick) { sr = &x; break; }
+            if (!sr) continue;
+            const Object* any = nullptr;
+            for (const auto& o : world.objects()) if (o->person && !o->definition) { any = o.get(); break; }
+            if (!any) continue;
+            const std::vector<float> mv(sr->motives.begin(), sr->motives.end());
+            const float got = interaction_score(curves, nullptr, *any, mv);
+            note(got == br.score ? "autonomy: a base score the same natively (no advert)" : "autonomy: a base score DIFFERENT");
+        }
+        for (const ScoreRec& sr : log.scores) {
+            // The person: the Sim whose motives these are (person data for the personality).
+            const Object* person = nullptr;
+            for (const auto& o : world.objects())
+                if (o->person && !o->definition && o->motives.size() >= 16) {
+                    bool near = true;
+                    for (int i : {5, 7, 9}) if (std::fabs(o->motives[(size_t)i] - sr.motives[(size_t)i]) > 60.0f) near = false;
+                    if (near && (!person || std::fabs(o->motives[5] - sr.motives[5]) < std::fabs(person->motives[5] - sr.motives[5]))) person = o.get();
+                }
+            if (!person) { note("autonomy: a score's person not found"); continue; }
+            std::vector<Interaction::Advert> ads(16);
+            for (int m = 0; m < 16; m++) ads[(size_t)m] = {sr.adverts[(size_t)m][1], sr.adverts[(size_t)m][2], (uint16_t)sr.adverts[(size_t)m][0]};
+            const std::vector<float> mv(sr.motives.begin(), sr.motives.end());
+            const float got = interaction_score(curves, &ads, *person, mv);
+            note(got == sr.score ? "autonomy: a score the same natively (bit for bit)" : std::fabs(got - sr.score) < 1e-5f ? "autonomy: a score the same natively but for the last bits" : "autonomy: a score DIFFERENT");
+        }
+    }
+
     // The motives' own update (update_motives), on each person's logged motives ('N'
     // records): the native update of one record against the next. A pair it does not
     // reproduce is a change the scripts made, or a tick the original did not update it.

@@ -27,6 +27,25 @@ struct Candidate {
 // home log's three evaluations, objects and persons, the same.
 std::vector<Candidate> autonomy_candidates(const World& world, const Object& me);
 
+// The interaction score's curves (Bustin' Out's fn_80267E9C; docs/simulation.md, "The
+// curves"): one a motive, its points (x, y) by x ascending and each segment's 1 / width.
+struct ScoreCurve {
+    int motive;
+    std::vector<std::pair<float, float>> points;
+    std::vector<float> slopes;
+    float at(float v) const;
+};
+// From the global file's STR# 501, "InteractionScoreCurves": "(x;y) (x;y) ...", its strings
+// for motives 5, 6, 7, 8, 9, 3, 13, 14 and 15 in turn (the tenth is not used here).
+std::vector<ScoreCurve> score_curves(const Library& lib);
+
+// An advert's amount for a person (its minimum, plus the delta scaled by the personality
+// field it names, or 1000 less it), as the score takes it.
+float advert_amount(const Interaction::Advert& a, const Object& person);
+// The score of a set of adverts (one a motive; null: none) for a person with these motives.
+float interaction_score(const std::vector<ScoreCurve>& curves, const std::vector<Interaction::Advert>* adverts,
+                        const Object& person, const std::vector<float>& motives);
+
 // One check of an evaluation: the object, the tree (a table's first tree, or a candidate's
 // guard; `candidate` null for a first tree), and its result (nullopt if it did not finish).
 struct EvaluationCheck {

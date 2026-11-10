@@ -1,6 +1,9 @@
 #include "housefire/autonomy.h"
 
 #include <algorithm>
+#include <iterator>
+#include <cstdio>
+#include <cmath>
 
 namespace housefire {
 
@@ -58,6 +61,63 @@ std::vector<EvaluationCheck> run_evaluation(const World& world, const Object& me
         out.push_back({c.object, c.interaction->guard, &c, g ? host.run_check(g, c.object->file, c.object->id()) : std::nullopt});
     }
     return out;
+}
+
+float ScoreCurve::at(float v) const {
+    // The segment from the end: the last point at or below v.
+    int i = (int)points.size() - 1;
+    while (i >= 0 && v - points[(size_t)i].first < 0.0f) i--;
+    if (i < 0) return points.front().second;
+    if (i == (int)points.size() - 1) return points.back().second;
+    const auto& [x, y] = points[(size_t)i];
+    const float y1 = points[(size_t)i + 1].second;
+    return std::fmaf((v - x) * slopes[(size_t)i], y1 - y, y);
+}
+
+std::vector<ScoreCurve> score_curves(const Library& lib) {
+    static const int kMotives[] = {5, 6, 7, 8, 9, 3, 13, 14, 15};
+    std::vector<ScoreCurve> out;
+    const ObjectFile* g = lib.global();
+    if (!g) return out;
+    auto t = g->strings.find(501);
+    if (t == g->strings.end()) return out;
+    for (size_t k = 0; k < std::size(kMotives) && k < t->second.size(); k++) {
+        ScoreCurve c;
+        c.motive = kMotives[k];
+        const std::string& s = t->second[k];
+        for (size_t p = s.find('('); p != std::string::npos; p = s.find('(', p + 1)) {
+            float x = 0, y = 0;
+            if (std::sscanf(s.c_str() + p, "(%f;%f)", &x, &y) == 2) c.points.push_back({x, y});
+        }
+        std::sort(c.points.begin(), c.points.end());
+        for (size_t i = 0; i + 1 < c.points.size(); i++) c.slopes.push_back(1.0f / (c.points[i + 1].first - c.points[i].first));
+        if (!c.points.empty()) out.push_back(std::move(c));
+    }
+    return out;
+}
+
+float advert_amount(const Interaction::Advert& a, const Object& person) {
+    // The personality table (0x802D17F8, 12 bytes an entry): entry p's person data field is
+    // p / 2 + 1, the odd entries counting 1000 less it (1: field 2; 2: field 2, inverted; ...).
+    if (a.personality == 0) return (float)(a.min + a.delta);
+    const int field = (int)(a.personality + 1) / 2 + 1;
+    const bool inverted = a.personality % 2 == 0;
+    int v = (size_t)field < person.person_data.size() ? person.person_data[(size_t)field] : 0;
+    if (inverted) v = 1000 - v;
+    return (float)a.min + (float)(a.delta * v) / 1000.0f;
+}
+
+float interaction_score(const std::vector<ScoreCurve>& curves, const std::vector<Interaction::Advert>* adverts,
+                        const Object& person, const std::vector<float>& motives) {
+    if (curves.empty()) return 0.0f;
+    float total = 0.0f;
+    for (const ScoreCurve& c : curves) {
+        float ad = 0.0f;
+        if (adverts && (size_t)c.motive < adverts->size()) ad = advert_amount((*adverts)[(size_t)c.motive], person);
+        const float m = (size_t)c.motive < motives.size() ? motives[(size_t)c.motive] : 0.0f;
+        total += c.at(std::fmaf(ad, 0.001f, m));
+    }
+    return total / (float)curves.size();
 }
 
 }  // namespace housefire

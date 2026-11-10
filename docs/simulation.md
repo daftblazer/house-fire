@@ -390,8 +390,19 @@ Checked: 105 of the 111 logged scores bit for bit, the other 6 off by the last b
 against 26.284000). The bases are logged too (26.91314 at tick 186: the lowest score, as
 approximated before).
 
-Still to come: the last bit, the score and value native in the engine (the curves' source
-in the game's data), and the selection among the best of those that pass (the
+**The curves' source** is the global file's STR# 501, "InteractionScoreCurves": ten strings of
+points, "(-100;-100) (-72;90) (100;90)", not always in order (the comfort curve lists "(10;10)
+(-45;0)"), sorted by x when read; the first nine are motives 5, 6, 7, 8, 9, 3, 13, 14 and
+15, in that order. The personality table is regular: entry p is person data field
+(p + 1) / 2 + 1, the even entries counting 1000 less it.
+
+**Native** (`score_curves`, `advert_amount`, `interaction_score`; the curve's step and the
+advert's × 0.001 as multiply-adds in one rounding, which the last bit needed). Checked
+(`replay --card`, the `A` and `B` records): all 111 scores bit for bit from the adverts and
+motives they read, and all 3 base scores (the score of no advert).
+
+Still to come: the value (score less base, the distance) and the selection among the best,
+natively of those that pass (the
 adverts, the motives, the distance, the tuning table), checked as each choice among the native
 best four.
 
