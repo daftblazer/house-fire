@@ -643,3 +643,37 @@ Open, for the next loop:
   13; main trees restarted, e.g. the dance floor's 8216 for its saved 8220);
 - Castaway's object definitions (its files have no OBJD), its persons' and portals' parts;
 - the RK3566 benchmark again, with the cheap pass.
+
+# The fourth loop
+
+Planned 2026-11-09 for an unattended night. Same rules as the third: one chunk (or one
+well-defined part) an iteration, checked against the recompiled Bustin' Out (lockstep,
+replay), game runs only in the agreed light setup and one at a time, one-line commits never
+pushed. No RK3566 runs (the user is away; ask first, as always).
+
+## Chunks, in order
+
+1. **The neighbours.** NBRS's records decoded (their id field, the person data's length),
+   read by the engine; SetToNext kind 5 native, checked by replay.
+2. **SetToNext kind 6.** Its handler in Bustin' Out's code (the primitive dispatch, then the
+   case kind 6 takes), native, checked by replay; and the dance floor's 8 kind-4 steps.
+3. **What the engine sets as a lot loads:** person data 27 and 32, motive 13, the main trees
+   it restarts (the dance floor's 8216 for its saved 8220): from the loader's code and the
+   log's first ticks, done natively by `World::load_lot` or a lot-start step.
+4. **Relationship2** (opcode 26, 128 uses) on the relationships now decoded from the save,
+   and **CallNamedTree** (28) from its code.
+5. **The Sims' interactions:** the frames the engine pushes on a Sim's stack, from its saved
+   queue and the log; the replay's "another tree" and depth differences.
+6. **The next primitives by use** that need no new system, one an iteration.
+7. **Castaway's object definitions:** where its OBJD data lives (datasets, quickdat or the
+   ELF's tables).
+
+## Limits
+
+Stop after iteration 16, when the chunks are done, or when two iterations in a row end
+without a commit (record why here). An iteration that finds a chunk needs a whole new system
+records what it found and moves to the next chunk rather than starting the system.
+
+## Progress
+
+(none yet)
