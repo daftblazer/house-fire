@@ -66,6 +66,11 @@ def records(path):
                 oid, _x, i4, val, f12 = struct.unpack_from('<hHIfI', b, p); p += 16
                 rows.append((oid, i4 & 0xFFFF, val, f12))
             yield 'Y', rows
+        elif k == b'G':  # the route planner's vector: (state, result, [(word, word)])
+            if p + 10 > n: break
+            st, res, cnt = struct.unpack_from('<IIH', b, p); p += 10
+            if p + 8 * cnt > n: break
+            yield 'G', (st, res, [struct.unpack_from('<II', b, p + 8 * i) for i in range(cnt)]); p += 8 * cnt
         elif k == b'R':  # the random number autonomy's choice draws: (site, result)
             if p + 5 > n: break
             yield 'R', struct.unpack_from('<BI', b, p); p += 5

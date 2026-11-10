@@ -1038,7 +1038,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 15 of 16.
+Iteration 16 of 16.
 
 - **Iteration 1, chunk 1 (a table's first tree per table; PushAction by the object's
   table).** Object 198 is the group meal, whose table has action 4201 twice (guards 4202 and
@@ -1137,4 +1137,21 @@ Iteration 15 of 16.
   watch build found the routing code instead (named in the recomp: the place setter, the
   walker, GotoRoutingSlot and its worker, and 80222FF4, 18 calls, the planner it seems).
   Next: the observer logs the planner's result, checked against `Walls::route`.
+
+- **Iteration 16, chunk 4 (the original's routes, logged and checked against the walls).**
+  The observer logs `Route_Plan`'s vector (`G`): waypoints in sixteenths, a route broken at
+  doors (planning by rooms, the third array, and their doors). A new home log, the same
+  581,110 steps. Checked: all 17 plans open natively along their lines; figures unchanged
+  (561,398, 338,305, 68,202, lockstep 7,902). Next: the waypoints natively.
+
+## The seventh loop's end
+
+Stopped after iteration 16, as its limits say. Done: chunk 1 (a table's first tree, PushAction
+by the target's table), chunk 2 (the evaluation native, all 433 checks), chunk 3 (the score,
+the value and the choice native: every logged score bit for bit, every object's value bit for
+bit with the game's own square root, all three choices the log's with the original's random
+numbers). Chunk 4 begun: the walls and doors native (every logged step and all 17 of the
+original's planned routes open), a shortest tile route (13 of 15 walks as long), the original's
+planner found and logged. Open: Sim 237's own interactions' values; which objects block; the
+planner's waypoints natively (rooms, doors, lines); the walk's speed.
 

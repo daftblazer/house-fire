@@ -1190,6 +1190,37 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
             }
             tile[p.id] = {x, y};
         }
+        // The original's own planned routes ('G': waypoints in sixteenths): every tile change
+        // along their lines open natively (a corner crossed: either way round), and the objects
+        // whose tiles they cross.
+        std::map<std::string, size_t> crossed;
+        for (const PlanRec& pl : log.plans) {
+            if (pl.points.size() < 2) continue;
+            bool open = true;
+            for (size_t i = 1; i < pl.points.size() && open; i++) {
+                const auto [x0, y0] = pl.points[i - 1];
+                const auto [x1, y1] = pl.points[i];
+                const int n = std::max(std::abs(x1 - x0), std::abs(y1 - y0));
+                int tx = x0 >> 4, ty = y0 >> 4;
+                for (int k = 1; k <= n && open; k++) {
+                    const int nx = (x0 + (x1 - x0) * k / n) >> 4, ny = (y0 + (y1 - y0) * k / n) >> 4;
+                    if (nx == tx && ny == ty) continue;
+                    const int dx = nx - tx, dy = ny - ty;
+                    if (std::abs(dx) + std::abs(dy) == 1) open = world.walls.can_step(tx, ty, dx, dy);
+                    else open = (world.walls.can_step(tx, ty, dx, 0) && world.walls.can_step(tx + dx, ty, 0, dy)) ||
+                                (world.walls.can_step(tx, ty, 0, dy) && world.walls.can_step(tx, ty + dy, dx, 0));
+                    if (!open && getenv("REPLAY_SHOW_ROUTING")) std::printf("plan at tick %u through a wall: %d,%d -> %d,%d\n", pl.tick, tx, ty, nx, ny);
+                    tx = nx;
+                    ty = ny;
+                    for (const auto& o : world.objects())
+                        if (!o->person && o->level == 1 && o->on_lot() && (o->x16 >> 4) == nx && (o->y16 >> 4) == ny && o->file)
+                            crossed[o->file->path.substr(o->file->path.rfind('/') + 1)]++;
+                }
+            }
+            note(open ? "routing: an original's planned route open natively (walls, doors)" : "routing: an original's planned route through a WALL natively");
+        }
+        if (getenv("REPLAY_SHOW_ROUTING"))
+            for (const auto& [name, n] : crossed) std::printf("planned routes cross a tile of %s: %zu\n", name.c_str(), n);
         // Each walk (a Sim's tile changes, a pause of 40 ticks or more ending one) against the
         // native route between its ends (Walls::route, no object blocking yet).
         std::map<int16_t, std::vector<std::pair<uint32_t, Walls::Tile>>> seq;

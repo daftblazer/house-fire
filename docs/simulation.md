@@ -499,6 +499,19 @@ store in `Object_SetPlace` (801F16D4), called from the walker `Route_WalkStep` (
 large function of it, 80222FF4, runs 18 times, about once a walk (15 walks logged): the
 planner, it seems (`Route_Plan`, to be observed).
 
+**The original's planned routes, logged.** `Route_Plan` fills a vector at its state's +1140
+with 8-byte entries, which are waypoints: x and y in sixteenths of a tile (the observer's
+`G` records, on return; a new home log with the same 581,110 steps, 18 plans). They are lines
+at any angle, not tiles (Sim 12's first, tick 260: (344, 120), (331, 123), (304, 125), (301,
+125), (297, 185), ... to the front door), and a route breaks at a door: the yard to the door,
+through it (tick 497: (296, 232) to (296, 263)), the house beyond (tick 521). So the original
+plans by rooms (the third array names them: 7 the yard, 1 the house) and their doors, and
+within a room a line of waypoints. Checked: all 17 plans of two waypoints or more open
+natively along their lines (`Walls`: no wall crossed where there is no door). Their lines
+cross tiles of counters, the fridge and the stove as well as chairs (near their ends, where a
+Sim reaches an object), so which objects block is still open. Next: the plan's waypoints
+natively (the rooms, the doors between, the line within a room).
+
 ## Still open
 
 - What wakes a sleeping stack early (23 of 2,833 sleeps).

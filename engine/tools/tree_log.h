@@ -67,6 +67,8 @@ struct BaseRec { uint32_t tick; float score; };
 // Autonomy's sorted list ('Y': the sort is recursive, so a tick's last is the whole list) and
 // the random number its choice draws ('R').
 struct ChoiceListRec { uint32_t tick; struct Entry { int16_t id; uint16_t interaction; float value; uint32_t takes_best; }; std::vector<Entry> entries; };
+// A route the original planned (the 'G' record, Route_Plan): its waypoints, sixteenths of a tile.
+struct PlanRec { uint32_t tick; uint32_t state; std::vector<std::pair<int32_t, int32_t>> points; };
 struct RandomRec { uint32_t tick; uint8_t site; uint32_t value; };
 
 // A person's 16 motives when they changed, at the start of a tick (the 'N' record).
@@ -83,6 +85,7 @@ struct Log {
     std::vector<BaseRec> bases;      // logs with 'B' records
     std::vector<ChoiceListRec> choice_lists;  // logs with 'Y' records
     std::vector<RandomRec> randoms;           // logs with 'R' records
+    std::vector<PlanRec> plans;               // logs with 'G' records
     uint32_t ticks = 0;
 };
 
@@ -145,6 +148,15 @@ inline bool read_log(const char* path, Log& log) {
                 r.entries.push_back(e);
             }
             log.choice_lists.push_back(std::move(r));
+        }
+        else if (k == 'G') {  // a route planned
+            if (p + 10 > b.size()) break;
+            PlanRec r{log.ticks, u32(), {}};
+            u32();
+            const uint16_t cnt = u16();
+            if (p + 8u * cnt > b.size()) break;
+            for (int i = 0; i < cnt; i++) { const int32_t x = (int32_t)u32(); r.points.push_back({x, (int32_t)u32()}); }
+            log.plans.push_back(std::move(r));
         }
         else if (k == 'R') {  // the random number autonomy's choice draws
             if (p + 5 > b.size()) break;
