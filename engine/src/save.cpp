@@ -234,27 +234,31 @@ int32_t count(SaveStream& r, int32_t limit, const char* what) {
     return n;
 }
 
-// The +192 member (fn_8023243C, its list fn_80232E2C, entries fn_802326CC / fn_80233084):
-// read past.
-void skip_slot_entry(SaveStream& r) {
-    r.r32();
-    for (int32_t n = count(r, 4096, "ObjM: a slot list out of range"); n > 0; n--) r.r32();
+// The object's relationships (its +192 member, fn_8023243C; Castaway names it RelMatrixImpl):
+// a value, then (when it is negative) a counted list of present-flagged entries (fn_80232E2C),
+// or (when not) that many entries. An entry (RelArray, fn_802326CC / fn_80233084): the other
+// object's id and a counted list of 32-bit values.
+SavedRelationship read_relationship(SaveStream& r) {
+    SavedRelationship e;
+    e.with = r.r32();
+    for (int32_t n = count(r, 4096, "ObjM: a relationship's values out of range"); n > 0; n--) e.values.push_back(r.r32());
+    return e;
 }
 
-void skip_slots(SaveStream& r) {
+void read_relationships(SaveStream& r, LotObject& o) {
     const int32_t a = r.r32();
     if (a >= 0) {
-        if (a > 4096) throw FormatError("ObjM: slots out of range");
-        for (int32_t i = 0; i < a; i++) skip_slot_entry(r);
+        if (a > 4096) throw FormatError("ObjM: relationships out of range");
+        for (int32_t i = 0; i < a; i++) o.relationships.push_back(read_relationship(r));
         return;
     }
     if (kVersion > 78) r.r32();
-    for (int32_t n = count(r, 4096, "ObjM: slot entries out of range"); n > 0; n--)
-        if (r.r32()) skip_slot_entry(r);  // an int: the entry is there
+    for (int32_t n = count(r, 4096, "ObjM: relationship entries out of range"); n > 0; n--)
+        if (r.r32()) o.relationships.push_back(read_relationship(r));  // an int: the entry is there
 }
 
 // After the data: a zero, the tree stack (fn_8023F928, frames fn_8023E9A8, file
-// fn_801F961C), the +192 member, the pairs (fn_801F22D0), a 32-bit value, the shorts.
+// fn_801F961C), the relationships, the pairs (fn_801F22D0), a 32-bit value, the shorts.
 void read_base_rest(SaveStream& r, LotObject& o) {
     r.r16();
     const int32_t frames = r.r32();
@@ -272,7 +276,7 @@ void read_base_rest(SaveStream& r, LotObject& o) {
         r.r16();  // the original's file index
         o.stack.push_back(std::move(f));
     }
-    skip_slots(r);
+    read_relationships(r, o);
     for (int n = r.r16(); n > 0; n--) {
         const int16_t a = (int16_t)r.r16();
         o.pairs.push_back({a, (int16_t)r.r16()});

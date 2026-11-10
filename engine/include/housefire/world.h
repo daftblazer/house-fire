@@ -43,6 +43,9 @@ struct Object {
     // Its tree stack, bottom first: a lot's objects' as the lot saved it (a frame whose tree
     // is not on the disc keeps a null tree).
     std::vector<Frame> stack;
+    // Its relationships with other objects, as the lot saved them (the relationship system,
+    // Relationship2, is not native yet).
+    std::vector<SavedRelationship> relationships;
 
     int16_t id() const { return data.size() > kDataObjectId ? data[kDataObjectId] : 0; }
 };

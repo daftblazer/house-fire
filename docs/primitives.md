@@ -61,6 +61,19 @@ Measured on the recompiled game:
 The engine has it as `idle()` (`engine/src/primitives.cpp`), `Interpreter::sleep` and the
 simulator's pass. `tests/test_primitives.cpp` and `tests/test_simulator.cpp` test it.
 
+## Relationship2 (opcode 26): not native yet
+
+Reads and writes the relationships between objects (each object's saved RelMatrix, `lots.md`)
+and between neighbours (NBRS's). 128 uses in the session, with six operand forms. For the
+commonest get (`00 02 01 00 08 00 00 00`, 27 uses) the step is true exactly when the object
+has a saved relationship with the stack object (5 of 5), false otherwise (22 of 22). The
+other forms do not follow from the operand's obvious reading (one of them is both true and
+false between objects with no relationship). Castaway's `cXObject::TryRelationship2` (0xAA8
+bytes) shows why: modes in operand byte 1 (0, 2, 4 ...), objects or neighbours
+(`Relationship2Param::GetUseNeighbors`), a create flag (`GetCreate`), pet ownership. It is
+the relationship system, to come as one; the engine keeps the saved relationships
+(`Object::relationships`; the club's 16) for it.
+
 ## Random (opcode 8)
 
 A random number into a variable. The operand, as 16-bit little-endian fields: bytes 0-1 the

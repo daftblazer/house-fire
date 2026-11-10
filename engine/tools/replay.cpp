@@ -270,8 +270,8 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
     note("primitives: from the log");
     if (getenv("REPLAY_SHOW_OP") && n.opcode == (uint16_t)atoi(getenv("REPLAY_SHOW_OP"))) {
         static int shown = 0;
-        if (shown++ < 14) {
-            std::printf("op %d at %d:%d operand", n.opcode, s.tree, s.node);
+        if (shown++ < (getenv("REPLAY_SHOW_ALL") ? 100000 : 14)) {
+            std::printf("op %d by %d at %d:%d operand", n.opcode, me.id(), s.tree, s.node);
             for (uint8_t b : n.operand) std::printf(" %02x", b);
             std::printf(" -> %s; so %d; lookups", s.after == n.true_target ? "true" : "false", s.stack_object);
             for (const LookupRec& v : s.lookups) std::printf(" [%d/%d=%d]", v.scope, v.data, v.value);

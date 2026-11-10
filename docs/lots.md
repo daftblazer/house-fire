@@ -108,10 +108,12 @@ engine and `tools/objm.py` read version 80 only.
     Within each lot every object of a type has the same index; across lots they differ, as
     the list is built in load order. The engine does not keep it: a frame's file is its
     object's.
-- The +192 member (`fn_8023243C`): a 32-bit value `a`. If it is negative: a 32-bit value,
-  then a list (`fn_80232E2C`: a count, then for each an int, and if that is set an entry).
-  If not: `a` entries. An entry (`fn_802326CC`) is a 32-bit value and a counted list of
-  32-bit values (`fn_80233084`). On the disc `a` is always -1. Not named yet.
+- The relationships (the +192 member, `fn_8023243C`; Castaway names it `RelMatrixImpl`): a
+  32-bit value `a`. If it is negative: a 32-bit value, then a list (`fn_80232E2C`: a count,
+  then for each an int, and if that is set an entry). If not: `a` entries. An entry
+  (`fn_802326CC`, RelArray) is the other object's id and a counted list of 32-bit values
+  (`fn_80233084`). On the disc `a` is always -1; the club has 16 relationships, in pairs
+  (119 and 125, 124 and 126 ...). The engine keeps them (`Object::relationships`).
 - A list of pairs (`fn_801F22D0`, the class's virtual): a 16-bit count, then two 16-bit
   values each. Not named yet.
 - A 32-bit value, then a 16-bit count and that many 16-bit values. Not named yet.

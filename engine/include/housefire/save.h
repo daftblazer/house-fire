@@ -112,6 +112,13 @@ struct SavedQueueEntry {
     float e = 0;
 };
 
+// An object's saved relationship with another (the save's RelArray): the other object's id
+// and the relationship's values.
+struct SavedRelationship {
+    int32_t with = 0;
+    std::vector<int32_t> values;
+};
+
 // A lot's object as its table gives it, in the world's list order.
 struct LotObject {
     int16_t id = 0;
@@ -123,10 +130,10 @@ struct LotObject {
     // attributes (as many as the save gives), its 8 temps and its 72 data fields.
     int32_t header[8] = {};
     std::vector<int16_t> attributes, temps, data;
-    // Then its tree stack, bottom first, and the rest of the base object's part. The rest is
-    // read past but not used yet (to be named): the +192 member's lists, a list of pairs,
-    // a 32-bit value and a list of 16-bit values.
+    // Then its tree stack, bottom first, its relationships, and the rest of the base
+    // object's part (to be named): a list of pairs, a 32-bit value, a list of 16-bit values.
     std::vector<SavedFrame> stack;
+    std::vector<SavedRelationship> relationships;
     std::vector<std::pair<int16_t, int16_t>> pairs;
     std::vector<int16_t> shorts;
     // Where the base object's part ends; the class's own part runs from here to the

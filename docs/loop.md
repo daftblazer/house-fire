@@ -676,7 +676,7 @@ records what it found and moves to the next chunk rather than starting the syste
 
 ## Progress
 
-Iteration 3 of 16.
+Iteration 4 of 16.
 
 - **Iteration 1, chunk 1 (the neighbours).** NBRS decoded (`objects.md`, "The
   neighbours"): 63 slots, 51 neighbours, read to the chunk's end, ids the slot's number plus
@@ -694,3 +694,10 @@ Iteration 3 of 16.
   deeper stacks); the lot's Sims are neighbours, by GUID. Person data 27 and 32 (set to 1)
   and motive 13 (computed) are the person system's (routing, motives in Castaway's code):
   recorded and skipped, as a system of its own. Next: chunk 4, Relationship2.
+
+- **Iteration 4, chunk 4 (Relationship2).** The relationships saved with each object are now
+  kept (`Object::relationships`; the club's 16, in pairs). Relationship2 itself: the
+  commonest get is true exactly when the object has a saved relationship with the stack
+  object (27 of 27), but the other operand forms need its modes, neighbours, create flag
+  (Castaway's `TryRelationship2`): the relationship system, recorded and skipped
+  (`primitives.md`). Next: CallNamedTree from its code, then chunk 5.
