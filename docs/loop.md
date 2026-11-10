@@ -837,3 +837,13 @@ What the next loops need first is new logs rather than new code: a session at a 
 (motives running, the household's own interactions, autonomy), and the observer logging
 positions (an object's place as the original has it), so that routing and animation can be
 checked. Both are runs of the recompiled game with small read-only observer additions.
+
+## A home-lot log (2026-11-10)
+
+`work/logs/home.log`: the household at Mom's house, from the user's save. Made by replaying
+a recorded play session (`--replay=work/inputs/mom-live`: the launcher's input recording with
+its card snapshot, cut before its last Start press, which paused the game) and letting the
+game run on past its end with no input, the usual headless run of 330 s. 6,869 passes, about
+3.8 minutes of play. Unlike the club's logs, the Sims' needs move here: of 37 motive values
+read, 29 change (270 changes), Sims 12 and 237 losing theirs a point at a time and refilling
+some, so the motive system can now be checked. The observer does not log positions yet.
