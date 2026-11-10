@@ -21,11 +21,13 @@ enum class Scope : uint8_t {
     MyAttribute = 0, StackAttribute = 1, MyData = 3, StackData = 4, Global = 6, Literal = 7,
     Temp = 8, Parameter = 9, StackObject = 10, MyMotive = 14, StackMotive = 15,
     CheckTreeAdRange = 12, MyPersonData = 18, StackPersonData = 19, StackDefinition = 21, StackAttributeByParameter = 22, Local = 25,
-    Constant = 26, MyPersonDataByTemp = 30, Neighbourhood = 34,
+    NeighbourInStackObject = 24, Constant = 26, MyPersonDataByTemp = 30, Neighbourhood = 34,
 };
 
 // Object data fields with a meaning the engine relies on.
 enum : int { kDataObjectId = 11 };
+// Person data fields with a meaning the engine relies on: a Sim's neighbour id (its NBRS id).
+enum : int { kPersonNeighbourId = 31 };
 
 struct Object {
     const ObjectFile* file = nullptr;

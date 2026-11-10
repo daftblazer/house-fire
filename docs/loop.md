@@ -878,7 +878,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 1 of 16.
+Iteration 2 of 16.
 
 - **Iteration 1, chunk 1 (Mom's house read from the save).** The card's save is the
   neighbourhood file with big-endian block headers and chunk tables (`lots.md`, "Saves");
@@ -886,3 +886,12 @@ Iteration 1 of 16.
   Sim's +1160, +1180 and +1120 lists (the last the motive deltas). Checked: all 4,582 objects
   of its 16 lots read to their ends (Python and engine alike), and Mom's house's 206 are the
   home log's first world list, in order. Next: replay over the home log from the card.
+
+- **Iteration 2, chunk 1 (the replay at Mom's house).** `replay LOG ISO --card CARD` runs
+  the save's lot (Mom's house) natively over the home log: 566,100 of its 581,110 steps with
+  the native stack as the log's, all 6,869 passes starting where the log's do and 6,858
+  stopping where they did. Scope 24 (the person with a neighbour id, by person data 31) made
+  native: all 30,684 reads the same, and the expressions that differ fell from 31,967 to
+  1,283. A frame with no tree now fails as a missing tree instead of crashing the
+  interpreter (it did on a return into one). Next: the motives (chunk 2), from the saved
+  deltas (the +1120 list) and SetMotiveDelta.

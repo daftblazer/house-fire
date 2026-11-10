@@ -1,7 +1,10 @@
 // The club run natively, tick after tick, against a log of the recompiled Bustin' Out's
 // interpreter (its src/tree_log.cpp, BUSTIN_TREE_LOG) and the disc it ran.
 //
-// Usage: replay LOG ISO
+// Usage: replay LOG ISO [--card CARD] [--lot N] [--bench]
+//
+// --card: the lot from a save on a memory card image (its first lot, Mom's house in the
+// user's save, unless --lot says), not the disc's club; the neighbours are the save's too.
 //
 // The world is the disc's club lot, loaded natively (the log starts as the club loads):
 // each object's saved tree stack, attributes, temps, data, and the Sims' motives and person
@@ -470,7 +473,8 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
     world.load_lot(club);
     world.neighbours = neighbours;
     if (log.lists.empty() || log.lists[0].ids.size() != world.objects().size()) {
-        std::printf("the log does not start with the club loaded\n");
+        std::printf("the log does not start with the lot loaded (%zu objects in its first list, %zu in the lot)\n",
+                    log.lists.empty() ? (size_t)0 : log.lists[0].ids.size(), world.objects().size());
         return false;
     }
 
@@ -805,25 +809,49 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
 }
 
 int main(int argc, char** argv) {
-    if (argc < 3) { std::printf("usage: replay LOG ISO\n"); return 2; }
+    if (argc < 3) { std::printf("usage: replay LOG ISO [--card CARD] [--lot N] [--bench]\n"); return 2; }
     Log log;
     if (!read_log(argv[1], log)) { std::printf("cannot read %s\n", argv[1]); return 1; }
     Disc d(argv[2]);
     if (!d.ok()) { std::printf("cannot read %s\n", argv[2]); return 1; }
     const Library lib = Library::bustin_out(d);
-    const auto ngh = d.read("Runtime/default.ngh");
+    bool bench = false;
+    const char* card_path = nullptr;
+    int lot_index = -1;
+    for (int i = 3; i < argc; i++) {
+        const std::string a = argv[i];
+        if (a == "--bench") bench = true;
+        else if (a == "--card" && i + 1 < argc) card_path = argv[++i];
+        else if (a == "--lot" && i + 1 < argc) lot_index = std::atoi(argv[++i]);
+        else { std::printf("unknown option %s\n", argv[i]); return 2; }
+    }
+    std::vector<uint8_t> ngh;
+    if (card_path) {
+        std::vector<uint8_t> card;
+        if (std::FILE* f = std::fopen(card_path, "rb")) {
+            card.resize(1 << 22);
+            card.resize(std::fread(card.data(), 1, card.size(), f));
+            std::fclose(f);
+        }
+        ngh = memory_card_file(card, "G4ME69");
+        if (ngh.empty()) { std::printf("no Bustin' Out save on %s\n", card_path); return 1; }
+        if (lot_index < 0) lot_index = 0;
+    } else {
+        ngh = d.read("Runtime/default.ngh");
+    }
     const auto lots = read_lots(ngh);
     const auto neighbours = read_neighbours(ngh);
-    const bool bench = argc > 3 && std::string(argv[3]) == "--bench";
+    if (lots.empty()) { std::printf("no lots\n"); return 1; }
+    const LotChunks& the_lot = lot_index < 0 || lot_index >= (int)lots.size() ? lots.back() : lots[(size_t)lot_index];
     if (!bench) {
-        if (!run(log, lib, lots.back(), neighbours, nullptr)) return 1;
+        if (!run(log, lib, the_lot, neighbours, nullptr)) return 1;
         for (const auto& [k, n] : counts) std::printf("  %-66s %zu\n", k.c_str(), n);
         return 0;
     }
     // The benchmark: five runs, each figure the median of the runs (the PC is shared).
     quiet = true;
     std::vector<Bench> runs(5);
-    for (Bench& b : runs) if (!run(log, lib, lots.back(), neighbours, &b)) return 1;
+    for (Bench& b : runs) if (!run(log, lib, the_lot, neighbours, &b)) return 1;
     auto median = [&](auto f) {
         std::vector<double> v;
         for (const Bench& b : runs) v.push_back(f(b));

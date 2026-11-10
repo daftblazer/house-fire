@@ -165,6 +165,12 @@ stream: 0, the version (80), "SRBN", a count of 63 slots, then each slot:
 
 All 51 records read to the chunk's exact end, their ids the walk's (`test_lots`).
 
+**Scope 24, "neighbour in stack object".** The stack object holds a neighbour id rather than
+an object's; field 0 is the id of the person on the lot whose neighbour id (person data 31)
+it is, 0 if that neighbour is not on the lot. At Mom's house the household's scripts ask it
+of neighbours 34 and 50 (Sims 12 and 237) thousands of times: all 30,684 reads of the home
+log the same natively, and the club logs' 38.
+
 ## Objects made and removed
 
 The original's object list is linked through its objects. Each object keeps its manager at

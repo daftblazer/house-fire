@@ -193,6 +193,17 @@ std::optional<ScriptVariables::Cell> ScriptVariables::cell(uint8_t scope, int16_
 std::optional<Variable> ScriptVariables::get(uint8_t scope, int16_t d) {
     switch ((Scope)scope) {
         case Scope::Literal: return Variable{d, {}};
+        case Scope::NeighbourInStackObject: {
+            // The stack object holds a neighbour id; field 0 is the id of the person on the
+            // lot with that neighbour id (person data 31), 0 if none is here. Measured: all
+            // 30,684 reads of the home log (docs/objects.md, "The neighbours").
+            if (d != 0) return std::nullopt;
+            for (const auto& o : world_.objects())
+                if (o->person && o->person_data.size() > kPersonNeighbourId && frame_.stack_object != 0 &&
+                    o->person_data[kPersonNeighbourId] == frame_.stack_object)
+                    return Variable{o->id(), {}};
+            return Variable{0, {}};
+        }
         case Scope::StackDefinition: {
             // The stack object's definition as the engine keeps it: a 32-bit version, then the
             // OBJD's fields, the datum counting 16-bit words from the start (so field datum - 2).

@@ -47,6 +47,9 @@ Step Interpreter::fail(Error e) {
 
 // A node's true or false target becomes the current node; 253 is the error exit.
 Step Interpreter::transition(Frame& f, bool value) {
+    // A frame whose tree was not found (a saved frame naming a tree the files lack): an error,
+    // as the original's missing tree, never a read through nothing.
+    if (!f.tree || f.node >= f.tree->nodes.size()) return fail(Error::Missing);
     const Node& n = f.tree->nodes[f.node];
     const uint8_t t = value ? n.true_target : n.false_target;
     if (t == kTargetError) return fail(Error::BadTransition);
@@ -73,7 +76,7 @@ Step Interpreter::step() {
         return transition(stack_.back(), value);
     }
 
-    if (f.node >= f.tree->nodes.size()) return fail(Error::Missing);
+    if (!f.tree || f.node >= f.tree->nodes.size()) return fail(Error::Missing);
     if (++iterations_ > max_iterations_) return fail(Error::TooManyIterations);
     const Node& n = f.tree->nodes[f.node];
     const uint16_t op = n.opcode & 0x7FFF;
