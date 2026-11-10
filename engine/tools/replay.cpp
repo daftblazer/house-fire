@@ -869,16 +869,27 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
             auto id = ids.find(key.second);
             const Object* me = id == ids.end() ? nullptr : world.find(id->second);
             if (!me || !me->person) continue;
+            // An evaluation goes over the lot: many objects (a pie menu's checks are of one).
+            std::set<int16_t> over;
+            for (const StepRec* s : v) if (s->frame == bottom) over.insert(s->stack_object);
+            if (over.size() < 10 || per_frame[bottom] < 20) continue;
             std::vector<std::pair<int16_t, uint16_t>> logged, native;
             for (const StepRec* s : v) {
                 const Object* so = world.find(s->stack_object);
-                if (s->frame != bottom || !so || so->person || so == me) continue;
+                if (s->frame != bottom || !so || so == me) continue;
                 bool prefix = false;
-                if (so->file) for (const auto& [a, p] : so->file->prefix_of) if (p == s->tree) prefix = true;
+                const ObjectFile* tf = so->person && so->file ? so->file->semi : so->file;
+                if (tf) for (const auto& [a, p] : tf->prefix_of) if (p == s->tree) prefix = true;
                 if (!prefix) logged.push_back({s->stack_object, s->tree});
             }
-            for (const Candidate& c : autonomy_candidates(world, *me)) native.push_back({c.object->id(), c.interaction->guard});
-            note(logged == native ? "autonomy: an evaluation's candidates the same natively (objects)" : "autonomy: an evaluation's candidates DIFFERENT");
+            // The objects on the lot then (the log's list at that tick: the replay does not
+            // remove objects natively yet, as the paper girl leaves).
+            std::set<int16_t> present;
+            for (const ListRec& l : log.lists)
+                if (l.tick <= key.first) present = std::set<int16_t>(l.ids.begin(), l.ids.end());
+            for (const Candidate& c : autonomy_candidates(world, *me))
+                if (present.empty() || present.count(c.object->id())) native.push_back({c.object->id(), c.interaction->guard});
+            note(logged == native ? "autonomy: an evaluation's candidates the same natively (objects and persons)" : "autonomy: an evaluation's candidates DIFFERENT");
             note("autonomy: candidates checked in evaluations", logged.size());
             if (logged != native && getenv("REPLAY_SHOW_AUTONOMY")) {
                 std::set<int16_t> lo, na;

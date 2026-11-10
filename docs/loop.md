@@ -878,7 +878,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 13 of 16.
+Iteration 14 of 16.
 
 - **Iteration 1, chunk 1 (Mom's house read from the save).** The card's save is the
   neighbourhood file with big-endian block headers and chunk tables (`lots.md`, "Saves");
@@ -968,3 +968,8 @@ Iteration 13 of 16.
   below 100, no flag 0x80, reverse order, a guard once); `Library::interactions_of`;
   objects keep their place. Checked: the three evaluations' 216 object checks the same in
   order. Next: the persons' candidates, then the guards' results and the score.
+
+- **Iteration 14, chunk 3 (persons as candidates).** A person's table is its semi-global
+  file's (person_sg for Sims, NPC_SG for NPCs); flag 0x40 keeps an interaction out too.
+  Checked: the home log's three evaluations, objects and persons, all 421 checks the same in
+  order. The club's bursts (about 4 checks each) do not match and are left open.

@@ -287,9 +287,23 @@ nor a part whose definition's field 6 is 1 to 0xFFFD (a bed's, a mailbox's, a co
 lesser parts; 0, 0xFFFE and 0xFFFF are in); its table (field 5, a part's master's, or the
 file's only one); the interactions whose autonomy threshold is below 100 and whose flags lack
 0x80, in reverse table order, a guard shared by several once. Checked (`replay --card`): the
-three evaluations' 216 checks of objects (persons aside) the same natively, in order. Still
-to come: the persons' interactions (the Sims' social ones, from the person files), the
-version-11 table's first tree, and which candidates pass and how they score.
+three evaluations' 216 checks of objects (persons aside) the same natively, in order. 
+
+**Persons as candidates.** A person's interactions are its semi-global file's one table:
+`person_sg`'s (table 129, version 11, its first tree 8230 run before its guards) for a Sim,
+whose file is `template_person`; `NPC_SG`'s for an NPC (the paper girl). One more flag keeps
+an interaction out: 0x40 (person_sg's 8486, 0x245, which the log never checks; no object's
+interaction with it is a candidate either). Checked (`replay --card`): all three
+evaluations the same natively, objects and persons, 421 checks in order (the objects present
+taken from the log's list at that tick: the paper girl leaves at 1382 and 1767, and the
+replay does not remove objects natively yet).
+
+At the club the replay finds 67 bursts of checks over many objects with about 4 top-level
+checks each, against a native list of 599: either the club's evaluations are spread over many
+ticks a few candidates at a time, or they are something else. Open; the club is not claimed.
+
+Still to come: which candidates pass their guards, and how those score (the adverts, the
+motives, the distance, the tuning table).
 
 **The advertisements** (the interaction tables, TTAB; `Interaction`, `Library` keeps every
 file's by chunk id). A file can have several tables (a fridge's for cheap, moderate and

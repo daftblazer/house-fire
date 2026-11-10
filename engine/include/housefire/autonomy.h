@@ -18,9 +18,9 @@ struct Candidate {
 // The interactions an evaluation considers, in the order it checks their guards: the lot's
 // objects by id (not of definition type 7, nor a part whose definition's field 6 is 1 to
 // 0xFFFD), each one's table (Library::interactions_of) in reverse order, an interaction
-// whose autonomy threshold is below 100 and whose flags lack 0x80, a guard several share once.
-// Persons are not in it yet (their interactions are the person files'). Measured: all 117
-// objects' sequences in the home log's three evaluations the same.
+// whose autonomy threshold is below 100 and whose flags lack 0x80 and 0x40, a guard several
+// share once. A person's table is its semi-global file's (person_sg, NPC_SG). Measured: the
+// home log's three evaluations, objects and persons, the same.
 std::vector<Candidate> autonomy_candidates(const World& world, const Object& me);
 
 }  // namespace housefire
