@@ -766,7 +766,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 4 of 16.
+Iteration 5 of 16.
 
 - **Iteration 1, chunk 1 (the queue's entries and their delivery).** The engine keeps each
   Sim's saved queue (`Object::current`, `queue`); an entry's fields named from the log: the
@@ -797,3 +797,8 @@ Iteration 4 of 16.
   to name mapping is not found (`primitives.md`, "Animate": nine hashes ruled out). Without
   it no animation's length can be checked, so Animate is set aside, recorded. Next: chunk 3,
   the motives.
+
+- **Iteration 5, chunk 3 (the motives: measured, not checkable).** SetMotiveDelta's operand
+  read (`primitives.md`); but the logs show almost no motive change (1 of 47 variables), so
+  nothing of the motive system can be checked against them. Recorded; a home-lot session is
+  the log it needs. Next: chunk 4, Dialog and CompleteGoal.

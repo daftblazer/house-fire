@@ -101,6 +101,18 @@ front end. What each operand asks (which sound, which refresh) is the front ends
 
 The engine has them as `present()`.
 
+## SetMotiveDelta (opcode 29) and the motives: not checkable in the logs yet
+
+The operand: byte 0 the scope of the change, byte 1 the scope of its limit, byte 2 the
+motive, bytes 4-5 and 6-7 the two data. In the session its 12 uses are the dance floor's
+dance (tree 4107) on four Sims, three each: motive 15 by 45 towards 75, motive 7 by 15
+towards -20, motive 14 by 25 towards 10 (all constants, scope 26).
+
+The motives themselves hardly move in the logs: of 47 motive variables read (2,829 reads in
+the 5,130-tick session), one changes (a Sim's motive 15: 6, 12, 20 at ticks 696, 1,790 and
+3,117), and none in the 719-tick one. That is too little to check a motive system against;
+a session with the household at home, motives running, is the one to log for it.
+
 ## Random (opcode 8)
 
 A random number into a variable. The operand, as 16-bit little-endian fields: bytes 0-1 the
