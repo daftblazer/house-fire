@@ -278,4 +278,14 @@ std::optional<float> Library::tuning(std::string_view name) const {
     return std::nullopt;
 }
 
+const std::vector<Interaction>* Library::interactions_of(const Definition& d, const ObjectFile& file) const {
+    uint16_t id = d.interaction_table();
+    if (id == 0xFFFF && d.field(8))
+        for (const Definition& m : file.definitions)
+            if (m.field(8) == d.field(8) && m.interaction_table() != 0xFFFF) { id = m.interaction_table(); break; }
+    if (id == 0xFFFF && file.tables.size() == 1) return &file.tables.begin()->second;
+    auto it = file.tables.find(id);
+    return it == file.tables.end() ? nullptr : &it->second;
+}
+
 }  // namespace housefire

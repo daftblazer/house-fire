@@ -36,6 +36,7 @@
 #include <string>
 #include <tuple>
 
+#include "housefire/autonomy.h"
 #include "housefire/disc.h"
 #include "housefire/expression.h"
 #include "housefire/library.h"
@@ -852,6 +853,52 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
         for (auto& [p, n] : f) std::printf("a lot Sim's own trees in %s: %d steps\n", p.c_str(), n);
     }
     if (!bench) note("steps: longest run with the native stack as the log's", best_streak);
+
+    // Autonomy's evaluations: a person's many guard checks in one tick (each at node 0 in the
+    // bottom frame of its checks), against the native candidates (autonomy_candidates), the
+    // persons' interactions and a version-11 table's first tree set aside.
+    if (!bench) {
+        std::map<std::pair<uint32_t, uint32_t>, std::vector<const StepRec*>> starts;  // (tick, stack) -> node-0 starts
+        for (const StepRec& s : log.steps)
+            if (s.node == 0) starts[{s.tick, s.sim}].push_back(&s);
+        for (auto& [key, v] : starts) {
+            if (v.size() < 40) continue;
+            std::map<uint32_t, size_t> per_frame;  // the checks' bottom frame: the one with the most starts
+            for (const StepRec* s : v) per_frame[s->frame]++;
+            const uint32_t bottom = std::max_element(per_frame.begin(), per_frame.end(), [](const auto& a, const auto& b) { return a.second < b.second; })->first;
+            auto id = ids.find(key.second);
+            const Object* me = id == ids.end() ? nullptr : world.find(id->second);
+            if (!me || !me->person) continue;
+            std::vector<std::pair<int16_t, uint16_t>> logged, native;
+            for (const StepRec* s : v) {
+                const Object* so = world.find(s->stack_object);
+                if (s->frame != bottom || !so || so->person || so == me) continue;
+                bool prefix = false;
+                if (so->file) for (const auto& [a, p] : so->file->prefix_of) if (p == s->tree) prefix = true;
+                if (!prefix) logged.push_back({s->stack_object, s->tree});
+            }
+            for (const Candidate& c : autonomy_candidates(world, *me)) native.push_back({c.object->id(), c.interaction->guard});
+            note(logged == native ? "autonomy: an evaluation's candidates the same natively (objects)" : "autonomy: an evaluation's candidates DIFFERENT");
+            note("autonomy: candidates checked in evaluations", logged.size());
+            if (logged != native && getenv("REPLAY_SHOW_AUTONOMY")) {
+                std::set<int16_t> lo, na;
+                for (auto& x : logged) lo.insert(x.first);
+                for (auto& x : native) na.insert(x.first);
+                std::printf("objects only native:");
+                for (int16_t i : na) if (!lo.count(i)) {
+                    const Object* o = world.find(i);
+                    std::printf(" %d(%s, stack %zu)", i, o && o->file ? o->file->path.substr(o->file->path.rfind('/') + 1).c_str() : "?", o ? o->stack.size() : 0);
+                }
+                std::printf("\nonly logged:");
+                for (int16_t i : lo) if (!na.count(i)) std::printf(" %d", i);
+                std::printf("\n");
+                size_t k = 0;
+                while (k < logged.size() && k < native.size() && logged[k] == native[k]) k++;
+                std::printf("evaluation at tick %u by %d: %zu logged, %zu native, first difference at %zu: log %d/%d, native %d/%d\n", key.first, me->id(), logged.size(), native.size(), k,
+                            k < logged.size() ? logged[k].first : -1, k < logged.size() ? logged[k].second : -1, k < native.size() ? native[k].first : -1, k < native.size() ? native[k].second : -1);
+            }
+        }
+    }
 
     // The motives' own update (update_motives), on each person's logged motives ('N'
     // records): the native update of one record against the next. A pair it does not

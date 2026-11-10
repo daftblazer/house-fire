@@ -280,6 +280,17 @@ exactly. The others:
   checked (40: 8219, 8235, 8237, 8243) and two that do are not (25: 8208, 8239), so the
   autonomy flags, the minimums or the threshold decide it.
 
+**The candidates, native** (`autonomy_candidates`). The rule that fits every check: the
+lot's objects by id; not one whose definition is of type 7 (field 7: the phone's and the
+stereo's controllers; Mom's house's scenario controller, type 4, is in though off the lot),
+nor a part whose definition's field 6 is 1 to 0xFFFD (a bed's, a mailbox's, a compactor's
+lesser parts; 0, 0xFFFE and 0xFFFF are in); its table (field 5, a part's master's, or the
+file's only one); the interactions whose autonomy threshold is below 100 and whose flags lack
+0x80, in reverse table order, a guard shared by several once. Checked (`replay --card`): the
+three evaluations' 216 checks of objects (persons aside) the same natively, in order. Still
+to come: the persons' interactions (the Sims' social ones, from the person files), the
+version-11 table's first tree, and which candidates pass and how they score.
+
 **The advertisements** (the interaction tables, TTAB; `Interaction`, `Library` keeps every
 file's by chunk id). A file can have several tables (a fridge's for cheap, moderate and
 expensive models); an object uses the one its definition's field 5 names. Each interaction

@@ -46,7 +46,11 @@ struct Object {
     // Its running motive changes (SetMotiveDelta's; the save's +1120 list): each a motive,
     // its change a tick and the value it stops at, applied as each of its turns begins.
     std::vector<LotObject::MotiveDelta> motive_deltas;
-    uint32_t turns = 0;               // the passes that have reached it (a person's motives update every 60th)     // the motives as of their last update (Motives::Sim's copy)
+    uint32_t turns = 0;
+    // Its place in sixteenths of a tile (the save's header 0 and 1, the original's FTilePt at
+    // its +0xC8; the observer's 'P' records): -16, -16 off the lot.
+    int32_t x16 = 0, y16 = 0;
+    bool on_lot() const { return x16 >= 0 && y16 >= 0; }               // the passes that have reached it (a person's motives update every 60th)     // the motives as of their last update (Motives::Sim's copy)
     // A Sim's interaction queue as the lot saved it: the entry it was on, the rest queued.
     SavedQueueEntry current;
     std::vector<SavedQueueEntry> queue;

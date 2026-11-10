@@ -83,6 +83,10 @@ public:
     int tuning_failures() const { return tuning_failures_; }  // FCNS chunks not read to their end
     // A named tuning value of the global file's (FCNS), if it has one.
     std::optional<float> tuning(std::string_view name) const;
+    // The interaction table a definition uses: its field 5 names it; a multi-tile object's part
+    // (0xFFFF there) uses its master definition's (the file's definition with the same master
+    // id, field 8, and a table), and a file with one table that one. Null if none.
+    const std::vector<Interaction>* interactions_of(const Definition& d, const ObjectFile& file) const;
     // A definition by GUID, and the file it is in (the first if several files have it).
     const Definition* definition(uint32_t guid, const ObjectFile** file = nullptr) const;
 

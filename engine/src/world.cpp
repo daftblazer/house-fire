@@ -45,6 +45,8 @@ int World::load_lot(const LotChunks& lot) {
             o->file = lib_.find("template_person");
         }
         // Its state as the lot saved it.
+        o->x16 = lo.header[0];
+        o->y16 = lo.header[1];
         o->data = lo.data;
         o->attributes = lo.attributes;
         for (int k = 0; k < kObjectTemps && k < (int)lo.temps.size(); k++) o->temps[(size_t)k] = lo.temps[(size_t)k];

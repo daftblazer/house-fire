@@ -878,7 +878,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 12 of 16.
+Iteration 13 of 16.
 
 - **Iteration 1, chunk 1 (Mom's house read from the save).** The card's save is the
   neighbourhood file with big-endian block headers and chunk tables (`lots.md`, "Saves");
@@ -962,3 +962,9 @@ Iteration 12 of 16.
   version-11 table's first tree before them: 23 of 41 objects exactly. Open: the parts'
   tables (field 5 0xFFFF: the master's) and which interactions take part (flags, minimum,
   threshold). No engine code yet: the rule is not complete enough to check.
+
+- **Iteration 13, chunk 3 (the candidates, native).** `autonomy_candidates` (objects by id,
+  not type 7 nor a lesser part by field 6; the table by field 5 or the master's; threshold
+  below 100, no flag 0x80, reverse order, a guard once); `Library::interactions_of`;
+  objects keep their place. Checked: the three evaluations' 216 object checks the same in
+  order. Next: the persons' candidates, then the guards' results and the score.
