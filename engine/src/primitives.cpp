@@ -21,7 +21,8 @@ PrimResult random(const Node& n, World& world, ScriptVariables& vars) {
     return vars.set(o[2], field(0), v) ? PrimResult::True : PrimResult::Stop;
 }
 
-PrimResult call_named_tree(const Node& n, const Frame& f, const Library& lib) {
+PrimResult call_named_tree(Interpreter& in, const Node& n, const Frame& f, World& world) {
+    const Library& lib = world.library();
     const auto& o = n.operand;
     auto field = [&](int i) { return (int16_t)(n.order == Order::Little ? o[i] | o[i + 1] << 8 : o[i] << 8 | o[i + 1]); };
     const ObjectFile* own = f.file;
@@ -38,9 +39,23 @@ PrimResult call_named_tree(const Node& n, const Frame& f, const Library& lib) {
     }
     if (!file) return PrimResult::False;
     auto table = file->strings.find((uint16_t)field(0));
-    if (table == file->strings.end() || o[4] >= table->second.size() || table->second[o[4]].empty()) return PrimResult::False;
-    if (!file->tree_by_name.count(table->second[o[4]])) return PrimResult::False;
-    return PrimResult::Stop;  // the call: not modelled yet
+    if (table == file->strings.end() || o[4] < 1 || o[4] > table->second.size()) return PrimResult::False;
+    const std::string& name = table->second[o[4] - 1];
+    if (name.empty()) return PrimResult::False;
+    // The tree of that name: the stack object's own file's, its semi-global's, the global file's.
+    const Object* so = world.find(f.stack_object);
+    const ObjectFile* so_file = so ? so->file : nullptr;
+    for (const ObjectFile* where : {so_file, so_file ? so_file->semi : nullptr, lib.global()}) {
+        if (!where) continue;
+        auto t = where->tree_by_name.find(name);
+        if (t == where->tree_by_name.end()) continue;
+        auto tree = where->trees.find(t->second);
+        if (tree == where->trees.end()) continue;
+        if (!in.push(&tree->second, nullptr, 0)) return PrimResult::Stop;
+        in.top().file = where;
+        return PrimResult::Continue;
+    }
+    return PrimResult::False;
 }
 
 PrimResult idle_for_input(Interpreter& in, const Node& n, Object& me, World& world, Host& host) {

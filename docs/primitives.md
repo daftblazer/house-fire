@@ -82,10 +82,16 @@ object's own; otherwise the calling tree's own kind), byte 4 the string's index.
 that name, in that file, is called on the stack object (`cXObject::TryCallNamedTree`). No
 such string, or no tree of that name: false.
 
-Measured with `replay`: all 116 uses in the session false, and the same natively. They are
-two calls (in PersonGlobals' "Interaction - Object Menu - TEST" and the party controller)
-asking for strings 44 and 5 of tables 303 that have 1 and 5 strings: no such string. The
-call itself is never made in the logs, so the engine stops there for now.
+The index counts from 1, and the name is looked up in the **stack object's** files (its own,
+its semi-global, the global file), not the one the strings are from: Global 430 ("PS2 -
+Story - Am I Dudley?") asks for Global's STR# 303 string 57, "CT - Story - Am I Dudley?",
+which the log runs as ScenarioGlobals 8251, the semi-global of its stack object (Mom's
+house's scenario controller). The call is a Gosub: the tree pushed in that file, its return
+taking the node's true or false way.
+
+Measured with `replay`: at Mom's house 850 calls made natively and 10 uses with no tree the
+same (2 different, the log's taken); the club's 116 uses, all without a tree, the same as
+before (a name the stack object's files lack).
 
 The engine has it as `call_named_tree()`; the library keeps each file's string tables and its
 trees by name.

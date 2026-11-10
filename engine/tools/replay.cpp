@@ -294,9 +294,10 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
         return logged();
     }
     if (n.opcode == 28) {  // CallNamedTree
-        const PrimResult got = call_named_tree(n, f, r.lib);
+        const PrimResult got = call_named_tree(in, n, f, r.world);
+        if (got == PrimResult::Continue) { note("primitives: CallNamedTree: a tree called natively"); return got; }
         const PrimResult want = logged();
-        note(got == want ? "primitives: CallNamedTree: the same natively" : got == PrimResult::Stop ? "primitives: CallNamedTree: a tree found (not modelled; the log's taken)" : "primitives: CallNamedTree: DIFFERENT (the log's taken)");
+        note(got == want ? "primitives: CallNamedTree: the same natively (no tree)" : "primitives: CallNamedTree: DIFFERENT (the log's taken)");
         return want;
     }
     if (n.opcode == 32) {  // TestObjectType

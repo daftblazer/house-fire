@@ -1038,7 +1038,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 2 of 16.
+Iteration 3 of 16.
 
 - **Iteration 1, chunk 1 (a table's first tree per table; PushAction by the object's
   table).** Object 198 is the group meal, whose table has action 4201 twice (guards 4202 and
@@ -1054,3 +1054,9 @@ Iteration 2 of 16.
   checks' opcode-28 calls (into another file's tree) not being made inside a check. Kept off
   by default so the replay's figures stay. Next: opcode 28 natively (the call), so the
   checks run through.
+
+- **Iteration 3, chunk 2 (opcode 28's call).** CallNamedTree makes its call natively (the
+  string's index from 1, the tree looked up in the stack object's files, a Gosub): 850 calls
+  native at Mom's house, the club's 116 uses unchanged. In the evaluation (`REPLAY_EVALUATION`)
+  the checks' results the same went 153 → 195, different 45 → 20 (218 not finished). Next:
+  the next thing the checks stop at.
