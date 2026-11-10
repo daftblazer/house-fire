@@ -1251,7 +1251,7 @@ without a commit (record why here). Then the eighth loop resumes.
 
 ## Progress
 
-Iteration 7 of 16.
+Iteration 8 of 16.
 
 - **Iteration 1, chunk 1 (the crate and the readers).** The C++ engine moved to
   `engine-cpp/` (built with clang from there, its home-log replay output the very same as
@@ -1316,3 +1316,13 @@ Iteration 7 of 16.
   checks as a Rust test, each the C++ one's (its `me`, outside the world there, is the world's
   object 5, the id it is given), all passing (the C++ `test_primitives: ok`); clippy clean.
   Next: chunk 4, `motives` and `simulator` with `test_simulator`.
+
+- **Iteration 8, chunk 4 (the simulator).** `simulator` and `motives` ported. The C++ makes a
+  host for each object, each holding the world by reference; here the simulator keeps the
+  stacks (by `ObjectKey`) and a tick is given one host that holds the world (`SimHost`: the
+  world, whose turn it is, a turn's end), so nothing is borrowed twice. A turn asks the pass
+  to stop through `World::stop_pass` (as Dialog does; the C++ tick reads it too), the
+  simulator's own flag dropped. The motives' update uses `mul_add` where the C++ has `fmaf`.
+  Checked: `test_simulator`'s nine checks as a Rust test, all passing (the C++
+  `test_simulator: ok`); the motives' update is checked by the replay (its `N` records), in
+  chunk 6; clippy clean. Next: `routing` (the walls, the rooms, the route) and `autonomy`.

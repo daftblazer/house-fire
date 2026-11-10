@@ -6,9 +6,11 @@ pub mod disc;
 pub mod expression;
 pub mod iff;
 pub mod library;
+pub mod motives;
 pub mod primitives;
 pub mod interp;
 pub mod save;
+pub mod simulator;
 pub mod world;
 
 /// A tree, by its place in the trees a host keeps (the library's, or a test's).
