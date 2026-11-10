@@ -161,7 +161,32 @@ at or above 0, or below):
 - then all 16 clamped to −100 … 100 and copied to +64, and a virtual call on the person.
 Motive 3 is not in it: another update moves it. The 0.0, 100 and −100 are in the DOL; the
 rates (from r13 − 24772 on) are not: they are set at run time, from tuning data
-(Castaway's `MotiveConstantsClient::UpdateConstants`), and are to be found at their source. Castaway names the update's parts: `Motives`
+(Castaway's `MotiveConstantsClient::UpdateConstants`), and are to be found at their source.
+
+**The rates' source.** A watch on the first rate's word names its writer, `fn_801CFFB4`, run
+once at the start: for each rate it asks a tuning object for a value by name, with a default
+from the DOL (the defaults are not the game's values: "hyg decrement, awake" defaults to
+0.15, the game has 0.17). The values are the global file's (`Global.iff`) tuning tables, its
+four FCNS chunks: 0, 1, "SNCF", a count, then each entry a name, a little-endian float and a
+description (strings zero-ended, padded to even with 0xCD). Table 1 is the motives':
+
+| Name | Value | |
+|---|---|---|
+| energy span | 180 | energy 5: 180 / 16 waking hours / 30 = 0.375 a step, as measured |
+| wake hours, wake hour | 16, 7 | |
+| energy drift | 0.01 | |
+| hunger to bladder multiplier | 0.3 | |
+| hunger decrement ratio | 0.0021 | hunger 7: (value + 100) × 0.0021, as measured |
+| social decrement base, multiplier | 0.055, 0.0001254 | social 14: 0.055 + 0.0001254 × person data 6 |
+| ent decrement, awake / multiplier, asleep | 0.25 / 1 | fun 15: 0.25, as measured |
+| hyg decrement, awake / asleep | 0.17 / 0.08 | hygiene 8: 0.17, as measured |
+| bladder decrement, awake / asleep | 0.3 / 0.15 | bladder 9: 0.3, as measured |
+| comfort decrement (active, lazy, base) | 0.4, 0.6, 0.5 | comfort 6, by person data 3 |
+
+Table 2 is autonomy's (the minimum scores, attenuations, "random selection count" 4,
+"friendship threshold" 50), 3 rooms' and light's, 4 the family's score. All four read to
+their ends (`Library::tuning`, `test_disc`). The rest of `fn_801CFFB4` derives the rates the
+update uses from these; that is the next piece. Castaway names the update's parts: `Motives`
 (`Sim`, `InitDecayRates`), a base decay table (`sMotiveDecayBase`) and changes to it by
 personality (`sMotiveDecayActiveMod`, `NeatMod`, `OutgoingMod`, `PlayfulMod`), and
 `MotiveConstantsClient::UpdateConstants`, which suggests the rates are game data: the

@@ -878,7 +878,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 4 of 16.
+Iteration 5 of 16.
 
 - **Iteration 1, chunk 1 (Mom's house read from the save).** The card's save is the
   neighbourhood file with big-endian block headers and chunk tables (`lots.md`, "Saves");
@@ -910,3 +910,10 @@ Iteration 4 of 16.
   by `fn_8022501C` each 60 ticks; what it does to motives 5-9, 14, 15 is in `simulation.md`.
   Its rates are set at run time (zero-filled data the DOL does not hold). Next: where they
   come from (a watch on one), then the native update, checked against the `N` records.
+
+- **Iteration 5, chunk 2 (the motive rates' source).** A watch on a rate names its writer,
+  `fn_801CFFB4`, which takes each by name from the global file's tuning tables (FCNS) with a
+  DOL default. The FCNS chunks read (`Library::tuning`; all four on the disc, 57 values,
+  each to its end); their values are the measured rates (hygiene 0.17, hunger 0.0021,
+  bladder 0.3, fun 0.25, energy 180 / 16 / 30). Next: the rates derived in `fn_801CFFB4`,
+  then the native update against the `N` records.

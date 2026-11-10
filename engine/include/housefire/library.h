@@ -7,6 +7,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "housefire/bhav.h"
@@ -32,6 +33,9 @@ struct ObjectFile {
     std::map<uint16_t, Tree> trees;                      // BHAV by id
     std::map<uint16_t, std::vector<int16_t>> constants;  // BCON by id
     std::map<uint16_t, std::vector<std::string>> strings;  // STR# by id (every language's, in turn)
+    // Named tuning values (FCNS) by chunk id: the global file's motive rates (1), autonomy (2),
+    // rooms and light (3), the family's score (4); docs/simulation.md, "The motives".
+    std::map<uint16_t, std::vector<std::pair<std::string, float>>> tuning;
     std::map<std::string, uint16_t> tree_by_name;        // BHAV ids by their chunk labels
     // From the interaction tables (TTAB): an interaction's action tree -> its guard (test) tree,
     // and -> the tree its table names to run first (version 11's field for the whole table).
@@ -58,6 +62,9 @@ public:
     const ObjectFile* global() const { return global_; }
     const ObjectFile* find(const std::string& name) const;  // by file name, any case, no .iff
     int bhav_failures() const { return bhav_failures_; }
+    int tuning_failures() const { return tuning_failures_; }  // FCNS chunks not read to their end
+    // A named tuning value of the global file's (FCNS), if it has one.
+    std::optional<float> tuning(std::string_view name) const;
     // A definition by GUID, and the file it is in (the first if several files have it).
     const Definition* definition(uint32_t guid, const ObjectFile** file = nullptr) const;
 
@@ -75,6 +82,7 @@ private:
     std::map<uint32_t, std::pair<const ObjectFile*, size_t>> by_guid_;
     const ObjectFile* global_ = nullptr;
     int bhav_failures_ = 0;
+    int tuning_failures_ = 0;
 };
 
 }  // namespace housefire

@@ -1,3 +1,4 @@
+#include <cstring>
 #include <algorithm>
 #include "housefire/library.h"
 #include "housefire/save.h"
@@ -25,6 +26,41 @@ namespace {
 // A string table (STR#): its format (0 Pascal strings, -1 C strings, -2 pairs of C strings,
 // -3 a language, a value and a comment, -4 sets by language of Pascal values and comments),
 // then the strings; the values, each language's in turn. A table that does not read is empty.
+// A tuning table (FCNS): 0, 1, "SNCF", the entry count, then each entry a name, a float and a
+// description, the strings zero-ended and padded to an even length (with 0xCD). Empty if the
+// chunk does not read to exactly its end.
+std::vector<std::pair<std::string, float>> read_tuning(std::span<const uint8_t> d, Order o) {
+    std::vector<std::pair<std::string, float>> out;
+    auto u32 = [&](size_t p) {
+        return o == Order::Little ? (uint32_t)d[p] | d[p + 1] << 8 | d[p + 2] << 16 | (uint32_t)d[p + 3] << 24
+                                  : (uint32_t)d[p] << 24 | d[p + 1] << 16 | d[p + 2] << 8 | d[p + 3];
+    };
+    if (d.size() < 16 || std::memcmp(d.data() + 8, "SNCF", 4) != 0) return out;
+    const uint32_t count = u32(12);
+    size_t p = 16;
+    auto zstring = [&](std::string& s) {
+        size_t q = p;
+        while (q < d.size() && d[q]) q++;
+        if (q >= d.size()) return false;
+        s.assign((const char*)d.data() + p, q - p);
+        p = q + 1;
+        p += p & 1;
+        return true;
+    };
+    for (uint32_t i = 0; i < count; i++) {
+        std::string name, description;
+        if (!zstring(name) || p + 4 > d.size()) return {};
+        const uint32_t w = u32(p);
+        float v;
+        std::memcpy(&v, &w, 4);
+        p += 4;
+        if (!zstring(description)) return {};
+        out.emplace_back(std::move(name), v);
+    }
+    if (p != d.size()) return {};
+    return out;
+}
+
 std::vector<std::string> read_strings(std::span<const uint8_t> d, Order o) {
     std::vector<std::string> out;
     size_t p = 2;
@@ -126,6 +162,11 @@ Library Library::bustin_out(const Disc& d) {
             f->tree_by_name.emplace(c->label, (uint16_t)c->id);
         }
         for (const Chunk* c : f->iff.of("STR#")) f->strings[(uint16_t)c->id] = read_strings(c->data, o);
+        for (const Chunk* c : f->iff.of("FCNS")) {
+            auto t = read_tuning(c->data, o);
+            if (t.empty()) lib.tuning_failures_++;
+            else f->tuning[(uint16_t)c->id] = std::move(t);
+        }
         for (const Chunk* c : f->iff.of("TTAB")) {
             std::vector<std::pair<uint16_t, uint16_t>> list;
             read_ttab(c->data, o, f->guard_of, f->prefix_of, list);
@@ -201,6 +242,14 @@ const Definition* Library::definition(uint32_t guid, const ObjectFile** file) co
     if (it == by_guid_.end()) return nullptr;
     if (file) *file = it->second.first;
     return &it->second.first->definitions[it->second.second];
+}
+
+std::optional<float> Library::tuning(std::string_view name) const {
+    if (!global_) return std::nullopt;
+    for (const auto& [id, table] : global_->tuning)
+        for (const auto& [n, v] : table)
+            if (n == name) return v;
+    return std::nullopt;
 }
 
 }  // namespace housefire

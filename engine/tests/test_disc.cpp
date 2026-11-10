@@ -73,8 +73,18 @@ int main() {
         return t == f->strings.end() ? -1 : (long)t->second.size();
     };
     std::printf("STR# 303: controller_party %ld, PersonGlobals %ld\n", table("controller_party", 303), table("PersonGlobals", 303));
+    // Tuning tables (FCNS): every one read to its end; the global file's four (17, 12, 19 and 9
+    // values), and the motive rates the home log measured (docs/simulation.md, "The motives").
+    size_t tuning_tables = 0, tuning_values = 0;
+    for (const auto& f : lib.files())
+        for (const auto& [id, t] : f->tuning) { tuning_tables++; tuning_values += t.size(); }
+    auto tv = [&](const char* n) { return lib.tuning(n).value_or(-1.0f); };
+    std::printf("FCNS: %zu tables, %zu values, %d not read; hyg decrement, awake %g; hunger decrement ratio %g; energy span %g\n",
+                tuning_tables, tuning_values, lib.tuning_failures(), tv("hyg decrement, awake"), tv("hunger decrement ratio"), tv("energy span"));
     const bool ok = bad == 0 && bhavs == 9529 && total == bhavs && ended == total &&
-                    table("controller_party", 303) == 5 && table("PersonGlobals", 303) == 1;
+                    table("controller_party", 303) == 5 && table("PersonGlobals", 303) == 1 &&
+                    lib.tuning_failures() == 0 && lib.global() && lib.global()->tuning.size() == 4 &&
+                    tv("hyg decrement, awake") == 0.17f && tv("hunger decrement ratio") == 0.0021f && tv("energy span") == 180.0f;
     std::printf("test_disc: %s\n", ok ? "ok" : "FAILED");
     return ok ? 0 : 1;
 }
