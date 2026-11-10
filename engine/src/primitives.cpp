@@ -55,12 +55,24 @@ PrimResult idle_for_input(Interpreter& in, const Node& n, Object& me, World& wor
     // The checks, each as the target's file names it: the tree its interaction table names to
     // run first (the club's: Global 463, "Dream Sequence - Prefix Check Tree"), then the
     // interaction's guard, where the table has them.
-    for (const auto* table : {&target->file->prefix_of, &target->file->guard_of}) {
-        auto c = table->find((uint16_t)entry.tree);
-        if (c == table->end()) continue;
-        const Tree* t = world.library().tree(target->file, c->second);
-        const std::optional<bool> ok = t ? host.run_check(t, target->file, target->id()) : std::nullopt;
-        if (!ok || !*ok) return PrimResult::Stop;
+    // An entry the engine queued knows its place in the target's table: that table's first
+    // tree and that interaction's guard. A saved one is looked up by its tree, file-wide.
+    const auto tab = world.library().table_of(*target);
+    if (entry.interaction >= 0 && tab.table && (size_t)entry.interaction < tab.table->size()) {
+        for (uint16_t id : {tab.first, (*tab.table)[(size_t)entry.interaction].guard}) {
+            if (!id) continue;
+            const Tree* t = world.library().tree(tab.file, id);
+            const std::optional<bool> ok = t ? host.run_check(t, tab.file, target->id()) : std::nullopt;
+            if (!ok || !*ok) return PrimResult::Stop;
+        }
+    } else {
+        for (const auto* table : {&target->file->prefix_of, &target->file->guard_of}) {
+            auto c = table->find((uint16_t)entry.tree);
+            if (c == table->end()) continue;
+            const Tree* t = world.library().tree(target->file, c->second);
+            const std::optional<bool> ok = t ? host.run_check(t, target->file, target->id()) : std::nullopt;
+            if (!ok || !*ok) return PrimResult::Stop;
+        }
     }
     me.queue.erase(me.queue.begin());
     // The frame the primitive was given is not touched after this: the push can move it.
@@ -73,13 +85,15 @@ PrimResult idle_for_input(Interpreter& in, const Node& n, Object& me, World& wor
 PrimResult push_action(Interpreter& in, Frame& f, const Node& n, World& world) {
     Object* sim = world.find(f.stack_object);
     const Object* target = world.find(in.local(f, n.operand[1]));
-    if (!sim || !target || !target->file || target->file->ttabs != 1) return PrimResult::Stop;
-    const auto& table = target->file->interactions;
-    if (n.operand[0] >= table.size()) return PrimResult::Stop;
+    if (!sim || !target) return PrimResult::Stop;
+    // The target's own table (Library::table_of): its definition's, a person's semi-global's.
+    const auto t = world.library().table_of(*target);
+    if (!t.table || n.operand[0] >= t.table->size()) return PrimResult::Stop;
     SavedQueueEntry e;
     e.objects[0] = sim->id();
     e.objects[1] = target->id();
-    e.tree = (int16_t)table[n.operand[0]].first;
+    e.tree = (int16_t)(*t.table)[n.operand[0]].action;
+    e.interaction = n.operand[0];
     sim->queue.push_back(e);
     return PrimResult::True;
 }

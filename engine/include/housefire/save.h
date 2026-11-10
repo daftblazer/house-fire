@@ -132,6 +132,10 @@ struct SavedQueueEntry {
     int32_t a = 0, id = 0, b = 0, c = 0, flags = 0;
     int16_t objects[3] = {}, shorts[4] = {}, tree = 0;
     float e = 0;
+    // Not saved: the interaction's place in the target's table, when the engine queued it
+    // (PushAction); -1 for a saved entry. An action can be in a table more than once, each
+    // with its own guard (the group meal's 4201: guards 4202 and 8248).
+    int interaction = -1;
 };
 
 // An object's saved relationship with another (the save's RelArray): the other object's id

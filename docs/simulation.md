@@ -117,6 +117,13 @@ What the log shows of the queue so far (the fifth loop):
   natively (6 in all, 101 check steps the same). Bytes 2 and 3 (1 or 2; 0x0a: a priority and
   flags?) and what the original does with an interaction pushed again while one is queued
   are not known yet: no logged delivery shows them.
+- **An entry the engine queues knows its place in the table** (`SavedQueueEntry::interaction`):
+  an action can be in a table more than once with different guards (the group meal's 4201,
+  guards 4202 and 8248), and the original checks the one PushAction chose. PushAction takes
+  the target's own table (`Library::table_of`: its definition's, a person's semi-global
+  file's), and the delivery that table's first tree (version 11, kept per table) and that
+  entry's guard. Checked (`replay --card`): one more PushAction native at Mom's house, its
+  delivery made natively with all 5 check steps as the log's; the club logs unchanged.
 
 Replay figures after its own fixes (2026-11-09: the frames saved below a stack's first step,
 returns into them, the file a rebuilt frame names its trees from): on the 719-tick log 68,273

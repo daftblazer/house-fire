@@ -1038,4 +1038,11 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 0 of 16.
+Iteration 1 of 16.
+
+- **Iteration 1, chunk 1 (a table's first tree per table; PushAction by the object's
+  table).** Object 198 is the group meal, whose table has action 4201 twice (guards 4202 and
+  8248): a queued entry now carries its table index, tables keep their first trees, and
+  PushAction and the delivery use the target's own table. Checked: one more PushAction and
+  delivery native at Mom's house, 5 check steps as the log's, 3 differing steps fewer; the
+  club unchanged. Next: chunk 2, the evaluation natively.

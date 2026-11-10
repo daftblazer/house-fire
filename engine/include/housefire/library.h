@@ -61,6 +61,7 @@ struct ObjectFile {
     std::vector<std::pair<uint16_t, uint16_t>> interactions;
     int ttabs = 0;
     std::map<uint16_t, std::vector<Interaction>> tables;  // TTAB by chunk id
+    std::map<uint16_t, uint16_t> table_first;  // a version-11 table's tree run before its guards, by chunk id
     std::vector<Definition> definitions;                 // OBJD, in the file's order
     std::string glob;                                    // the semi-global file it names
     const ObjectFile* semi = nullptr;                    // that file, if there is one
@@ -87,6 +88,10 @@ public:
     // (0xFFFF there) uses its master definition's (the file's definition with the same master
     // id, field 8, and a table), and a file with one table that one. Null if none.
     const std::vector<Interaction>* interactions_of(const Definition& d, const ObjectFile& file) const;
+    // An object's table (its definition's, or a person's semi-global file's) and the file it
+    // is in, and that table's first tree (0 if none).
+    struct ObjectTable { const std::vector<Interaction>* table = nullptr; const ObjectFile* file = nullptr; uint16_t first = 0; };
+    ObjectTable table_of(const struct Object& o) const;
     // A definition by GUID, and the file it is in (the first if several files have it).
     const Definition* definition(uint32_t guid, const ObjectFile** file = nullptr) const;
 

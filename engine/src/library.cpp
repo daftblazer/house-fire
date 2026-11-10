@@ -1,6 +1,7 @@
 #include <cstring>
 #include <algorithm>
 #include "housefire/library.h"
+#include "housefire/world.h"
 #include "housefire/save.h"
 
 #include <cctype>
@@ -106,7 +107,7 @@ std::vector<std::string> read_strings(std::span<const uint8_t> d, Order o) {
 // 9 and up are packed as the save stream is (a code byte 1, then its compressed fields; 11
 // opens with one field for the table). A table that does not read adds nothing.
 void read_ttab(std::span<const uint8_t> d, Order o, std::map<uint16_t, uint16_t>& out, std::map<uint16_t, uint16_t>& prefix,
-               std::vector<std::pair<uint16_t, uint16_t>>& list, std::vector<Interaction>& table_out) {
+               std::vector<std::pair<uint16_t, uint16_t>>& list, std::vector<Interaction>& table_out, uint16_t& first) {
     try {
         Reader r(d, o);
         const uint16_t n = r.u16();
@@ -141,6 +142,7 @@ void read_ttab(std::span<const uint8_t> d, Order o, std::map<uint16_t, uint16_t>
         SaveStream f(d.subspan(r.pos()));
         f.compressed = true;
         const uint16_t table = version >= 11 ? (uint16_t)f.r16() : 0;
+        first = table;
         for (int i = 0; i < n; i++) {
             Interaction e;
             e.action = (uint16_t)f.r16();
@@ -194,8 +196,10 @@ Library Library::bustin_out(const Disc& d) {
         for (const Chunk* c : f->iff.of("TTAB")) {
             std::vector<std::pair<uint16_t, uint16_t>> list;
             std::vector<Interaction> table;
-            read_ttab(c->data, o, f->guard_of, f->prefix_of, list, table);
+            uint16_t first = 0;
+            read_ttab(c->data, o, f->guard_of, f->prefix_of, list, table, first);
             if (!table.empty()) f->tables[(uint16_t)c->id] = std::move(table);
+            if (first) f->table_first[(uint16_t)c->id] = first;
             if (f->ttabs++ == 0) f->interactions = std::move(list);
             else f->interactions.clear();  // several tables: which an object uses is not known yet
         }
@@ -286,6 +290,25 @@ const std::vector<Interaction>* Library::interactions_of(const Definition& d, co
     if (id == 0xFFFF && file.tables.size() == 1) return &file.tables.begin()->second;
     auto it = file.tables.find(id);
     return it == file.tables.end() ? nullptr : &it->second;
+}
+
+Library::ObjectTable Library::table_of(const Object& o) const {
+    ObjectTable t;
+    if (!o.file) return t;
+    if (o.person) {
+        t.file = o.file->semi;
+        if (t.file && t.file->tables.size() == 1) t.table = &t.file->tables.begin()->second;
+    } else if (o.definition) {
+        t.file = o.file;
+        t.table = interactions_of(*o.definition, *o.file);
+    }
+    if (t.table && t.file)
+        for (const auto& [id, tab] : t.file->tables)
+            if (&tab == t.table) {
+                auto f = t.file->table_first.find(id);
+                if (f != t.file->table_first.end()) t.first = f->second;
+            }
+    return t;
 }
 
 }  // namespace housefire
