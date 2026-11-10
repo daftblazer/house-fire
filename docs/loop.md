@@ -878,7 +878,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 10 of 16.
+Iteration 11 of 16.
 
 - **Iteration 1, chunk 1 (Mom's house read from the save).** The card's save is the
   neighbourhood file with big-endian block headers and chunk tables (`lots.md`, "Saves");
@@ -950,3 +950,9 @@ Iteration 10 of 16.
   advertise (hunger +20, bladder +70, fun +10), each the Sim's need then. Next: the score
   (motives against adverts, attenuation by distance, the tuning table), checked as each
   logged choice among the native best four.
+
+- **Iteration 11, chunk 3 (where autonomy runs).** Find Best Action is in PersonGlobals 8233
+  "try autonomy" and takes a choice made by an evaluation 60-75 ticks earlier: ~145 guard
+  checks over ~41 objects by id, each object's interactions in table order (ticks 186, 1443
+  for Sim 12, 1847 for Sim 237; the same sequence both times for Sim 12). Next: the
+  evaluation's candidates and guard checks natively, checked step by step against these.

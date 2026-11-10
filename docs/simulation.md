@@ -255,6 +255,17 @@ the best four with the original's own random numbers (which the engine does not 
 `plan.md`), the check is that the log's choice is among the native best four, and the
 scores' order where the log shows it.
 
+**Where it runs.** PersonGlobals 8233 is "try autonomy": node 0 opcode 3, node 1 Find Best
+Action, then "reset idle" (8292) or 8282. Find Best Action takes a choice already made:
+its stack object is the chosen target before it runs. The choice comes from an
+**evaluation** about 60-75 ticks earlier, one for each (Sim 12 at ticks 186 and 1443, Sim
+237 at 1847): in one turn, the Sim's stack runs about 145 check trees (each at node 0 in a
+frame of their own, with nested calls above it) over about 41 objects, by id ascending
+(7, 10, 13, 25, 26, 29, 33, 34, …), each object's interactions' guards in table order, the
+stack object the candidate. The same objects and guards each time for Sim 12 (186 and 1443
+run the same 145). Next to build natively: that sequence (the candidates and their guards,
+`Host::run_check`), then the score of those that pass.
+
 **The advertisements** (the interaction tables, TTAB; `Interaction`, `Library` keeps every
 file's by chunk id). A file can have several tables (a fridge's for cheap, moderate and
 expensive models); an object uses the one its definition's field 5 names. Each interaction
