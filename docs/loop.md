@@ -729,3 +729,41 @@ Iteration 8 of 16.
   class; 1 has no definition; 2 (type 9, swapped at load for a plain object) carry 7 bits
   more than a plain object, open. Chunk 7 done: all the fourth loop's chunks have been
   worked; the ones left open are systems of their own (`loop.md`, below).
+
+## Where the fourth loop ended
+
+All seven chunks worked in 8 iterations, each with a commit: SetToNext complete (kinds 5
+and 6 native), the lot's load measured, relationships kept, CallNamedTree, PlaySound/Update/
+KillSounds and Random native, the replay's own errors fixed (314 step differences left on the
+719-tick log), Castaway's definitions found. What is left is systems of their own, the fifth
+loop's.
+
+# The fifth loop
+
+Planned 2026-11-09, the same night, unattended. Same rules and limits as the fourth (one
+well-defined part an iteration, checked by replay and lockstep, one-line commits, no RK3566),
+but its chunks are systems, each built a checked piece at a time: a piece that cannot be
+checked against the log is not built.
+
+## Chunks, in order
+
+1. **The interaction queue.** How a Sim's chosen interaction reaches its stack: the saved
+   queue (`lots.md`, the Sim's part), IdleForInput (17) in "Wait For Notify", PushAction
+   (13); the engine's push of the interaction's frame, checked against replay's pushes.
+2. **Animate (44) as the scripts see it.** Each animation's length in ticks from the disc's
+   animation data, the yields, the events (flag 0x20); checked step by step.
+3. **The motives.** SetMotiveDelta (29), the motives' change each tick, motive 13; checked
+   against the motive reads in the log.
+4. **Dialog (36)** with a player-input interface (the replay answering for the player), and
+   **CompleteGoal (56)**.
+5. **Routing**, only if the floor and walls (the lots' Arry chunks) decode first: the Arry
+   chunks, then GotoRoutingSlot / GotoRelative's results.
+
+## Limits
+
+Stop after iteration 16, when the chunks are done, or when two iterations in a row end
+without a commit (record why here).
+
+## Progress
+
+(none yet)
