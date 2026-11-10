@@ -406,3 +406,14 @@ the new-game route, in a 4 GB scope at low priority, at most 330 s, one run at a
 - **Next:** iteration 9, chunk 3: each object's table sizes from its definition. Or, if
   that is not in the definition, from the lot's object sections, which hold the arrays:
   `fn_801F1F20`.
+
+**Iteration 9** (chunk 3, the table sizes, and a lot's saved state):
+- **From the stream's code and trace:** object data is 72 fields, temps 8, and attributes
+  as many as the save gives. The attribute count is not the definition's field 56 (667 of
+  4,519 match).
+- **`World::load_lot` now gives each object its saved state:** attributes, temps and data.
+  The loader checks data 11 is the id: all 4,572 objects of the 16 lots.
+- **Checked:** the first read of each of an object's own variables, before any expression
+  wrote it, is the lot's value 437 times. 13 others were changed first by something else.
+- **Next:** iteration 10, chunk 4: the scopes not modelled (21, the stack object's
+  definition, with the definitions now on the objects; 12, 16, 20, 23, 24, 32, 40).

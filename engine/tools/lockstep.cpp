@@ -24,6 +24,7 @@
 #include <memory>
 #include <climits>
 #include <set>
+#include <tuple>
 #include <span>
 #include <string>
 
@@ -833,6 +834,39 @@ int main(int argc, char** argv) {
             char lb[96];
             std::snprintf(lb, sizeof lb, "SetToNext: the disc's lot %zu (the walk of %zu follows its order for %zu)", best, walk.size(), best_n);
             note(lb);
+            // The lot's saved state against the original: the first read of each of an
+            // object's own variables (data, attributes, temps), before any expression wrote
+            // it, must be the lot's value. Objects by their id (data 11, read as they ask).
+            {
+                std::map<uint32_t, int16_t> id_of;  // the original's object pointer -> id
+                std::set<std::tuple<uint32_t, int, int>> done;
+                for (const StepRec& s : log.steps) {
+                    for (const LookupRec& v : s.lookups) {
+                        if (v.caller != 0x80213900 && v.caller != 0x802138C8) continue;
+                        if (v.scope == 3 && v.data == kDataObjectId) id_of[v.object] = v.value;
+                        if (v.scope != 3 && v.scope != 0 && v.scope != 8) continue;
+                        const auto key = std::make_tuple(v.object, (int)v.scope, (int)v.data);
+                        if (!done.insert(key).second) continue;
+                        auto id = id_of.find(v.object);
+                        if (id == id_of.end()) { note("lot state: object not known yet"); continue; }
+                        const Object* o = lw.find(id->second);
+                        if (!o) { note("lot state: object not in the lot"); continue; }
+                        const std::vector<int16_t>* t = v.scope == 3 ? &o->data : v.scope == 0 ? &o->attributes : nullptr;
+                        int16_t native;
+                        if (t) {
+                            if (v.data < 0 || (size_t)v.data >= t->size()) { note("lot state: scope " + std::to_string(v.scope) + ": past the table"); continue; }
+                            native = (*t)[(size_t)v.data];
+                        } else {
+                            if (v.data < 0 || v.data >= 8) continue;
+                            native = o->temps[(size_t)v.data];
+                        }
+                        note("lot state: scope " + std::to_string(v.scope) + (native == v.value ? ": the first read the lot's value" : ": the first read not the lot's (changed before it)"));
+                    }
+                    // A written variable's first read after it is not the lot's to check.
+                    if (s.has_expr && !s.lookups.empty() && s.lookups.back().caller == 0x80213900)
+                        done.insert(std::make_tuple(s.lookups.back().object, (int)s.lookups.back().scope, (int)s.lookups.back().data));
+                }
+            }
             Object me;
             for (size_t i = 0; i < log.steps.size(); i++) {
                 const StepRec& s = log.steps[i];

@@ -29,8 +29,10 @@ int World::load_lot(const LotChunks& lot) {
         }
         // No definition on the disc: a character, whose definition is made at run time.
         if (!o->definition) { missing++; o->person = true; }
-        o->data.resize(kDataObjectId + 1);
-        o->data[kDataObjectId] = lo.id;
+        // Its state as the lot saved it.
+        o->data = lo.data;
+        o->attributes = lo.attributes;
+        for (int k = 0; k < kObjectTemps && k < (int)lo.temps.size(); k++) o->temps[(size_t)k] = lo.temps[(size_t)k];
         add(std::move(o));
     }
     return missing;

@@ -72,7 +72,12 @@ struct LotObject {
     std::vector<int32_t> extra;      // counted 32-bit values
     int16_t type = 0;                // objt field 4
     size_t section = 0, section_end = 0;  // its section of the stream
+    // The start of its section (fn_801F1E30's header, then fn_801F1F20's tables): its
+    // attributes (as many as the save gives), its 8 temps and its 72 data fields.
+    int32_t header[8] = {};
+    std::vector<int16_t> attributes, temps, data;
 };
+constexpr int kObjectDataFields = 72, kObjectTemps = 8;
 struct LotObjects {
     std::vector<LotObject> objects;
     size_t lot_section = 0, lot_section_end = 0;  // the lot's own part, after the objects

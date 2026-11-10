@@ -89,11 +89,28 @@ Left over:
   session), and a new object can take a deleted one's pointer or id. That is the object
   primitives' work (create, remove), not yet modelled.
 
-## Sizes
+## Sizes, and a lot's saved state
 
-How many attributes, object data and person data fields an object has is not taken from the
-game yet: the native tables grow to the highest index used. Object data fields seen go up to
-61, person data up to 74 (80 fit before the motives); motives up to 15.
+What fixes the table sizes, read from Bustin' Out's object stream (`fn_801F1F20`; traced):
+
+- **Object data:** 72 fields (the code's own count).
+- **Temps:** 8.
+- **Attributes:** as many as the save gives: a count, then the attributes. That is not the
+  definition's field 56 (the PC's attribute count), which matches only 667 of 4,519
+  objects. Objects made during play presumably take their definition's (to be checked on
+  one).
+- **Sims:** a further table (20 values in the session's six) follows. Person data and
+  motives are still grown to the highest index used: up to 74 (80 fit before the motives)
+  and 15.
+
+`World::load_lot` gives each object its state as the lot saved it: attributes, temps and
+data (`LotObject`; the loader checks that data 11 is the object's id, true for all 4,572
+objects of the disc's 16 lots).
+
+Checked against the running game: the first read of each of an object's own variables,
+before any expression wrote it, is the lot's value 437 times (data 199 of 199, attributes
+174 of 181, temps 64 of 70). The other 13 were changed before that first read by something
+other than an expression.
 
 ## SetToNext (primitive 31) and the object list
 

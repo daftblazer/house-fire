@@ -32,8 +32,8 @@ struct Object {
     const Definition* definition = nullptr;
     uint32_t guid = 0;
     std::array<int16_t, 8> temps{};   // scope 8
-    std::vector<int16_t> data;        // scope 3 (11: the object's id)
-    std::vector<int16_t> attributes;  // scope 0
+    std::vector<int16_t> data;        // scope 3, 72 fields (11: the object's id)
+    std::vector<int16_t> attributes;  // scope 0, as many as the save gives (a lot's objects)
     bool person = false;
     std::vector<int16_t> person_data; // scope 18
     std::vector<float> motives;       // scope 14, kept between -100 and 100

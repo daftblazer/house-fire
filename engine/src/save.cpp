@@ -195,8 +195,20 @@ LotObjects read_lot_objects(std::span<const uint8_t> m) {
     }
     if (sections.size() != out.objects.size() + 1) throw FormatError("ObjM: not one section per object");
     for (size_t k = 0; k < out.objects.size(); k++) {
-        out.objects[k].section = kStart + sections[k].first;
-        out.objects[k].section_end = kStart + sections[k].second;
+        LotObject& o = out.objects[k];
+        o.section = kStart + sections[k].first;
+        o.section_end = kStart + sections[k].second;
+        SaveStream h(s, sections[k].first);
+        h.compressed = true;
+        for (int i = 0; i < 6; i++) o.header[i] = h.r32();
+        o.header[6] = h.r32();
+        o.header[7] = h.r16();
+        const int n = h.r16();
+        if (n < 0 || n > 4096) throw FormatError("ObjM: an object's attribute count is out of range");
+        for (int i = 0; i < n; i++) o.attributes.push_back((int16_t)h.r16());
+        for (int i = 0; i < kObjectTemps; i++) o.temps.push_back((int16_t)h.r16());
+        for (int i = 0; i < kObjectDataFields; i++) o.data.push_back((int16_t)h.r16());
+        if (o.data[11] != o.id) throw FormatError("ObjM: an object's data 11 is not its id");
     }
     out.lot_section = kStart + sections.back().first;
     out.lot_section_end = kStart + sections.back().second;

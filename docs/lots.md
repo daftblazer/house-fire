@@ -88,9 +88,12 @@ saves.
 
 ## Not decoded yet
 
-- **An object's section:**
+- **An object's section** (decoded so far):
   - the header (`fn_801F1E30`: six 32-bit values, an int, a 16-bit value);
-  - the data arrays (`fn_801F1F20`: 10, 8 (the temps) and the object data);
+  - its attributes (a count, then that many), 8 temps and 72 data fields (`fn_801F1F20`),
+    read by the engine;
+
+  Still to decode:
   - the tree stack (`fn_8023F928`, frames `fn_8023E9A8`);
   - the Sims' motives and the rest.
 - **The lot's own section.**
