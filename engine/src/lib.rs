@@ -8,6 +8,7 @@ pub mod iff;
 pub mod library;
 pub mod interp;
 pub mod save;
+pub mod world;
 
 /// A tree, by its place in the trees a host keeps (the library's, or a test's).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]

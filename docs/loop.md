@@ -1251,7 +1251,7 @@ without a commit (record why here). Then the eighth loop resumes.
 
 ## Progress
 
-Iteration 5 of 16.
+Iteration 6 of 16.
 
 - **Iteration 1, chunk 1 (the crate and the readers).** The C++ engine moved to
   `engine-cpp/` (built with clang from there, its home-log replay output the very same as
@@ -1293,3 +1293,15 @@ Iteration 5 of 16.
   every tree run through the Rust interpreter: 1,251,290 steps, the outcomes 21, 1,740, 443,
   758, 1,921 and 4,646 alike; STR#, FCNS, TTAB and SLOT alike); clippy clean. Next: `world`
   and the rest of `test_lots`.
+
+- **Iteration 6, chunk 3 (the world).** `world` ported: the objects in a slot arena
+  (`ObjectKey`, stable while an object lives) with the list's order and the ids' map beside
+  it, so that the stack object and `me` can be one object without two mutable borrows;
+  `ScriptVariables` borrows the world and the frame and finds `me` and the stack object by
+  key each time; a cell's table an enum by owner (the C++ compared pointers). The lot's walls
+  come with `routing` (chunk 4). Checked: `test_lots` entire as Rust tests, every figure the
+  C++ one's (4,572 objects, 53 without a definition; 4,575 frames, 53 of characters, 4,522
+  found and fitting; classes 1,754, 1,821, 944, 53; 16 lots' own parts, 16 club relationships;
+  the club's first objects 178 177 176 174 172 171; the save's 4,582 objects, the first lot's
+  206, 54 Sims, 15 motive deltas); clippy clean. Chunk 3 done. Next: `primitives` and
+  `test_primitives` (which exercise `ScriptVariables`).
