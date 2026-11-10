@@ -1158,7 +1158,7 @@ planner's waypoints natively (rooms, doors, lines); the walk's speed.
 
 # The eighth loop
 
-Planned 2026-11-10 at the user's request, to go on from the seventh, with half an hour between
+Planned 2026-11-10 at the user's request, to go on from the seventh, with a quarter of an hour between
 iterations. The rules and limits are the same: one well-defined part an iteration, checked by
 replay on the home log (and the club's logs, kept as they are), a piece that cannot be checked
 is not built, one-line commits, never pushed, no RK3566.
@@ -1185,7 +1185,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 1 of 16.
+Iteration 2 of 16.
 
 - **Iteration 1, chunk 1 (the rooms and their doors).** The third array is not the rooms (1
   inside, 7 outside); the rooms are the regions the walls close (`Walls::room`, a door left
@@ -1194,3 +1194,13 @@ Iteration 1 of 16.
   with a waypoint either side; figures unchanged (561,398, 338,305, 68,202, lockstep 7,902).
   Chunk 1 done. Next: chunk 2, the planner's code read for the order of rooms and the
   waypoints within a room.
+
+- **Iteration 2, chunk 2 (the routing slots).** SLOT read natively (version 10, the PC's 70
+  bytes a slot; all 764 on the disc to their end, `test_disc`), OBJD field 18 naming an
+  object's; GotoRoutingSlot's operand decoded (the number among the routing slots, from the
+  object's own SLOT or the global one). Checked: the home log's 448 routing steps with such a
+  slot all find it natively (81 more from a stack variable, 116 on objects not on the lot
+  natively); the plans' starts all the Sim's place; figures unchanged (561,398, 338,305,
+  68,202, lockstep 7,902). Next: the plan's goal from the slot (the object's place, its
+  directions and proximity, the side nearest the Sim) against the 17 plans' ends.
+

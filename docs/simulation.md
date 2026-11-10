@@ -519,6 +519,22 @@ home log's plans: 13 of the 17 within one room; the other 4 change rooms only at
 a waypoint on each side of it (a single step through the opening), so a plan is a piece a
 room, joined at the doors.
 
+**The routing slots** (`Slot`, `routing_slot`). A plan starts at the walking Sim's place (all
+17). Its goal comes from a routing slot: GotoRoutingSlot's operand is the slot's number and
+where it is from (big-endian 16-bit fields: 1 the stack object's own SLOT, named by OBJD field
+18; 2 the global file's 15; 0 a stack variable), the number counting the routing slots (type
+3) alone, as on the PC. SLOT is the PC's version 10, 70 bytes a slot: its type, an offset
+(three floats), standing, sitting, ground, the flags (the directions it may be taken from: 1
+the front, then round by eighths to 128; 0x55 the four sides), the snap slot, the minimum,
+maximum and optimal proximity (sixteenths), a size, a gradient (3/16 nearly always: the
+waypoints' 3/16 clearance), a height, the facing and a resolution. All 764 on the disc read
+to their end. Checked on the home log's routing steps: 448 slots found natively (193 the
+object's own, 255 the global ones), none missing; 81 name a stack variable (not modelled)
+and 116 an object not on the lot natively. Measured towards the goal: plan ends are mostly a
+target object's place (the counter, the meal, the chair being sat on) or a tile beside it
+(the chair's global slot 1, the side nearest the Sim), and a door's crossing ends a sixteenth
+short of the far tile's middle.
+
 ## Still open
 
 - What wakes a sleeping stack early (23 of 2,833 sleeps).

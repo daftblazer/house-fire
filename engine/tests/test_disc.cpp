@@ -98,11 +98,16 @@ int main() {
     size_t tables = 0;
     for (const auto& f : lib.files()) tables += f->tables.size();
     std::printf("TTAB: %zu tables; the fridge's snack hunger %d, the toilet bladder %d, the easel fun %d\n", tables, fridge, toilet, easel);
+    // Slots (SLOT): every one of version 10 and read to its end; the global file's 15.
+    size_t slot_tables = 0;
+    for (const auto& f : lib.files()) slot_tables += f->slots.size();
+    const size_t global_slots = lib.global() && lib.global()->slots.size() == 1 ? lib.global()->slots.begin()->second.size() : 0;
+    std::printf("SLOT: %zu tables, %d not read; the global file's %zu slots\n", slot_tables, lib.slot_failures(), global_slots);
     const bool ok = bad == 0 && bhavs == 9529 && total == bhavs && ended == total &&
                     table("controller_party", 303) == 5 && table("PersonGlobals", 303) == 1 &&
                     lib.tuning_failures() == 0 && lib.global() && lib.global()->tuning.size() == 4 &&
                     tv("hyg decrement, awake") == 0.17f && tv("hunger decrement ratio") == 0.0021f && tv("energy span") == 180.0f &&
-                    fridge == 20 && toilet == 70 && easel == 10;
+                    fridge == 20 && toilet == 70 && easel == 10 && lib.slot_failures() == 0 && global_slots == 15;
     std::printf("test_disc: %s\n", ok ? "ok" : "FAILED");
     return ok ? 0 : 1;
 }

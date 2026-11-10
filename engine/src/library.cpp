@@ -213,6 +213,33 @@ Library Library::bustin_out(const Disc& d) {
             for (int k = 0; k < n && r.left() >= 2; k++) vals.push_back(r.s16());
             f->constants[(uint16_t)c->id] = std::move(vals);
         }
+        for (const Chunk* c : f->iff.of("SLOT")) {
+            // 0, the version, "SLOT", the count, then the slots.
+            try {
+                Reader r(c->data, o);
+                r.u32();
+                const uint32_t version = r.u32();
+                r.u32();
+                const uint32_t n = r.u32();
+                if (version != 10) { lib.slot_failures_++; continue; }
+                auto f32 = [&] { const uint32_t u = r.u32(); float v; std::memcpy(&v, &u, 4); return v; };
+                auto s32 = [&] { return (int32_t)r.u32(); };
+                std::vector<Slot> out;
+                for (uint32_t k = 0; k < n; k++) {
+                    Slot s;
+                    s.type = r.u16();
+                    s.x = f32(); s.y = f32(); s.z = f32();
+                    s.standing = s32(); s.sitting = s32(); s.ground = s32(); s.flags = s32(); s.snap = s32();
+                    s.min_proximity = s32(); s.max_proximity = s32(); s.optimal_proximity = s32(); s.max_size = s32();
+                    s32();  // always 0 on the disc
+                    s.gradient = f32();
+                    s.height = s32(); s.facing = s32(); s.resolution = s32();
+                    out.push_back(s);
+                }
+                r.done();
+                f->slots[(uint16_t)c->id] = std::move(out);
+            } catch (const FormatError&) { lib.slot_failures_++; }
+        }
         for (const Chunk* c : f->iff.of("GLOB")) f->glob = glob_name(c->data);
         for (const Chunk* c : f->iff.of("OBJD")) {
             Reader r(c->data, o);
@@ -309,6 +336,20 @@ Library::ObjectTable Library::table_of(const Object& o) const {
                 if (f != t.file->table_first.end()) t.first = f->second;
             }
     return t;
+}
+
+const Slot* routing_slot(const ObjectFile* global, const ObjectFile& file, const Definition* def, uint16_t scope, uint16_t number) {
+    const std::vector<Slot>* table = nullptr;
+    if (scope == 1 && def) {
+        auto t = file.slots.find(def->slot_table());
+        if (t != file.slots.end()) table = &t->second;
+    }
+    else if (scope == 2 && global && global->slots.size() == 1)
+        table = &global->slots.begin()->second;
+    if (!table) return nullptr;
+    for (const Slot& s : *table)
+        if (s.type == 3 && number-- == 0) return &s;
+    return nullptr;
 }
 
 }  // namespace housefire

@@ -1245,6 +1245,48 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
             if (changes) note(at_doors ? "routing: a plan through rooms broken at each door" : "routing: a plan changing rooms NOT at a door");
             else note("routing: a plan within one room");
         }
+        // Every routing step (GotoRoutingSlot, opcode 45): the routing slot its operand names
+        // (the number, where from), found natively in the stack object's SLOT or the global one.
+        for (const StepRec& s : log.steps) {
+            if (!s.t || s.node * 12u + 12 > s.t->raw.size()) continue;
+            const uint8_t* raw = s.t->raw.data() + 12 * s.node;
+            if (((raw[0] << 8 | raw[1]) & 0x7FFF) != 45) continue;
+            const uint16_t number = (uint16_t)(raw[4] << 8 | raw[5]), scope = (uint16_t)(raw[6] << 8 | raw[7]);
+            const Object* o = world.find(s.stack_object);
+            if (scope == 0) { note("routing: a routing step's slot from a stack variable (not modelled)"); continue; }
+            if (!o || !o->file) { note("routing: a routing step's stack object not on the lot natively"); continue; }
+            const Slot* slot = routing_slot(lib.global(), *o->file, o->definition, scope, number);
+            note(slot ? (scope == 1 ? "routing: a routing step's slot found natively (the object's own)" : "routing: a routing step's slot found natively (the global one)")
+                      : "routing: a routing step's slot NOT found natively");
+        }
+        // The routing steps (GotoRoutingSlot, opcode 45): the slot they name, of the stack
+        // object's SLOT, against the next plan's end (study: REPLAY_SHOW_SLOTS).
+        if (getenv("REPLAY_SHOW_SLOTS")) {
+            size_t g = 0;
+            for (const StepRec& s : log.steps) {
+                if (!s.t || s.node * 12u + 12 > s.t->raw.size()) continue;
+                const uint8_t* raw = s.t->raw.data() + 12 * s.node;
+                if (((raw[0] << 8 | raw[1]) & 0x7FFF) != 45) continue;
+                while (g < log.plans.size() && log.plans[g].tick < s.tick) g++;
+                if (g >= log.plans.size() || log.plans[g].tick != s.tick) continue;  // a plan made in this step's tick
+                const Object* o = world.find(s.stack_object);
+                std::printf("route step tick %u: object %d (%s at %d,%d), operand", s.tick, s.stack_object,
+                            o && o->file ? o->file->path.substr(o->file->path.rfind('/') + 1).c_str() : "-", o ? o->x16 : 0, o ? o->y16 : 0);
+                for (int k = 4; k < 12; k++) std::printf(" %02x", raw[k]);
+                std::printf(", params");
+                for (int16_t p : s.params) std::printf(" %d", p);
+                if (g < log.plans.size() && !log.plans[g].points.empty())
+                    std::printf("; next plan tick %u from %d,%d to %d,%d", log.plans[g].tick, log.plans[g].points.front().first, log.plans[g].points.front().second,
+                                log.plans[g].points.back().first, log.plans[g].points.back().second);
+                std::printf(" result %u; lookups", s.result);
+                for (const LookupRec& l : s.lookups) std::printf(" (%d,%d)=%d", l.scope, l.data, l.value);
+                std::printf("\n");
+                if (o && o->file)
+                    for (const auto& [id, v] : o->file->slots)
+                        for (size_t k = 0; k < v.size(); k++)
+                            if (v[k].type == 3) std::printf("   slot %zu: flags %x, proximity %d-%d (%d), facing %d, offset %g,%g\n", k, v[k].flags, v[k].min_proximity, v[k].max_proximity, v[k].optimal_proximity, v[k].facing, v[k].x, v[k].y);
+            }
+        }
         if (getenv("REPLAY_SHOW_ROUTING"))
             for (const auto& [name, n] : crossed) std::printf("planned routes cross a tile of %s: %zu\n", name.c_str(), n);
         // Each walk (a Sim's tile changes, a pause of 40 ticks or more ending one) against the
