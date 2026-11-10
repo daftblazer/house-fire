@@ -1185,7 +1185,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 13 of 16.
+Iteration 14 of 16.
 
 - **Iteration 1, chunk 1 (the rooms and their doors).** The third array is not the rooms (1
   inside, 7 outside); the rooms are the regions the walls close (`Walls::room`, a door left
@@ -1314,6 +1314,14 @@ Iteration 13 of 16.
   corner the planner passes differently. Figures unchanged (561,398, 338,305, 68,202, lockstep
   7,902, 4, 24); clippy clean. Next: the planner's in-between points (a sixteenth off the start,
   near corners), the walls' corners at tick 521, or the plans through doors.
+
+- **Iteration 14, chunk 3 (persons among the obstacles).** The kind-2 branch read: a person is
+  left out when it is the request's target or more than 3.0 tiles (the constant at 802CFAAC,
+  read from the DOL) from the planning Sim. Checked: 17 of the loop's 20 answers about persons
+  natively (target from the tick's walking routing step, places as logged); the 3 others the
+  paper girl (a state test, `fn_801FD05C`, not read). Figures unchanged (561,398, 338,305,
+  68,202, lockstep 7,902, 4, 24); clippy clean. Next: the planner's in-between points or the
+  plans through doors (chunk 2), then the loop's end write-up.
 
 
 ## The eighth loop paused

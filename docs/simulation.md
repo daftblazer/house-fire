@@ -650,6 +650,16 @@ front door to the fridge) turns at a wall's corner, (317, 275), where the planne
 The planner's other points (a sixteenth off the start, along its lines, near corners) are not
 built.
 
+**Persons among the obstacles.** The loop's kind-2 branch (`Route_SkipObstacle` for a person):
+a person is left out when it is what the request goes to (the request's +132) or when its
+distance from the planning Sim (a virtual, +128) is more than a float constant, 3.0 tiles (at
+802CFAAC in the DOL); first a state test (`fn_801FD05C` on its +32 with 2) and the request's
++152 decide whether to ask at all. Natively (the places as logged, the walk not native; the
+target the stack object of the tick's walking routing step): 17 of the loop's 20 answers about
+persons; at exactly 3 tiles the log has them left out (the distance measured mid-tick, the
+logged places being the tick's start). The 3 others are the paper girl, left out 22.6 and 32
+sixteenths off and when she is not the target: the state test, not yet read.
+
 **Which objects block** (`routing::obstacle`). Read from the objects the loop asks about (`J`)
 against the object data the save gives: an object is left out when its flags (object data 8)
 have 0x4 (no extent: rugs, windows, wall lamps, paintings, the alarms, the phone) or it sits in

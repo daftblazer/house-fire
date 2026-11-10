@@ -2488,6 +2488,51 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                     println!("   native obstacle {a:?}, the planner's {b:?}");
                 }
             }
+            // A person among the obstacles natively: left out when it is what the plan goes to
+            // (the stack object of the tick's routing step that walks: opcode 27 or 45, result
+            // 1) or more than 3 tiles from the planning Sim (the constant at 802CFAAC, 3.0; the
+            // logged places, the walk not native); against the loop's answers.
+            let targets: Vec<i16> = log
+                .steps
+                .iter()
+                .filter(|s| s.tick == pl.tick && s.result == 1)
+                .filter(|s| {
+                    log.tree_of(s).is_some_and(|t| {
+                        let at = s.node as usize * 12;
+                        t.tree == s.tree && at + 12 <= t.raw.len() && matches!(u16::from_be_bytes([t.raw[at], t.raw[at + 1]]) & 0x7FFF, 27 | 45)
+                    })
+                })
+                .map(|s| s.stack_object)
+                .collect();
+            if let Some(sr) = sim_rect {
+                let c = (sr[0] + 3, sr[1] + 3);
+                for &(id, out) in &pl.tested {
+                    let Some(p) = world.find_object(id).filter(|o| o.person).and_then(|_| place_at(id, pl.tick)) else { continue };
+                    let d2 = (p.0 - c.0).pow(2) + (p.1 - c.1).pow(2);
+                    let native_out = targets.contains(&id) || d2 >= 48 * 48;
+                    counts.note(if native_out == out {
+                        "routing: a person natively kept or left out as the loop did (its target, or 3 tiles off)"
+                    } else {
+                        "routing: a person natively NOT kept or left out as the loop did"
+                    });
+                    if show_obstacles && native_out != out {
+                        println!("   person {id} at {p:?}, {:.1} from the Sim: the loop {}, natively {}; targets {targets:?}", (d2 as f64).sqrt(), if out { "left out" } else { "kept" }, if native_out { "left out" } else { "kept" });
+                    }
+                }
+            }
+            // study: each person the loop asked about, its distance from the planning Sim and
+            // whether it was kept
+            if show_obstacles {
+                for &(id, out) in &pl.tested {
+                    if let Some(o) = world.find_object(id).filter(|o| o.person)
+                        && let (Some(p), Some(s)) = (place_at(id, pl.tick), sim_rect)
+                    {
+                        let c = (s[0] + 3, s[1] + 3);
+                        let d = (((p.0 - c.0).pow(2) + (p.1 - c.1).pow(2)) as f64).sqrt();
+                        println!("   person {id} ({}) at {p:?}, {d:.1} from the Sim at {c:?} (start {:?}, goal {:?}): {}", o.id(), pl.points.first(), pl.points.last(), if out { "left out" } else { "kept" });
+                    }
+                }
+            }
             if show_obstacles {
                 println!("   native list tick {}: {} rects, the planner's {}, kept {}, the Sim's {sim_rect:?}, {hit} the same", pl.tick, native.len(), pl.obstacles.len(), kept.len());
             }
