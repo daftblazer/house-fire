@@ -766,7 +766,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 6 of 16.
+Iteration 7 of 16.
 
 - **Iteration 1, chunk 1 (the queue's entries and their delivery).** The engine keeps each
   Sim's saved queue (`Object::current`, `queue`); an entry's fields named from the log: the
@@ -807,3 +807,8 @@ Iteration 6 of 16.
   gives (`World::dialog_answer`): open, wait and stop the pass, then true. The replay plays
   the player: all 2,471 waits and 4 answers as the log's, all 719 passes stopped as the
   log's. Next: CompleteGoal (56).
+
+- **Iteration 7, chunk 4 (CompleteGoal).** Its operand named from Castaway's
+  `CompleteGoalParam` (`primitives.md`); all 2,377 uses false, asking about goals whose
+  state is the player's progress: the goal system's, recorded and skipped. Chunk 4 done
+  (Dialog native). Next: chunk 5, the lots' Arry chunks (floors and walls) before routing.

@@ -113,6 +113,16 @@ the 5,130-tick session), one changes (a Sim's motive 15: 6, 12, 20 at ticks 696,
 3,117), and none in the 719-tick one. That is too little to check a motive system against;
 a session with the household at home, motives running, is the one to log for it.
 
+## CompleteGoal (opcode 56): the goal system's
+
+Asks about a goal's state. Castaway's `CompleteGoalParam` names the operand: a 16-bit
+operation, a 16-bit goal datum and its owner (the scope), and a flags byte (status into
+temp 0; true if the goal is locked, open, satisfied or completed; the low two bits an old
+form), then a type. In the session all 2,377 uses (the party controller and the dance floor's
+tiles, every few ticks) are false, all of the old form, the goal named by constants. Native,
+it needs the goals' state (the player's progress, in the save): the goal system's, to come
+with it. Until then the replay takes the log's answer.
+
 ## Random (opcode 8)
 
 A random number into a variable. The operand, as 16-bit little-endian fields: bytes 0-1 the
