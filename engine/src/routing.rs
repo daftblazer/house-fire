@@ -116,6 +116,81 @@ pub fn overlaps(a: &[i32; 4], b: &[i32; 4]) -> bool {
     a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3]
 }
 
+/// Whether the segment from a to b passes through the inside of rectangle r ({x0, y0, x1,
+/// y1}; its edges and corners do not count): clipped to the open interior (Liang-Barsky).
+pub fn segment_enters(a: (i32, i32), b: (i32, i32), r: &[i32; 4]) -> bool {
+    let (dx, dy) = ((b.0 - a.0) as f64, (b.1 - a.1) as f64);
+    let (mut t0, mut t1) = (0.0f64, 1.0f64);
+    for (p, q) in [(-dx, (a.0 - r[0]) as f64), (dx, (r[2] - a.0) as f64), (-dy, (a.1 - r[1]) as f64), (dy, (r[3] - a.1) as f64)] {
+        if p == 0.0 {
+            if q <= 0.0 {
+                return false;
+            }
+        } else {
+            let t = q / p;
+            if p < 0.0 {
+                t0 = t0.max(t)
+            } else {
+                t1 = t1.min(t)
+            }
+        }
+    }
+    t1 - t0 > 1e-9
+}
+
+/// The shortest line from `start` to `goal` (sixteenths) that keeps out of the blocking
+/// obstacles' insides and crosses no wall (with `half` > 0, keeping that far from the walls too), going from corner to corner of the obstacles (a
+/// visibility graph, searched by Dijkstra): its points, the ends included; none if there is no
+/// such line. Obstacles that may be walked through are not in its way.
+pub fn corner_path(start: (i32, i32), goal: (i32, i32), obstacles: &[[i32; 5]], walls: &Walls, half: i32) -> Option<Vec<(i32, i32)>> {
+    let mut blocking: Vec<[i32; 4]> = obstacles.iter().filter(|r| r[4] == BLOCKS).map(|r| [r[0], r[1], r[2], r[3]]).collect();
+    if half > 0 {
+        blocking.extend(walls.wall_rects(half));
+    }
+    let inside = |p: (i32, i32)| blocking.iter().any(|r| p.0 > r[0] && p.0 < r[2] && p.1 > r[1] && p.1 < r[3]);
+    let mut nodes = vec![start, goal];
+    for r in &blocking {
+        for c in [(r[0], r[1]), (r[2], r[1]), (r[0], r[3]), (r[2], r[3])] {
+            if !inside(c) && !nodes.contains(&c) {
+                nodes.push(c);
+            }
+        }
+    }
+    let clear = |a: (i32, i32), b: (i32, i32)| !blocking.iter().any(|r| segment_enters(a, b, r)) && walls.line_open(a, b);
+    let n = nodes.len();
+    let mut dist = vec![f64::INFINITY; n];
+    let mut prev = vec![usize::MAX; n];
+    let mut done = vec![false; n];
+    dist[0] = 0.0;
+    while let Some(u) = (0..n).filter(|&i| !done[i] && dist[i].is_finite()).min_by(|&i, &j| dist[i].total_cmp(&dist[j])) {
+        if u == 1 {
+            break;
+        }
+        done[u] = true;
+        for v in 0..n {
+            if done[v] || v == u {
+                continue;
+            }
+            let d = dist[u] + (((nodes[v].0 - nodes[u].0).pow(2) + (nodes[v].1 - nodes[u].1).pow(2)) as f64).sqrt();
+            if d < dist[v] && clear(nodes[u], nodes[v]) {
+                dist[v] = d;
+                prev[v] = u;
+            }
+        }
+    }
+    if !dist[1].is_finite() {
+        return None;
+    }
+    let mut path = vec![goal];
+    let mut at = 1;
+    while at != 0 {
+        at = prev[at];
+        path.push(nodes[at]);
+    }
+    path.reverse();
+    Some(path)
+}
+
 /// A tile, (x, y).
 pub type Tile = (i32, i32);
 
@@ -196,6 +271,32 @@ impl Walls {
 
     /// Whether a Sim on tile (x, y) can step to its neighbour (x + dx, y + dy), one of dx and dy
     /// 0 and the other ±1. Off the grid is open (the lot's edge is not a wall here).
+    /// Whether a straight line between two places (sixteenths) crosses no wall: each tile it
+    /// steps into from the last (stepped along it a sixteenth at a time) open from it, a diagonal
+    /// step by either way round.
+    pub fn line_open(&self, a: (i32, i32), b: (i32, i32)) -> bool {
+        let steps = (b.0 - a.0).abs().max((b.1 - a.1).abs()).max(1);
+        let mut t = (a.0 >> 4, a.1 >> 4);
+        for i in 1..=steps {
+            let p = (a.0 + (b.0 - a.0) * i / steps, a.1 + (b.1 - a.1) * i / steps);
+            let u = (p.0 >> 4, p.1 >> 4);
+            if u == t {
+                continue;
+            }
+            let (dx, dy) = (u.0 - t.0, u.1 - t.1);
+            let ok = if dx != 0 && dy != 0 {
+                (self.can_step(t.0, t.1, dx, 0) && self.can_step(t.0 + dx, t.1, 0, dy)) || (self.can_step(t.0, t.1, 0, dy) && self.can_step(t.0, t.1 + dy, dx, 0))
+            } else {
+                self.can_step(t.0, t.1, dx, dy)
+            };
+            if !ok {
+                return false;
+            }
+            t = u;
+        }
+        true
+    }
+
     pub fn can_step(&self, x: i32, y: i32, dx: i32, dy: i32) -> bool {
         !self.wall_between(x, y, dx, dy)
             || self.open.contains(&key(x, y, leaving(dx, dy)))
@@ -245,6 +346,27 @@ impl Walls {
             }
         }
         Vec::new()
+    }
+
+    /// Each closed wall edge (no door open in it) as a rectangle grown by `half` on every side,
+    /// {x0, y0, x1, y1} in sixteenths: the walls as the planner keeps clear of them. Diagonal
+    /// walls are not among them.
+    pub fn wall_rects(&self, half: i32) -> Vec<[i32; 4]> {
+        let mut out = Vec::new();
+        for y in 0..self.height as i32 {
+            for x in 0..self.width as i32 {
+                // the edges towards x + 1 and y + 1 (each wall once)
+                if x + 1 < self.width as i32 && !self.can_step(x, y, 1, 0) {
+                    let e = (x + 1) * 16;
+                    out.push([e - half, y * 16 - half, e + half, (y + 1) * 16 + half]);
+                }
+                if y + 1 < self.height as i32 && !self.can_step(x, y, 0, 1) {
+                    let e = (y + 1) * 16;
+                    out.push([x * 16 - half, e - half, (x + 1) * 16 + half, e + half]);
+                }
+            }
+        }
+        out
     }
 
     pub fn wall_edges(&self) -> usize {

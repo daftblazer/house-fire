@@ -46,7 +46,7 @@ use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
-use housefire::routing::{BLOCKS, Tile, footprint, front, obstacle, overlaps, slot_places, ungrown};
+use housefire::routing::{BLOCKS, Tile, corner_path, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
 use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
@@ -2500,11 +2500,36 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 .map(|(a, b)| if *a == [0; 5] { b } else { a })
                 .flat_map(|r| [(r[0], r[1]), (r[2], r[1]), (r[0], r[3]), (r[2], r[3])])
                 .collect();
+            // The plan within one room natively (`corner_path`) against the planner's: the corners
+            // of the obstacles it passes, in order (its other points apart), to the place it
+            // walks to (before the object it then faces).
+            let obstacles_here: Vec<[i32; 5]> = native.iter().zip(&pl.obstacles).map(|(a, b)| if *a == [0; 5] { *b } else { *a }).collect();
+            if pl.points.len() >= 2 && native.len() == pl.obstacles.len() {
+                let start = pl.points[0];
+                let end = *pl.points.last().unwrap();
+                let in_blocking = |p: (i32, i32)| obstacles_here.iter().any(|r| r[4] == BLOCKS && p.0 > r[0] && p.0 < r[2] && p.1 > r[1] && p.1 < r[3]);
+                let goal = if in_blocking(end) && pl.points.len() >= 3 { pl.points[pl.points.len() - 2] } else { end };
+                let room = |p: (i32, i32)| walls.room(p.0 >> 4, p.1 >> 4);
+                if room(start) == room(goal) {
+                    let path = corner_path(start, goal, &obstacles_here, walls, half);
+                    let is_corner = |p: &(i32, i32)| obstacles_here.iter().filter(|r| r[4] == BLOCKS).any(|r| [(r[0], r[1]), (r[2], r[1]), (r[0], r[3]), (r[2], r[3])].contains(p));
+                    let theirs: Vec<(i32, i32)> = pl.points.iter().copied().filter(is_corner).collect();
+                    let ours: Vec<(i32, i32)> = path.as_ref().map_or(Vec::new(), |p| p.iter().copied().filter(is_corner).collect());
+                    counts.note(if path.is_some() && ours == theirs {
+                        "routing: a plan within a room natively by the obstacles' corners as the planner's"
+                    } else {
+                        "routing: a plan within a room natively NOT by the planner's corners"
+                    });
+                    if show_obstacles {
+                        println!("   corner path tick {}: native {path:?}; the planner's corners {theirs:?}, points {:?}", pl.tick, pl.points);
+                    }
+                }
+            }
             // Each leg of the plan keeps out of the blocking obstacles' insides (natively)
             // (but the last into the object it ends at: the Sim turns to face it there)
             for (i, leg) in pl.points.windows(2).enumerate() {
                 let (a, b) = (leg[0], leg[1]);
-                let through = native.iter().filter(|r| r[4] == BLOCKS).find(|r| segment_enters(a, b, r));
+                let through = native.iter().filter(|r| r[4] == BLOCKS).find(|r| segment_enters(a, b, &[r[0], r[1], r[2], r[3]]));
                 let last = i + 2 == pl.points.len();
                 counts.note(match through {
                     None => "routing: a plan's leg clear of the native blocking obstacles",
@@ -2867,20 +2892,3 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Whether the segment from a to b passes through the inside of rectangle r (its edges and
-/// corners do not count): clipped to the rectangle's open interior (Liang-Barsky).
-fn segment_enters(a: (i32, i32), b: (i32, i32), r: &[i32; 5]) -> bool {
-    let (dx, dy) = ((b.0 - a.0) as f64, (b.1 - a.1) as f64);
-    let (mut t0, mut t1) = (0.0f64, 1.0f64);
-    for (p, q) in [(-dx, (a.0 - r[0]) as f64), (dx, (r[2] - a.0) as f64), (-dy, (a.1 - r[1]) as f64), (dy, (r[3] - a.1) as f64)] {
-        if p == 0.0 {
-            if q <= 0.0 {
-                return false;
-            }
-        } else {
-            let t = q / p;
-            if p < 0.0 { t0 = t0.max(t) } else { t1 = t1.min(t) }
-        }
-    }
-    t1 - t0 > 1e-9
-}

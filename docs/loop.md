@@ -1185,7 +1185,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 12 of 16.
+Iteration 13 of 16.
 
 - **Iteration 1, chunk 1 (the rooms and their doors).** The third array is not the rooms (1
   inside, 7 outside); the rooms are the regions the walls close (`Walls::room`, a door left
@@ -1305,6 +1305,15 @@ Iteration 12 of 16.
   (a visibility graph). Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24);
   clippy clean. Next: the search's choice (read `fn_80249BB8`, or log its graph), or the persons'
   rule.
+
+- **Iteration 13, chunk 2 (a route within a room).** `routing::corner_path`: Dijkstra over the
+  corners of the grown blocking obstacles and of the walls (each closed edge grown by 3,
+  `Walls::wall_rects`; lines checked by `Walls::line_open` and `segment_enters`). Checked: 11 of
+  the home log's 12 single-room plans pass exactly the planner's corners in order (tick 1905's
+  way round the table among them, decided by the walls' 3); the 12th (521) turns at a wall
+  corner the planner passes differently. Figures unchanged (561,398, 338,305, 68,202, lockstep
+  7,902, 4, 24); clippy clean. Next: the planner's in-between points (a sixteenth off the start,
+  near corners), the walls' corners at tick 521, or the plans through doors.
 
 
 ## The eighth loop paused

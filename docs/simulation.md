@@ -637,6 +637,19 @@ none of these (tick 521's (313, 279), 1791's (403, 304) twice, 1905's (363, 247)
 would; how it picks among them, and the points along its lines, are the search's own (its
 `fn_80249BB8`, to read).
 
+**A route within a room, natively** (`routing::corner_path`). The shortest line from the start
+to the goal (the place before the object a plan ends at) that keeps out of the blocking
+obstacles' insides and as far from the walls (each closed wall edge a rectangle grown by the
+same 3: `Walls::wall_rects`), going from corner to corner of them, by Dijkstra over the
+visibility graph. Checked on the home log's 12 plans whose start and goal share a room: 11 pass
+exactly the planner's obstacle corners, in order; among them tick 1905's long way round the
+dining table (the six corners of the chairs and the table), which the walls decide: without
+their 3 the short way east of the chair, along the wall, is open. The 12th (tick 521, from the
+front door to the fridge) turns at a wall's corner, (317, 275), where the planner passes (313,
+279) and goes by the counter's corner (371, 317): the walls' corners are not yet the planner's.
+The planner's other points (a sixteenth off the start, along its lines, near corners) are not
+built.
+
 **Which objects block** (`routing::obstacle`). Read from the objects the loop asks about (`J`)
 against the object data the save gives: an object is left out when its flags (object data 8)
 have 0x4 (no extent: rugs, windows, wall lamps, paintings, the alarms, the phone) or it sits in
