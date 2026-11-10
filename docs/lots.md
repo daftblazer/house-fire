@@ -217,14 +217,22 @@ The Sims 2: Castaway's lots (`R42E69`, `default.ngh`: 28 lots, ObjM versions 120
 - **The lot's part:** Bustin' Out's.
 
 The class comes from the definition, as in Bustin' Out (`ConstructObject`: a master id makes a
-multi-tile part, of type 8 a portal; single-tile of type 2 a person). Castaway's object files
-have no OBJD chunks, so the tool finds each type's class from the data instead: the classes
-whose reading ends every one of its objects' sections at their mark, across the 28 lots.
+multi-tile part, of type 8 a portal; single-tile of type 2 a person; single-tile of type 8 or
+9 none at all, and the table's reading first swaps a type 9's selector for GUID 0xB54AF253, a
+plain object). Castaway's object files have no OBJD chunks: its definitions are the quick
+data's `ObjDefinition` table (`quickdat.arc`, `SimsObjects`; `ObjectDataObjDefinition::
+LoadFromQDataByID`), 1,335 rows of 196 bytes, big-endian, version 138 and the 96 fields of
+Bustin' Out's OBJD (the GUID in fields 12-13, high half first). The tool also finds each
+type's classes from the data alone: those whose reading ends every one of its objects'
+sections at its mark, across the 28 lots.
 
 Measured: every section of the 28 lots ends at its mark under its type's class, and every
 lot's part ends the stream. 2,611 objects: 2,339 plain, 271 parts of multi-tile objects, 1 of
-a type that reads either way (its values all zero). Where Castaway keeps its definitions is
-still to be found.
+a type that reads either way (its values all zero). With the definitions
+(`castaway_objm.py --image=DISC`): 2,608 read as their definition's class; 1 has no
+definition (GUID 0x334945B8); 2 are the type-9 objects (GUID 0x437) swapped for 0xB54AF253, a
+plain object, whose sections carry 7 bits more than a plain object's (they read as a
+multi-tile part's zeros): still open.
 
 ## Not decoded yet
 

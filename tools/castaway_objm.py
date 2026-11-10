@@ -2,7 +2,10 @@
 """The Sims 2: Castaway's lots' objects (R42E69's default.ngh, ObjM versions 120, 129, 130),
 read as its loader does. Read from its ELF's named code (docs/lots.md, "Castaway").
 
-Usage: castaway_objm.py [NGH]   (default: work/cache/R42E69/default.ngh)
+Usage: castaway_objm.py [NGH] [--image=DISC]   (NGH default: work/cache/R42E69/default.ngh)
+
+With the disc image, each object's class from its definition (the quick data's ObjDefinition
+table) is checked against the classes its section reads as.
 
 - The table: a bool (compression), then an object id, and for each object its type (16 bits,
   ObjectFolder::ReconSelector: an index into the objt from version 47) and the next id, ended
@@ -16,9 +19,10 @@ Usage: castaway_objm.py [NGH]   (default: work/cache/R42E69/default.ngh)
 - The lot's part: an object, a counted list of objects, a wide string, as Bustin' Out's.
 
 The class of each object comes from its definition in the original (ConstructObject: a
-master id makes a multi-tile part, type 8 then a portal, type 2 a person). Castaway's object
-files hold no OBJD chunks, so here it is found from the data: each type takes the classes
-whose reading ends its objects' sections exactly at their marks, across all lots. A portal
+master id makes a multi-tile part, type 8 then a portal, type 2 a person). Castaway's
+definitions are not in its object files but in its quick data (`definitions`). The tool also
+finds each type's classes from the data alone: those whose reading ends its objects'
+sections exactly at their marks, across all lots. A portal
 or a person (cXPortal, cXPerson) is not read: no saved lot has one.
 
 Checks: every section ends at its mark under its type's class; every lot's part ends the
@@ -136,8 +140,38 @@ def try_classes(m,a,b,v):
     return ok
 
 
+def definitions(image):
+    """Castaway's object definitions: GUID -> 96 16-bit fields, from the ObjDefinition table of
+    its quick data (quickdat.arc's SimsObjects), rows of 196 bytes, big-endian: a version
+    (138), then the fields as Bustin' Out's OBJD has them (7 the type, 8 the master id, 12-13
+    the GUID, high half first)."""
+    import quickdata
+    from disc import Disc
+    for n, b in quickdata.entries_of(Disc(image)):
+        if n != 'SimsObjects':
+            continue
+        img = quickdata.Image(b, quickdata.records(b)[0])
+        t = [x for x in img.tables() if x['name'] == 'ObjDefinition'][0]
+        out = {}
+        for i in range(t['count']):
+            f = struct.unpack_from('>96H', img.data, t['rows'] + 196 * i + 4)
+            out[f[12] << 16 | f[13]] = f
+        return out
+    return {}
+
+
+def class_of(f):
+    """ObjectModule::ConstructObject's class for a definition's fields."""
+    if f[8]:
+        return 'portal' if f[7] == 8 else 'mt'
+    return 'person' if f[7] == 2 else 'object'
+
+
 def main(argv):
-    path = argv[1] if len(argv) > 1 else str(ROOT / 'work' / 'cache' / 'R42E69' / 'default.ngh')
+    args = [a for a in argv[1:] if not a.startswith('--')]
+    path = args[0] if args else str(ROOT / 'work' / 'cache' / 'R42E69' / 'default.ngh')
+    image = next((a.split('=', 1)[1] for a in argv if a.startswith('--image=')), None)
+    defs = definitions(image) if image else {}
     res = collections.Counter()
     per_type = collections.defaultdict(lambda: set(PARTS))
     objects = []
@@ -161,6 +195,13 @@ def main(argv):
     by_class = collections.Counter(' or '.join(sorted(per_type[g])) or 'NONE' for g in objects)
     print(dict(res))
     print('objects by their type\'s class:', dict(by_class))
+    if defs:
+        agree = collections.Counter()
+        for g in objects:
+            if g not in defs: agree['no definition'] += 1
+            elif class_of(defs[g]) in per_type[g]: agree['the definition\'s class reads'] += 1
+            else: agree[f'the definition says {class_of(defs[g])}, the data {" or ".join(sorted(per_type[g]))}'] += 1
+        print(f'{len(defs)} definitions; the objects:', dict(agree))
     ok = res['lot parts ending the stream'] == res['lots'] == res['sections, one per object and the lot'] and 'NONE' not in by_class
     print('castaway_objm:', 'ok' if ok else 'FAILED')
     return 0 if ok else 1

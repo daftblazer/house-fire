@@ -676,7 +676,7 @@ records what it found and moves to the next chunk rather than starting the syste
 
 ## Progress
 
-Iteration 7 of 16.
+Iteration 8 of 16.
 
 - **Iteration 1, chunk 1 (the neighbours).** NBRS decoded (`objects.md`, "The
   neighbours"): 63 slots, 51 neighbours, read to the chunk's end, ids the slot's number plus
@@ -722,3 +722,10 @@ Iteration 7 of 16.
   the same. Of the rest answered from the log, ChangeSuit (appearance), PushAction and
   IdleForInput (the interaction queue), GenericSimCall, Animate, Dialog, CompleteGoal,
   routing and SetMotiveDelta are systems. Next: chunk 7, Castaway's definitions.
+
+- **Iteration 8, chunk 7 (Castaway's definitions).** Found: the quick data's ObjDefinition
+  table, 1,335 rows of Bustin' Out's OBJD fields, big-endian (`lots.md`, "Castaway"); read by
+  `castaway_objm.py --image`. 2,608 of the 2,611 lot objects read as their definition's
+  class; 1 has no definition; 2 (type 9, swapped at load for a plain object) carry 7 bits
+  more than a plain object, open. Chunk 7 done: all the fourth loop's chunks have been
+  worked; the ones left open are systems of their own (`loop.md`, below).
