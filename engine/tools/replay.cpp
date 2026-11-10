@@ -417,6 +417,7 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
         if (log.steps[i].tick >= 1 && log.steps[i].tick <= log.ticks) by_tick[log.steps[i].tick].push_back(i);
     std::map<uint32_t, std::vector<uint32_t>> frames;  // the log's stacks: frame addresses, bottom first
     std::map<uint32_t, uint32_t> first_seen;           // stack -> tick of its first step
+    std::set<uint32_t> first_step;                     // stacks whose first step was seen
     std::map<std::tuple<uint32_t, uint32_t, uint16_t>, std::pair<const Tree*, const ObjectFile*>> frame_tree;
     size_t streak = 0, best_streak = 0;
 
@@ -525,6 +526,15 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
             }
             // The native stack before the step against the log's.
             const auto& st = in.stack();
+            if (first_step.insert(s.sim).second) {
+                // Each lot object's first step against the stack the lot saved.
+                const bool same0 = !st.empty() && st.back().tree && st.back().tree->id == (int16_t)s.tree && st.back().node == s.node && st.size() == fr.size();
+                note(same0 ? "load: a stack's first step at its saved top frame" : "load: a stack's first step NOT at its saved top frame");
+                static int shown = 0;
+                if (!same0 && getenv("REPLAY_SHOW_LOAD") && shown++ < 12)
+                    std::printf("load: object %d tick %u: saved %d:%d (depth %zu), first step %d:%d (depth %zu)\n", o->id(), t,
+                                st.empty() || !st.back().tree ? -1 : st.back().tree->id, st.empty() ? -1 : st.back().node, st.size(), s.tree, s.node, fr.size());
+            }
             const bool same = !in.done() && st.size() == fr.size() && st.back().tree && st.back().tree->id == (int16_t)s.tree && st.back().node == s.node;
             if (same) {
                 note("steps: the native stack as the log's");

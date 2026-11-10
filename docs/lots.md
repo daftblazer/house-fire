@@ -152,6 +152,19 @@ lot's. The rest are set by the engine as the lot loads (by tick 2): person data 
 become 1 for every Sim, and motive 13 is computed (56.2 for two); person data 33 becomes 100
 later in play. The native load will have to do the same.
 
+What the load does, measured further (`replay`, the 5,130-tick session):
+- **No tree is restarted:** 176 of the 178 lot objects make their first step at the top
+  frame their saved stack has; the other two are the stacks of two and three frames, whose
+  first step is at the same tree and node (the log does not show the frames below it).
+- **Each lot Sim is a neighbour** (`objects.md`, "The neighbours"): its type's GUID is one
+  of NBRS's, the club's nine being neighbours 17, 34, 44, 46, 50, 51, 53, 58 and 59. The
+  neighbour's saved person data is not what the load sets: it has 0 at 27 and 32 too.
+- **Person data 27 and 32 are 1 for every lot Sim at tick 1,** before any script writes
+  them: set by the engine. In Castaway, `SetPersonData` is called with 32 from the Sim's
+  routing states (`Routing_Initial`, `Routing_Succeeded`, ...) and with 27 from its
+  `Cleanup`; and motive 13 is computed (56.2 for a Sim whose saved one is 0). Both are the
+  person system's (routing, motives), which comes as a system of its own.
+
 Over the 16 lots: 4,575 frames, one per object but for one stack of 2 and one of 3. All
 4,522 frames of objects with a definition on the disc name a tree that is there, with the
 node in it and exactly its parameter and local counts (`engine/tests/test_lots.cpp`). The

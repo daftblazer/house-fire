@@ -676,7 +676,7 @@ records what it found and moves to the next chunk rather than starting the syste
 
 ## Progress
 
-Iteration 2 of 16.
+Iteration 3 of 16.
 
 - **Iteration 1, chunk 1 (the neighbours).** NBRS decoded (`objects.md`, "The
   neighbours"): 63 slots, 51 neighbours, read to the chunk's end, ids the slot's number plus
@@ -687,5 +687,10 @@ Iteration 2 of 16.
   next object whose data field 59 is the frame's first parameter; Bustin' Out's log agrees
   (field 59 equals it for 1,984 of 2,000 objects found). Native: all 2,188 and 549 steps
   the same; the stack object at step starts now differs at 2,498 steps, down from 4,652.
-  The dance floor's 8 kind-4 steps are left (their walk is the original's half-built list
-  as the lot loads). Next: chunk 3, what the engine sets as a lot loads.
+  The dance floor's 8 kind-4 steps are left, not looked at here. Next: chunk 3, what the engine sets as a lot loads.
+
+- **Iteration 3, chunk 3 (the lot's load).** Measured (`lots.md`, "What the load does"): no
+  tree is restarted (176 of 178 first steps at the saved top frame, the other two the
+  deeper stacks); the lot's Sims are neighbours, by GUID. Person data 27 and 32 (set to 1)
+  and motive 13 (computed) are the person system's (routing, motives in Castaway's code):
+  recorded and skipped, as a system of its own. Next: chunk 4, Relationship2.
