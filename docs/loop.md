@@ -439,3 +439,43 @@ the new-game route, in a 4 GB scope at low priority, at most 330 s, one run at a
   `tests/test_primitives.cpp` (Idle and SetToNext's rules, the next-id rule).
 - **Next:** iteration 12, the last: the script side of Animate (44, 24,000 steps: its
   results, yields and variable writes such as the event local), and the loop's wrap-up.
+
+**Iteration 12** (chunk 5, part two: Animate's script side; the last):
+- **Animate (44):**
+  - It yields every tick while its animation plays, then ends true (526 runs) or false
+    (102).
+  - With flag 0x20, an event ends it false with the event in local 0 (74).
+  - 44 of 102 animations always last the same number of ticks.
+  - Written up as the contract for the animation system (`primitives.md`). Not implemented:
+    it needs the animation data.
+
+## Where the second loop ended
+
+Twelve iterations, twelve commits here (and the observer's in Bustin' Out). Chunks:
+
+- **1 (SetToNext), done for kinds 0, 1, 2 and 4.** Kinds 0, 1 and 4 agree on 36,129 steps on
+  a lot-loaded world, with the original's list replayed. Kinds 3, 5 and 6 are open: kind 6
+  is unidentified, and 3 and 5 wait for multi-tile objects and neighbours.
+- **1b (lots), added and done for the objects.** The neighbourhood file, the save stream
+  and each lot's objects are in the engine:
+  - their order, definitions and saved attributes, temps and data;
+  - 437 first reads match the lot.
+
+  Still open: each object's tree stack, the Sims' parts, and the lot's own section.
+- **2 (objects made and removed), done for what the session does:** effects made during
+  Animate, KillObject, the next-id and in-front rules.
+- **3 (table sizes), done for objects:** 72 data fields, 8 temps, attributes from the save.
+  Person data sizes are open.
+- **4 (scopes):** 21 and 12 done. 16, 20, 23, 24, 32 and 40 are left: 583 lookups.
+- **5 (primitives):** Idle done; Animate's contract written up.
+- **6 (frames the engine starts):** not reached.
+
+The world now comes from the disc, not the log: a native world made from the club lot gives
+the original's object order, ids, definitions and saved state. The scripts' control flow,
+expressions, variables, SetToNext and Idle agree with the original on that world.
+
+Next, in order:
+- the rest of each object's saved state (tree stacks, so the scripts running at load can be
+  started natively, and the Sims' motives and person data);
+- the simulation tick: which stacks run when, the sleep clock and pauses;
+- then the animation data, so that Animate, and the effects it makes, can be native.

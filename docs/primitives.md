@@ -60,3 +60,23 @@ Measured on the recompiled game (a session of the new-game route):
 
 The engine has it as `idle()` (`engine/src/primitives.cpp`) and `Interpreter::sleep_until`.
 `tests/test_primitives.cpp` tests it.
+
+## Animate (opcode 44): what the scripts see
+
+Measured on the recompiled game, a session of the new-game route: 23,811 steps, 628 runs of
+102 animations.
+
+- **While the animation plays, the step yields once every tick** (23,183 yields).
+- **A run ends true** (526) **or false** (102).
+- **Flag 0x20 in operand byte 5:** an animation event ends the step false with the event in
+  local 0 (74 runs). The script handles the event and calls Animate again.
+- **The flags byte** is 0 (12,909 steps), 0x20 (10,447) or 0x22 (455).
+- **Operand bytes 0-1** are the animation.
+- **A run lasts as long as its animation:** 44 of the 102 animations run the same number of
+  ticks every time (12, 13, 16, 20, 24, 28 ... 92). The others vary, as their events and
+  continuations would explain.
+
+This is the contract the animation system must keep (each animation's length in ticks and
+its events, from the animation data, which is not decoded yet). The primitive is a thin
+wrapper over that system, so it waits for it. Animate steps also make the effect objects
+(`objects.md`, "Objects made and removed").
