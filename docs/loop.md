@@ -1251,4 +1251,12 @@ without a commit (record why here). Then the eighth loop resumes.
 
 ## Progress
 
-Iteration 0 of 16.
+Iteration 1 of 16.
+
+- **Iteration 1, chunk 1 (the crate and the readers).** The C++ engine moved to
+  `engine-cpp/` (built with clang from there, its home-log replay output the very same as
+  before the move); the Cargo crate in `engine/` (no outside crates), `iff` (the file owning
+  its bytes, chunks as ranges into them), `disc` and `bhav` ported, a `Result` for each
+  reader's error. Checked: the Rust disc test reads all 9,529 trees, none failing, as the C++
+  `test_disc` (`BHAV read: 9529, failed 0`); clippy clean. Chunk 1 done. Next: chunk 2,
+  `expression`, `interp`, `primitives` and their tests.
