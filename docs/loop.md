@@ -390,3 +390,19 @@ the new-game route, in a 4 GB scope at low priority, at most 330 s, one run at a
 - **Next:** iteration 8, chunk 2: the objects made and removed (CreateObject 42, KillObject
   18, and those the engine makes at load), so that the native world has them when the
   original does.
+
+**Iteration 8** (chunk 2, the objects made and removed):
+- **No script makes an object in the session:** no CreateObject, one KillObject. The objects
+  made are effects (`efx_smokepuff`), during Animate steps.
+- **The original's object list:** each object's next at +188, its manager at +184, whose
+  first object is its +44. Found by following SetToNext's virtual calls. The observer walks
+  it every tick and logs each change ('L') and each head change after a script step ('C').
+- **The rule:** a new object takes one more than the highest id in use (a removed id comes
+  back) and goes in front (`World::make_object`, `next_id`). In the lockstep, all three new
+  ids and the list's order at all five changes agree.
+- **SetToNext with the list replayed:** kind 0 23,082 same; kind 1 2,144; kind 4 10,903,
+  with 28 different while the lot loads (its list is still being built, in another order)
+  and 3 later (the dance floor's multi-tile search, open).
+- **Next:** iteration 9, chunk 3: each object's table sizes from its definition. Or, if
+  that is not in the definition, from the lot's object sections, which hold the arrays:
+  `fn_801F1F20`.

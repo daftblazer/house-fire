@@ -57,6 +57,10 @@ public:
     int load_lot(const LotChunks& lot);
     // A lot unloaded: every object gone, the shared tables kept.
     void clear() { objects_.clear(); by_id_.clear(); }
+    // An object made during play (CreateObject, the engine's effects): the next id (one more
+    // than the highest in use: a removed object's id comes back), in front of the list.
+    Object& make_object(std::unique_ptr<Object> o);
+    int16_t next_id() const;
     void remove(const Object* o);
     Object* find(int16_t id);  // by object id (data 11)
     // Called when an object's id changes (its data 11 is written).

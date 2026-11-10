@@ -71,8 +71,11 @@ struct StepRec {
     uint32_t tick = 0;
 };
 
+struct ListRec { uint32_t tick; std::vector<int16_t> ids; };  // the original's object list, when it changed
+
 struct Log {
     std::vector<std::unique_ptr<TreeRec>> trees;
+    std::vector<ListRec> lists;
     std::vector<StepRec> steps;
     uint32_t ticks = 0;
 };
@@ -92,6 +95,23 @@ bool read_log(const char* path, Log& log) {
     while (p < b.size()) {
         const char k = (char)b[p++];
         if (k == 'K') { if (p + 4 > b.size()) break; u32(); log.ticks++; }
+        else if (k == 'L') {  // the object list, when it changed
+            if (p + 6 > b.size()) break;
+            ListRec l;
+            l.tick = u32();
+            const uint16_t cnt = u16();
+            if (p + 6u * cnt > b.size()) break;
+            for (int i = 0; i < cnt; i++) { u32(); l.ids.push_back((int16_t)u16()); }
+            log.lists.push_back(std::move(l));
+        }
+        else if (k == 'C') {
+            if (p + 6 > b.size()) break;
+            p += 6;
+        }
+        else if (k == 'M') {  // an object's memory (tools/tree_log.py)
+            if (p + 4 + 0x1100 > b.size()) break;
+            p += 4 + 0x1100;
+        }
         else if (k == 'O') {  // where an object keeps its definition (tools/definitions.py)
             if (p + 4 > b.size()) break;
             p += 4;
@@ -798,9 +818,12 @@ int main(int argc, char** argv) {
             const std::set<int16_t> seen(walk.begin(), walk.end());
             World lw(lib);
             lw.load_lot(lots[best]);
-            // Objects made at load: in the walk but not in the lot, in front in the walk's order.
+            // Objects made at load: in the walk but not in the lot, in front in the walk's order
+            // (when the log has the original's list, it is replayed instead, below).
             std::vector<int16_t> made;
-            for (int16_t id : walk) if (!lot_ids[best].count(id)) made.push_back(id);
+            if (log.lists.empty())
+                for (int16_t id : walk) if (!lot_ids[best].count(id)) made.push_back(id);
+            size_t li = 0;
             for (auto it = made.rbegin(); it != made.rend(); ++it) {
                 auto o = std::make_unique<Object>();
                 o->data.resize(kDataObjectId + 1);
@@ -827,7 +850,26 @@ int main(int argc, char** argv) {
                 f.locals = s.locals;
                 f.stack_object = s.stack_object;
                 ScriptVariables vars(lw, me, f);
-                const PrimResult r = set_to_next(node, lw, vars);
+                // The objects made and removed, as the original's list shows them, replayed up to
+            // this step's tick (each new id checked against the world's rule).
+            while (li < log.lists.size() && log.lists[li].tick <= s.tick) {
+                const ListRec& L = log.lists[li++];
+                std::set<int16_t> now(L.ids.begin(), L.ids.end());
+                std::vector<const Object*> gone;
+                for (const auto& o : lw.objects()) if (!now.count(o->id())) gone.push_back(o.get());
+                for (const Object* o : gone) { lw.remove(o); note("objects: removed"); }
+                for (auto it = L.ids.rbegin(); it != L.ids.rend(); ++it) {
+                    if (lw.find(*it)) continue;
+                    const int16_t want = lw.next_id();
+                    lw.make_object(std::make_unique<Object>());
+                    note(want == *it ? "objects: made, the id the same" : "objects: made, the id DIFFERENT");
+                    if (want != *it) { lw.find(want)->data[kDataObjectId] = *it; lw.reindex(*lw.find(want)); }
+                }
+                std::vector<int16_t> order;
+                for (const auto& o : lw.objects()) order.push_back(o->id());
+                note(order == L.ids ? "objects: the list's order the same" : "objects: the list's order DIFFERENT");
+            }
+            const PrimResult r = set_to_next(node, lw, vars);
                 const bool orig_true = s.after == raw[2];
                 const std::string kind = "SetToNext kind " + std::to_string(node.operand[4] & 0x7F);
                 if (r == PrimResult::Stop) { note(kind + ": not modelled"); continue; }
@@ -835,9 +877,23 @@ int main(int argc, char** argv) {
                 char ex[128];
                 std::snprintf(ex, sizeof ex, "tick %u from %d: original %s %d, native %s %d", s.tick, s.stack_object,
                               orig_true ? "true" : "false", s.stack_object_after, r == PrimResult::True ? "true" : "false", f.stack_object);
-                // In the first ticks the objects made at load are still being made (the native
-                // world has them from the start): counted apart.
-                note(kind + (same ? ": same" : s.tick < 3 ? ": different while the lot loads (ticks 0-2)" : ": DIFFERENT"), ex);
+                // While the lot loads (its first ticks) the original's list is still being built,
+                // in another order (a global init tree walks the objects of a GUID in ascending
+                // id order then); the native world has the finished list: counted apart.
+                note(kind + (same ? ": same" : s.tick < 10 ? ": different while the lot loads (ticks 0-9)" : ": DIFFERENT"), ex);
+                if (!same && s.tick >= 10) {
+                    static int shown = 0;
+                    if (shown++ < 12) {
+                        const uint32_t g = (uint32_t)node.operand[0] | node.operand[1] << 8 | node.operand[2] << 16 | (uint32_t)node.operand[3] << 24;
+                        int pos_from = -1, pos_orig = -1;
+                        for (size_t q = 0; q < lw.objects().size(); q++) {
+                            if (lw.objects()[q]->id() == s.stack_object) pos_from = (int)q;
+                            if (lw.objects()[q]->id() == s.stack_object_after) pos_orig = (int)q;
+                        }
+                        std::printf("  %s tick %u tree %#x node %u GUID %08x: from %d (at %d), original %d (at %d, GUID %08x)\n", kind.c_str(), s.tick, s.tree, s.node, g,
+                                    s.stack_object, pos_from, s.stack_object_after, pos_orig, lw.find(s.stack_object_after) ? lw.find(s.stack_object_after)->guid : 0);
+                    }
+                }
             }
         }
     }

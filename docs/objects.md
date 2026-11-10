@@ -122,3 +122,32 @@ time with two objects the lot does not list (179, 180, not Sims) made in front.
 52 steps differ, all at ticks 0-6 while the lot loads: objects the original has made by
 then (the two in front, and others such as 141) are not yet made natively. That is chunk 2's
 (the objects made and removed).
+
+## Objects made and removed
+
+The original's object list is linked through its objects. Each object keeps its manager at
++184 and its next object at +188 (`801F6580`); the manager's first object is at its +44
+(`80203E1C`, reached from SetToNext through virtual calls). The observer walks this list
+every tick ('L' records) and checks its head after every script step ('C').
+
+In a session of the new-game route the club's 178 objects are the list at tick 0:
+- object 179 is made at tick 85;
+- 179 is removed at tick 276 (the session's one KillObject);
+- 179 is made again at tick 741;
+- 180 is made at tick 1684.
+
+They are effects (`efx_smokepuff.iff`), made during Animate steps (animation events). No
+script runs CreateObject in the session.
+
+A new object takes one more than the highest id in use, so a removed one's id comes back,
+and goes in front of the list (`World::make_object`). Replayed in the lockstep, all three
+ids and the list's order at all five changes are the original's. With them, SetToNext's
+kind 0 agrees on all 23,082 steps.
+
+While a lot loads (its first ticks) the original's list is still being built in another
+order: a global init tree (`0x190`) walks the objects of a GUID in ascending id order. The
+native world has the finished list, so 28 kind-4 steps there differ, counted apart.
+
+Three kind-4 steps differ later. All are the dance floor's "Choose dance orientation":
+from tile 135 it finds an earlier tile of another GUID. That is multi-tile, near kind 3:
+open.

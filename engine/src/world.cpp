@@ -36,6 +36,18 @@ int World::load_lot(const LotChunks& lot) {
     return missing;
 }
 
+int16_t World::next_id() const {
+    int16_t top = 0;
+    for (const auto& o : objects_) top = std::max(top, o->id());
+    return (int16_t)(top + 1);
+}
+
+Object& World::make_object(std::unique_ptr<Object> o) {
+    if (o->data.size() <= kDataObjectId) o->data.resize(kDataObjectId + 1);
+    o->data[kDataObjectId] = next_id();
+    return add(std::move(o), true);
+}
+
 void World::remove(const Object* o) {
     for (auto it = by_id_.begin(); it != by_id_.end();)
         it = it->second == o ? by_id_.erase(it) : std::next(it);

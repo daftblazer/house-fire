@@ -28,6 +28,19 @@ def records(path):
         if k == b'K':
             if p + 4 > n: break
             yield 'K', struct.unpack_from('<I', b, p)[0]; p += 4
+        elif k == b'L':
+            if p + 6 > n: break
+            tick, cnt = struct.unpack_from('<IH', b, p); p += 6
+            if p + 6 * cnt > n: break
+            items = [struct.unpack_from('<Ih', b, p + 6 * i) for i in range(cnt)]; p += 6 * cnt
+            yield 'L', (tick, items)
+        elif k == b'C':
+            if p + 6 > n: break
+            yield 'C', struct.unpack_from('<Ih', b, p); p += 6
+        elif k == b'M':
+            if p + 4 + 0x1100 > n: break
+            obj = struct.unpack_from('<I', b, p)[0]
+            yield 'M', (obj, b[p + 4:p + 4 + 0x1100]); p += 4 + 0x1100
         elif k == b'O':
             if p + 4 > n: break
             obj = struct.unpack_from('<I', b, p)[0]; p += 4
