@@ -2250,7 +2250,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
     // the walls let it reach and no other object stands on; against the plan the step made in
     // its tick (its start the Sim's place) by the step that walks: its end, or the tile before
     // the object where it ends at the object.
-    let place_at = |id: i16, tick: u32| log.places.iter().filter(|p| p.id == id && p.tick <= tick).last().map(|p| (p.x, p.y));
+    let place_at = |id: i16, tick: u32| log.places.iter().rfind(|p| p.id == id && p.tick <= tick).map(|p| (p.x, p.y));
     for s in &log.steps {
         let Some(raw) = raw45(s) else { continue };
         // The step that walks (yields, result 1) made the plan; one that ends (a return to its
