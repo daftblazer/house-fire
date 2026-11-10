@@ -766,7 +766,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 7 of 16.
+Iteration 8 of 16.
 
 - **Iteration 1, chunk 1 (the queue's entries and their delivery).** The engine keeps each
   Sim's saved queue (`Object::current`, `queue`); an entry's fields named from the log: the
@@ -812,3 +812,8 @@ Iteration 7 of 16.
   `CompleteGoalParam` (`primitives.md`); all 2,377 uses false, asking about goals whose
   state is the player's progress: the goal system's, recorded and skipped. Chunk 4 done
   (Dialog native). Next: chunk 5, the lots' Arry chunks (floors and walls) before routing.
+
+- **Iteration 8, chunk 5 (the Arry chunks).** Decoded (`lots.md`, "The arrays"): three
+  64 by 64 grids a lot (elements of 1, 8 and 1 bytes), run-length coded in bytes; all 48 of
+  the 16 lots read to exactly their size and their chunk's end (`read_lot_arrays`,
+  `test_lots`). Their meaning (floors, walls, ground?) and routing over them next.

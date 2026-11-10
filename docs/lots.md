@@ -234,9 +234,22 @@ definition (GUID 0x334945B8); 2 are the type-9 objects (GUID 0x437) swapped for 
 plain object, whose sections carry 7 bits more than a plain object's (they read as a
 multi-tile part's zeros): still open.
 
+## The arrays
+
+Each lot has three Arry chunks: 0, a width and a height (64 and 64 on the disc), an element
+size (1, 8 and 1), a 1 (32-bit words), then the elements' bytes, row after row,
+run-length coded. A 16-bit header: with its top bit set, that many copies of the one byte
+after it (padded to 2 bytes); otherwise that many bytes as they are (padded to an even
+length). The counts are in bytes, whatever the element size. All 48 arrays of the 16 lots
+read to exactly their size and their chunk's end (`read_lot_arrays`, `test_lots`).
+
+What they hold is to be named. In the club: the first is mostly 0 (2,763 of 4,096) with
+tile kinds such as 7, 33 and 18 (the floors?); the second, of 8 bytes a tile, is mostly
+`00 0f 01 01 00 00 00 00` (the walls?); the third mostly 32, then 7 (the ground?).
+
 ## Not decoded yet
 
 - The meaning of a multi-tile part's values, a door's floats, and a Sim's second table of
   floats, +1136 member and queue fields.
-- **The Arry chunks** (floors, walls and the like).
+- **The arrays' meaning** (decoded, not named).
 - **The two 32-bit values and the counted ones** of each table entry.

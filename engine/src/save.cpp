@@ -145,6 +145,38 @@ std::vector<LotChunks> read_lots(std::span<const uint8_t> file) {
     return out;
 }
 
+std::vector<LotArray> read_lot_arrays(const LotChunks& lot) {
+    std::vector<LotArray> out;
+    for (const auto& [type, c] : lot.chunks) {
+        if (type != "Arry") continue;
+        if (c.size() < 20) throw FormatError("Arry: no header");
+        LotArray a;
+        a.width = le32(c.data() + 4);
+        a.height = le32(c.data() + 8);
+        a.element_size = le32(c.data() + 12);
+        const size_t need = (size_t)a.width * a.height * a.element_size;
+        if (need > (1u << 24)) throw FormatError("Arry: too large");
+        size_t p = 20;
+        while (a.bytes.size() < need) {
+            if (p + 2 > c.size()) throw FormatError("Arry: runs past its chunk");
+            const uint16_t h = le16(c.data() + p);
+            p += 2;
+            if (h & 0x8000) {  // that many copies of one byte (padded to 2)
+                if (p + 1 > c.size()) throw FormatError("Arry: runs past its chunk");
+                a.bytes.insert(a.bytes.end(), h & 0x7FFF, c[p]);
+                p += 2;
+            } else {  // that many bytes as they are (padded to even)
+                if (p + h > c.size()) throw FormatError("Arry: runs past its chunk");
+                a.bytes.insert(a.bytes.end(), c.begin() + (long)p, c.begin() + (long)(p + h));
+                p += h + (h & 1);
+            }
+        }
+        if (a.bytes.size() != need || p != c.size()) throw FormatError("Arry: does not end at its chunk's end");
+        out.push_back(std::move(a));
+    }
+    return out;
+}
+
 std::vector<Neighbour> read_neighbours(std::span<const uint8_t> file) {
     const std::vector<uint8_t>* nbrs = nullptr;
     LotChunks t;

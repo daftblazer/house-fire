@@ -27,7 +27,7 @@ int main() {
         // its semi-global or the global one), and found frames whose node and counts fit it.
         size_t frames = 0, found = 0, fit = 0, person_frames = 0;
         // The classes (every section read to exactly its mark), and the Sims' motives.
-        size_t by_class[4] = {}, sims_with_motives = 0, lot_parts = 0, club_relationships = 0;
+        size_t by_class[4] = {}, sims_with_motives = 0, lot_parts = 0, club_relationships = 0, arrays = 0;
         std::vector<int16_t> club;
         for (const LotChunks& lot : lots) {
             types += read_object_types(*lot.find("objt")).size();
@@ -37,6 +37,7 @@ int main() {
             {
                 const auto lo = w.read_objects(lot);
                 for (const LotObject& o : lo.objects) by_class[(int)o.saved_class]++;
+                for (const LotArray& a : read_lot_arrays(lot)) arrays += a.width == 64 && a.height == 64;
                 if (&lot == &lots.back())
                     for (const LotObject& o : lo.objects) club_relationships += o.relationships.size();
                 // The lot's own part, read to the stream's end: on the disc no objects, and
@@ -63,7 +64,7 @@ int main() {
                     frames, person_frames, found, fit);
         std::printf("classes: %zu objects, %zu parts, %zu door parts, %zu Sims (%zu with motives and person data)\n",
                     by_class[0], by_class[1], by_class[2], by_class[3], sims_with_motives);
-        std::printf("lots' own parts as expected: %zu; the club's relationships: %zu\n", lot_parts, club_relationships);
+        std::printf("lots' own parts as expected: %zu; the club's relationships: %zu; arrays read, 64 by 64: %zu\n", lot_parts, club_relationships, arrays);
         const auto nb = read_neighbours(ngh);
         std::printf("neighbours %zu, ids %d to %d\n", nb.size(), nb.empty() ? 0 : nb.front().id, nb.empty() ? 0 : nb.back().id);
         std::printf("the club's first objects:");
@@ -73,7 +74,7 @@ int main() {
              club == std::vector<int16_t>{178, 177, 176, 174, 172, 171} &&
              frames == 4575 && person_frames == 53 && found == 4522 && fit == 4522 &&
              by_class[0] == 1754 && by_class[1] == 1821 && by_class[2] == 944 && by_class[3] == 53 &&
-             sims_with_motives == 53 && lot_parts == 16 && club_relationships == 16;
+             sims_with_motives == 53 && lot_parts == 16 && club_relationships == 16 && arrays == 48;
         ok = ok && nb.size() == 51 && nb.front().id == 3 && nb.back().id == 63;
     } catch (const FormatError& e) {
         std::printf("FormatError: %s\n", e.what());

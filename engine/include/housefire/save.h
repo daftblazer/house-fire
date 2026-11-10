@@ -75,6 +75,16 @@ struct Neighbour {
 // The neighbours, in id order. Throws FormatError if NBRS does not read to its end.
 std::vector<Neighbour> read_neighbours(std::span<const uint8_t> file);
 
+// One of a lot's three arrays (its Arry chunks): a width by height grid (64 by 64 on the
+// disc) of elements of a size (1, 8, 1), as bytes, row after row. Read from their run-length
+// coding (docs/lots.md, "The arrays"); what each holds is to be named (the floors, the walls,
+// the ground, by their values). Throws FormatError if one does not read to its chunk's end.
+struct LotArray {
+    uint32_t width = 0, height = 0, element_size = 0;
+    std::vector<uint8_t> bytes;
+};
+std::vector<LotArray> read_lot_arrays(const LotChunks& lot);
+
 // An object type of a lot (objt): its GUID, six 16-bit fields (field 4 is the type number
 // the lot's objects name) and its name.
 struct ObjectType {
