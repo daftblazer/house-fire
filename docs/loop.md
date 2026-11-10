@@ -1038,7 +1038,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 7 of 16.
+Iteration 8 of 16.
 
 - **Iteration 1, chunk 1 (a table's first tree per table; PushAction by the object's
   table).** Object 198 is the group meal, whose table has action 4201 twice (guards 4202 and
@@ -1083,3 +1083,8 @@ Iteration 7 of 16.
   from. On the logged scores with the logged places: each of the three choices among the best
   two (2nd, 1st, 2nd). Next: the base and the distance exactly, and the curves' data so the
   score is native.
+
+- **Iteration 8, chunk 3 (the value's terms read).** The distance read exactly (`fn_801F1C18`:
+  tiles from the two places, 20 a level), which is what iteration 7 tested; f27 = 1, f29 the
+  family's or a visitor's minimum, f28 a function of its own (`fn_80267D48`). Next: the
+  curves' data and f28 logged, so the score and the value are native.

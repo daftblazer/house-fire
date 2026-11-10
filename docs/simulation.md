@@ -370,7 +370,13 @@ attenuation by code (1 none, 2 0.1, 3 0.3, 4 0.6 from the tuning table, 0 the en
 the evaluation's lowest score for f28: each choice is among the best two, so within the
 best four the tuning's "random selection count" names (tick 186: the toilet first, the chosen
 fridge snack second; 1443: the chosen toilet first; 1847: the chosen easel second).
-Approximations still: f28 (the lowest score here) and the code to attenuation mapping.
+Read exactly since: f30 is the Sim's distance to the candidate, a virtual call on the Sim
+(its function `fn_801F1C18`): √((dx² + dy²) / 256 + (20 × the levels' difference)²) over
+the two places (the FTilePt at +0xC8, sixteenths; the level at +0xE0), so tiles, as tested;
+f27 is 1.0; f29 is one of two minimums (r13 − 28316 or − 28320, by the evaluator's +72: the
+family's or a visitor's, the tuning's "min autonomy score" for each); f28 is
+`fn_80267D48` on the same evaluator before the candidates (the score of no advert, it seems).
+Still approximate: f28 (the lowest score here) and the code to attenuation mapping.
 
 Still to come: f28 and f30 read exactly, the motive curves (their data) so the score is native,
 and the selection among the best of those that pass (the
