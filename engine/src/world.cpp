@@ -53,6 +53,7 @@ int World::load_lot(const LotChunks& lot) {
         o->relationships = lo.relationships;
         if (lo.saved_class == SavedClass::Part || lo.saved_class == SavedClass::Door)
             o->leader = lo.leader ? lo.leader : lo.id;
+        o->door = lo.saved_class == SavedClass::Door;
         if (lo.saved_class == SavedClass::Sim) {
             o->person = true;  // an NPC with a definition keeps its own file
             o->person_data = lo.person_data;
@@ -75,6 +76,7 @@ int World::load_lot(const LotChunks& lot) {
         }
         add(std::move(o));
     }
+    walls = Walls(read_lot_arrays(lot), *this);
     return missing;
 }
 

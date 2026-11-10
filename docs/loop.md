@@ -1038,7 +1038,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 12 of 16.
+Iteration 13 of 16.
 
 - **Iteration 1, chunk 1 (a table's first tree per table; PushAction by the object's
   table).** Object 198 is the group meal, whose table has action 4201 twice (guards 4202 and
@@ -1113,4 +1113,12 @@ Iteration 12 of 16.
   are the log's, the evaluation's stack object set by the engine; one list the same entire;
   the home figures (561,398) and the club's (338,305, 68,202) unchanged, lockstep's 7,902 too.
   Open: Sim 237's own interactions' values. Next: chunk 4, routing's first piece.
+
+- **Iteration 13, chunk 4 (routing: the walls).** The second array's first byte is the walls,
+  a bit an edge of the tile (1 −y, 2 −x, 4 +y, 8 +x; 0x10, 0x20 diagonal), a door's two parts
+  opening the wall between them; the floors do not block (0 the grass). `Walls`, built as the
+  lot loads. Checked on the home log's places: all 79 tile-to-tile steps of the Sims open
+  natively, 2 through doors, none through a wall; the figures (561,398, 338,305, 68,202,
+  lockstep 7,902) unchanged. Next: the path search, its tiles against Sim 12's logged walk to
+  the fridge (tick 307 on).
 

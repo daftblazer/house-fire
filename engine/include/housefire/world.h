@@ -12,6 +12,7 @@
 #include "housefire/expression.h"
 #include "housefire/interp.h"
 #include "housefire/library.h"
+#include "housefire/routing.h"
 #include "housefire/save.h"
 
 namespace housefire {
@@ -40,6 +41,7 @@ struct Object {
     // A multi-tile object's parts: the id of its leader (the leader's own id for itself); 0
     // for a single-tile object.
     int16_t leader = 0;
+    bool door = false;  // a door's part (OBJD type 8; World::saved_class)
     std::vector<int16_t> person_data; // scope 18
     std::vector<float> motives;       // scope 14, kept between -100 and 100
     std::vector<float> motives_b;
@@ -78,6 +80,7 @@ public:
     // type's GUID) and its file. Returns how many had no definition on the disc (the
     // characters, whose definitions are made at run time).
     int load_lot(const LotChunks& lot);
+    Walls walls;  // the lot's (load_lot)
     // The class the original's loader makes of an object of this definition (none: a
     // character's): docs/lots.md, "The classes".
     static SavedClass saved_class(const Definition* d);

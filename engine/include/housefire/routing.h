@@ -1,0 +1,37 @@
+// Routing: where a Sim can walk (docs/simulation.md, "Routing"). Measured on the recompiled
+// Bustin' Out's home log (the Sims' places, 'P').
+#pragma once
+#include <cstdint>
+#include <vector>
+
+#include "housefire/save.h"
+
+namespace housefire {
+
+class World;
+
+// A lot's walls: the second array's first byte a tile (docs/lots.md, "The arrays"), a bit an
+// edge of the tile: 1 towards y - 1, 2 towards x - 1, 4 towards y + 1, 8 towards x + 1 (each
+// wall seen from both its tiles); 0x10 and 0x20 the diagonal walls. A door opens the wall
+// between its two parts' tiles. The ground floor's (level 1) only, as the lot has one array.
+class Walls {
+public:
+    Walls() = default;
+    Walls(const std::vector<LotArray>& arrays, const World& world);
+    // Whether a Sim on tile (x, y) can step to its neighbour (x + dx, y + dy), one of dx and
+    // dy 0 and the other ±1. Off the grid is open (the lot's edge is not a wall here).
+    bool can_step(int x, int y, int dx, int dy) const;
+    // The same, the doors' openings left out.
+    bool wall_between(int x, int y, int dx, int dy) const;
+    size_t wall_edges() const { return wall_edges_; }
+    size_t openings() const { return open_.size(); }
+
+private:
+    uint8_t at(int x, int y) const;
+    uint32_t width_ = 0, height_ = 0;
+    std::vector<uint8_t> edges_;
+    std::vector<uint32_t> open_;  // (x, y, the edge's bit) of each door's opening
+    size_t wall_edges_ = 0;
+};
+
+}  // namespace housefire

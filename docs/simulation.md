@@ -451,6 +451,20 @@ Each is what its Sim lacked then: Sim 12 hungry (hunger −3.5 at the load), the
 low (−5 to −33); Sim 237's fun the lowest of its motives (about 21). Checked: `test_disc`
 reads all 856 tables on the disc and finds the three.
 
+## Routing
+
+**The walls** are the lot's second array, its first byte a tile (`docs/lots.md`, "The
+arrays"): a bit an edge, 1 towards y − 1, 2 towards x − 1, 4 towards y + 1, 8 towards x + 1,
+each wall seen from both of its tiles (the house's west wall: 8 on x = 12, 2 on x = 13); 0x10
+and 0x20 the diagonal walls at the house's corners. The array is row after row of y. A door
+(OBJD type 8, two parts) stands on the two tiles either side of its wall and opens it
+(`Walls`, built as the lot loads). The floors (the first array) do not block: 0 is the grass
+the Sims cross. Checked (`replay --card`, the Sims' places, `P`): 79 steps from a tile to a
+neighbour, every one open natively, 2 of them through a door (Sim 12 through the front door,
+object 67 at (18, 14) and its part at (18, 15); Sim 237 through the lattice door, 65 and
+66); 162 wall edges, 19 doors' openings. Two moves of 197 (the paper girl) are not steps: she
+is placed (37, 5 to 25, 20). The ground floor only: the lot has one walls array.
+
 ## Still open
 
 - What wakes a sleeping stack early (23 of 2,833 sleeps).

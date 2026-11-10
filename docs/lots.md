@@ -278,7 +278,8 @@ yards), 297 outside the 64 by 64. Of the 1,838 parts of multi-tile objects, 686 
 leader plus 16 × offset (y, x), 441 at (x, y) and 711 at neither: the objects' rotation turns
 the offsets, and what the six header values are exactly is still open.
 
-What they hold is to be named. In the club: the first is mostly 0 (2,763 of 4,096) with
+The second array's first byte is the walls (`simulation.md`, "Routing"), indexed y × 64 + x.
+What the rest hold is to be named. In the club: the first is mostly 0 (2,763 of 4,096) with
 tile kinds such as 7, 33 and 18 (the floors?); the second, of 8 bytes a tile, is mostly
 `00 0f 01 01 00 00 00 00` (the walls?); the third mostly 32, then 7 (the ground?).
 

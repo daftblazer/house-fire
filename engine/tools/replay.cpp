@@ -621,6 +621,14 @@ void place_quiet_stacks(const Log& log, const World& world, std::map<uint32_t, i
 bool run(const Log& log, const Library& lib, const LotChunks& club, const std::vector<Neighbour>& neighbours, Bench* bench, bool card_lot = false) {
     World world(lib);
     world.load_lot(club);
+    if (getenv("REPLAY_SHOW_OBJECTS"))
+        for (const auto& o : world.objects())
+            std::printf("object %d: guid %08x, %s\n", o->id(), o->guid, o->file ? o->file->path.c_str() : "-");
+    if (const char* dump = getenv("REPLAY_DUMP_ARRAYS"))  // the lot's three arrays, raw, for study
+        if (std::FILE* f = std::fopen(dump, "wb")) {
+            for (const LotArray& la : read_lot_arrays(club)) std::fwrite(la.bytes.data(), 1, la.bytes.size(), f);
+            std::fclose(f);
+        }
     // The disc's club: its motives do not move by themselves (measured; World::motives_run).
     world.motives_run = card_lot;
     world.neighbours = neighbours;
@@ -1149,6 +1157,34 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
             const std::vector<float> mv(sr.motives.begin(), sr.motives.end());
             const float got = interaction_score(curves, &ads, *person, mv);
             note(got == sr.score ? "autonomy: a score the same natively (bit for bit)" : std::fabs(got - sr.score) < 1e-5f ? "autonomy: a score the same natively but for the last bits" : "autonomy: a score DIFFERENT");
+        }
+    }
+
+    // Routing: each Sim's logged step from one tile to the next ('P'), against the lot's walls
+    // and the doors' openings (Walls). Measured on the save's lot.
+    if (!bench && !log.places.empty()) {
+        note("routing: the lot's wall edges (each seen from both tiles)", world.walls.wall_edges());
+        note("routing: the doors' openings", world.walls.openings());
+        std::map<int16_t, std::pair<int, int>> tile;
+        for (const PlaceRec& p : log.places) {
+            const Object* o = world.find(p.id);
+            if (!o || !o->person || p.x < 0 || p.y < 0) continue;
+            const int x = p.x >> 4, y = p.y >> 4;
+            auto it = tile.find(p.id);
+            if (it != tile.end() && it->second != std::make_pair(x, y)) {
+                const int dx = x - it->second.first, dy = y - it->second.second;
+                if (std::abs(dx) + std::abs(dy) != 1) {
+                    note("routing: a Sim's move not to a neighbouring tile (not a step)");
+                    if (getenv("REPLAY_SHOW_ROUTING")) std::printf("Sim %d moved %d,%d -> %d,%d (tick %u)\n", p.id, it->second.first, it->second.second, x, y, p.tick);
+                }
+                else {
+                    const bool ok = world.walls.can_step(it->second.first, it->second.second, dx, dy);
+                    note(ok ? "routing: a Sim's step between tiles open natively" : "routing: a Sim's step through a WALL natively");
+                    if (ok && world.walls.wall_between(it->second.first, it->second.second, dx, dy)) note("routing: a Sim's step through a door's opening");
+                    if (!ok && getenv("REPLAY_SHOW_ROUTING")) std::printf("Sim %d through a wall: %d,%d -> %d,%d (tick %u)\n", p.id, it->second.first, it->second.second, x, y, p.tick);
+                }
+            }
+            tile[p.id] = {x, y};
         }
     }
 
