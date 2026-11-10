@@ -647,7 +647,7 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
             const StepRec* before = nullptr;
             for (size_t j = i; j-- > 0;) if (log.steps[j].sim == s.sim) { before = &log.steps[j]; break; }
             if (o->person && s.node == 0 && before && before->tree == 281 && before->node == 4 && delivered.insert(s.sim).second) {
-                if (natively_delivered.count(o->id())) {}  // checked by the native delivery
+                if (rp.natively_delivered.count(o->id())) {}  // checked by the native delivery
                 else if (o->queue.empty()) note("queue: a waiting Sim's first interaction, with nothing queued (autonomy's)");
                 else {
                     const SavedQueueEntry& q = o->queue.front();
