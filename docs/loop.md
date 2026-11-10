@@ -878,7 +878,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 15 of 16.
+Iteration 16 of 16 (the loop ended).
 
 - **Iteration 1, chunk 1 (Mom's house read from the save).** The card's save is the
   neighbourhood file with big-endian block headers and chunk tables (`lots.md`, "Saves");
@@ -979,3 +979,30 @@ Iteration 15 of 16.
   guard among them (`simulation.md`, "Which pass"). The native guard runs need the
   evaluation inside the replay's turn; not built this iteration, as there is no checked
   piece of it smaller than that.
+
+- **Iteration 16, chunk 3 (PushAction by the object's own table, tried).** PushAction taking
+  the target's table by `interactions_of` makes one more of the home log's uses native, but
+  the delivery it leads to then runs object 198's own guard (4202) where the original runs
+  8248 and 265 first: a table's first tree is kept per file, not per table, and 198's table
+  is not the one the lookup gives. It made the replay 3 steps worse, so it was reverted;
+  recorded for the next loop (`Interaction` should carry its table's first tree, and 198's
+  table is to be found).
+
+## Where the sixth loop ended
+
+16 iterations, each with a commit. Done and checked against the home log (Mom's house, from
+the user's save):
+- **The save read** (the memory card's neighbourhood: big-endian blocks, NPCs as Sims, a
+  Sim's three lists) and the replay run from it (566,100 of 581,110 steps; scope 24).
+- **The motives, native:** the update (Motives::Sim, its rates the global file's tuning
+  tables FCNS), when it runs (every 60th turn, at the turn's end, not for NPCs), and the
+  running changes (SetMotiveDelta): 703 of 704 after-tick motive states as the log's.
+- **Autonomy's candidates, native:** all three evaluations' 421 guard checks the same, in
+  order (objects and persons; tables by OBJD field 5 or the master's; the filter by
+  threshold and flags).
+- The observer: objects' places (`P`), persons' motives (`N`), the motive gate (`U`).
+
+Open, for the next loop: autonomy's guards run in the turn and the score (the choice among
+the native best four); routing (chunk 4, not started: the `P` records and the floors are
+ready for it); at the club, what freezes the motives and what its bursts of checks are;
+motive 3; a table's first tree per table (iteration 16).
