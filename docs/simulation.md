@@ -76,6 +76,21 @@ On the 719-tick log: 67,001 steps with the native stack as the log's, 1,329 not 
 the engine pushed or popped: interactions, not native yet); 30,845 expressions the same
 natively, 555 not; Idle the same every time (5,809).
 
+## Where a Sim's interactions come in
+
+A Sim waits for its next interaction in "Wait For Notify" (Global 281), at node 4,
+IdleForInput (opcode 17). While it waits, in its turn, the engine runs check trees on its
+stack (a frame above, "Dream Sequence - Prefix Check Tree" and the like, then "hide menu")
+and then pushes the interaction it chose (a tree of the Sim's or of an object, at node 0, a
+frame above the wait). Of the replay's remaining step differences on the 719-tick log, these
+are nearly all (the rest are the pie menu's checks and the first ticks). They are the
+interaction queue's and autonomy's, which come as a system of their own: the next large one.
+
+Replay figures after its own fixes (2026-11-09: the frames saved below a stack's first step,
+returns into them, the file a rebuilt frame names its trees from): on the 719-tick log 68,273
+steps with the native stack as the log's, 314 not; on the 5,130-tick one (no pass records,
+the pie menu's runs counted as turns) 338,376 and 7,033.
+
 ## Still open
 
 - What wakes a sleeping stack early (23 of 2,833 sleeps).

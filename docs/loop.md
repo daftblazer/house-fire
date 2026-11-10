@@ -676,7 +676,7 @@ records what it found and moves to the next chunk rather than starting the syste
 
 ## Progress
 
-Iteration 5 of 16.
+Iteration 6 of 16.
 
 - **Iteration 1, chunk 1 (the neighbours).** NBRS decoded (`objects.md`, "The
   neighbours"): 63 slots, 51 neighbours, read to the chunk's end, ids the slot's number plus
@@ -707,3 +707,11 @@ Iteration 5 of 16.
   go: all 116 uses false and the same (the strings asked for do not exist); the call itself,
   never made in the logs, stops as not modelled. The library now reads string tables
   (`test_disc`). Chunk 4 done. Next: chunk 5, the Sims' interactions.
+
+- **Iteration 6, chunk 5 (the Sims' interactions).** The replay's own errors fixed (saved
+  frames below a stack's first step, returns into them, a rebuilt frame's file): on the
+  719-tick log 68,273 steps the same and 314 not (were 67,001 and 1,572). What is left is
+  where a Sim gets its interactions: in "Wait For Notify" at IdleForInput, the engine runs
+  check trees and pushes the chosen interaction (`simulation.md`). That is the interaction
+  queue and autonomy, a system of its own: recorded and skipped. Next: chunk 6, the next
+  primitives by use.

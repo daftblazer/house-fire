@@ -424,6 +424,7 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
     std::map<uint32_t, std::vector<uint32_t>> frames;  // the log's stacks: frame addresses, bottom first
     std::map<uint32_t, uint32_t> first_seen;           // stack -> tick of its first step
     std::set<uint32_t> first_step;                     // stacks whose first step was seen
+    std::set<uint32_t> unseen;                         // placeholder addresses of saved frames below a first step
     std::map<std::tuple<uint32_t, uint32_t, uint16_t>, std::pair<const Tree*, const ObjectFile*>> frame_tree;
     size_t streak = 0, best_streak = 0;
 
@@ -507,7 +508,16 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
             auto& fr = frames[s.sim];
             auto at = std::find(fr.begin(), fr.end(), s.frame);
             if (at != fr.end()) fr.erase(at + 1, fr.end());
-            else fr.push_back(s.frame);
+            else {
+                // A frame not seen yet: a call (above the others), or a return into one of the
+                // saved frames below the stack's first step, whose address the log had not shown
+                // (placeholders in `unseen`): the frames above it are gone, and it takes the
+                // place of the placeholder below them.
+                bool popped = false;
+                while (!fr.empty() && fr.back() > s.frame) { fr.pop_back(); popped = true; }
+                if (popped && !fr.empty() && unseen.count(fr.back())) { unseen.erase(fr.back()); fr.back() = s.frame; }
+                else fr.push_back(s.frame);
+            }
             first_seen.emplace(s.sim, t);
             auto id = ids.find(s.sim);
             Object* o = id == ids.end() ? nullptr : world.find(id->second);
@@ -524,6 +534,12 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
                 tf = finder.find(s);
                 if (tf.first) frame_tree[key] = tf;
             }
+            // Several files can hold a tree of the same id and shape (a Sim's template_person
+            // and the character files): an own tree is taken from the object's file if it has it.
+            if (tf.first && tree_kind(s.tree) == TreeKind::Own && o->file && tf.second != o->file && s.t && s.t->tree == s.tree) {
+                auto ot = o->file->trees.find(s.tree);
+                if (ot != o->file->trees.end() && same_shape(ot->second, s.t->raw)) tf = {&ot->second, o->file};
+            }
             const auto [tree, file] = tf;
             if (!tree) {
                 note("steps: tree not found on the disc");
@@ -534,8 +550,15 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
             const auto& st = in.stack();
             if (first_step.insert(s.sim).second) {
                 // Each lot object's first step against the stack the lot saved.
-                const bool same0 = !st.empty() && st.back().tree && st.back().tree->id == (int16_t)s.tree && st.back().node == s.node && st.size() == fr.size();
+                const bool same0 = !st.empty() && st.back().tree && st.back().tree->id == (int16_t)s.tree && st.back().node == s.node;
                 note(same0 ? "load: a stack's first step at its saved top frame" : "load: a stack's first step NOT at its saved top frame");
+                // The log shows only the frames that step: the saved frames below the first
+                // step's are taken as the log's too (addresses below its, never seen).
+                if (same0 && st.size() > fr.size()) {
+                    std::vector<uint32_t> below;
+                    for (size_t k = st.size() - fr.size(); k > 0; k--) { below.push_back(s.frame - 16 * (uint32_t)k); unseen.insert(below.back()); }
+                    fr.insert(fr.begin(), below.begin(), below.end());
+                }
                 static int shown = 0;
                 if (!same0 && getenv("REPLAY_SHOW_LOAD") && shown++ < 12)
                     std::printf("load: object %d tick %u: saved %d:%d (depth %zu), first step %d:%d (depth %zu)\n", o->id(), t,
@@ -547,6 +570,19 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
                 best_streak = std::max(best_streak, ++streak);
             } else {
                 streak = 0;
+                {
+                    static std::map<int, int> shown;
+                    const int cat = in.done() ? 0 : st.size() > fr.size() ? 1 : st.size() < fr.size() ? 2 : (st.back().tree && st.back().tree->id != (int16_t)s.tree) ? 3 : 4;
+                    static const char* names[] = {"stopped", "deeper", "log deeper", "another tree", "another node"};
+                    if (getenv("REPLAY_SHOW_DIFFS") && shown[cat]++ < 6) {
+                        const StepRec* prev = nullptr;
+                        for (size_t j = i; j-- > 0;) if (log.steps[j].sim == s.sim) { prev = &log.steps[j]; break; }
+                        std::printf("%s: object %d tick %u: native %d:%d depth %zu (error %d), log %d:%d depth %zu; its last step %d:%d->%d %c res %d\n",
+                                    names[cat], o->id(), t, st.empty() || !st.back().tree ? -1 : st.back().tree->id, st.empty() ? -1 : st.back().node,
+                                    st.size(), (int)in.error(), s.tree, s.node, fr.size(), prev ? prev->tree : -1, prev ? prev->node : -1, prev ? prev->after : -1,
+                                    prev && prev->look ? prev->look : '-', prev ? prev->result : -1);
+                    }
+                }
                 if (in.done()) note("steps: different: the native stack stopped");
                 else if (st.size() != fr.size()) note(st.size() < fr.size() ? "steps: different: the log's is deeper (a frame pushed)" : "steps: different: the native is deeper");
                 else if (!st.back().tree || st.back().tree->id != (int16_t)s.tree) {
@@ -567,7 +603,15 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
                 top.params = s.params;
                 top.locals = s.locals;
                 top.stack_object = s.stack_object;
+                // A frame's file is the object file its trees are named from: for a global or
+                // semi-global tree, not the file the tree is in but one that names it (the
+                // object's own if it does, else any whose semi-global file it is).
                 top.file = file;
+                if (tree_kind(s.tree) == TreeKind::Global) top.file = !st.empty() && st.back().file ? st.back().file : o->file;
+                else if (tree_kind(s.tree) == TreeKind::SemiGlobal) {
+                    if (o->file && o->file->semi == file) top.file = o->file;
+                    else for (const auto& f : lib.files()) if (f->semi == file) { top.file = f.get(); break; }
+                }
                 nf.push_back(top);
                 in.restore(std::move(nf));
                 if (in.asleep()) in.wake();
