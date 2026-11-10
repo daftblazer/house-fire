@@ -63,6 +63,27 @@ pub fn slot_places(slot: &crate::library::Slot, x16: i32, y16: i32, facing: i16)
     out
 }
 
+/// An object's footprint on its tile, {x0, y0, x1, y1} in sixteenths: the tile less its
+/// definition's footprint mask (OBJD field 75), whose nibble k (the low first) is the inset of
+/// the side k quarter turns from the object's front (`front(facing + 2k)`). Measured on the home
+/// log's obstacles (`docs/simulation.md`, "The footprints"): the trees' quarters turning with
+/// their facing, the armchair's 1 at each side, the jukebox's 6 at its back.
+pub fn footprint(mask: u16, x16: i32, y16: i32, facing: i16) -> [i32; 4] {
+    let (x, y) = (x16 & !15, y16 & !15);
+    let mut r = [x, y, x + 16, y + 16];
+    for k in 0..4 {
+        let inset = ((mask >> (4 * k)) & 15) as i32;
+        match front((facing & 6) + 2 * k as i16) {
+            Some((-1, 0)) => r[0] += inset,
+            Some((1, 0)) => r[2] -= inset,
+            Some((0, -1)) => r[1] += inset,
+            Some((0, 1)) => r[3] -= inset,
+            _ => {}
+        }
+    }
+    r
+}
+
 /// A tile, (x, y).
 pub type Tile = (i32, i32);
 

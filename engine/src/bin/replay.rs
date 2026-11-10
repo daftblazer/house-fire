@@ -46,7 +46,7 @@ use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
-use housefire::routing::{Tile, front, slot_places};
+use housefire::routing::{Tile, footprint, front, slot_places};
 use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
@@ -2408,6 +2408,18 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             counts.add("routing: obstacles paired with the objects the loop kept (as many, or one dropped)", (best.len() == pl.obstacles.len()) as usize);
             for (&id, r) in best.iter().zip(&pl.obstacles) {
                 let c = core(r);
+                // its footprint natively (not a person's): the tile less the definition's mask
+                if let Some(o) = world.find_object(id).filter(|o| !o.person) {
+                    let mask = world.definition(o).map_or(0, |d| d.field(75));
+                    if show_obstacles && footprint(mask, o.x16, o.y16, o.facing()) != c {
+                        println!("   footprint miss: object {id} mask {mask:04x} facing {}: native {:?}, the log's {c:?}", o.facing(), footprint(mask, o.x16, o.y16, o.facing()));
+                    }
+                    counts.note(if footprint(mask, o.x16, o.y16, o.facing()) == c {
+                        "routing: an obstacle's footprint natively its object's (the tile less its OBJD mask)"
+                    } else {
+                        "routing: an obstacle's footprint natively NOT its object's"
+                    });
+                }
                 let what = match world.find_object(id) {
                     None => "routing: an obstacle's object not in the native world",
                     Some(_) if on_tile(id, r) => "routing: an obstacle's object natively on its tile (the footprint within it)",
@@ -2417,7 +2429,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 if show_obstacles {
                     let o = world.find_object(id);
                     println!(
-                        "   obstacle {:?} cost {} core {}x{} at +{},+{} of tile {},{}: object {id} {} native at {:?}",
+                        "   obstacle {:?} cost {} core {}x{} at +{},+{} of tile {},{}: object {id} {} native at {:?} defn version {:?} f75 {:04x}",
                         &r[..4],
                         r[4],
                         c[2] - c[0],
@@ -2427,7 +2439,9 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                         c[0] >> 4,
                         c[1] >> 4,
                         o.and_then(|o| o.file).map_or("-".to_string(), |f| file_name(lib, f)),
-                        o.map(|o| (o.x16, o.y16, o.level, o.facing()))
+                        o.map(|o| (o.x16, o.y16, o.level, o.facing())),
+                        o.and_then(|o| world.definition(o)).map(|d| (d.version, d.fields.len())),
+                        o.and_then(|o| world.definition(o)).map_or(0, |d| d.field(75))
                     );
                 }
             }

@@ -1185,7 +1185,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 7 of 16.
+Iteration 8 of 16.
 
 - **Iteration 1, chunk 1 (the rooms and their doors).** The third array is not the rooms (1
   inside, 7 outside); the rooms are the regions the walls close (`Walls::room`, a door left
@@ -1262,6 +1262,15 @@ Iteration 7 of 16.
   keeps 3 off them. Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy
   clean. Next: each object's footprint and cost from its definition, and which are left out,
   to build the obstacles natively (rectangle by rectangle against `X`).
+
+- **Iteration 8, chunk 3 (the footprints).** An object's footprint natively
+  (`routing::footprint`): its tile less OBJD field 75, the footprint mask, nibble k the inset of
+  the side `front(facing + 2k)`. Checked against the logged obstacles: 647 of the 694 of native
+  objects (persons apart) exactly, the mask turning with the facing (the trees' quarters, the
+  armchair, the jukebox); the 47 others the outdoor chairs (0x3333 but 4 in) and two of the
+  game's own objects (mask 0, 8 at +4). Figures unchanged (561,398, 338,305, 68,202, lockstep
+  7,902, 4, 24); clippy clean. Next: the cost (10 or blocking: the doors, the newspaper, the
+  trees at 10) and which objects are left out, from the definitions, to build the whole list.
 
 
 ## The eighth loop paused

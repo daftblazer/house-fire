@@ -605,6 +605,18 @@ native). The walk round the table at tick 1905 keeps exactly 3 off them (x 22 + 
 8 at +4, grown by 3). Which objects are left out (932 native objects in the rectangles' extent
 are not among them: rugs, windows, wall lamps, paintings, ...) and each footprint's size are next.
 
+**The footprints** (`routing::footprint`). An object's footprint is its tile less its
+definition's footprint mask, OBJD field 75 (the PC's FootprintMask): nibble k, the low first, is
+the inset in sixteenths of the side k quarter turns from the object's front (`front(facing +
+2k)`), so the mask turns with the object. Checked on the home log's 694 obstacles of native
+objects (persons apart): 647 the native footprint exactly: whole tiles (mask 0), the trees' four
+quarter pieces (0x0cc0 and its turns, each 4 by 4 in a corner, by facing), the armchair's 1 at
+two sides (0x1010 at facing 2: 14 by 16), the jukebox's 6 at its back (0x0006 at facing 4), the
+end table's 2 (0x2222), the newspaper's 5 and the garden lamp's 6. The other 47: the three
+outdoor chairs, 0x3333 but 4 in on each side (8 by 8 at +4, one more than the mask), and two
+of the game's own objects with mask 0 but 8 by 8 at +4 (`zz_move_a__tron`, the two-player money
+trunk): something besides the mask shrinks them (not yet found).
+
 ## Still open
 
 - What wakes a sleeping stack early (23 of 2,833 sleeps).
