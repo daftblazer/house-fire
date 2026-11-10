@@ -149,6 +149,8 @@ pub struct World<'lib> {
     slots: Vec<Option<Object>>,
     order: Vec<ObjectKey>,
     by_id: BTreeMap<i16, ObjectKey>,
+    /// The same, indexed by id + 32768, for `find`.
+    id_index: Vec<Option<ObjectKey>>,
     version: u64,
     pub rng: Rng,
     /// The lot's (`load_lot`).
@@ -186,6 +188,7 @@ impl<'lib> World<'lib> {
             slots: Vec::new(),
             order: Vec::new(),
             by_id: BTreeMap::new(),
+            id_index: vec![None; 1 << 16],
             version: 0,
             rng: Rng::default(),
             walls: Walls::default(),
@@ -343,6 +346,7 @@ impl<'lib> World<'lib> {
         self.slots.iter_mut().for_each(|s| *s = None);
         self.order.clear();
         self.by_id.clear();
+        self.id_index.fill(None);
         self.version += 1;
     }
 
@@ -362,7 +366,7 @@ impl<'lib> World<'lib> {
     }
 
     pub fn remove(&mut self, k: ObjectKey) {
-        self.by_id.retain(|_, v| *v != k);
+        self.unindex(k);
         self.order.retain(|&o| o != k);
         self.slots[k.0 as usize] = None;
         self.version += 1;
@@ -370,7 +374,7 @@ impl<'lib> World<'lib> {
 
     /// By object id (data 11).
     pub fn find(&self, id: i16) -> Option<ObjectKey> {
-        self.by_id.get(&id).copied()
+        self.id_index[(id as i32 + 32768) as usize]
     }
     pub fn find_object(&self, id: i16) -> Option<&Object> {
         self.find(id).map(|k| self.get(k))
@@ -378,12 +382,24 @@ impl<'lib> World<'lib> {
 
     /// Called when an object's id changes (its data 11 is written).
     pub fn reindex(&mut self, k: ObjectKey) {
-        self.by_id.retain(|_, v| *v != k);
+        self.unindex(k);
         let id = self.get(k).id();
         if id != 0 {
             self.by_id.insert(id, k);
+            self.id_index[(id as i32 + 32768) as usize] = Some(k);
         }
         self.version += 1;
+    }
+
+    /// Every id that names the object no longer does.
+    fn unindex(&mut self, k: ObjectKey) {
+        let index = &mut self.id_index;
+        self.by_id.retain(|&id, v| {
+            if *v == k {
+                index[(id as i32 + 32768) as usize] = None;
+            }
+            *v != k
+        });
     }
 
     /// The objects by id, and a count that changes whenever an object comes, goes or changes its

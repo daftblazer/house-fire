@@ -75,6 +75,15 @@ fn file_name(lib: &Library, f: FileId) -> String {
     p[p.rfind('/').map_or(0, |s| s + 1)..].to_string()
 }
 
+/// A count whose kind is formatted, only when counting.
+macro_rules! note {
+    ($counts:expr, $($arg:tt)*) => {
+        if !$counts.quiet {
+            $counts.note(&format!($($arg)*));
+        }
+    };
+}
+
 /// What was seen, counted by kind (--bench: nothing, only the timings).
 #[derive(Default)]
 struct Counts {
@@ -226,23 +235,22 @@ fn sync_variables(world: &mut World, counts: &mut Counts, shown: &mut Shown, me:
         if v.flags & 1 == 0 {
             continue; // the lookup found nothing
         }
-        let sc = format!("variables: scope {}", v.scope);
         let Some(got) = vars.get(v.scope as u8, v.data) else {
-            counts.note(&format!("{sc}: not modelled"));
+            note!(counts, "variables: scope {}: not modelled", v.scope);
             continue;
         };
         if v.flags & 4 != 0 {
             let lf = f32::from_bits(v.fvalue);
             if got.f == Some(lf) {
-                counts.note(&format!("{sc}: the same natively"));
+                note!(counts, "variables: scope {}: the same natively", v.scope);
                 continue;
             }
-            counts.note(&format!("{sc}: different (set to the log's)"));
+            note!(counts, "variables: scope {}: different (set to the log's)", v.scope);
             vars.set_float(v.scope as u8, v.data, lf);
             continue;
         }
         if got.value == v.value {
-            counts.note(&format!("{sc}: the same natively"));
+            note!(counts, "variables: scope {}: the same natively", v.scope);
             continue;
         }
         if env("REPLAY_SHOW_SCOPE").is_some_and(|e| atoi(&e) == v.scope as i64) && shown.next("scope", 10) {
@@ -251,7 +259,7 @@ fn sync_variables(world: &mut World, counts: &mut Counts, shown: &mut Shown, me:
                 v.scope, v.data, got.value, v.value, s.stack_object, s.stack_object_after, s.tree, s.node
             );
         }
-        counts.note(&format!("{sc}: different (set to the log's)"));
+        note!(counts, "variables: scope {}: different (set to the log's)", v.scope);
         vars.set(v.scope as u8, v.data, v.value);
     }
 }
@@ -553,10 +561,10 @@ impl Host for ReplayHost<'_, '_> {
             }
             let want = self.logged(s, n);
             if got == want {
-                self.counts.note(&format!(
+                note!(self.counts, 
                     "primitives: TestObjectType: the same natively, {}",
                     if got == PrimResult::True { "true" } else { "false" }
-                ));
+                );
             } else {
                 self.counts.note("primitives: TestObjectType: DIFFERENT (the log's taken)");
                 if has("REPLAY_SHOW_DIFF") && self.shown.next("tot", 8) {
@@ -589,14 +597,11 @@ impl Host for ReplayHost<'_, '_> {
                 }
             }
             let want = self.logged(s, n);
-            let mut k = if n.opcode == 2 { "primitives: expression".to_string() } else { "primitives: SetToNext".to_string() };
-            if n.opcode == 31 {
-                k += &format!(" kind {}", n.operand[4] & 0x7F);
-            }
+            let k = || if n.opcode == 2 { "primitives: expression".to_string() } else { format!("primitives: SetToNext kind {}", n.operand[4] & 0x7F) };
             if got == want {
-                self.counts.note(&format!("{k}: the same natively"));
+                note!(self.counts, "{}: the same natively", k());
             } else {
-                self.counts.note(&format!("{k}: DIFFERENT (the log's taken)"));
+                note!(self.counts, "{}: DIFFERENT (the log's taken)", k());
                 let kind = n.operand[4] & 0x7F;
                 if n.opcode == 31 && kind == 6 && has("REPLAY_KIND6") {
                     // which data fields of the object found equal the frame's first parameter
@@ -695,7 +700,7 @@ impl Host for ReplayHost<'_, '_> {
         }
         self.counts.note("primitives: from the log");
         if s.params != s.params_after || s.locals != s.locals_after || s.stack_object != s.stack_object_after {
-            self.counts.note(&format!("primitives: from the log, opcode {}: changes its frame", n.opcode));
+            note!(self.counts, "primitives: from the log, opcode {}: changes its frame", n.opcode);
         }
         if env("REPLAY_SHOW_OP").is_some_and(|e| n.opcode == atoi(&e) as u16)
             && self.shown.next("op", if has("REPLAY_SHOW_ALL") { 100000 } else { 14 })
@@ -725,7 +730,7 @@ impl Host for ReplayHost<'_, '_> {
             }
             println!("{l}");
         }
-        self.counts.note(&format!("primitives: from the log, opcode {}", n.opcode));
+        note!(self.counts, "primitives: from the log, opcode {}", n.opcode);
         let f = interp.top();
         f.params = s.params_after.clone();
         f.locals = s.locals_after.clone();
@@ -1284,7 +1289,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
                 let i = sim.stack_of(&h.world, k);
                 let op = top_node(lib, i).map_or("?".to_string(), |n| n.opcode.to_string());
                 let slept = if i.sleep().woke() { " (slept)" } else { "" };
-                h.counts.note(&format!("turns: the native would run, at opcode {op}{slept}"));
+                note!(h.counts, "turns: the native would run, at opcode {op}{slept}");
             }
             let show = has("REPLAY_SHOW_TURNS");
             let shown = *h.shown.0.get("turns").unwrap_or(&0);
@@ -1505,11 +1510,11 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
             }
             let Some((tree, file)) = tf else {
                 h.counts.note("steps: tree not found on the disc");
-                h.counts.note(&format!(
+                note!(h.counts, 
                     "steps: tree not found: {}{}",
                     if s.t.is_some() { "tree " } else { "no tree record, tree " },
                     s.tree
-                ));
+                );
                 continue;
             };
             // The interaction queue: the first interaction pushed onto a waiting Sim (a tree at
@@ -1709,7 +1714,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
                     } else {
                         "a step of the frame"
                     };
-                    h.counts.note(&format!("frames: stack object different, after {what}"));
+                    note!(h.counts, "frames: stack object different, after {what}");
                     if has("REPLAY_SHOW_SO") && h.shown.next("so", 12) {
                         let mut l = format!(
                             "stack object: native {}, log {} at {}:{}; before: {}:{}->{} ({}) so {}->{}{}",
@@ -1789,11 +1794,11 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
             if !same {
                 for (i, (&a, &b)) in om.iter().zip(&m.motives).enumerate() {
                     if i != 3 && i != 13 && a != b {
-                        h.counts.note(&format!(
+                        note!(h.counts, 
                             "motives: different after the tick: person {} motive {i}{}",
                             m.id,
                             if (a - b).abs() < 1e-3 { " (by a last bit)" } else { "" }
-                        ));
+                        );
                     }
                 }
             }

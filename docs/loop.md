@@ -1251,7 +1251,7 @@ without a commit (record why here). Then the eighth loop resumes.
 
 ## Progress
 
-Iteration 10 of 16.
+Iteration 11 of 16.
 
 - **Iteration 1, chunk 1 (the crate and the readers).** The C++ engine moved to
   `engine-cpp/` (built with clang from there, its home-log replay output the very same as
@@ -1357,3 +1357,13 @@ Iteration 10 of 16.
   pass; clippy clean. Measured: 14.0 µs a tick against the C++'s 10.6 (`--bench`,
   interleaved), so the next part is its speed. Chunk 6 done. Next: the replay's speed, then
   chunk 7.
+
+- **Iteration 11, chunk 6 (the replay's speed).** Profiled (`perf`): the timed steps spent
+  most of the gap formatting the counts' texts, which `--bench` then drops, and in
+  `World::find`'s tree map. The replay formats a count only when counting (a `note!` macro);
+  the world keeps a direct index from id to object beside its ordered map (`find` one
+  look-up). Checked: the replay's and lockstep's outputs on the three logs still the C++ ones'
+  line for line; the tests pass; clippy clean. Measured (`--bench` on the home log, the two
+  interleaved twice): 9.9 and 10.0 µs a tick against the C++'s 10.6 (the C++ figure includes
+  its own counts' texts); of the engine's parts, the expression 1.84 against 2.20, SetToNext
+  0.54 against 0.41, the pass 0.87 against 0.80. Next: chunk 7, the C++ engine removed.
