@@ -157,10 +157,25 @@ Over the 16 lots: 4,575 frames, one per object but for one stack of 2 and one of
 node in it and exactly its parameter and local counts (`engine/tests/test_lots.cpp`). The
 other 53 are the characters'.
 
+## The lot's own section
+
+After the last object's section and its mark, the loader (`fn_801FDE80`) reads:
+- an object (a 16-bit reference, through the object manager's virtual, `fn_801FDD0C`);
+- (v>51) an int count and that many object references;
+- (v>63) a wide string (`Recon_String2`): on to an even byte position, an optional
+  byte-order mark (bytes FE FF: little-endian units follow; FF FE: big-endian, the
+  console's own order), then 16-bit units to a zero unit. (Before version 64, a string in
+  bytes.)
+
+On every lot both object fields are empty and the string is empty, written as FE FF 00 00;
+where it starts at an odd position the byte before it is CD, padding the writer never set.
+Every lot's part ends exactly at the stream's end, and in the club the traced reads
+(`fn_801FDD0C`, the int, `Recon_String2`) start and end where the engine's do. None of it is
+named yet, and the engine uses none of it.
+
 ## Not decoded yet
 
 - The meaning of a multi-tile part's values, a door's floats, and a Sim's second table of
   floats, +1136 member and queue fields.
-- **The lot's own section.**
 - **The Arry chunks** (floors, walls and the like).
 - **The two 32-bit values and the counted ones** of each table entry.

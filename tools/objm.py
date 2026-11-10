@@ -227,6 +227,35 @@ def whole_section(m, start, end, cls, v=VERSION):
     return o
 
 
+def wide_string(m, pos):
+    """Recon_String2 at byte position pos: on to an even position, an optional byte-order
+    mark (bytes FE FF: little-endian units follow; FF FE: big-endian, the console's), then
+    16-bit units to a zero unit. Returns (the string, the position after it)."""
+    pos += pos & 1
+    order = '>'
+    if m[pos:pos + 2] == b'\xfe\xff': order, pos = '<', pos + 2
+    elif m[pos:pos + 2] == b'\xff\xfe': pos += 2
+    units = []
+    while True:
+        u = struct.unpack_from(order + 'H', m, pos)[0]
+        pos += 2
+        if u == 0: return ''.join(map(chr, units)), pos
+        units.append(u)
+
+
+def lot_section(m, start):
+    """The lot's own part, after the objects (the loader, fn_801FDE80): an object, a list of
+    objects, a wide string (v>63). Must end the stream."""
+    r = recon.Reader(m, START + start)
+    r.compressed = True
+    o = {'object': r.r16()}
+    o['objects'] = [r.r16() for _ in range(r.r32())]
+    r.pad()
+    o['string'], end = wide_string(m, r.pos)
+    if end != len(m): raise ValueError(f'the lot part ends at {end - START}, not {len(m) - START}')
+    return o
+
+
 def main(argv):
     d = Disc(argv[1])
     res = collections.Counter()

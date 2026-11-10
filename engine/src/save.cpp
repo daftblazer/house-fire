@@ -329,6 +329,26 @@ LotObjects read_lot_objects(std::span<const uint8_t> m, const std::function<Save
     }
     out.lot_section = kStart + sections.back().first;
     out.lot_section_end = kStart + sections.back().second;
+    {
+        SaveStream l(s, sections.back().first);
+        l.compressed = true;
+        out.lot_object = (int16_t)l.r16();  // the manager's object reference (fn_801FDD0C)
+        const int32_t n = count(l, 4096, "ObjM: the lot's objects out of range");
+        for (int32_t i = 0; i < n; i++) out.lot_objects.push_back((int16_t)l.r16());
+        l.pad();  // the string (Recon_String2): UTF-16 from an even position
+        size_t p = l.pos() + (l.pos() & 1);
+        bool little = false;
+        if (p + 2 <= s.size() && s[p] == 0xFE && s[p + 1] == 0xFF) { little = true; p += 2; }
+        else if (p + 2 <= s.size() && s[p] == 0xFF && s[p + 1] == 0xFE) p += 2;
+        while (true) {
+            if (p + 2 > s.size()) throw FormatError("ObjM: the lot's string has no end");
+            const char16_t u = little ? (char16_t)le16(s.data() + p) : (char16_t)(s[p] << 8 | s[p + 1]);
+            p += 2;
+            if (!u) break;
+            out.lot_string.push_back(u);
+        }
+        if (p != s.size()) throw FormatError("ObjM: the lot's part does not end the stream");
+    }
     return out;
 }
 

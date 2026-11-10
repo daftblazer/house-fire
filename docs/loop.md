@@ -517,7 +517,7 @@ without a commit.
 
 ## Progress
 
-Iteration 2 of 12.
+Iteration 3 of 12.
 
 - **Iteration 1, chunk 1 (the tree stack and the base object).** Read the loader's code for
   everything after an object's data: the tree stack and its frames, the +192 member, the
@@ -537,3 +537,12 @@ Iteration 2 of 12.
   the club Sims' first reads: 22 of 24 motives and 81 of 102 person data fields are the
   lot's; the rest the engine sets at load (person data 27 and 32 to 1, motive 13), which the
   native load must model (chunk 2). Next: the lot's own section.
+
+- **Iteration 3, chunk 1 (the lot's own section).** Read the loader's code after the
+  objects: an object reference, a counted list of them, a wide string (`lots.md`, "The
+  lot's own section"); the engine reads it and requires it to end the stream. A new trace
+  (the recon log now flushes each record, as runs end by a signal) has all 178 club
+  sections: every one starts and ends where the engine's reading does, and so do the lot
+  section's three reads. All 16 lots end exactly at the stream's end; their lot parts are
+  empty. Chunk 1 is done (the Arry chunks, floors and walls, wait for the systems that use
+  them). Next: chunk 2, the native simulation tick.

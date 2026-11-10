@@ -127,6 +127,11 @@ constexpr int kObjectDataFields = 72, kObjectTemps = 8;
 struct LotObjects {
     std::vector<LotObject> objects;
     size_t lot_section = 0, lot_section_end = 0;  // the lot's own part, after the objects
+    // The lot's own part (the loader, fn_801FDE80, after the objects): an object, a list of
+    // objects (both to be named; empty on the disc) and a string (UTF-16; empty on the disc).
+    int16_t lot_object = 0;
+    std::vector<int16_t> lot_objects;
+    std::u16string lot_string;
 };
 // ObjM: the table, then the mark chain (one section per object, then the lot's). class_of
 // gives the class of an objt type number. Every section must end exactly at its mark.
