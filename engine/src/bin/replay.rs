@@ -46,7 +46,7 @@ use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
-use housefire::routing::{Tile, front};
+use housefire::routing::{Tile, front, slot_places};
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
 use housefire::tree_log::{Log, PassRec, StepRec, read_log, same_shape};
@@ -2242,6 +2242,54 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 stand.0,
                 stand.1,
                 want
+            );
+        }
+    }
+    // A routing step's goal natively (GotoRoutingSlot, a literal or global slot): of the places
+    // its slot offers (`slot_places`), the nearest the Sim (from the plan's start) whose tile
+    // the walls let it reach and no other object stands on; against the plan the step made in
+    // its tick (its start the Sim's place) by the step that walks: its end, or the tile before
+    // the object where it ends at the object.
+    let place_at = |id: i16, tick: u32| log.places.iter().filter(|p| p.id == id && p.tick <= tick).last().map(|p| (p.x, p.y));
+    for s in &log.steps {
+        let Some(raw) = raw45(s) else { continue };
+        // The step that walks (yields, result 1) made the plan; one that ends (a return to its
+        // tree's true or false target) only shares the tick.
+        if s.result != 1 {
+            continue;
+        }
+        let (number, scope) = (u16::from_be_bytes([raw[4], raw[5]]), u16::from_be_bytes([raw[6], raw[7]]));
+        let Some(sim) = ids.get(&s.sim).copied() else { continue };
+        let Some(start) = place_at(sim, s.tick) else { continue };
+        let Some(pl) = log.plans.iter().find(|p| p.tick == s.tick && p.points.first() == Some(&start) && p.points.len() >= 2) else { continue };
+        let Some(o) = world.find_object(s.stack_object) else { continue };
+        let Some(file) = o.file else { continue };
+        let Some(slot) = lib.routing_slot(file, world.definition(o), scope, number) else { continue };
+        let target = place_at(o.id(), s.tick).unwrap_or((o.x16, o.y16));
+        let end = pl.points[pl.points.len() - 1];
+        let want = if end == target { pl.points[pl.points.len() - 2] } else { end };
+        let tile = |p: (i32, i32)| (p.0 >> 4, p.1 >> 4);
+        let occupied = |p: (i32, i32)| {
+            world.objects().any(|x| {
+                !x.person && x.id() != o.id() && x.on_lot() && x.level == 1 && tile((x.x16, x.y16)) == tile(p)
+            })
+        };
+        let mut places = slot_places(slot, target.0, target.1, o.facing());
+        places.retain(|&p| !occupied(p) && !walls.route(tile(start), tile(p), None).is_empty());
+        let d2 = |p: &(i32, i32)| (p.0 - start.0).pow(2) + (p.1 - start.1).pow(2);
+        let got = places.iter().min_by_key(|p| d2(p)).copied();
+        counts.note(if got == Some(want) {
+            "routing: a routing step's goal natively the plan's (the nearest open place of its slot)"
+        } else {
+            "routing: a routing step's goal natively NOT the plan's"
+        });
+        if show {
+            println!(
+                "goal at tick {}: slot {number} ({scope}) flags {:x} of {} facing {}: native {got:?}, the plan's {want:?}; places {places:?}",
+                s.tick,
+                slot.flags,
+                o.id(),
+                o.facing()
             );
         }
     }

@@ -1185,7 +1185,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 3 of 16.
+Iteration 4 of 16.
 
 - **Iteration 1, chunk 1 (the rooms and their doors).** The third array is not the rooms (1
   inside, 7 outside); the rooms are the regions the walls close (`Walls::room`, a door left
@@ -1214,6 +1214,17 @@ Iteration 3 of 16.
   its own slots' offsets); 10 plans end elsewhere (a door, a slot's side, the lot's edge).
   Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902); clippy clean. Next: the
   sitting and the any-side slots (the chair, the global slot 1's nearest side).
+
+- **Iteration 4, chunk 2 (a routing slot's goal).** `routing::slot_places`: the places a slot
+  offers, one for each direction its flags name (bit k k eighths from the object's front),
+  at its optimal proximity; the goal the nearest to the Sim of those the walls let it reach and
+  no other object stands on. The plan is the routing step's that walks (it yields, result 1;
+  a step that ends only shares the tick). Checked on the home log's five such steps: three
+  goals the plan's (the counter's front, the meal's open side by the fridge and stove, the
+  chair's side nearest the Sim); the other two are slots of the paper girl, a person, whose
+  facing the save gives (5) and her walk then turns. Figures unchanged (561,398, 338,305,
+  68,202, lockstep 7,902); clippy clean. Next: a person's facing as it walks (the place
+  records' direction), or the planner's waypoints within a room.
 
 
 ## The eighth loop paused

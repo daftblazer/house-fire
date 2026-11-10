@@ -543,6 +543,14 @@ away, by the object's facing: its data field 1, in eighths of a turn (`Object::f
 end at their routing step's object; the other 2 are to the dining chair, approached from its
 side to sit down.
 
+**A routing slot's goal** (`routing::slot_places`). A slot offers a place for each direction
+its flags name (bit k: k eighths of a turn from the object's front), at its optimal proximity;
+the Sim goes to the nearest of them that the walls let it reach and no other object stands
+on. Checked on the home log's five walking GotoRoutingSlot steps: three goals the original's
+(the counter's front; the group meal's four sides, two taken by the fridge and the stove, the
+open west one; the chair's four sides, the south one nearest); the two others are slots of the
+paper girl, a person whose facing changes as she walks (the save's 5 is stale by then).
+
 ## Still open
 
 - What wakes a sleeping stack early (23 of 2,833 sleeps).

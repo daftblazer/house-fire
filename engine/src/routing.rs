@@ -37,6 +37,29 @@ pub fn front(facing: i16) -> Option<(i32, i32)> {
     }
 }
 
+/// The places a routing slot offers around its object: for each direction its flags name (bit
+/// k: k eighths of a turn from the object's front, by its facing), the place that far away at
+/// the slot's optimal proximity (sixteenths; a diagonal's two parts each that far). Places in
+/// sixteenths, as the objects'.
+pub fn slot_places(slot: &crate::library::Slot, x16: i32, y16: i32, facing: i16) -> Vec<(i32, i32)> {
+    let mut out = Vec::new();
+    for k in 0..8 {
+        if slot.flags & (1 << k) == 0 {
+            continue;
+        }
+        let f = facing + k as i16;
+        let d = match front(f) {
+            Some(d) => d,
+            None => {
+                let (a, b) = (front(f - 1).unwrap(), front(f + 1).unwrap());
+                (a.0 + b.0, a.1 + b.1)
+            }
+        };
+        out.push((x16 + d.0 * slot.optimal_proximity, y16 + d.1 * slot.optimal_proximity));
+    }
+    out
+}
+
 /// A tile, (x, y).
 pub type Tile = (i32, i32);
 
