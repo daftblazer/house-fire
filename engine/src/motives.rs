@@ -43,6 +43,12 @@ pub struct MotiveRates {
 impl MotiveRates {
     /// From the tuning tables as fn_801CFFB4 derives them; `None` if one is missing.
     pub fn from(lib: &Library) -> Option<MotiveRates> {
+        let (r, ok) = Self::read(lib);
+        ok.then_some(r)
+    }
+
+    /// The same, the rates found kept when one is missing (it counts 0), and whether all were.
+    pub fn read(lib: &Library) -> (MotiveRates, bool) {
         let mut ok = true;
         let mut get = |name: &str| {
             let v = lib.tuning(name);
@@ -75,7 +81,7 @@ impl MotiveRates {
             bladder_awake: get("bladder decrement, awake"),
             bladder_asleep: get("bladder decrement, asleep"),
         };
-        ok.then_some(r)
+        (r, ok)
     }
 }
 

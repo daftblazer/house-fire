@@ -70,16 +70,11 @@ pub trait Host: Trees {
     fn tree(&mut self, id: u16) -> Option<TreeId>;
     /// The primitive at `node`, for the interpreter's top frame.
     fn primitive(&mut self, interp: &mut Interpreter, node: &Node) -> PrimResult;
-    /// The parameters a call that gives none passes: the interpreter's own, given when it is set
-    /// up (TreeSimImpl::Initialize keeps a pointer at +44; Bustin' Out's call, fn_8023EE1C,
-    /// copies from it). In the PC game they are the object's temporaries.
-    fn default_params(&self) -> &[i16] {
-        &[]
-    }
     /// Runs a check tree to its return on its own stack ([`Mode::Check`]), with this stack
-    /// object and file: its result, or `None` if the host cannot (the engine's own checks: the
-    /// interaction queue's prefix check, "hide menu").
-    fn run_check(&mut self, _t: TreeId, _file: Option<FileId>, _stack_object: i16) -> Option<bool> {
+    /// object and file and the interpreter's own parameters (`defaults`): its result, or `None`
+    /// if the host cannot (the engine's own checks: the interaction queue's prefix check, "hide
+    /// menu").
+    fn run_check(&mut self, _t: TreeId, _file: Option<FileId>, _stack_object: i16, _defaults: &[i16]) -> Option<bool> {
         None
     }
     /// A primitive read local k of frame `frame` before anything wrote it
@@ -143,6 +138,7 @@ pub struct Interpreter {
     finished: bool,
     error: Error,
     sleep: Sleep,
+    defaults: Vec<i16>,
 }
 
 impl Interpreter {
@@ -156,6 +152,7 @@ impl Interpreter {
             finished: false,
             error: Error::None,
             sleep: Sleep::default(),
+            defaults: Vec::new(),
         }
     }
 
@@ -285,7 +282,10 @@ impl Interpreter {
         if op > 255 {
             let Some(t) = host.tree(op) else { return self.fail(Error::Missing) };
             let pushed = if n.operand.iter().all(|&b| b == 0xFF) {
-                self.push(host, t, host.default_params())
+                let d = std::mem::take(&mut self.defaults);
+                let pushed = self.push(host, t, &d);
+                self.defaults = d;
+                pushed
             } else {
                 let p: [i16; 4] = std::array::from_fn(|i| n.operand16(i) as i16);
                 self.push(host, t, &p)
@@ -334,6 +334,16 @@ impl Interpreter {
                 f.unset &= !(1u64 << k);
             }
         }
+    }
+
+    /// The parameters a call that gives none passes: the interpreter's own, given when it is set
+    /// up (TreeSimImpl::Initialize keeps a pointer at +44; Bustin' Out's call, fn_8023EE1C,
+    /// copies from it). In the PC game they are the object's temporaries.
+    pub fn defaults(&self) -> &[i16] {
+        &self.defaults
+    }
+    pub fn set_defaults(&mut self, d: Vec<i16>) {
+        self.defaults = d;
     }
 
     /// The stack's sleep (Idle).

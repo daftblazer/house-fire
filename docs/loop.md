@@ -1251,7 +1251,7 @@ without a commit (record why here). Then the eighth loop resumes.
 
 ## Progress
 
-Iteration 9 of 16.
+Iteration 10 of 16.
 
 - **Iteration 1, chunk 1 (the crate and the readers).** The C++ engine moved to
   `engine-cpp/` (built with clang from there, its home-log replay output the very same as
@@ -1338,3 +1338,22 @@ Iteration 9 of 16.
   differences; 177, 139 and 157 lines); 1.2 s against the C++'s 1.4 s on the home log;
   clippy clean. Chunk 5 done. Next: chunk 6, the replay, with `routing`, `autonomy` and the
   four primitives it alone checks.
+
+- **Iteration 10, chunk 6 (the replay).** `routing`, `autonomy`, CallNamedTree,
+  IdleForInput, PushAction and SetMotiveDelta ported, and the replay as `src/bin/replay.rs`.
+  The C++ made a host for each object, each sharing the replay's state by reference; here one
+  host holds the world and that state and is told whose stack it steps. An interpreter keeps
+  its own parameters (the original's +44; the simulator gives it the object's temps when it
+  makes the stack, as the C++ host did), so a check run takes them from its caller. A
+  candidate carries its object's key and its interaction's place in the table. The list's sort
+  is libstdc++'s `stable_sort` as it runs (two halves in chunks of 7, then merged), since its
+  comparator's near-ties make the result depend on the algorithm. One C++ behaviour found by
+  the diff and kept: a frame reset to a semi-global tree no file names keeps the tree's own
+  file (the club's 643 steps where the native stack then stops). The simulator's stacks are a
+  vector by object key, and keys are never reused (`World::clear`). Checked: the replay's
+  whole output on the home log, `tree.log` and `tree3.log` the C++ one's, line for line (236,
+  133 and 119 lines: 561,398, 338,305, 68,202), and six of its studies (routing, autonomy with
+  the distances, slots, diffs, turns, pushes) the same; lockstep still the same; the tests
+  pass; clippy clean. Measured: 14.0 µs a tick against the C++'s 10.6 (`--bench`,
+  interleaved), so the next part is its speed. Chunk 6 done. Next: the replay's speed, then
+  chunk 7.

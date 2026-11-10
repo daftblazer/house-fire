@@ -1,5 +1,6 @@
 //! The node step's rules (`docs/interpreter.md`) on trees written here, not taken from a game:
-//! the C++ engine's `test_interp`, case for case.
+//! the C++ engine's `test_interp`, case for case (the interpreter's own parameters set on it,
+//! where the C++ test's host gave them).
 
 use std::collections::BTreeMap;
 
@@ -33,7 +34,6 @@ struct TestHost {
     trees: Vec<Tree>,
     by_id: BTreeMap<u16, TreeId>,
     answers: Vec<PrimResult>,
-    defaults: Vec<i16>,
     next: usize,
     yields: i32,
     unset_reads: Vec<usize>,
@@ -86,9 +86,6 @@ impl Host for TestHost {
             _ => PrimResult::Stop,
         }
     }
-    fn default_params(&self) -> &[i16] {
-        &self.defaults
-    }
     fn unset_local(&mut self, _: &Interpreter, _: usize, k: usize) {
         self.unset_reads.push(k);
     }
@@ -137,10 +134,11 @@ fn a_call_its_parameters_and_its_return() {
 
 #[test]
 fn an_operand_of_all_ones_passes_the_interpreters_own_parameters() {
-    let mut h = TestHost { defaults: vec![17, 2, 3], ..Default::default() };
+    let mut h = TestHost::default();
     h.add(tree(0x1001, vec![n(0, RETURN_TRUE, RETURN_TRUE)], 2, 0), true);
     let t = h.add(tree(0x1000, vec![node(0x1001, RETURN_TRUE, RETURN_TRUE, [-1; 4])], 3, 0), false);
     let mut i = check();
+    i.set_defaults(vec![17, 2, 3]);
     i.start(&h, Some(t), &[65, 7, 9], None);
     i.step(&mut h);
     assert!(i.stack().len() == 2 && i.stack()[1].params == [17, 2]);

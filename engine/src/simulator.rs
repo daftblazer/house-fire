@@ -2,8 +2,6 @@
 //! (`docs/simulation.md`). Measured on the recompiled Bustin' Out (BUSTIN_TREE_LOG) and read from
 //! its tick, fn_80238150.
 
-use std::collections::BTreeMap;
-
 use crate::interp::{Host, Interpreter};
 use crate::library::Library;
 use crate::motives::{MotiveRates, update_motives};
@@ -30,7 +28,7 @@ struct Entry {
 pub struct Simulator {
     /// The objects' running stacks, made on first need from the frames the object has (a lot's
     /// object: as the lot saved them). Each lives as long as its object in the simulator.
-    runs: BTreeMap<ObjectKey, Interpreter>,
+    runs: Vec<Option<Interpreter>>,
     /// The objects that have a stack, by id: rebuilt only when the world's objects change
     /// (`World::version`), so that a pass is a walk down a vector.
     order: Vec<Entry>,
@@ -80,7 +78,7 @@ fn end_turn(rates: &Option<MotiveRates>, world: &mut World, k: ObjectKey, update
 
 impl Simulator {
     pub fn new(lib: &Library) -> Self {
-        Simulator { runs: BTreeMap::new(), order: Vec::new(), seen_version: u64::MAX, top: 0, now: 0, cursor: 0, rates: MotiveRates::from(lib) }
+        Simulator { runs: Vec::new(), order: Vec::new(), seen_version: u64::MAX, top: 0, now: 0, cursor: 0, rates: MotiveRates::from(lib) }
     }
 
     /// Where the next pass goes on from (0: id 1).
@@ -92,18 +90,31 @@ impl Simulator {
         self.now
     }
 
-    /// An object's running stack, made on first need from the frames the object has.
+    /// An object's running stack, made on first need from the frames the object has, its own
+    /// parameters the object's temps as they are then.
     pub fn stack_of(&mut self, world: &World, k: ObjectKey) -> &mut Interpreter {
-        self.runs.entry(k).or_insert_with(|| {
+        let at = k.0 as usize;
+        if at >= self.runs.len() {
+            self.runs.resize_with(at + 1, || None);
+        }
+        self.runs[at].get_or_insert_with(|| {
+            let o = world.get(k);
             let mut i = Interpreter::main();
-            i.restore(world.get(k).stack.clone());
+            i.restore(o.stack.clone());
+            i.set_defaults(o.temps.to_vec());
             i
         })
     }
 
+    fn has_run(&self, k: ObjectKey) -> bool {
+        self.runs.get(k.0 as usize).is_some_and(Option::is_some)
+    }
+
     /// The object is gone.
     pub fn forget(&mut self, k: ObjectKey) {
-        self.runs.remove(&k);
+        if let Some(r) = self.runs.get_mut(k.0 as usize) {
+            *r = None;
+        }
         self.seen_version = u64::MAX;
     }
 
@@ -115,10 +126,20 @@ impl Simulator {
         let by_id = world.by_id();
         self.top = by_id.keys().next_back().copied().unwrap_or(0);
         // The runs of objects that are gone go with them.
-        self.runs.retain(|k, _| by_id.values().any(|v| v == k));
+        let mut live = vec![false; self.runs.len()];
+        for v in by_id.values() {
+            if let Some(l) = live.get_mut(v.0 as usize) {
+                *l = true;
+            }
+        }
+        for (r, l) in self.runs.iter_mut().zip(live) {
+            if !l {
+                *r = None;
+            }
+        }
         self.order.clear();
         for (&id, &key) in by_id {
-            if id <= 0 || (world.get(key).stack.is_empty() && !self.runs.contains_key(&key)) {
+            if id <= 0 || (world.get(key).stack.is_empty() && !self.has_run(key)) {
                 continue;
             }
             self.stack_of(world, key);
@@ -142,7 +163,7 @@ impl Simulator {
         self.order[self.start()..]
             .iter()
             .filter_map(|e| {
-                let i = &self.runs[&e.key];
+                let i = self.runs[e.key.0 as usize].as_ref().expect("a run");
                 (!i.done()).then(|| (e.key, i.asleep()))
             })
             .collect()
@@ -189,7 +210,7 @@ impl Simulator {
         let mut i = self.start();
         while i < self.order.len() && self.order[i].id <= top {
             let e = self.order[i];
-            let interp = self.runs.get_mut(&e.key).expect("a run");
+            let interp = self.runs[e.key.0 as usize].as_mut().expect("a run");
             if interp.done() {
                 i += 1;
                 continue;

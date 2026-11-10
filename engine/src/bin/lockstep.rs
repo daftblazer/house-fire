@@ -89,7 +89,6 @@ struct LogHost<'a> {
     lib: &'a Library,
     object: Option<FileId>,
     answer: PrimResult,
-    defaults: Vec<i16>,
 }
 
 impl Trees for LogHost<'_> {
@@ -104,9 +103,6 @@ impl Host for LogHost<'_> {
     }
     fn primitive(&mut self, _: &mut Interpreter, _: &Node) -> PrimResult {
         self.answer
-    }
-    fn default_params(&self) -> &[i16] {
-        &self.defaults
     }
 }
 
@@ -299,7 +295,7 @@ fn main() -> ExitCode {
             }
 
             // The native stack, as the log has it.
-            let mut h = LogHost { lib: &lib, object: Some(object), answer: PrimResult::Stop, defaults: s.defaults.to_vec() };
+            let mut h = LogHost { lib: &lib, object: Some(object), answer: PrimResult::Stop };
             let mut native: Vec<Frame> = Vec::new();
             let mut ok = true;
             for fp in st {
@@ -332,6 +328,7 @@ fn main() -> ExitCode {
             }
             let mut interp = Interpreter::new(if native.len() == 1 { Mode::Check } else { Mode::Main }, 10000);
             interp.restore(native.clone());
+            interp.set_defaults(s.defaults.to_vec());
             let step = interp.step(&mut h);
             let next: Option<&StepRec> = next_of.get(&i).map(|&n| &log.steps[n]);
             let back_node = |interp: &Interpreter| interp.stack().last().map_or(0, |f| f.node);

@@ -1,10 +1,12 @@
 //! Primitives other than the expression (`expression`), each on the world (`world`).
 
-use crate::bhav::Node;
+use crate::bhav::{Node, TreeKind, tree_kind};
 use crate::expression::Variables;
 use crate::iff::Order;
-use crate::interp::{Frame, PrimResult, Sleep};
-use crate::world::{Object, PresentationEvent, ScriptVariables, World, scope};
+use crate::interp::{Frame, Interpreter, PrimResult, Sleep};
+use crate::save::{MotiveDelta, SavedQueueEntry};
+use crate::simulator::SimHost;
+use crate::world::{Object, ObjectKey, PresentationEvent, ScriptVariables, World, scope};
 
 /// A 16-bit field of a node's operand at byte `i`, in the file's byte order.
 fn field(n: &Node, i: usize) -> i16 {
@@ -172,4 +174,163 @@ pub fn idle(sleep: &mut Sleep, f: &mut Frame, n: &Node) -> PrimResult {
     }
     sleep.sleep(ticks as u32 - 1);
     PrimResult::Yield
+}
+
+/// CallNamedTree (opcode 28): the tree whose name is a string (operand bytes 0-1 its STR#, byte 4
+/// its index, counted from 1) of a file (bytes 2-3: 1 the global file, 2 the semi-global, 3 the
+/// object's own; otherwise the calling tree's own kind), looked up by name in the stack
+/// object's files (its own, its semi-global, the global file) and called on it: pushed as a
+/// call, whose return takes the node's true or false way (Continue). No such string, or no tree
+/// of that name: false. Measured: `docs/primitives.md`, "CallNamedTree".
+pub fn call_named_tree(interp: &mut Interpreter, n: &Node, world: &World) -> PrimResult {
+    let lib = world.library();
+    let f = interp.stack().last().expect("a frame");
+    let own = f.file;
+    let semi = own.and_then(|o| lib.file(o).semi);
+    let file = match field(n, 2) {
+        1 => lib.global(),
+        2 => semi,
+        3 => own,
+        _ => match f.tree.map(|t| tree_kind(lib.tree_at(t).id as u16)) {
+            // the calling tree's own kind
+            Some(TreeKind::Global) => lib.global(),
+            Some(TreeKind::SemiGlobal) => semi,
+            Some(_) => own,
+            None => None,
+        },
+    };
+    let Some(file) = file else { return PrimResult::False };
+    let index = n.operand[4] as usize;
+    let Some(name) = lib.file(file).strings.get(&(field(n, 0) as u16)).and_then(|t| t.get(index.wrapping_sub(1))).filter(|_| index >= 1) else {
+        return PrimResult::False;
+    };
+    if name.is_empty() {
+        return PrimResult::False;
+    }
+    // The tree of that name: the stack object's own file's, its semi-global's, the global file's.
+    let so_file = world.find_object(f.stack_object).and_then(|o| o.file);
+    for where_ in [so_file, so_file.and_then(|s| lib.file(s).semi), lib.global()].into_iter().flatten() {
+        let wf = lib.file(where_);
+        let Some(t) = wf.tree_by_name.get(name).and_then(|id| wf.trees.get(id)).copied() else { continue };
+        if !interp.push(lib, t, &[]) {
+            return PrimResult::Stop;
+        }
+        interp.top().file = Some(where_);
+        return PrimResult::Continue;
+    }
+    PrimResult::False
+}
+
+/// IdleForInput (opcode 17), where a Sim waits in "Wait For Notify" (Global 281) for its next
+/// interaction. With an entry queued: the engine's checks on the entry's target, as its
+/// interaction table (TTAB) names them (the tree the table runs first, then the interaction's
+/// guard; run by `Host::run_check`), then the entry's tree (the target's) pushed on the stack
+/// with the target as stack object and zero parameters; the entry leaves the queue, and the
+/// step goes on into it (Continue; this node stays, and the interaction's return comes back to
+/// it). `docs/simulation.md`, "Where a Sim's interactions come in". Not modelled yet: nothing
+/// queued (autonomy's, or a wait), a check that fails, a host that cannot run checks: Stop.
+pub fn idle_for_input<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &mut H, me: ObjectKey) -> PrimResult {
+    let world = host.world();
+    let lib = world.library();
+    let Some(&entry) = world.get(me).queue.first() else { return PrimResult::Stop };
+    let Some(target) = world.find(entry.objects[1]) else { return PrimResult::Stop };
+    if lib.global().is_none() {
+        return PrimResult::Stop;
+    }
+    let t = world.get(target);
+    let (tfile, tid, tperson, tdef) = (t.file, t.id(), t.person, world.definition(t));
+    let Some(action) = lib.tree(tfile, entry.tree as u16) else { return PrimResult::Stop };
+    let Some(tf) = tfile else { return PrimResult::Stop };
+    // The checks, each as the target's file names it: the tree its interaction table names to
+    // run first (the club's: Global 463, "Dream Sequence - Prefix Check Tree"), then the
+    // interaction's guard, where the table has them. An entry the engine queued knows its place
+    // in the target's table: that table's first tree and that interaction's guard. A saved one
+    // is looked up by its tree, file-wide.
+    let tab = lib.table_of(tfile, tperson, tdef);
+    let checks: Vec<u16> = match (entry.interaction, tab.file, tab.table) {
+        (Some(i), Some(f), Some(id)) if i < lib.table(f, id).len() => vec![tab.first, lib.table(f, id)[i].guard],
+        _ => {
+            let file = lib.file(tf);
+            [&file.prefix_of, &file.guard_of].iter().filter_map(|m| m.get(&(entry.tree as u16)).copied()).collect()
+        }
+    };
+    let defaults = interp.defaults().to_vec();
+    for id in checks {
+        if id == 0 {
+            continue;
+        }
+        // As the object's own file names it.
+        let ok = lib.tree(tfile, id).and_then(|t| host.run_check(t, tfile, tid, &defaults));
+        if ok != Some(true) {
+            return PrimResult::Stop;
+        }
+    }
+    host.world().get_mut(me).queue.remove(0);
+    if !interp.push(lib, action, &[]) {
+        return PrimResult::Stop;
+    }
+    interp.top().stack_object = tid;
+    interp.top().file = tfile;
+    PrimResult::Continue
+}
+
+/// PushAction (opcode 13): queues an interaction for the Sim that is the stack object: the
+/// interaction in place byte 0 of the target's interaction table (its file's TTAB), the target
+/// the object whose id local byte 1 holds; true. Measured: the interactions the controller
+/// pushes onto the club's Sims are the ones IdleForInput then delivers (`docs/simulation.md`).
+/// Not modelled yet: operand bytes 2 and 3 (1 or 2; 0x0a), a target whose file has several
+/// TTABs: Stop.
+pub fn push_action<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &mut H, n: &Node) -> PrimResult {
+    let top = interp.top_index();
+    let target_id = interp.local(host, top, n.operand[1] as usize);
+    let so = interp.stack()[top].stack_object;
+    let world = host.world();
+    let lib = world.library();
+    let (Some(sim), Some(target)) = (world.find(so), world.find(target_id)) else { return PrimResult::Stop };
+    // The target's own table (Library::table_of): its definition's, a person's semi-global's.
+    let t = world.get(target);
+    let tab = lib.table_of(t.file, t.person, world.definition(t));
+    let (Some(f), Some(id)) = (tab.file, tab.table) else { return PrimResult::Stop };
+    let Some(e) = lib.table(f, id).get(n.operand[0] as usize) else { return PrimResult::Stop };
+    let entry = SavedQueueEntry {
+        objects: [world.get(sim).id(), t.id(), 0],
+        tree: e.action as i16,
+        interaction: Some(n.operand[0] as usize),
+        ..Default::default()
+    };
+    world.get_mut(sim).queue.push(entry);
+    PrimResult::True
+}
+
+/// SetMotiveDelta (opcode 29): a running change of one of the Sim's (`vars.me`) motives. Its
+/// operand (Castaway's SetMotiveDeltaParam): byte 0 the change's scope and field 4 its datum (a
+/// change an hour), byte 1 the stop value's scope and field 6 its datum, byte 2 the motive, byte
+/// 3 flags (1 clear all first; 2 and 4 an influence on the Sim or the stack object, not this,
+/// `None`). The change a tick is the hour's / 1800 (30 ticks a second, a game hour a real
+/// minute). Measured: the home log's one use, Sim 237 at the easel, fun +48 an hour to 50: its
+/// 593 steps of +0.026667 the same (`docs/simulation.md`, "The motives").
+pub fn set_motive_delta(n: &Node, vars: &mut ScriptVariables) -> Option<PrimResult> {
+    let o = &n.operand;
+    let flags = o[3];
+    if flags & 6 != 0 {
+        return None; // an influence: not this
+    }
+    let me = vars.me;
+    if !vars.world.get(me).person {
+        return Some(PrimResult::Stop);
+    }
+    if flags & 1 != 0 {
+        vars.world.get_mut(me).motive_deltas.clear();
+    }
+    let rate = vars.get(o[0], field(n, 4));
+    let stop = vars.get(o[1], field(n, 6));
+    let (Some(rate), Some(stop)) = (rate, stop) else { return Some(PrimResult::Stop) };
+    let d = MotiveDelta { motive: o[2] as i32, rate: rate.value as f32 / 1800.0, target: stop.value as f32 };
+    // One change a motive: a new one takes the old one's place (the log has only one use).
+    let deltas = &mut vars.world.get_mut(me).motive_deltas;
+    match deltas.iter_mut().find(|x| x.motive == d.motive) {
+        Some(x) => *x = d,
+        None => deltas.push(d),
+    }
+    Some(PrimResult::True)
 }

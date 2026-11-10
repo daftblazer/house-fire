@@ -8,8 +8,9 @@ use crate::expression::{Variable, Variables};
 use crate::iff::FormatError;
 use crate::interp::Frame;
 use crate::library::{DefId, Definition, Library};
+use crate::routing::Walls;
 use crate::save::{
-    LotChunks, LotObjects, MotiveDelta, Neighbour, OBJECT_TEMPS, SavedClass, SavedQueueEntry, SavedRelationship, read_lot_objects,
+    read_lot_arrays, LotChunks, LotObjects, MotiveDelta, Neighbour, OBJECT_TEMPS, SavedClass, SavedQueueEntry, SavedRelationship, read_lot_objects,
     read_object_types,
 };
 use crate::FileId;
@@ -100,7 +101,7 @@ impl Object {
 }
 
 /// An object of a world, by its slot: the same while it lives, whatever its id or its place in
-/// the list.
+/// the list, and never another's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ObjectKey(pub u32);
 
@@ -150,6 +151,8 @@ pub struct World<'lib> {
     by_id: BTreeMap<i16, ObjectKey>,
     version: u64,
     pub rng: Rng,
+    /// The lot's (`load_lot`).
+    pub walls: Walls,
     pub presentation: Vec<PresentationEvent>,
     /// A dialog waiting for the player (Dialog): the object whose script opened it (0: none),
     /// and the player's answer once given (the front end sets it). While it waits, the tick's
@@ -185,6 +188,7 @@ impl<'lib> World<'lib> {
             by_id: BTreeMap::new(),
             version: 0,
             rng: Rng::default(),
+            walls: Walls::default(),
             presentation: Vec::new(),
             dialog_object: 0,
             dialog_answer: None,
@@ -313,6 +317,7 @@ impl<'lib> World<'lib> {
             }
             self.add(o, false);
         }
+        self.walls = Walls::new(&read_lot_arrays(lot)?, self);
         Ok(missing)
     }
 
@@ -332,9 +337,10 @@ impl<'lib> World<'lib> {
         }
     }
 
-    /// A lot unloaded: every object gone, the shared tables kept.
+    /// A lot unloaded: every object gone, the shared tables kept. The objects' keys are not
+    /// used again (what keeps a run by key cannot take a new object for an old one).
     pub fn clear(&mut self) {
-        self.slots.clear();
+        self.slots.iter_mut().for_each(|s| *s = None);
         self.order.clear();
         self.by_id.clear();
         self.version += 1;
@@ -456,13 +462,12 @@ impl<'a, 'lib> ScriptVariables<'a, 'lib> {
     fn cell16(&mut self, scope: u8, d: i16) -> Option<&mut i16> {
         use scope::*;
         let di = d as i32;
-        let so = self.stack_object();
         let me = self.me;
         match scope {
             MY_ATTRIBUTE => at(&mut self.world.get_mut(me).attributes, di),
-            STACK_ATTRIBUTE => at(&mut self.world.get_mut(so?).attributes, di),
+            STACK_ATTRIBUTE => at(&mut self.world.get_mut(self.stack_object()?).attributes, di),
             MY_DATA => at(&mut self.world.get_mut(me).data, di),
-            STACK_DATA => at(&mut self.world.get_mut(so?).data, di),
+            STACK_DATA => at(&mut self.world.get_mut(self.stack_object()?).data, di),
             GLOBAL => at(&mut self.world.globals, di),
             TEMP => self.world.get_mut(me).temps.get_mut(usize::try_from(d).ok()?),
             PARAMETER => self.frame.params.get_mut(usize::try_from(d).ok()?),
@@ -472,12 +477,12 @@ impl<'a, 'lib> ScriptVariables<'a, 'lib> {
                 if o.person { at(&mut o.person_data, di) } else { None }
             }
             STACK_PERSON_DATA => {
-                let o = self.world.get_mut(so?);
+                let o = self.world.get_mut(self.stack_object()?);
                 if o.person { at(&mut o.person_data, di) } else { None }
             }
             STACK_ATTRIBUTE_BY_PARAMETER => {
                 let p = *self.frame.params.get(usize::try_from(d).ok()?)?;
-                at(&mut self.world.get_mut(so?).attributes, p as i32)
+                at(&mut self.world.get_mut(self.stack_object()?).attributes, p as i32)
             }
             LOCAL => self.frame.locals.get_mut(usize::try_from(d).ok()?),
             MY_PERSON_DATA_BY_TEMP => {
