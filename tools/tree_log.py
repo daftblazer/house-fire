@@ -54,6 +54,9 @@ def records(path):
                 inner, ptr = struct.unpack_from('<HI', b, p); p += 6
                 rows.append(((off, inner), ptr, b[p:p + 196])); p += 196
             yield 'O', (obj, rows)
+        elif k == b'N':
+            if p + 66 > n: break
+            yield 'N', (struct.unpack_from('<h', b, p)[0], struct.unpack_from('<16f', b, p + 2)); p += 66
         elif k == b'P':
             if p + 14 > n: break
             yield 'P', struct.unpack_from('<hiii', b, p); p += 14

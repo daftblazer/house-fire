@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <array>
 #include <map>
 #include <memory>
 #include <set>
@@ -58,12 +59,16 @@ struct PassRec { uint32_t from = 0, stopped_at = 0; };
 // tile, and its level; -16, -16 off the lot.
 struct PlaceRec { uint32_t tick; int16_t id; int32_t x, y, level; };
 
+// A person's 16 motives when they changed, at the start of a tick (the 'N' record).
+struct MotiveRec { uint32_t tick; int16_t id; std::array<float, 16> motives; };
+
 struct Log {
     std::vector<std::unique_ptr<TreeRec>> trees;
     std::vector<ListRec> lists;
     std::map<uint32_t, PassRec> passes;  // tick -> its pass over the objects (logs with 'Q' records)
     std::vector<StepRec> steps;
     std::vector<PlaceRec> places;  // logs with 'P' records
+    std::vector<MotiveRec> motives;  // logs with 'N' records
     uint32_t ticks = 0;
 };
 
@@ -101,6 +106,12 @@ inline bool read_log(const char* path, Log& log) {
             if (p + 4 > b.size()) break;
             log.passes[log.ticks].stopped_at = u32();
             in_pass = false;
+        }
+        else if (k == 'N') {  // a person's motives changed (before the tick's 'K')
+            if (p + 66 > b.size()) break;
+            MotiveRec r{log.ticks, (int16_t)u16(), {}};
+            for (float& m : r.motives) { uint32_t w = u32(); std::memcpy(&m, &w, 4); }
+            log.motives.push_back(r);
         }
         else if (k == 'P') {  // an object's place changed (before the tick's 'K')
             if (p + 14 > b.size()) break;

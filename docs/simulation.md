@@ -123,6 +123,31 @@ returns into them, the file a rebuilt frame names its trees from): on the 719-ti
 steps with the native stack as the log's, 314 not; on the 5,130-tick one (no pass records,
 the pie menu's runs counted as turns) 338,376 and 7,033.
 
+## The motives
+
+Measured on the home log with the observer's `N` records (each person's 16 motives at the
+start of a tick, when they changed): at Mom's house the scripts change a motive only 18
+times (expressions) and SetMotiveDelta runs once, against 270 changes the scripts read. The
+rest is the engine's own update, which comes every 60 ticks (122, 182, 242, …) and moves
+each motive by its own amount:
+
+| Motive | Sim 12 | Sim 237 | |
+|---|---|---|---|
+| 5 | −0.375 | −0.375 | the same for both |
+| 8 | −0.17 | −0.17 | |
+| 9 | −0.3 | −0.3 | |
+| 15 | −0.25 | −0.25 | |
+| 6 | −0.48 | −0.44 | a rate of each Sim's own |
+| 3 | −0.2295 | −0.209 | |
+| 14 | −0.1553 | −0.1428 | |
+| 7 | −0.2027 at −3.51 | −0.4032 at 92.01 | 0.0021 × (value + 100), both |
+
+Motive 13 moves only when something sets it. Castaway names the update's parts: `Motives`
+(`Sim`, `InitDecayRates`), a base decay table (`sMotiveDecayBase`) and changes to it by
+personality (`sMotiveDecayActiveMod`, `NeatMod`, `OutgoingMod`, `PlayfulMod`), and
+`MotiveConstantsClient::UpdateConstants`, which suggests the rates are game data: the
+engine's update is to be built from those, checked against every `N` record.
+
 ## Still open
 
 - What wakes a sleeping stack early (23 of 2,833 sleeps).

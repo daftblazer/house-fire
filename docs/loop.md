@@ -878,7 +878,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 2 of 16.
+Iteration 3 of 16.
 
 - **Iteration 1, chunk 1 (Mom's house read from the save).** The card's save is the
   neighbourhood file with big-endian block headers and chunk tables (`lots.md`, "Saves");
@@ -895,3 +895,11 @@ Iteration 2 of 16.
   1,283. A frame with no tree now fails as a missing tree instead of crashing the
   interpreter (it did on a return into one). Next: the motives (chunk 2), from the saved
   deltas (the +1120 list) and SetMotiveDelta.
+
+- **Iteration 3, chunk 2 (the motives measured).** The observer logs each person's motives
+  when they change (`N` records; a person told by the pointer back at -0x640); a new home
+  log, the same 581,110 steps. The motives' change is the engine's, not the scripts' (18
+  script writes of 270 changes): every 60 ticks, by a rate for each motive, some the same
+  for both Sims, some each Sim's own (personality), one proportional to the value
+  (`simulation.md`, "The motives"). Next: the update's code (Castaway's `Motives::Sim`,
+  `InitDecayRates`, the decay tables) and its rates, then the native update.
