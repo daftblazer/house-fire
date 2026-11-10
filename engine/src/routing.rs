@@ -67,10 +67,13 @@ pub fn slot_places(slot: &crate::library::Slot, x16: i32, y16: i32, facing: i16)
 /// definition's footprint mask (OBJD field 75), whose nibble k (the low first) is the inset of
 /// the side k quarter turns from the object's front (`front(facing + 2k)`). Measured on the home
 /// log's obstacles (`docs/simulation.md`, "The footprints"): the trees' quarters turning with
-/// their facing, the armchair's 1 at each side, the jukebox's 6 at its back.
-pub fn footprint(mask: u16, x16: i32, y16: i32, facing: i16) -> [i32; 4] {
+/// their facing, the armchair's 1 at each side, the jukebox's 6 at its back. A definition's width
+/// (OBJD field 65; 0 for most) narrows it by (16 - width) / 2 more on every side: the outdoor
+/// chair's 14 (8 at +4 with its mask of 3), the tron's and the trunk's 8.
+pub fn footprint(mask: u16, width: u16, x16: i32, y16: i32, facing: i16) -> [i32; 4] {
     let (x, y) = (x16 & !15, y16 & !15);
-    let mut r = [x, y, x + 16, y + 16];
+    let narrow = if width == 0 || width >= 16 { 0 } else { (16 - width as i32) / 2 };
+    let mut r = [x + narrow, y + narrow, x + 16 - narrow, y + 16 - narrow];
     for k in 0..4 {
         let inset = ((mask >> (4 * k)) & 15) as i32;
         match front((facing & 6) + 2 * k as i16) {
@@ -93,13 +96,13 @@ pub const WALK_THROUGH: i32 = 10;
 /// one with no extent (flags 0x4) or in another is left out; one that may be walked through
 /// (flags 0x10) is its footprint at a small cost; any other blocks, its footprint grown on each
 /// side by half the width (`half`: 3 in Bustin' Out). Not for persons (another rule).
-pub fn obstacle(o: &crate::world::Object, mask: u16, half: i32) -> Option<[i32; 5]> {
+pub fn obstacle(o: &crate::world::Object, mask: u16, width: u16, half: i32) -> Option<[i32; 5]> {
     use crate::world::{DATA_CONTAINER, DATA_FLAGS};
     let flags = o.data[DATA_FLAGS];
     if flags & 0x4 != 0 || o.data[DATA_CONTAINER] != 0 {
         return None;
     }
-    let f = footprint(mask, o.x16, o.y16, o.facing());
+    let f = footprint(mask, width, o.x16, o.y16, o.facing());
     Some(if flags & 0x10 != 0 { [f[0], f[1], f[2], f[3], WALK_THROUGH] } else { [f[0] - half, f[1] - half, f[2] + half, f[3] + half, BLOCKS] })
 }
 

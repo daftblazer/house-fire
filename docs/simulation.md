@@ -615,7 +615,15 @@ two sides (0x1010 at facing 2: 14 by 16), the jukebox's 6 at its back (0x0006 at
 end table's 2 (0x2222), the newspaper's 5 and the garden lamp's 6. The other 47: the three
 outdoor chairs, 0x3333 but 4 in on each side (8 by 8 at +4, one more than the mask), and two
 of the game's own objects with mask 0 but 8 by 8 at +4 (`zz_move_a__tron`, the two-player money
-trunk): something besides the mask shrinks them (not yet found).
+trunk): something besides the mask shrinks them (found: the width, below).
+
+**A definition's width.** OBJD field 65 (the PC's TileWidth; 0 for most objects) narrows the
+footprint by (16 - width) / 2 more on every side: the outdoor chair's 14 (its mask's 3 and 1
+more, 8 at +4), the tron's and the trunk's 8 (8 at +4); the other definitions with a width are
+left out anyway (the table lamp's 8, the wall lamp's 4). With it all 694 footprints of native
+objects are the planner's, and 16 of the 17 logged obstacle lists natively exactly the planner's
+(but for 9 rectangles of objects not native); the 17th (tick 1220) drops the paper girl, not
+native, as the one by the Sim.
 
 **Which objects block** (`routing::obstacle`). Read from the objects the loop asks about (`J`)
 against the object data the save gives: an object is left out when its flags (object data 8)

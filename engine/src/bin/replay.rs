@@ -2411,11 +2411,12 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 // its footprint natively (not a person's): the tile less the definition's mask
                 if let Some(o) = world.find_object(id).filter(|o| !o.person) {
                     let mask = world.definition(o).map_or(0, |d| d.field(75));
-                    if show_obstacles && footprint(mask, o.x16, o.y16, o.facing()) != c {
-                        println!("   footprint miss: object {id} mask {mask:04x} facing {}: native {:?}, the log's {c:?}", o.facing(), footprint(mask, o.x16, o.y16, o.facing()));
+                    let width = world.definition(o).map_or(0, |d| d.field(65));
+                    if show_obstacles && footprint(mask, width, o.x16, o.y16, o.facing()) != c {
+                        println!("   footprint miss: object {id} mask {mask:04x} facing {}: native {:?}, the log's {c:?}", o.facing(), footprint(mask, width, o.x16, o.y16, o.facing()));
                     }
-                    counts.note(if footprint(mask, o.x16, o.y16, o.facing()) == c {
-                        "routing: an obstacle's footprint natively its object's (the tile less its OBJD mask)"
+                    counts.note(if footprint(mask, width, o.x16, o.y16, o.facing()) == c {
+                        "routing: an obstacle's footprint natively its object's (the tile less its OBJD mask and width)"
                     } else {
                         "routing: an obstacle's footprint natively NOT its object's"
                     });
@@ -2474,7 +2475,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                         let p = place_at(id, pl.tick).unwrap_or((o.x16, o.y16));
                         return (!out).then_some([p.0 - 3 - half, p.1 - 3 - half, p.0 + 3 + half, p.1 + 3 + half, BLOCKS]);
                     }
-                    obstacle(o, world.definition(o).map_or(0, |d| d.field(75)), half)
+                    obstacle(o, world.definition(o).map_or(0, |d| d.field(75)), world.definition(o).map_or(0, |d| d.field(65)), half)
                 })
                 // one whose footprint (before it is grown) overlaps the Sim's is dropped
                 .filter(|r| *r == [0; 5] || !sim_rect.is_some_and(|s| overlaps(&ungrown(r, half), &s)))

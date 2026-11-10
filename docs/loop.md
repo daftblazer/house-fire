@@ -1185,7 +1185,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 10 of 16.
+Iteration 11 of 16.
 
 - **Iteration 1, chunk 1 (the rooms and their doors).** The third array is not the rooms (1
   inside, 7 outside); the rooms are the regions the walls close (`Walls::room`, a door left
@@ -1289,6 +1289,14 @@ Iteration 10 of 16.
   objects not native, 78 not (44 the known footprints, 34 the 17th's shifted). Figures unchanged
   (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next: the persons' rule (the
   loop's kind-2 branch), or the chairs' footprint; then the search over the obstacles.
+
+- **Iteration 11, chunk 3 (a definition's width).** OBJD field 65 (TileWidth) narrows a
+  footprint by (16 - width) / 2 on every side (the outdoor chairs' 14, the tron's and trunk's 8;
+  `routing::footprint` takes it). Checked: all 694 footprints of native objects the planner's;
+  16 of the 17 logged obstacle lists natively exact (but for objects not native), the 17th the
+  paper girl's drop (not native). Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902,
+  4, 24); clippy clean. Chunk 3 done but for the persons' rule (taken from the log for now).
+  Next: chunk 2's search over the obstacles (the waypoints), or the persons' rule.
 
 
 ## The eighth loop paused
