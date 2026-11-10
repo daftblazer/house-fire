@@ -184,6 +184,12 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
         } else note("primitives: Random: the original's number not in the log (a temp or attribute)");
         return want;
     }
+    if (n.opcode == 28) {  // CallNamedTree
+        const PrimResult got = call_named_tree(n, f, r.lib);
+        const PrimResult want = logged();
+        note(got == want ? "primitives: CallNamedTree: the same natively" : got == PrimResult::Stop ? "primitives: CallNamedTree: a tree found (not modelled; the log's taken)" : "primitives: CallNamedTree: DIFFERENT (the log's taken)");
+        return want;
+    }
     if (n.opcode == 32) {  // TestObjectType
         r.sync_variables(me, f, s);
         ScriptVariables vars(r.world, me, f);

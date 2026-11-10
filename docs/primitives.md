@@ -74,6 +74,22 @@ bytes) shows why: modes in operand byte 1 (0, 2, 4 ...), objects or neighbours
 the relationship system, to come as one; the engine keeps the saved relationships
 (`Object::relationships`; the club's 16) for it.
 
+## CallNamedTree (opcode 28)
+
+Calls a tree by name. The operand (Castaway's `CallNamedTreeParam`): bytes 0-1 a string
+table (STR#), bytes 2-3 which file's names (1 the global file, 2 the semi-global, 3 the
+object's own; otherwise the calling tree's own kind), byte 4 the string's index. The tree with
+that name, in that file, is called on the stack object (`cXObject::TryCallNamedTree`). No
+such string, or no tree of that name: false.
+
+Measured with `replay`: all 116 uses in the session false, and the same natively. They are
+two calls (in PersonGlobals' "Interaction - Object Menu - TEST" and the party controller)
+asking for strings 44 and 5 of tables 303 that have 1 and 5 strings: no such string. The
+call itself is never made in the logs, so the engine stops there for now.
+
+The engine has it as `call_named_tree()`; the library keeps each file's string tables and its
+trees by name.
+
 ## Random (opcode 8)
 
 A random number into a variable. The operand, as 16-bit little-endian fields: bytes 0-1 the

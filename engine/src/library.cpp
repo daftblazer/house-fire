@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "housefire/library.h"
 
 #include <cctype>
@@ -19,6 +20,52 @@ std::string glob_name(std::span<const uint8_t> d) {
     return std::string((const char*)d.data(), n);
 }
 
+namespace {
+// A string table (STR#): its format (0 Pascal strings, -1 C strings, -2 pairs of C strings,
+// -3 a language, a value and a comment, -4 sets by language of Pascal values and comments),
+// then the strings; the values, each language's in turn. A table that does not read is empty.
+std::vector<std::string> read_strings(std::span<const uint8_t> d, Order o) {
+    std::vector<std::string> out;
+    size_t p = 2;
+    auto cstr = [&] {
+        size_t q = p;
+        while (q < d.size() && d[q]) q++;
+        std::string s((const char*)d.data() + p, std::min(q, d.size()) - p);
+        p = std::min(q + 1, d.size());
+        return s;
+    };
+    auto pstr = [&] {
+        if (p >= d.size()) return std::string();
+        const size_t n = d[p++];
+        std::string s((const char*)d.data() + p, std::min(n, d.size() - p));
+        p += n;
+        return s;
+    };
+    auto u16 = [&] {
+        if (p + 2 > d.size()) return 0;
+        const int v = o == Order::Little ? d[p] | d[p + 1] << 8 : d[p] << 8 | d[p + 1];
+        p += 2;
+        return v;
+    };
+    if (d.size() < 4) return out;
+    const int16_t fmt = (int16_t)(o == Order::Little ? d[0] | d[1] << 8 : d[0] << 8 | d[1]);
+    if (fmt == -4) {
+        const int sets = p < d.size() ? d[p++] : 0;
+        for (int s = 0; s < sets; s++)
+            for (int n = u16(); n > 0 && p < d.size(); n--) { p++; out.push_back(pstr()); pstr(); }
+        return out;
+    }
+    for (int n = u16(); n > 0 && p < d.size(); n--) {
+        if (fmt == 0) out.push_back(pstr());
+        else if (fmt == -1) out.push_back(cstr());
+        else if (fmt == -2) { out.push_back(cstr()); cstr(); }
+        else if (fmt == -3) { p++; out.push_back(cstr()); cstr(); }
+        else break;
+    }
+    return out;
+}
+}  // namespace
+
 Library Library::bustin_out(const Disc& d) {
     Library lib;
     for (const auto& [path, where] : d.files()) {
@@ -30,7 +77,9 @@ Library Library::bustin_out(const Disc& d) {
         const Order o = bhav_order(f->iff);
         for (const Chunk* c : f->iff.of("BHAV")) {
             try { f->trees[(uint16_t)c->id] = read_bhav(*c, o); } catch (const FormatError&) { lib.bhav_failures_++; }
+            f->tree_by_name.emplace(c->label, (uint16_t)c->id);
         }
+        for (const Chunk* c : f->iff.of("STR#")) f->strings[(uint16_t)c->id] = read_strings(c->data, o);
         for (const Chunk* c : f->iff.of("BCON")) {
             // A count, a flags byte, then the values.
             if (c->data.size() < 2) continue;

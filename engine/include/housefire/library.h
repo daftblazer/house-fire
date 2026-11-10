@@ -31,6 +31,8 @@ struct ObjectFile {
     IffFile iff;
     std::map<uint16_t, Tree> trees;                      // BHAV by id
     std::map<uint16_t, std::vector<int16_t>> constants;  // BCON by id
+    std::map<uint16_t, std::vector<std::string>> strings;  // STR# by id (every language's, in turn)
+    std::map<std::string, uint16_t> tree_by_name;        // BHAV ids by their chunk labels
     std::vector<Definition> definitions;                 // OBJD, in the file's order
     std::string glob;                                    // the semi-global file it names
     const ObjectFile* semi = nullptr;                    // that file, if there is one

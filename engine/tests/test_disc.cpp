@@ -64,7 +64,17 @@ int main() {
         if (k != "did not end") ended += v;
     }
     std::printf("trees run: %d, %ld steps; all ended: %s\n", total, steps, ended == total ? "yes" : "no");
-    const bool ok = bad == 0 && bhavs == 9529 && total == bhavs && ended == total;
+    // String tables (STR#): the two CallNamedTree reads in the logged session, 303 in the party
+    // controller (5 strings) and in PersonGlobals (1), as tools/chunks.py reads them.
+    auto table = [&](const char* file, uint16_t id) -> long {
+        const ObjectFile* f = lib.find(file);
+        if (!f) return -1;
+        auto t = f->strings.find(id);
+        return t == f->strings.end() ? -1 : (long)t->second.size();
+    };
+    std::printf("STR# 303: controller_party %ld, PersonGlobals %ld\n", table("controller_party", 303), table("PersonGlobals", 303));
+    const bool ok = bad == 0 && bhavs == 9529 && total == bhavs && ended == total &&
+                    table("controller_party", 303) == 5 && table("PersonGlobals", 303) == 1;
     std::printf("test_disc: %s\n", ok ? "ok" : "FAILED");
     return ok ? 0 : 1;
 }

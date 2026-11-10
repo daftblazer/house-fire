@@ -676,7 +676,7 @@ records what it found and moves to the next chunk rather than starting the syste
 
 ## Progress
 
-Iteration 4 of 16.
+Iteration 5 of 16.
 
 - **Iteration 1, chunk 1 (the neighbours).** NBRS decoded (`objects.md`, "The
   neighbours"): 63 slots, 51 neighbours, read to the chunk's end, ids the slot's number plus
@@ -701,3 +701,9 @@ Iteration 4 of 16.
   object (27 of 27), but the other operand forms need its modes, neighbours, create flag
   (Castaway's `TryRelationship2`): the relationship system, recorded and skipped
   (`primitives.md`). Next: CallNamedTree from its code, then chunk 5.
+
+- **Iteration 5, chunk 4 (CallNamedTree).** From Castaway's `TryCallNamedTree`: a tree named
+  by a string (table, file, index), called on the stack object. Native as far as the logs
+  go: all 116 uses false and the same (the strings asked for do not exist); the call itself,
+  never made in the logs, stops as not modelled. The library now reads string tables
+  (`test_disc`). Chunk 4 done. Next: chunk 5, the Sims' interactions.

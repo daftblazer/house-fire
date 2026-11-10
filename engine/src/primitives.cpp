@@ -20,6 +20,28 @@ PrimResult random(const Node& n, World& world, ScriptVariables& vars) {
     return vars.set(o[2], field(0), v) ? PrimResult::True : PrimResult::Stop;
 }
 
+PrimResult call_named_tree(const Node& n, const Frame& f, const Library& lib) {
+    const auto& o = n.operand;
+    auto field = [&](int i) { return (int16_t)(n.order == Order::Little ? o[i] | o[i + 1] << 8 : o[i] << 8 | o[i + 1]); };
+    const ObjectFile* own = f.file;
+    const ObjectFile* file = nullptr;
+    switch (field(2)) {
+        case 1: file = lib.global(); break;
+        case 2: file = own ? own->semi : nullptr; break;
+        case 3: file = own; break;
+        default:  // the calling tree's own kind
+            if (f.tree) {
+                const TreeKind k = tree_kind((uint16_t)f.tree->id);
+                file = k == TreeKind::Global ? lib.global() : k == TreeKind::SemiGlobal ? (own ? own->semi : nullptr) : own;
+            }
+    }
+    if (!file) return PrimResult::False;
+    auto table = file->strings.find((uint16_t)field(0));
+    if (table == file->strings.end() || o[4] >= table->second.size() || table->second[o[4]].empty()) return PrimResult::False;
+    if (!file->tree_by_name.count(table->second[o[4]])) return PrimResult::False;
+    return PrimResult::Stop;  // the call: not modelled yet
+}
+
 PrimResult test_object_type(const Node& n, World& world, ScriptVariables& vars) {
     const auto& o = n.operand;
     const int16_t data = (int16_t)(n.order == Order::Little ? o[4] | o[5] << 8 : o[4] << 8 | o[5]);

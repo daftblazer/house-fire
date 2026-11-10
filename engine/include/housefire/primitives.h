@@ -20,6 +20,13 @@ PrimResult set_to_next(const Node& n, World& world, ScriptVariables& vars);
 // (docs/primitives.md, "Random").
 PrimResult random(const Node& n, World& world, ScriptVariables& vars);
 
+// CallNamedTree (opcode 28): the tree whose name is a string (operand bytes 0-1 its STR#,
+// byte 4 its index) of a file (bytes 2-3: 1 the global file, 2 the semi-global, 3 the
+// object's own; otherwise the calling tree's own kind), called on the stack object
+// (Castaway's TryCallNamedTree and CallNamedTreeParam). No such string, or no tree of that
+// name: false. A tree found: Stop, as its call is not modelled (no logged use finds one).
+PrimResult call_named_tree(const Node& n, const Frame& f, const Library& lib);
+
 // TestObjectType (opcode 32): whether the object whose id a variable holds (operand bytes
 // 4-5 the datum, byte 6 the scope) is of the GUID in bytes 0-3. An id no object has: false.
 // Measured on the recompiled game (docs/primitives.md, "TestObjectType").
