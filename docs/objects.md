@@ -10,7 +10,7 @@ Out. Its log (`BUSTIN_TREE_LOG`) records every variable lookup the original make
 - the value;
 - the address the variable was found at.
 
-`tools/variables.py` reads that. The engine's model is `engine/include/housefire/world.h`:
+`tools/variables.py` reads that. The engine's model is `engine/src/world.rs`:
 `World`, `Object` and `ScriptVariables`. The layout is the engine's own; what each scope
 reaches is the original's.
 
@@ -163,7 +163,7 @@ stream: 0, the version (80), "SRBN", a count of 63 slots, then each slot:
   count of relationships, each a word 1, the other neighbour's id, a count and that many
   32-bit values.
 
-All 51 records read to the chunk's exact end, their ids the walk's (`test_lots`).
+All 51 records read to the chunk's exact end, their ids the walk's (the `lots` test).
 
 **Scope 24, "neighbour in stack object".** The stack object holds a neighbour id rather than
 an object's; field 0 is the id of the person on the lot whose neighbour id (person data 31)

@@ -2,7 +2,7 @@
 
 Bustin' Out's lots, families and neighbourhood come from `Runtime/default.ngh`. The game
 never reads the PC-style house files in `Runtime/*/Houses/` (checked by mapping a run's disc
-reads to files). The engine reads it in `engine/src/save.cpp`; the Python tools are
+reads to files). The engine reads it in `engine/src/save.rs`; the Python tools are
 `tools/ngh.py`, `lot.py`, `recon.py` and `objm.py`. Measured on the player's disc and the
 recompiled game, 2026-11-09.
 
@@ -169,7 +169,7 @@ What the load does, measured further (`replay`, the 5,130-tick session):
 
 Over the 16 lots: 4,575 frames, one per object but for one stack of 2 and one of 3. All
 4,522 frames of objects with a definition on the disc name a tree that is there, with the
-node in it and exactly its parameter and local counts (`engine/tests/test_lots.cpp`). The
+node in it and exactly its parameter and local counts (`engine/tests/lots.rs`). The
 other 53 are the characters'.
 
 ## The lot's own section
@@ -256,7 +256,7 @@ What the save has that the disc's lots never do:
   goes to: in the club's five dancers (15, +0.025, 75), (7, +0.0083, −20), (14, +0.0139, 10),
   SetMotiveDelta's state.
 
-All 4,582 objects of the save's 16 lots read to exactly their ends (`test_lots` with
+All 4,582 objects of the save's 16 lots read to exactly their ends (the `lots` test with
 `HOUSEFIRE_CARD`).
 
 ## The arrays
@@ -266,7 +266,7 @@ size (1, 8 and 1), a 1 (32-bit words), then the elements' bytes, row after row,
 run-length coded. A 16-bit header: with its top bit set, that many copies of the one byte
 after it (padded to 2 bytes); otherwise that many bytes as they are (padded to an even
 length). The counts are in bytes, whatever the element size. All 48 arrays of the 16 lots
-read to exactly their size and their chunk's end (`read_lot_arrays`, `test_lots`).
+read to exactly their size and their chunk's end (`read_lot_arrays`, the `lots` test).
 
 Measured towards naming them: an object's header (`fn_801F1E30`'s six values) holds its
 place in sixteenths of a tile: the dance floor's parts, 16 apart, are at their leader's

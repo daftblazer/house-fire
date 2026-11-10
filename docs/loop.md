@@ -1251,7 +1251,7 @@ without a commit (record why here). Then the eighth loop resumes.
 
 ## Progress
 
-Iteration 11 of 16.
+Iteration 12 of 16.
 
 - **Iteration 1, chunk 1 (the crate and the readers).** The C++ engine moved to
   `engine-cpp/` (built with clang from there, its home-log replay output the very same as
@@ -1367,3 +1367,26 @@ Iteration 11 of 16.
   interleaved twice): 9.9 and 10.0 µs a tick against the C++'s 10.6 (the C++ figure includes
   its own counts' texts); of the engine's parts, the expression 1.84 against 2.20, SetToNext
   0.54 against 0.41, the pass 0.87 against 0.80. Next: chunk 7, the C++ engine removed.
+
+- **Iteration 12, chunk 7 (the C++ engine removed).** `engine-cpp/` deleted; the README's
+  commands are cargo's (the build, the tests, `lockstep`, `replay`), the docs name the Rust
+  files (`engine/src/*.rs`, `engine/tests/*.rs`, `engine/src/bin/*.rs`), `plan.md` has the
+  Rust measurement, `engine/target/` is ignored. Checked: from the README's own commands (the
+  default target directory, built afresh) the tests pass (18), the home replay's output is
+  the C++ one's saved before the removal, and lockstep's 7,902. Chunk 7 done.
+
+## The ninth loop's end
+
+Done in 12 iterations: the engine and its tools are Rust, no outside crates, and every check
+the C++ engine had gives its very figures: the tests' (`test_disc`'s output line for line,
+its 9,529 trees run through the interpreter in 1,251,290 steps), lockstep's and the replay's
+whole outputs on the home log and the club's two (561,398, 338,305 and 68,202 steps, 7,902
+lockstep differences), and six of the replay's studies. On the way: one C++ quirk kept on
+purpose for the outputs to match (a frame reset to a semi-global tree no file names keeps the
+tree's own file, so the club's native stacks stop 643 times there), recorded for the eighth
+loop to look at; the list's sort is libstdc++'s `stable_sort` as it runs. Speed: the home
+replay 9.9 µs a tick against the C++'s 10.6.
+
+The eighth loop resumes from its chunk 2 (the plan's goal from the slot), its checks now with
+`engine/target/release/replay` and `lockstep`, built with `cargo build --release` through
+`tools/capped.sh`.

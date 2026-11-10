@@ -97,6 +97,12 @@ tick right after it, which sets up every object's stack). The scripts take 7.1 �
 the pass 5.2 µs. On the 719-tick one: 14.7 µs on average, 136 µs at worst. The budget is
 5,000 µs on an A55.
 
+**Measured again in Rust (the PC, 2026-11-10).** The engine moved from C++ to Rust with its
+behaviour unchanged: the replay's and lockstep's outputs on the three logs line for line the
+C++ tools' (`docs/loop.md`, the ninth loop). On the home log (6,869 ticks, 82 steps a tick),
+interleaved with the C++ build: 9.9 µs a tick on average against 10.6, the expression 1.8
+against 2.2 µs a tick, SetToNext 0.54 against 0.41, the pass 0.87 against 0.80.
+
 **Measured (the RK3566, an RG353VS on ROCKNIX, 2026-11-09).** The same benchmark, a static
 aarch64 build (`-mcpu=cortex-a55`, cross-compiled in a Debian container), pinned to one core
 at 1.8 GHz, the frontend running: 125 µs a tick on average, 80 µs median, 918 µs at the 99th

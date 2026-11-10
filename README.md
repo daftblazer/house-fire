@@ -14,23 +14,16 @@ with only the assets and scripts coming from the disc.
 | The Sims 2: Pets (2006) | `G4OE69` | EOR/Maxis Engine v3.0 |
 | The Sims 2: Castaway (2007, Wii) | `R42E69` | EOR/Maxis Engine v3.0 (built Aug 25 2007) |
 
-Status: started. `engine/` is the engine in Rust, being ported from the C++ one in
-`engine-cpp/` (`docs/loop.md`, "The ninth loop"); the readers are ported so far:
+Status: started. `engine/` is the engine, in Rust (a Cargo crate with no outside crates): the
+readers, the interpreter, the simulation so far, and the tools that check it against the
+recompiled game:
 
 ```sh
-cargo test --release --manifest-path engine/Cargo.toml   # HOUSEFIRE_BUSTIN_ISO=... for the disc's
-```
-
-The C++ engine, the reference until the port is done:
-
-```sh
-CXX=clang++ cmake -S engine-cpp -B work/build -G Ninja && ninja -C work/build
-work/build/test_interp                                      # the node step's rules
-work/build/test_expression                                  # the expression primitive's rules
-HOUSEFIRE_BUSTIN_ISO=/path/to/G4ME69.iso work/build/test_lots  # every lot of your disc, as a world
-work/build/test_primitives                                  # SetToNext's and Idle's rules
-HOUSEFIRE_BUSTIN_ISO=/path/to/G4ME69.iso work/build/test_disc  # every script on your disc
-work/build/lockstep LOG G4ME69.iso   # the native interpreter against a log of the recompiled game's
+cargo build --release --manifest-path engine/Cargo.toml
+cargo test --release --manifest-path engine/Cargo.toml   # the rules; with HOUSEFIRE_BUSTIN_ISO=/path/to/G4ME69.iso
+                                                         # every script and lot of your disc too
+engine/target/release/lockstep LOG G4ME69.iso            # the native interpreter against a log of the recompiled game's
+engine/target/release/replay LOG G4ME69.iso [--card CARD]  # the lot run natively over the log's ticks
 ```
 
 A log comes from the recompiled Bustin' Out run with `BUSTIN_TREE_LOG=<file>`

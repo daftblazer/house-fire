@@ -180,10 +180,10 @@ The recompiled game's log records each expression: what the lookups found and th
 side after. `tools/lockstep` runs the native expression on those values. In a session of
 the new-game route, all 169,010 expressions agree: results, 16-bit values written and float
 values written, bit for bit, over every operator but none of the errors.
-`engine/tests/test_expression.cpp` covers the rules the session does not reach.
+`engine/tests/expression.rs` covers the rules the session does not reach.
 
 What the lookups themselves are, scope by scope, belongs to the object model
-(`engine/include/housefire/library.h` so far).
+(`engine/src/library.rs` so far).
 
 ## Constants (scope 26)
 
@@ -199,7 +199,7 @@ constants, so which variant an object is shows only in the constants it reads.
 ## Checked against the original (`tools/lockstep`)
 
 The recompiled Bustin' Out logs its interpreter when `BUSTIN_TREE_LOG=<file>` is set
-(`src/tree_log.cpp` there; it only reads memory). `engine/tools/lockstep.cpp` reads such a
+(`src/tree_log.cpp` there; it only reads memory). `engine/src/bin/lockstep.rs` reads such a
 log with the disc: each step the original took is given to the native interpreter, with the
 stack as the log has it and the primitive answering what the original's answered, and the
 native stack after it is compared with the original's next step.

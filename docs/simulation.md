@@ -3,7 +3,7 @@
 Which objects' tree stacks run in a tick, and in what order. Read from Bustin' Out's tick
 (`Simulator_SimulateOneTick`, 80237C88, and its pass over the objects, `fn_80238150`, named
 `Simulator_RunObjects` in the recomp) and measured on the recompiled game's interpreter log
-(`tools/tick_order.py`; `engine/tools/replay`). The engine's is `engine/src/simulator.cpp`.
+(`tools/tick_order.py`; `engine/src/bin/replay.rs`). The engine's is `engine/src/simulator.rs`.
 
 ## The pass
 
@@ -192,7 +192,7 @@ description (strings zero-ended, padded to even with 0xCD). Table 1 is the motiv
 
 Table 2 is autonomy's (the minimum scores, attenuations, "random selection count" 4,
 "friendship threshold" 50), 3 rooms' and light's, 4 the family's score. All four read to
-their ends (`Library::tuning`, `test_disc`). The rest of `fn_801CFFB4` derives the rates the
+their ends (`Library::tuning`, the `disc` test). The rest of `fn_801CFFB4` derives the rates the
 update uses from these, as follows (W the wake hours, 16; H the wake hour, 7; S the span,
 180): energy −S / W / 30 a step awake (−0.375) and +S / (24 − W) / 30 asleep (+0.75), less
 the drift while asleep after hour H and before H + W; comfort less lazy + (active − lazy) /
@@ -448,7 +448,7 @@ an attenuation (code and value), an autonomy threshold and flags. The three choi
 | 152, the easel (`art_easel`) | 129 | 4097 | fun +10 (minimum 1), attenuation 4 / 0.2 |
 
 Each is what its Sim lacked then: Sim 12 hungry (hunger −3.5 at the load), then its bladder
-low (−5 to −33); Sim 237's fun the lowest of its motives (about 21). Checked: `test_disc`
+low (−5 to −33); Sim 237's fun the lowest of its motives (about 21). Checked: the `disc` test
 reads all 856 tables on the disc and finds the three.
 
 ## Routing

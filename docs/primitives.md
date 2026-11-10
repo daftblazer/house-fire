@@ -58,8 +58,8 @@ Measured on the recompiled game:
   exactly N − 1 passes, the late ones included: the passes in between stopped at a dialog and
   did not reach the object. 23 others ended early, woken by something else.
 
-The engine has it as `idle()` (`engine/src/primitives.cpp`), `Interpreter::sleep` and the
-simulator's pass. `tests/test_primitives.cpp` and `tests/test_simulator.cpp` test it.
+The engine has it as `idle()` (`engine/src/primitives.rs`), the interpreter's `Sleep` and the
+simulator's pass. `engine/tests/primitives.rs` and `engine/tests/simulator.rs` test it.
 
 ## Relationship2 (opcode 26): not native yet
 
@@ -141,7 +141,7 @@ whose destination the log shows (a parameter or a local), all 294 numbers within
 range. The numbers themselves are the engine's own, a deliberate difference (`plan.md`); the
 replay takes the original's. A range of 0 or less gives 0 (not seen in the logs).
 
-The engine has it as `random()` (`engine/src/primitives.cpp`).
+The engine has it as `random()` (`engine/src/primitives.rs`).
 
 ## TestObjectType (opcode 32)
 
@@ -151,9 +151,9 @@ the object with that id is of that GUID; false otherwise, and for an id no objec
 
 Measured with `replay` on the 5,130-tick session: all 181 uses the same natively. All of them
 are false there (tests of the Sims against one GUID, of one object against another), so the
-true case is checked only by `tests/test_primitives.cpp` so far.
+true case is checked only by `engine/tests/primitives.rs` so far.
 
-The engine has it as `test_object_type()` (`engine/src/primitives.cpp`).
+The engine has it as `test_object_type()` (`engine/src/primitives.rs`).
 
 ## Animate (opcode 44): what the scripts see
 
