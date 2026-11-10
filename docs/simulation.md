@@ -570,7 +570,7 @@ slot of a range of proximities (her slot 8 of the global SLOT, 16 to 64 at resol
 offers an area of places, 48 at tick 931 (not yet); the planner's choice among the goals is the
 nearest native one in the two requests that took one natively.
 
-**The planner's obstacles, logged.** The search (`fn_8024C5DC`) goes over the objects and, for
+**The planner's obstacles, logged.** (Read turned at first: see "The obstacles' objects" below.) The search (`fn_8024C5DC`) goes over the objects and, for
 each on the Sim's level that it does not leave out (`fn_802499DC`), takes its footprint (a
 virtual call, a rectangle {x0, y0, x1, y1} in sixteenths) and a cost: 0x7FFFFFFF, or 10 when a
 virtual flag (its +704 with 10) says so; an object of kind 8 (its +872) adds a strip of a tile
@@ -588,6 +588,22 @@ native world they do not yet meet: 226 rectangles have a native object at their 
 objects within their extent 278 are covered, 1,194 not (the dining table among them, though the
 walk round it at tick 1905 keeps clear of it): which objects the search leaves out, and where
 an object's footprint lies, are next.
+
+**The obstacles' objects.** The loop asks `Route_SkipObstacle` (802499DC) of each object on the
+Sim's level but the Sim; the observer logs each asked about, in order, with whether it was left
+out (`J`, before each `X`; the part asked about is not the interpreter object but one of its
+parts, 356 bytes into it or 104 or 112 before it by class, its owner named by a word holding the
+owner's +0x16). The objects kept are the rectangles, one for one in order (one fewer in 7 of the
+17 plans: the one overlapping the Sim, dropped). And the rectangles are turned: the vector holds
+{y0, x0, y1, x1} (the footprint's four words taken in reverse), so the earlier reading put each
+on the mirrored tile. Read the right way round: of the home log's 709 rectangles, 701 are the
+footprint of a native object on its own tile (8 of objects not in the native world): a whole
+tile for most (counters, the fridge, the table's four tiles, the couch's three), 8 at +4 for the
+outdoor chairs, 12 at +2 for the end table, 16 by 14 for the armchair, 16 by 10 for the
+jukebox; a person 6 on a side centred on its place (its place as logged, the walk not yet
+native). The walk round the table at tick 1905 keeps exactly 3 off them (x 22 + 1/16: the chair's
+8 at +4, grown by 3). Which objects are left out (932 native objects in the rectangles' extent
+are not among them: rugs, windows, wall lamps, paintings, ...) and each footprint's size are next.
 
 ## Still open
 

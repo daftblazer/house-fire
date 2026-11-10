@@ -151,9 +151,12 @@ pub struct PlanRec {
     /// The goal it took (the request's +88), -1 for none or an older log.
     pub chosen: i32,
     /// The obstacles the search gathered from the objects (the 'X' record, in newer logs):
-    /// {x0, y0, x1, y1, cost}; and the global width it grows them by half of.
+    /// {x0, y0, x1, y1, cost} in sixteenths (the record's {y0, x0, y1, x1} turned); and the global width it grows them by half of.
     pub obstacles: Vec<[i32; 5]>,
     pub obstacle_width: i32,
+    /// The objects the search's loop asked about (the 'J' record, in newer logs), in order: the
+    /// id and whether it was left out.
+    pub tested: Vec<(i16, bool)>,
 }
 
 /// The random number autonomy's choice draws ('R').
@@ -233,6 +236,7 @@ pub fn read_log(path: &str) -> Option<Log> {
     let mut log = Log::default();
     let mut request: Option<(i32, Vec<[u32; 4]>)> = None;
     let mut obstacles: Option<(i32, Vec<[i32; 5]>)> = None;
+    let mut tested: Option<Vec<(i16, bool)>> = None;
     let mut at: BTreeMap<u32, usize> = BTreeMap::new();
     let mut pending: Option<ExprRec> = None;
     let mut pending_lookups: Vec<LookupRec> = Vec::new();
@@ -320,7 +324,31 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let points = (0..cnt).map(|_| (r.u32() as i32, r.u32() as i32)).collect();
                 let (chosen, goals) = request.take().unwrap_or((-1, Vec::new()));
                 let (obstacle_width, obstacles) = obstacles.take().unwrap_or_default();
-                log.plans.push(PlanRec { tick: log.ticks, state, points, goals, chosen, obstacles, obstacle_width });
+                let tested = tested.take().unwrap_or_default();
+                log.plans.push(PlanRec { tick: log.ticks, state, points, goals, chosen, obstacles, obstacle_width, tested });
+            }
+            b'J' => {
+                // the objects the loop of the plan that follows tested: the part's address, the
+                // id of the listed object it belongs to, its offset, left out, 24 words of it
+                if !r.has(2) {
+                    break;
+                }
+                let cnt = r.u16() as usize;
+                if !r.has(107 * cnt) {
+                    break;
+                }
+                let mut t = Vec::with_capacity(cnt);
+                for _ in 0..cnt {
+                    r.u32();
+                    let id = r.i16();
+                    r.u32();
+                    let out = r.u8() != 0;
+                    for _ in 0..24 {
+                        r.u32();
+                    }
+                    t.push((id, out));
+                }
+                tested = Some(t);
             }
             b'X' => {
                 // the obstacles of the plan that follows
@@ -332,7 +360,14 @@ pub fn read_log(path: &str) -> Option<Log> {
                 if !r.has(20 * cnt) {
                     break;
                 }
-                let rects = (0..cnt).map(|_| [r.u32() as i32, r.u32() as i32, r.u32() as i32, r.u32() as i32, r.u32() as i32]).collect();
+                // stored {y0, x0, y1, x1, cost} (the footprint's words taken in reverse): kept
+                // here as {x0, y0, x1, y1, cost}, the objects' and the waypoints' order
+                let rects = (0..cnt)
+                    .map(|_| {
+                        let (y0, x0, y1, x1) = (r.u32() as i32, r.u32() as i32, r.u32() as i32, r.u32() as i32);
+                        [x0, y0, x1, y1, r.u32() as i32]
+                    })
+                    .collect();
                 obstacles = Some((width, rects));
             }
             b'H' => {

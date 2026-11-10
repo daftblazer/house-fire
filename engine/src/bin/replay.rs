@@ -2378,13 +2378,58 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 .filter(|o| inside(o, r))
                 .map(|o| format!("{} {} f{}", o.id(), o.file.map_or("-".to_string(), |f| file_name(lib, f)), o.facing()))
                 .collect();
-            counts.note(if objs.is_empty() {
-                "routing: an obstacle with no native object at its place (another tile of one, or not on the lot natively)"
-            } else {
-                "routing: an obstacle with a native object at its place"
-            });
             if show_obstacles {
                 println!("   {:?} {w}x{h} cost {}: {objs:?}", &r[..4], r[4]);
+            }
+        }
+        // Each obstacle's object (logs with 'J'): the objects the loop kept, in order, one a
+        // rectangle (one may be dropped, as overlapping the Sim: the pairing that best fits).
+        let kept: Vec<i16> = pl.tested.iter().filter(|t| !t.1).map(|t| t.0).collect();
+        if !kept.is_empty() {
+            let core = |r: &[i32; 5]| if r[4] == i32::MAX { [r[0] + half, r[1] + half, r[2] - half, r[3] - half] } else { [r[0], r[1], r[2], r[3]] };
+            // an object's place: a person's as logged at the plan's tick (the walk is not yet
+            // native), any other's natively
+            let place = |id: i16| world.find_object(id).map(|o| if o.person { place_at(id, pl.tick).unwrap_or((o.x16, o.y16)) } else { (o.x16, o.y16) });
+            let on_tile = |id: i16, r: &[i32; 5]| {
+                let c = core(r);
+                place(id).is_some_and(|p| {
+                    let person = world.find_object(id).is_some_and(|o| o.person);
+                    // a person's core is 6 on a side, centred on its place; another's within its tile
+                    if person { c == [p.0 - 3, p.1 - 3, p.0 + 3, p.1 + 3] } else { p.0 >> 4 == c[0] >> 4 && p.1 >> 4 == c[1] >> 4 }
+                })
+            };
+            let skips: Vec<Option<usize>> = if kept.len() == pl.obstacles.len() + 1 { (0..kept.len()).map(Some).collect() } else { vec![None] };
+            let pairing = |skip: Option<usize>| -> Vec<i16> { kept.iter().enumerate().filter(|&(i, _)| Some(i) != skip).map(|(_, &id)| id).collect() };
+            let best = skips
+                .iter()
+                .map(|&sk| pairing(sk))
+                .max_by_key(|ids| ids.iter().zip(&pl.obstacles).filter(|(id, r)| on_tile(**id, r)).count())
+                .unwrap_or_default();
+            counts.add("routing: obstacles paired with the objects the loop kept (as many, or one dropped)", (best.len() == pl.obstacles.len()) as usize);
+            for (&id, r) in best.iter().zip(&pl.obstacles) {
+                let c = core(r);
+                let what = match world.find_object(id) {
+                    None => "routing: an obstacle's object not in the native world",
+                    Some(_) if on_tile(id, r) => "routing: an obstacle's object natively on its tile (the footprint within it)",
+                    Some(_) => "routing: an obstacle's object natively NOT on its tile",
+                };
+                counts.note(what);
+                if show_obstacles {
+                    let o = world.find_object(id);
+                    println!(
+                        "   obstacle {:?} cost {} core {}x{} at +{},+{} of tile {},{}: object {id} {} native at {:?}",
+                        &r[..4],
+                        r[4],
+                        c[2] - c[0],
+                        c[3] - c[1],
+                        c[0] & 15,
+                        c[1] & 15,
+                        c[0] >> 4,
+                        c[1] >> 4,
+                        o.and_then(|o| o.file).map_or("-".to_string(), |f| file_name(lib, f)),
+                        o.map(|o| (o.x16, o.y16, o.level, o.facing()))
+                    );
+                }
             }
         }
         // the native objects within the obstacles' extent that none covers

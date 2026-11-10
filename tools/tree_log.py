@@ -71,6 +71,11 @@ def records(path):
             st, res, cnt = struct.unpack_from('<IIH', b, p); p += 10
             if p + 8 * cnt > n: break
             yield 'G', (st, res, [struct.unpack_from('<II', b, p + 8 * i) for i in range(cnt)]); p += 8 * cnt
+        elif k == b'J':  # the objects the planner's loop tested: [(object, id, offset, left out, 24 words)]
+            if p + 2 > n: break
+            cnt, = struct.unpack_from('<H', b, p); p += 2
+            if p + 107 * cnt > n: break
+            yield 'J', [struct.unpack_from('<IhiB24I', b, p + 107 * i) for i in range(cnt)]; p += 107 * cnt
         elif k == b'X':  # the planner's obstacles: (width, [(x0, y0, x1, y1, cost)])
             if p + 6 > n: break
             w, cnt = struct.unpack_from('<iH', b, p); p += 6

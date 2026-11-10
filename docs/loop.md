@@ -1185,7 +1185,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 6 of 16.
+Iteration 7 of 16.
 
 - **Iteration 1, chunk 1 (the rooms and their doors).** The third array is not the rooms (1
   inside, 7 outside); the rooms are the regions the walls close (`Walls::room`, a door left
@@ -1251,6 +1251,17 @@ Iteration 6 of 16.
   not (the dining table too). Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4,
   24); clippy clean. Next: which objects the search leaves out (`fn_802499DC`) and an object's
   footprint (its +696 virtual), to build the rectangles natively.
+
+- **Iteration 7, chunk 3 (the obstacles' objects).** The observer logs the objects the search's
+  loop asks about and whether each is left out (`J`, at `Route_SkipObstacle` 802499DC; three
+  more home runs to find how its part names its owner; the new home log has the same 581,110
+  steps). The kept objects pair one for one with the rectangles (one dropped where it overlaps
+  the Sim), and the rectangles are stored turned ({y0, x0, y1, x1}; the reader now turns them
+  back). Checked: all 701 rectangles of native objects lie on their object's native tile
+  (persons: 6 on a side round their logged place), 8 of objects not native; the tick-1905 walk
+  keeps 3 off them. Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy
+  clean. Next: each object's footprint and cost from its definition, and which are left out,
+  to build the obstacles natively (rectangle by rectangle against `X`).
 
 
 ## The eighth loop paused
