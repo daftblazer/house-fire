@@ -4,3 +4,12 @@
 pub mod bhav;
 pub mod disc;
 pub mod iff;
+pub mod interp;
+
+/// A tree, by its place in the trees a host keeps (the library's, or a test's).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct TreeId(pub u32);
+
+/// An object file, by its place in the library's files.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct FileId(pub u32);

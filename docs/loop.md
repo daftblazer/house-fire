@@ -1251,7 +1251,7 @@ without a commit (record why here). Then the eighth loop resumes.
 
 ## Progress
 
-Iteration 1 of 16.
+Iteration 2 of 16.
 
 - **Iteration 1, chunk 1 (the crate and the readers).** The C++ engine moved to
   `engine-cpp/` (built with clang from there, its home-log replay output the very same as
@@ -1260,3 +1260,10 @@ Iteration 1 of 16.
   reader's error. Checked: the Rust disc test reads all 9,529 trees, none failing, as the C++
   `test_disc` (`BHAV read: 9529, failed 0`); clippy clean. Chunk 1 done. Next: chunk 2,
   `expression`, `interp`, `primitives` and their tests.
+
+- **Iteration 2, chunk 2 (the interpreter).** `interp` ported: trees and files as indices
+  (`TreeId`, `FileId`, into the host's trees and the library's files) instead of pointers, the
+  host passed to each step instead of held, a primitive given the interpreter (its top frame
+  the C++ `Frame&`) and frames' locals read by index. Checked: `test_interp`'s ten cases as
+  Rust tests, every assertion the C++ one's, all passing (the C++ `test_interp: ok`); clippy
+  clean. Next: `expression` and `test_expression`.
