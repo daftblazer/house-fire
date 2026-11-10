@@ -317,7 +317,19 @@ choice's guard is among those that pass. Natively the guards are to run in the e
 turn (the check trees through `Host::run_check`, against the log's steps of them, as the
 interaction queue's are), which the replay's flow does not do yet.
 
-Still to come: the guards run natively in the turn, and the score of those that pass (the
+**The evaluation is opcode 3**, node 0 of "try autonomy" (8233): one step whose nested work is
+all the checks, which ends with the stack object set to the choice (then Find Best Action at
+node 1 pushes the chosen interaction on it). Its step record carries its last check's lookup
+and is in a frame below its checks'. Native: `run_evaluation` (the candidates' checks
+through `Host::run_check`, each object's table's first tree once before its guards). In the
+replay (only with `REPLAY_EVALUATION`): its checks step through the log's steps of them and
+each result is compared with the log's (its bottom frame's return): 153 the same, 45
+different and 235 not finished over the three evaluations, because a check that calls
+another file's tree through opcode 28 (430:3 → ScenarioGlobals 8251) goes on natively
+without the call (the main replay syncs such frames; a check does not). The choice is taken
+from the log until the score is native.
+
+Still to come: opcode 28's call inside a check, and the score of those that pass (the
 adverts, the motives, the distance, the tuning table), checked as each choice among the native
 best four.
 

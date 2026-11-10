@@ -26,6 +26,7 @@
 // a variable (one a primitive that is not native wrote). Objects that are not the lot's (the
 // household, made as the lot loads, and objects made later) are not run.
 #include <algorithm>
+#include <functional>
 #include <cmath>
 #include <chrono>
 #include <cstdlib>
@@ -115,6 +116,7 @@ struct ReplayHost : Host {
     std::span<const int16_t> default_params() override { return defaults; }
     std::optional<bool> run_check(const Tree* t, const ObjectFile* file, int16_t stack_object) override;
     std::vector<int16_t> defaults;
+    std::function<void(bool)> on_check;  // told each finished check's result (the evaluation's comparison)
 };
 
 struct Replay {
@@ -129,6 +131,7 @@ struct Replay {
     std::vector<size_t> nested;
     size_t nested_pos = 0;
     std::set<int16_t> natively_delivered;
+    std::set<int16_t> present;  // the objects on the lot this tick (the log's list)
 
     // Brings the native world's variables to what the original's lookups found, counting
     // those that were already the same.
@@ -194,7 +197,9 @@ std::optional<bool> ReplayHost::run_check(const Tree* t, const ObjectFile* file,
     r.step = outer;
     r.file_of_top = outer_file;
     if (getenv("REPLAY_TRACE_CHECK")) std::printf("  check %d done %d error %d result %d\n", t->id, chk.done(), (int)chk.error(), chk.result());
-    return chk.done() && chk.error() == Error::None ? std::optional<bool>(chk.result()) : std::nullopt;
+    const std::optional<bool> result = chk.done() && chk.error() == Error::None ? std::optional<bool>(chk.result()) : std::nullopt;
+    if (result && on_check) on_check(*result);
+    return result;
 }
 
 const Tree* ReplayHost::tree(uint16_t id) {
@@ -237,6 +242,29 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
         note(got == PrimResult::Continue ? "queue: IdleForInput delivered the queued interaction natively" : "queue: IdleForInput natively did NOT deliver");
         if (got == PrimResult::Continue) r.natively_delivered.insert(me.id());
         return got == PrimResult::Continue ? got : logged();
+    }
+    if (n.opcode == 3 && me.person && !r.nested.empty()) {  // the autonomy evaluation
+        std::vector<Candidate> cands;
+        for (const Candidate& c : autonomy_candidates(r.world, me))
+            if (r.present.empty() || r.present.count(c.object->id())) cands.push_back(c);
+        // The engine's evaluation, each check's result against the log's: the step that ends
+        // it (its bottom frame's return, 254 true or 255 false) is the last nested step used.
+        size_t same = 0, different = 0;
+        on_check = [&](bool got) {
+            if (r.nested_pos == 0) return;
+            const StepRec& end = r.log->steps[r.nested[r.nested_pos - 1]];
+            (got == (end.node == 254) ? same : different)++;
+        };
+        const auto checks = run_evaluation(r.world, me, *this, cands);
+        on_check = nullptr;
+        size_t unfinished = 0;
+        for (const EvaluationCheck& c : checks) unfinished += !c.passed.has_value();
+        note("autonomy: an evaluation's checks, result as the log's", same);
+        note("autonomy: an evaluation's checks, result DIFFERENT", different);
+        if (unfinished) note("autonomy: an evaluation's checks, not finished", unfinished);
+        // The choice: the log's (the score is not native yet).
+        f.stack_object = s.stack_object_after;
+        return logged();
     }
     if (n.opcode == 29) {  // SetMotiveDelta
         ScriptVariables vars(r.world, me, f);
@@ -613,6 +641,46 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
                 // 281:4 of this Sim) is run natively, its checks stepping through those steps.
                 auto id0 = ids.find(s.sim);
                 Object* w = id0 == ids.end() ? nullptr : world.find(id0->second);
+                if (w && w->person && s.node == 0) {
+                    // The evaluation (opcode 3 at the native top): its checks are this Sim's next
+                    // logged steps up to the opcode-3 step itself (its tree and node, looked up).
+                    Interpreter& ein = sim.stack_of(*w);
+                    const auto& est = ein.stack();
+                    const Node* en = !ein.done() && !est.empty() && est.back().tree && est.back().node < est.back().tree->nodes.size()
+                                         ? &est.back().tree->nodes[est.back().node] : nullptr;
+                    // Native only with REPLAY_EVALUATION set, until its checks run through whole
+                    // (opcode 28's calls inside them are not native yet).
+                    static const bool evaluation = getenv("REPLAY_EVALUATION") != nullptr;
+                    if (evaluation && en && en->opcode == 3 && !(s.tree == (uint16_t)est.back().tree->id && s.node == est.back().node)) {
+                        size_t k = i;
+                        std::vector<size_t> nest;
+                        for (size_t j : by_tick[t]) {
+                            if (j < i || log.steps[j].sim != s.sim) continue;
+                            // The opcode-3 step itself: its tree and node, in a frame below its checks'
+                            // (a guard can have the same tree id in another file: the bed's 8233).
+                            if (log.steps[j].tree == (uint16_t)est.back().tree->id && log.steps[j].node == est.back().node &&
+                                log.steps[j].frame < s.frame) { k = j; break; }  // (its lookup is its last check's)
+                            nest.push_back(j);
+                        }
+                        if (k != i && nest.size() >= 20) {
+                            rp.present.clear();
+                            for (const ListRec& l : log.lists) if (l.tick <= t) rp.present = std::set<int16_t>(l.ids.begin(), l.ids.end());
+                            rp.nested = nest;
+                            rp.nested_pos = 0;
+                            rp.step = &log.steps[k];
+                            rp.file_of_top = est.back().file;
+                            ein.reset_iterations();
+                            ein.step();
+                            note(rp.nested_pos == nest.size() ? "autonomy: the evaluation used exactly the log's steps of it" : "autonomy: the evaluation did NOT use the log's steps of it");
+                            if (rp.nested_pos != nest.size() && getenv("REPLAY_SHOW_AUTONOMY"))
+                                std::printf("evaluation of %d at tick %u: used %zu of %zu steps\n", w->id(), t, rp.nested_pos, nest.size());
+                            for (size_t j : nest) consumed.insert(j);
+                            consumed.insert(k);
+                            rp.nested.clear();
+                            continue;
+                        }
+                    }
+                }
                 if (w && w->person && !w->queue.empty() && s.node == 0) {
                     Interpreter& win = sim.stack_of(*w);
                     const auto& wst = win.stack();

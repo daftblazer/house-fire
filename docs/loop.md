@@ -1038,7 +1038,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 1 of 16.
+Iteration 2 of 16.
 
 - **Iteration 1, chunk 1 (a table's first tree per table; PushAction by the object's
   table).** Object 198 is the group meal, whose table has action 4201 twice (guards 4202 and
@@ -1046,3 +1046,11 @@ Iteration 1 of 16.
   PushAction and the delivery use the target's own table. Checked: one more PushAction and
   delivery native at Mom's house, 5 check steps as the log's, 3 differing steps fewer; the
   club unchanged. Next: chunk 2, the evaluation natively.
+
+- **Iteration 2, chunk 2 (the evaluation natively, first piece).** The evaluation is opcode 3
+  at "try autonomy" node 0 (its nested steps are the checks; it sets the stack object to the
+  choice). `run_evaluation` native; the replay runs it against the log's steps (with
+  `REPLAY_EVALUATION`): 153 results the same, 45 different, 235 not finished, all from the
+  checks' opcode-28 calls (into another file's tree) not being made inside a check. Kept off
+  by default so the replay's figures stay. Next: opcode 28 natively (the call), so the
+  checks run through.

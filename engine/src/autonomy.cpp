@@ -38,4 +38,24 @@ std::vector<Candidate> autonomy_candidates(const World& world, const Object& me)
     return out;
 }
 
+std::vector<EvaluationCheck> run_evaluation(const World& world, const Object& me, Host& host,
+                                            const std::vector<Candidate>& candidates) {
+    (void)me;
+    std::vector<EvaluationCheck> out;
+    const Object* last = nullptr;
+    for (const Candidate& c : candidates) {
+        const auto tab = world.library().table_of(*c.object);
+        if (c.object != last) {  // a new object: its table's first tree, once
+            last = c.object;
+            if (tab.first) {
+                const Tree* t = world.library().tree(tab.file, tab.first);
+                out.push_back({c.object, tab.first, nullptr, t ? host.run_check(t, tab.file, c.object->id()) : std::nullopt});
+            }
+        }
+        const Tree* g = world.library().tree(tab.file, c.interaction->guard);
+        out.push_back({c.object, c.interaction->guard, &c, g ? host.run_check(g, tab.file, c.object->id()) : std::nullopt});
+    }
+    return out;
+}
+
 }  // namespace housefire

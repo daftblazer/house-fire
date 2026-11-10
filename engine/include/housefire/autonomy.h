@@ -2,8 +2,12 @@
 // "Autonomy"). Measured on the recompiled Bustin' Out's home log (its three evaluations).
 #pragma once
 #include <cstdint>
+#include <optional>
 #include <vector>
 
+#include <functional>
+
+#include "housefire/interp.h"
 #include "housefire/library.h"
 #include "housefire/world.h"
 
@@ -22,5 +26,21 @@ struct Candidate {
 // share once. A person's table is its semi-global file's (person_sg, NPC_SG). Measured: the
 // home log's three evaluations, objects and persons, the same.
 std::vector<Candidate> autonomy_candidates(const World& world, const Object& me);
+
+// One check of an evaluation: the object, the tree (a table's first tree, or a candidate's
+// guard; `candidate` null for a first tree), and its result (nullopt if it did not finish).
+struct EvaluationCheck {
+    const Object* object;
+    uint16_t tree;
+    const Candidate* candidate;
+    std::optional<bool> passed;
+};
+
+// The evaluation (opcode 3, run by the Sims' "try autonomy", PersonGlobals 8233): every
+// candidate's checks through the host (Host::run_check, the stack object the candidate), an
+// object's table's first tree once before its guards. `present` (if given) says which objects
+// are on the lot. Measured: the home log's three evaluations (docs/simulation.md, "Autonomy").
+std::vector<EvaluationCheck> run_evaluation(const World& world, const Object& me, Host& host,
+                                            const std::vector<Candidate>& candidates);
 
 }  // namespace housefire
