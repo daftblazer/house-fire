@@ -517,7 +517,7 @@ without a commit.
 
 ## Progress
 
-Iteration 6 of 12.
+Iteration 7 of 12.
 
 - **Iteration 1, chunk 1 (the tree stack and the base object).** Read the loader's code for
   everything after an object's data: the tree stack and its frames, the +192 member, the
@@ -573,3 +573,9 @@ Iteration 6 of 12.
   pass 5.2 µs. Then the RK3566 (the user gave SSH access): 125 µs a tick on average on one
   A55 core, 1.8 ms at worst past the load, 7.7 ms for the tick after the load; the pass costs
   as much as the scripts (59 against 67 µs). Next: make the pass cheap, then chunk 4.
+
+- **Iteration 7, chunk 3 (the pass made cheap).** The simulator's objects in an id-sorted
+  vector with their stacks, rebuilt when the world changes. The PC: the pass 5.2 → 1.6 µs a
+  tick, a tick 12.3 → 8.7 µs; the replay's checks the same (every turn, every stop, Idle,
+  67,001 steps). The RK3566 again when the user next has it on. Next: chunk 4, Castaway's
+  object stream.

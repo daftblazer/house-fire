@@ -92,6 +92,7 @@ void World::remove(const Object* o) {
     for (auto it = by_id_.begin(); it != by_id_.end();)
         it = it->second == o ? by_id_.erase(it) : std::next(it);
     std::erase_if(objects_, [&](const std::unique_ptr<Object>& p) { return p.get() == o; });
+    version_++;
 }
 
 Object* World::find(int16_t id) {
@@ -103,6 +104,7 @@ void World::reindex(Object& o) {
     for (auto it = by_id_.begin(); it != by_id_.end();)
         it = it->second == &o ? by_id_.erase(it) : std::next(it);
     if (o.id()) by_id_[o.id()] = &o;
+    version_++;
 }
 
 namespace {

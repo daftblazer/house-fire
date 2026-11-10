@@ -6,6 +6,7 @@
 #include <functional>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 
 #include "housefire/interp.h"
 #include "housefire/world.h"
@@ -40,7 +41,7 @@ public:
     // object: as the lot saved them). Its id is the object's, its lifetime the object's in
     // the simulator.
     Interpreter& stack_of(Object& o);
-    void forget(const Object& o) { runs_.erase(&o); }  // the object is gone
+    void forget(const Object& o) { runs_.erase(&o); seen_version_ = ~uint64_t(0); }  // the object is gone
 
     // Called after each object's turn (for checks): the object, the steps it ran.
     std::function<void(const Object&, int steps)> on_turn;
@@ -50,9 +51,22 @@ private:
         std::unique_ptr<Host> host;
         std::unique_ptr<Interpreter> in;
     };
+    // The objects that have a stack, by id, each with its run: rebuilt only when the world's
+    // objects change (World::version), so that a pass is a walk down a vector.
+    struct Entry {
+        int16_t id;
+        Object* object;
+        Interpreter* in;
+    };
+    void refresh();
+    size_t first_from(int16_t id) const;  // the first entry with an id at least this
+
     World& world_;
     MakeHost make_host_;
     std::unordered_map<const Object*, Run> runs_;
+    std::vector<Entry> order_;
+    uint64_t seen_version_ = ~uint64_t(0);
+    int16_t top_ = 0;  // the highest id in use
     uint32_t now_ = 0;
     int16_t cursor_ = 0;
     bool stop_ = false;

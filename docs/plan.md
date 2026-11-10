@@ -103,6 +103,13 @@ percentile, 1.8 ms at worst past the load, 7.7 ms for the tick after it (two run
 lookup for each id, each tick) is as costly as all the scripts, and is the first thing to
 make cheaper. The budget leaves room, but not much to waste, for the systems to come.
 
+**The pass made cheap (2026-11-09).** The simulator keeps its objects by id in a vector, each
+with its stack, rebuilt only when the world's objects change (`World::version`), so a pass
+walks a vector instead of looking up every id in two maps. On the PC the pass went from
+5.2 µs to 1.6 µs a tick (most of what is left is the replay's own list of the pass for its
+checks) and a tick from 12.3 µs to 8.7 µs on average; every check of the replay unchanged.
+The RK3566 is to be measured again the next time it is on.
+
 ## What does not come over from Bustin' Out's port
 
 The port's own redrawn interface (its "HD UI": `src/hud_read.cpp`, `hud_pieces.h`,

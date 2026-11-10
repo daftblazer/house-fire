@@ -64,7 +64,7 @@ public:
     // A lot's objects as saved, each read by its class.
     LotObjects read_objects(const LotChunks& lot) const;
     // A lot unloaded: every object gone, the shared tables kept.
-    void clear() { objects_.clear(); by_id_.clear(); }
+    void clear() { objects_.clear(); by_id_.clear(); version_++; }
     // An object made during play (CreateObject, the engine's effects): the next id (one more
     // than the highest in use: a removed object's id comes back), in front of the list.
     Object& make_object(std::unique_ptr<Object> o);
@@ -73,6 +73,10 @@ public:
     Object* find(int16_t id);  // by object id (data 11)
     // Called when an object's id changes (its data 11 is written).
     void reindex(Object& o);
+    // The objects by id, and a count that changes whenever an object comes, goes or changes
+    // its id (for those that keep their own order of the objects, as the simulator does).
+    const std::map<int16_t, Object*>& by_id() const { return by_id_; }
+    uint64_t version() const { return version_; }
 
     std::vector<int16_t> globals;        // scope 6
     std::vector<int16_t> neighbourhood;  // scope 34
@@ -82,6 +86,7 @@ private:
     const Library& lib_;
     std::vector<std::unique_ptr<Object>> objects_;
     std::map<int16_t, Object*> by_id_;
+    uint64_t version_ = 0;
 };
 
 // The variables a primitive of `me` sees while running `frame`.
