@@ -44,6 +44,12 @@ pub mod scope {
 pub const DATA_OBJECT_ID: usize = 11;
 /// The object data field that holds the way it faces (in eighths of a turn).
 pub const DATA_FACING: usize = 1;
+/// The object data field naming the object it sits in or on (0 none): a lamp on a table, the
+/// sink in its counter.
+pub const DATA_CONTAINER: usize = 2;
+/// The object data field of its flags (0x4: no extent, not an obstacle; 0x10: may be walked
+/// through, an obstacle at a small cost; `docs/simulation.md`, "Which objects block").
+pub const DATA_FLAGS: usize = 8;
 /// The person data field the engine relies on: a Sim's neighbour id (its NBRS id).
 pub const PERSON_NEIGHBOUR_ID: usize = 31;
 

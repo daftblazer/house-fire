@@ -46,7 +46,7 @@ use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
-use housefire::routing::{Tile, footprint, front, slot_places};
+use housefire::routing::{BLOCKS, Tile, footprint, front, obstacle, slot_places};
 use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
@@ -2444,6 +2444,63 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                         o.and_then(|o| world.definition(o)).map_or(0, |d| d.field(75))
                     );
                 }
+            }
+        }
+        // The obstacles natively, in the loop's order (the objects it asked about, as logged):
+        // each not a person by `routing::obstacle`, a person as the log keeps it (6 on a side
+        // round its logged place, grown); against the logged list where it has as many (not
+        // dropping one that overlaps the Sim: not yet native), rectangle by rectangle.
+        if !kept.is_empty() && kept.len() == pl.obstacles.len() {
+            let native: Vec<[i32; 5]> = pl
+                .tested
+                .iter()
+                .filter_map(|&(id, out)| {
+                    // an object not in the native world holds its place (as the log keeps it)
+                    let Some(o) = world.find_object(id) else { return (!out).then_some([0; 5]) };
+                    if o.person {
+                        let p = place_at(id, pl.tick).unwrap_or((o.x16, o.y16));
+                        return (!out).then_some([p.0 - 3 - half, p.1 - 3 - half, p.0 + 3 + half, p.1 + 3 + half, BLOCKS]);
+                    }
+                    obstacle(o, world.definition(o).map_or(0, |d| d.field(75)), half)
+                })
+                .collect();
+            let hit = native.iter().zip(&pl.obstacles).filter(|(a, b)| a == b).count();
+            let unknown = native.iter().filter(|a| **a == [0; 5]).count();
+            let miss = native.len().min(pl.obstacles.len()) - hit - unknown;
+            if show_obstacles {
+                for (a, b) in native.iter().zip(&pl.obstacles).filter(|(a, b)| a != b && **a != [0; 5]) {
+                    println!("   native obstacle {a:?}, the planner's {b:?}");
+                }
+            }
+            counts.add("routing: obstacles of objects not in the native world (the log's kept)", unknown);
+            counts.add("routing: obstacles natively the planner's, rectangle by rectangle", hit);
+            counts.add("routing: obstacles natively NOT the planner's", miss + native.len().abs_diff(pl.obstacles.len()));
+            counts.note(if native.len() == pl.obstacles.len() && hit + unknown == native.len() {
+                "routing: a plan's obstacles natively all the planner's (but those of objects not native)"
+            } else {
+                "routing: a plan's obstacles natively NOT all the planner's (an object not native, or a footprint)"
+            });
+        }
+        // study (REPLAY_DUMP_TESTED): each object the loop asked about, its label (left out, or
+        // kept with its rectangle's cost) and its definition's fields, for the rules' search
+        if has("REPLAY_DUMP_TESTED") && !kept.is_empty() && kept.len() == pl.obstacles.len() {
+            let mut costs = std::collections::BTreeMap::new();
+            let mut k = 0;
+            for &(id, out) in &pl.tested {
+                if out {
+                    continue;
+                }
+                if let Some(r) = pl.obstacles.get(k) {
+                    costs.entry(id).or_insert(r[4]);
+                }
+                k += 1;
+            }
+            for &(id, out) in &pl.tested {
+                let Some(o) = world.find_object(id) else { continue };
+                let label = if out { "out".to_string() } else { costs.get(&id).map_or("kept?".to_string(), |c| format!("cost{c}")) };
+                let fields = world.definition(o).map(|d| d.fields.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(",")).unwrap_or_default();
+                let data = o.data.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(",");
+                println!("tested\t{}\t{id}\t{}\t{label}\t{}\t{fields}\t{data}", pl.tick, o.file.map_or("-".to_string(), |f| file_name(lib, f)), o.person as u8);
             }
         }
         // the native objects within the obstacles' extent that none covers

@@ -84,6 +84,25 @@ pub fn footprint(mask: u16, x16: i32, y16: i32, facing: i16) -> [i32; 4] {
     r
 }
 
+/// The cost the planner gives an obstacle that blocks.
+pub const BLOCKS: i32 = i32::MAX;
+/// The cost of an obstacle that may be walked through (a door's tile, a tree's quarters).
+pub const WALK_THROUGH: i32 = 10;
+
+/// An object's place among the planner's obstacles ({x0, y0, x1, y1, cost}, sixteenths), or none:
+/// one with no extent (flags 0x4) or in another is left out; one that may be walked through
+/// (flags 0x10) is its footprint at a small cost; any other blocks, its footprint grown on each
+/// side by half the width (`half`: 3 in Bustin' Out). Not for persons (another rule).
+pub fn obstacle(o: &crate::world::Object, mask: u16, half: i32) -> Option<[i32; 5]> {
+    use crate::world::{DATA_CONTAINER, DATA_FLAGS};
+    let flags = o.data[DATA_FLAGS];
+    if flags & 0x4 != 0 || o.data[DATA_CONTAINER] != 0 {
+        return None;
+    }
+    let f = footprint(mask, o.x16, o.y16, o.facing());
+    Some(if flags & 0x10 != 0 { [f[0], f[1], f[2], f[3], WALK_THROUGH] } else { [f[0] - half, f[1] - half, f[2] + half, f[3] + half, BLOCKS] })
+}
+
 /// A tile, (x, y).
 pub type Tile = (i32, i32);
 

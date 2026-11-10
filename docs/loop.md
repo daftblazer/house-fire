@@ -1185,7 +1185,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 8 of 16.
+Iteration 9 of 16.
 
 - **Iteration 1, chunk 1 (the rooms and their doors).** The third array is not the rooms (1
   inside, 7 outside); the rooms are the regions the walls close (`Walls::room`, a door left
@@ -1271,6 +1271,16 @@ Iteration 8 of 16.
   game's own objects (mask 0, 8 at +4). Figures unchanged (561,398, 338,305, 68,202, lockstep
   7,902, 4, 24); clippy clean. Next: the cost (10 or blocking: the doors, the newspaper, the
   trees at 10) and which objects are left out, from the definitions, to build the whole list.
+
+- **Iteration 9, chunk 3 (which objects block).** Found in the objects' own data, not their
+  definitions: left out when the flags (data 8) have 0x4 or the object is in another (data 2);
+  at cost 10, not grown, when the flags have 0x10; else blocking, grown by 3
+  (`routing::obstacle`, `DATA_FLAGS`, `DATA_CONTAINER`). Checked: all 858 of the loop's
+  questions about objects not persons, and all 98 costs; the native lists against the 12
+  logged ones of as many as kept: 441 rectangles exact, 7 of objects not native, 34 the known
+  footprint misses. Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy
+  clean. Next: the persons' rule and the one dropped as overlapping the Sim (then the whole list
+  native), or the chairs' footprint; then the search itself.
 
 
 ## The eighth loop paused

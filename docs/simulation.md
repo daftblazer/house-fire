@@ -617,6 +617,21 @@ outdoor chairs, 0x3333 but 4 in on each side (8 by 8 at +4, one more than the ma
 of the game's own objects with mask 0 but 8 by 8 at +4 (`zz_move_a__tron`, the two-player money
 trunk): something besides the mask shrinks them (not yet found).
 
+**Which objects block** (`routing::obstacle`). Read from the objects the loop asks about (`J`)
+against the object data the save gives: an object is left out when its flags (object data 8)
+have 0x4 (no extent: rugs, windows, wall lamps, paintings, the alarms, the phone) or it sits in
+or on another (object data 2, its container: the table lamps and plants, the sink in its
+counter, the meal on the counter); one whose flags have 0x10 may be walked through, its
+footprint at cost 10, not grown (the doors, the trees' quarters, the newspaper); any other
+blocks, its footprint grown by 3. Checked on the home log: the rule decides all 858 of its
+questions about objects not persons (390 left out, 468 kept), and the cost all 98 objects kept
+(47 at 10). No definition field does (the earlier search, among OBJD fields, could not find it:
+the flags are the object's own). A person is decided otherwise (the loop's kind-2 branch: the
+request's +152 and a distance; 8 of 16 left out), as the log has it for now. The obstacles
+natively, in the loop's order, against the 12 logged lists of as many as it kept: 441
+rectangles exactly the planner's, 7 of objects not native, 34 the footprints not yet found (the
+chairs, the tron, the trunk).
+
 ## Still open
 
 - What wakes a sleeping stack early (23 of 2,833 sleeps).
