@@ -234,6 +234,31 @@ definition (GUID 0x334945B8); 2 are the type-9 objects (GUID 0x437) swapped for 
 plain object, whose sections carry 7 bits more than a plain object's (they read as a
 multi-tile part's zeros): still open.
 
+## Saves
+
+Bustin' Out's save on a memory card (file `G4ME69`, "Sims BO Save", 161 blocks) is the
+neighbourhood file as the game holds it, the same size as the disc's `default.ngh`
+(1,318,912 bytes): the same 4 KB blocks, LZSS-packed, sections 0-3 as the disc's (and one
+more block, tagged 0xDEADBEEF), but with its block headers and the lots' chunk tables
+big-endian and the FourCCs not reversed. The chunks' own contents are the disc's formats:
+of the user's save of Mom's house, 14 of the 16 lots are byte for byte the disc's, and the
+two the player had been to (the first, Mom's house, and the club) read with the same readers
+(`memory_card_file`, `read_lots`; `work/momlot.py`). Its first lot's 206 objects are the
+running game's world list when it loads, in the same order (`work/logs/home.log`).
+
+What the save has that the disc's lots never do:
+- **A person with a definition** (OBJD type 2, an NPC with a file of its own: the paper
+  girl, `npc_papergirl.iff`) is saved as a Sim, not an object.
+- **A Sim's three lists**, empty on the disc: +1160 (fn_8022933C) saves only its count,
+  as each 168-byte element's read (fn_80249B80) reads nothing; +1180 (fn_8022989C, each
+  fn_8021A92C) an object, a 32-bit value and a bool; +1120 (fn_80229D5C, each fn_8021A598) a
+  32-bit value and two floats, which read as a motive, its change a tick and the value it
+  goes to: in the club's five dancers (15, +0.025, 75), (7, +0.0083, −20), (14, +0.0139, 10),
+  SetMotiveDelta's state.
+
+All 4,582 objects of the save's 16 lots read to exactly their ends (`test_lots` with
+`HOUSEFIRE_CARD`).
+
 ## The arrays
 
 Each lot has three Arry chunks: 0, a width and a height (64 and 64 on the disc), an element

@@ -80,6 +80,37 @@ int main() {
         std::printf("FormatError: %s\n", e.what());
         ok = false;
     }
+    // A save (HOUSEFIRE_CARD: a memory card image with a Bustin' Out save; the user's own,
+    // kept out of the repository): its lots read as the disc's, every object to its end.
+    // Checked for the save of Mom's house (docs/lots.md, "Saves"): its first lot's 206 objects
+    // are the running game's world list when it loads.
+    if (const char* card_path = std::getenv("HOUSEFIRE_CARD"); card_path && *card_path) {
+        try {
+            std::vector<uint8_t> card;
+            if (std::FILE* f = std::fopen(card_path, "rb")) {
+                card.resize(1 << 22);
+                card.resize(std::fread(card.data(), 1, card.size(), f));
+                std::fclose(f);
+            }
+            const auto save = memory_card_file(card, "G4ME69");
+            const auto lots = read_lots(save);
+            size_t objects = 0, sims = 0, deltas = 0;
+            for (const LotChunks& lot : lots) {
+                World w(lib);
+                const auto lo = w.read_objects(lot);
+                objects += lo.objects.size();
+                for (const LotObject& o : lo.objects)
+                    if (o.saved_class == SavedClass::Sim) { sims++; deltas += o.motive_deltas.size(); }
+            }
+            const size_t first = lots.empty() ? 0 : World(lib).read_objects(lots.front()).objects.size();
+            std::printf("the save: %zu bytes, lots %zu, objects %zu (the first lot %zu), Sims %zu, motive deltas %zu\n",
+                        save.size(), lots.size(), objects, first, sims, deltas);
+            ok = ok && lots.size() == 16 && first == 206;
+        } catch (const FormatError& e) {
+            std::printf("the save: FormatError: %s\n", e.what());
+            ok = false;
+        }
+    }
     std::printf("test_lots: %s\n", ok ? "ok" : "FAILED");
     return ok ? 0 : 1;
 }

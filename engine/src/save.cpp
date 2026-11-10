@@ -12,6 +12,7 @@ constexpr int kWidths16[4] = {5, 8, 13, 16};
 constexpr int kWidths32[4] = {6, 11, 21, 32};
 constexpr size_t kBlock = 0x1000, kHeader = 28;
 uint32_t le32(const uint8_t* p) { return (uint32_t)p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
+uint32_t be32(const uint8_t* p) { return (uint32_t)p[0] << 24 | p[1] << 16 | p[2] << 8 | p[3]; }
 uint16_t le16(const uint8_t* p) { return (uint16_t)(p[0] | p[1] << 8); }
 }  // namespace
 
@@ -100,11 +101,15 @@ std::vector<NeighbourhoodBlock> read_neighbourhood(std::span<const uint8_t> f) {
     std::vector<NeighbourhoodBlock> out;
     for (size_t off = 0; off + kHeader <= f.size(); off += kBlock) {
         const uint8_t* h = f.data() + off;
+        // The header's words: the disc's little-endian, a save's big-endian (its size, 28,
+        // tells which).
+        const bool big = le32(h + 4) != kHeader && be32(h + 4) == kHeader;
+        auto w = [&](int i) { return big ? be32(h + 4 * i) : le32(h + 4 * i); };
         // The sixth word is the format's version: Bustin' Out's 4, Castaway's 11.
-        const uint32_t section = le32(h), hs = le32(h + 4), un = le32(h + 8), pk = le32(h + 12), version = le32(h + 20);
+        const uint32_t section = w(0), hs = w(1), un = w(2), pk = w(3), version = w(5);
         if (hs != kHeader || version == 0 || version >= 64 || pk == 0 || pk > un || un >= (1u << 24) || off + kHeader + pk > f.size()) continue;
         size_t used = 0;
-        NeighbourhoodBlock b{(uint32_t)off, section, le32(h + 24), unpack_lzss(f.subspan(off + kHeader, pk), un, &used)};
+        NeighbourhoodBlock b{(uint32_t)off, section, w(6), big, unpack_lzss(f.subspan(off + kHeader, pk), un, &used)};
         if (used != pk) throw FormatError("a block does not unpack from exactly its packed size");
         out.push_back(std::move(b));
     }
@@ -129,8 +134,9 @@ LotChunks chunk_table(const NeighbourhoodBlock& b) {
     if (12 * n > d.size()) throw FormatError("a chunk table runs past its block");
     for (size_t k = 0; k < n; k++) {
         std::string tag((const char*)d.data() + 4 * k, 4);
-        std::string type(tag.rbegin(), tag.rend());  // stored backwards
-        const uint32_t at = le32(d.data() + 4 * n + 4 * k), size = le32(d.data() + 8 * n + 4 * k);
+        std::string type = b.big_endian ? tag : std::string(tag.rbegin(), tag.rend());  // the disc's stored backwards
+        auto word = [&](size_t at) { return b.big_endian ? be32(d.data() + at) : le32(d.data() + at); };
+        const uint32_t at = word(4 * n + 4 * k), size = word(8 * n + 4 * k);
         if (at < kHeader || at - kHeader + size > d.size()) throw FormatError("a chunk runs past its block");
         lot.chunks.push_back({type, std::vector<uint8_t>(d.begin() + (at - kHeader), d.begin() + (at - kHeader + size))});
     }
@@ -143,6 +149,30 @@ std::vector<LotChunks> read_lots(std::span<const uint8_t> file) {
     for (auto& b : read_neighbourhood(file))
         if (b.section == 3) out.push_back(chunk_table(b));
     return out;
+}
+
+std::vector<uint8_t> memory_card_file(std::span<const uint8_t> card, std::string_view game) {
+    // 8 KB blocks: 0 the header, 1-2 the directory (and its backup), 3-4 the block map; the
+    // files from block 5. A directory entry (64 bytes): the game and maker code, ..., its
+    // first block at +0x36 and its block count at +0x38 (big-endian); the map's entries
+    // (from +0x0A, one for each block from 5) the next block of a file.
+    constexpr size_t kCardBlock = 0x2000;
+    if (card.size() < 5 * kCardBlock || game.size() != 6) return {};
+    auto be16 = [&](size_t at) { return (uint16_t)(card[at] << 8 | card[at + 1]); };
+    const size_t blocks = card.size() / kCardBlock;
+    for (size_t e = kCardBlock; e < 2 * kCardBlock; e += 64) {
+        if (std::memcmp(card.data() + e, game.data(), 6) != 0) continue;
+        uint16_t b = be16(e + 0x36);
+        const uint16_t count = be16(e + 0x38);
+        std::vector<uint8_t> out;
+        for (uint16_t i = 0; i < count; i++) {
+            if (b < 5 || b >= blocks) throw FormatError("a memory card file's blocks leave the card");
+            out.insert(out.end(), card.begin() + (long)(b * kCardBlock), card.begin() + (long)((b + 1) * kCardBlock));
+            b = be16(3 * kCardBlock + 0x0A + 2 * (size_t)(b - 5));
+        }
+        return out;
+    }
+    return {};
 }
 
 std::vector<LotArray> read_lot_arrays(const LotChunks& lot) {
@@ -317,10 +347,6 @@ void read_base_rest(SaveStream& r, LotObject& o) {
     for (int n = r.r16(); n > 0; n--) o.shorts.push_back((int16_t)r.r16());
 }
 
-void no_elements(SaveStream& r, const char* what) {
-    if (r.r32() != 0) throw FormatError(what);  // never filled on the disc: not read yet
-}
-
 SavedQueueEntry read_queue_entry(SaveStream& r) {
     SavedQueueEntry e;
     e.a = r.r32();
@@ -343,13 +369,33 @@ void read_sim(SaveStream& r, LotObject& o) {
     for (int i = 0; i < 16; i++) o.motives.push_back(r.rfloat());
     for (int i = 0; i < 16; i++) o.motives_b.push_back(r.rfloat());
     for (int i = 0; i < 80; i++) o.person_data.push_back((int16_t)r.r16());
-    no_elements(r, "ObjM: a Sim's +1160 list is not empty");
+    // The +1160 list: its count only (each element's read, fn_80249B80, reads nothing).
+    o.list_1160 = r.r32();
+    if (o.list_1160 < 0 || o.list_1160 > 1024) throw FormatError("ObjM: a Sim's +1160 list out of range");
     o.current = read_queue_entry(r);
     const int32_t n = r.r32();
     if (n < 0 || n > 8) throw FormatError("ObjM: a Sim's queue out of range");
     for (int32_t i = 0; i < n; i++) o.queue.push_back(read_queue_entry(r));
-    no_elements(r, "ObjM: a Sim's +1180 list is not empty");
-    no_elements(r, "ObjM: a Sim's +1120 list is not empty");
+    // The +1180 list (fn_8021A92C each): an object, a 32-bit value, a bool.
+    int32_t k = r.r32();
+    if (k < 0 || k > 1024) throw FormatError("ObjM: a Sim's +1180 list out of range");
+    for (; k > 0; k--) {
+        LotObject::Entry1180 e;
+        e.object = (int16_t)r.r16();
+        e.value = r.r32();
+        e.flag = r.rbool();
+        o.list_1180.push_back(e);
+    }
+    // The +1120 list (fn_8021A598 each): the motive deltas.
+    k = r.r32();
+    if (k < 0 || k > 1024) throw FormatError("ObjM: a Sim's +1120 list out of range");
+    for (; k > 0; k--) {
+        LotObject::MotiveDelta d;
+        d.motive = r.r32();
+        d.rate = r.rfloat();
+        d.target = r.rfloat();
+        o.motive_deltas.push_back(d);
+    }
 }
 
 // A multi-tile object's part (fn_801D3F50) and a door's (fn_8022DE18): its leader's id kept,

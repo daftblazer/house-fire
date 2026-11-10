@@ -170,13 +170,25 @@ def sim_part(r, v):
     o['motives'] = [r.rfloat() for _ in range(16)]       # +168
     o['motives_b'] = [r.rfloat() for _ in range(16)]     # +232
     o['person_data'] = [r.r16() for _ in range(80 if v > 40 else 64)]  # +8
-    empty_list(r, 'the +1160 list')
+    # The +1160 list (fn_8022933C): its count only; each 168-byte element's own read
+    # (fn_80249B80) reads nothing, so they are made anew at the load.
+    n = r.r32()
+    if not 0 <= n <= 1024: raise ValueError(f'the +1160 list: {n} elements')
+    o['list_1160'] = n
     o['current'] = queue_entry(r, v)                     # +1032
     n = r.r32()
     if not 0 <= n <= 8: raise ValueError(f'a queue of {n}')
     o['queue'] = [queue_entry(r, v) for _ in range(n)]   # a ring of 8 at +320
-    empty_list(r, 'the +1180 list')
-    empty_list(r, 'the +1120 list')
+    # The +1180 list (fn_8022989C): 12-byte elements (fn_8021A92C), each an object
+    # reference, a 32-bit value and a bool.
+    n = r.r32()
+    if not 0 <= n <= 1024: raise ValueError(f'the +1180 list: {n} elements')
+    o['list_1180'] = [(r.r16(), r.r32(), r.rbool()) for _ in range(n)]
+    # The +1120 list (fn_80229D5C): 12-byte elements (fn_8021A598), a 32-bit value and two
+    # floats (fn_8023085C).
+    n = r.r32()
+    if not 0 <= n <= 1024: raise ValueError(f'the +1120 list: {n} elements')
+    o['list_1120'] = [(r.r32(), r.rfloat(), r.rfloat()) for _ in range(n)]
     return o
 
 
@@ -201,9 +213,9 @@ def door_part(r, v):
 
 def object_class(objd_fields):
     """The class the loader makes an object of, from its definition (OBJD) fields: no
-    definition on the disc, a Sim; a master id (field 8), a part of a multi-tile object,
+    definition on the disc or a person's (type 2, an NPC such as the paper girl), a Sim; a master id (field 8), a part of a multi-tile object,
     and a door's (type, field 7, 8) part if a door; otherwise the plain object."""
-    if objd_fields is None: return 'sim'
+    if objd_fields is None or objd_fields[7] == 2: return 'sim'  # type 2: a person (an NPC's own file)
     if objd_fields[8]: return 'door' if objd_fields[7] == 8 else 'part'
     return 'object'
 

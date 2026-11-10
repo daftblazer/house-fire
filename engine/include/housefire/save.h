@@ -6,6 +6,7 @@
 #include <functional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace housefire {
@@ -52,11 +53,19 @@ struct LotChunks {
 // block that does not unpack to exactly its stated size.
 struct NeighbourhoodBlock {
     uint32_t offset, section, count;
+    bool big_endian = false;  // a save's (memory_card_file), not the disc's
     std::vector<uint8_t> data;
 };
 std::vector<NeighbourhoodBlock> read_neighbourhood(std::span<const uint8_t> file);
 // Its lots (section 3), each by its chunk table.
 std::vector<LotChunks> read_lots(std::span<const uint8_t> file);
+
+// A save on a GameCube memory card image (a raw 2 MB card): the file of `game` (its six-byte
+// game and maker code, "G4ME69") by the card's directory and block map; empty if the card has
+// none. Bustin' Out's save is the neighbourhood file as the game keeps it in memory: the same
+// blocks and chunks as the disc's, but its block headers and chunk tables big-endian (and
+// the FourCCs not reversed); the chunks' own contents are the disc's formats.
+std::vector<uint8_t> memory_card_file(std::span<const uint8_t> card, std::string_view game);
 
 // A neighbour of the neighbourhood (its NBRS chunk, the PC's layout: docs/objects.md, "The
 // neighbours"): its id, name (the character file's), GUID, person data (if saved) and its
@@ -161,6 +170,15 @@ struct LotObject {
     std::vector<float> motives, motives_b;
     SavedQueueEntry current;
     std::vector<SavedQueueEntry> queue;
+    // Its +1120 list (fn_80229D5C): the motives changing at a rate, each a motive, its change
+    // a tick and the value it goes to (SetMotiveDelta's).
+    struct MotiveDelta { int32_t motive; float rate, target; };
+    std::vector<MotiveDelta> motive_deltas;
+    // Its +1180 list (fn_8022989C): an object, a 32-bit value and a flag each (to be named).
+    struct Entry1180 { int16_t object; int32_t value; bool flag; };
+    std::vector<Entry1180> list_1180;
+    // Its +1160 list (fn_8022933C): only a count is saved; its elements are made at the load.
+    int32_t list_1160 = 0;
 };
 constexpr int kObjectDataFields = 72, kObjectTemps = 8;
 struct LotObjects {

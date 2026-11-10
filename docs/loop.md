@@ -878,4 +878,11 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 0 of 16.
+Iteration 1 of 16.
+
+- **Iteration 1, chunk 1 (Mom's house read from the save).** The card's save is the
+  neighbourhood file with big-endian block headers and chunk tables (`lots.md`, "Saves");
+  the readers take either. New in the save: a type-2 definition (an NPC) makes a Sim, and a
+  Sim's +1160, +1180 and +1120 lists (the last the motive deltas). Checked: all 4,582 objects
+  of its 16 lots read to their ends (Python and engine alike), and Mom's house's 206 are the
+  home log's first world list, in order. Next: replay over the home log from the card.

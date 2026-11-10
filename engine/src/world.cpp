@@ -52,6 +52,7 @@ int World::load_lot(const LotChunks& lot) {
         if (lo.saved_class == SavedClass::Part || lo.saved_class == SavedClass::Door)
             o->leader = lo.leader ? lo.leader : lo.id;
         if (lo.saved_class == SavedClass::Sim) {
+            o->person = true;  // an NPC with a definition keeps its own file
             o->person_data = lo.person_data;
             o->motives = lo.motives;
             o->current = lo.current;
@@ -76,7 +77,9 @@ int World::load_lot(const LotChunks& lot) {
 SavedClass World::saved_class(const Definition* d) {
     // OBJD field 8, the master id (a multi-tile object's parts have one); field 7, the type
     // (8 a door).
-    if (!d) return SavedClass::Sim;
+    // No definition (a character, made at run time) or a person's (type 2: an NPC with a
+    // file of its own, the paper girl): a Sim.
+    if (!d || d->field(7) == 2) return SavedClass::Sim;
     if (d->field(8)) return d->field(7) == 8 ? SavedClass::Door : SavedClass::Part;
     return SavedClass::Object;
 }
