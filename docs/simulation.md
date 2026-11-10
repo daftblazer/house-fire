@@ -360,7 +360,20 @@ the chosen fridge snack (hunger +20) fifth; at 1443 the chosen toilet fifth; at 
 chosen easel third. So the choice weighs more: the distance by each interaction's
 attenuation (the places are logged) and what the evaluation does with these scores.
 
-Still to come: the score's distance and the choice of those that pass (the
+**The choice's value.** The score's caller (`fn_802266BC`) takes for each candidate whose
+guard passed (the `A` calls are exactly those, in order: 36, 37, 38 against 40, 41, 42 passing
+checks less the tables' first trees) its interaction's attenuation value (the entry's +48), the
+factor 1 / (1 + attenuation × f30) (f30 the distance, it seems), and keeps (score − f28) ×
+that factor if it reaches a minimum (f29), as a 16-byte entry in a list the choice is made
+from. Tested on the logged scores with the distance in tiles from the `P` places, the
+attenuation by code (1 none, 2 0.1, 3 0.3, 4 0.6 from the tuning table, 0 the entry's own) and
+the evaluation's lowest score for f28: each choice is among the best two, so within the
+best four the tuning's "random selection count" names (tick 186: the toilet first, the chosen
+fridge snack second; 1443: the chosen toilet first; 1847: the chosen easel second).
+Approximations still: f28 (the lowest score here) and the code to attenuation mapping.
+
+Still to come: f28 and f30 read exactly, the motive curves (their data) so the score is native,
+and the selection among the best of those that pass (the
 adverts, the motives, the distance, the tuning table), checked as each choice among the native
 best four.
 

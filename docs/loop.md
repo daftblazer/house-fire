@@ -1038,7 +1038,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 6 of 16.
+Iteration 7 of 16.
 
 - **Iteration 1, chunk 1 (a table's first tree per table; PushAction by the object's
   table).** Object 198 is the group meal, whose table has action 4201 twice (guards 4202 and
@@ -1077,3 +1077,9 @@ Iteration 6 of 16.
   by Castaway's shape, its arithmetic read; the observer logs each call (`A`: the motives, the
   adverts, the score; a new home log, the same steps). The scores alone do not rank the three
   choices first (5th, 5th, 3rd): the distance and the selection are next.
+
+- **Iteration 7, chunk 3 (the choice's value).** The score's caller (`fn_802266BC`): (score −
+  base) / (1 + attenuation × distance), kept above a minimum, into the list the choice is made
+  from. On the logged scores with the logged places: each of the three choices among the best
+  two (2nd, 1st, 2nd). Next: the base and the distance exactly, and the curves' data so the
+  score is native.
