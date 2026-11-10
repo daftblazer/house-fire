@@ -844,6 +844,23 @@ int main(int argc, char** argv) {
                     for (const LookupRec& v : s.lookups) {
                         if (v.caller != 0x80213900 && v.caller != 0x802138C8) continue;
                         if (v.scope == 3 && v.data == kDataObjectId) id_of[v.object] = v.value;
+                        if (v.scope == 21) {
+                            // The stack object's definition: field `datum` of its OBJD.
+                            const Object* so = lw.find(s.stack_object);
+                            if (!so || !so->definition) { note("scope 21: stack object or its definition not known"); continue; }
+                            Frame sf;
+                            sf.stack_object = s.stack_object;
+                            Object nobody;
+                            ScriptVariables sv(lw, nobody, sf);
+                            const auto got = sv.get(21, v.data);  // the engine's own lookup
+                            const int16_t f = got ? got->value : (int16_t)-32768;
+                            char e[96];
+                            std::snprintf(e, sizeof e, "datum %d of %d: native %d, original %d", v.data, s.stack_object, f, v.value);
+                            note(f == v.value ? "scope 21: the definition's field the same" : "scope 21: DIFFERENT", e);
+                            if (f != v.value) note(std::string("  scope 21 differs: datum ") + std::to_string(v.data) + " object " + std::to_string(s.stack_object) +
+                                                   " (" + (so->file ? so->file->path.substr(so->file->path.rfind('/') + 1) : std::string("?")) + ") native " + std::to_string(f) + " original " + std::to_string(v.value));
+                            continue;
+                        }
                         if (v.scope != 3 && v.scope != 0 && v.scope != 8) continue;
                         const auto key = std::make_tuple(v.object, (int)v.scope, (int)v.data);
                         if (!done.insert(key).second) continue;

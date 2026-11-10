@@ -100,6 +100,7 @@ int16_t* ScriptVariables::cell16(uint8_t scope, int16_t d) {
         case Scope::MyPersonDataByTemp:
             return me_.person && d >= 0 && d < 8 ? at(me_.person_data, me_.temps[(size_t)d]) : nullptr;
         case Scope::Neighbourhood: return at(world_.neighbourhood, d);
+        case Scope::CheckTreeAdRange: return at(world_.ad_range, d);
         default: return nullptr;
     }
 }
@@ -127,6 +128,7 @@ std::optional<ScriptVariables::Cell> ScriptVariables::cell(uint8_t scope, int16_
         case Scope::Temp: return Cell{owner(&me_, 4), d, false};
         case Scope::Global: return Cell{&world_.globals, d, false};
         case Scope::Neighbourhood: return Cell{&world_.neighbourhood, d, false};
+        case Scope::CheckTreeAdRange: return Cell{&world_.ad_range, d, false};
         case Scope::Parameter: return Cell{&frame_.params, d, false};
         case Scope::Local: return Cell{&frame_.locals, d, false};
         case Scope::StackObject: return Cell{&frame_.stack_object, 0, false};
@@ -143,6 +145,14 @@ std::optional<ScriptVariables::Cell> ScriptVariables::cell(uint8_t scope, int16_
 std::optional<Variable> ScriptVariables::get(uint8_t scope, int16_t d) {
     switch ((Scope)scope) {
         case Scope::Literal: return Variable{d, {}};
+        case Scope::StackDefinition: {
+            // The stack object's definition as the engine keeps it: a 32-bit version, then the
+            // OBJD's fields, the datum counting 16-bit words from the start (so field datum - 2).
+            const Object* so = stack_object();
+            if (!so || !so->definition || d < 0) return std::nullopt;
+            if (d < 2) return Variable{(int16_t)(d == 0 ? so->definition->version >> 16 : so->definition->version & 0xFFFF), {}};
+            return Variable{(int16_t)so->definition->field(d - 2), {}};
+        }
         case Scope::Constant: {
             // From the frame's file: the tree's, not necessarily the object's own (a Sim
             // running a fridge's interaction reads the fridge's constants).

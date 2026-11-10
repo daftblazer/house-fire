@@ -20,7 +20,7 @@ namespace housefire {
 enum class Scope : uint8_t {
     MyAttribute = 0, StackAttribute = 1, MyData = 3, StackData = 4, Global = 6, Literal = 7,
     Temp = 8, Parameter = 9, StackObject = 10, MyMotive = 14, StackMotive = 15,
-    MyPersonData = 18, StackPersonData = 19, StackAttributeByParameter = 22, Local = 25,
+    CheckTreeAdRange = 12, MyPersonData = 18, StackPersonData = 19, StackDefinition = 21, StackAttributeByParameter = 22, Local = 25,
     Constant = 26, MyPersonDataByTemp = 30, Neighbourhood = 34,
 };
 
@@ -68,6 +68,7 @@ public:
 
     std::vector<int16_t> globals;        // scope 6
     std::vector<int16_t> neighbourhood;  // scope 34
+    std::vector<int16_t> ad_range;       // scope 12: one shared value per datum (only 15 is used)
 
 private:
     const Library& lib_;

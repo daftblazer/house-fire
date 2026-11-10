@@ -417,3 +417,15 @@ the new-game route, in a 4 GB scope at low priority, at most 330 s, one run at a
   wrote it, is the lot's value 437 times. 13 others were changed first by something else.
 - **Next:** iteration 10, chunk 4: the scopes not modelled (21, the stack object's
   definition, with the definitions now on the objects; 12, 16, 20, 23, 24, 32, 40).
+
+**Iteration 10** (chunk 4, the scopes not modelled):
+- **Scope 21, the stack object's definition:** the datum counts 16-bit words of the
+  in-memory row from its 32-bit version, so it is the OBJD's field datum - 2. Found on the
+  pool table's six parts, whose sub-indices scripts read. In the engine
+  (`ScriptVariables`): all 2,221 reads of the session agree on the lot-loaded world.
+- **Scope 12** is one shared value (8035ADC8, datum 15), set by scripts and by the engine
+  (`World::ad_range`): 4,221 reads the same, 60 changes by the engine.
+- **Left:** 16, 20, 23, 24, 32, 40: 583 lookups in all, mostly 32 (neighbour, 459) and 20
+  (my slot, 78), whose systems (the neighbourhood, slots) come later.
+- **Next:** iteration 11, chunk 5: the next primitives by use. Idle (0), then the script
+  side of Animate (44) and others, checked step by step.

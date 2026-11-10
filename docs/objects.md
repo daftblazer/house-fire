@@ -34,6 +34,8 @@ where the measurements agree.
 | 15 | stack object's motive | the stack object's | the same |
 | 18 | my person data | 2 bytes a field, before the object part (object - 0x638) | `Object::person_data` |
 | 19 | stack object's person data | the stack object's | the same |
+| 12 | (PC: check tree ad range) | one shared 16-bit value (8035ADC8; datum 15 is the only one used), set by scripts and by the engine | `World::ad_range` |
+| 21 | stack object's definition | its definition row: a 32-bit version, then the OBJD's fields, so the datum is field + 2 | `Definition` |
 | 22 | stack object's attribute by parameter | the stack object's attribute named by a parameter | |
 | 25 | local | the frame's, after its parameters | `Frame::locals` |
 | 26 | constant | the frame's file's BCON tables (`interpreter.md`, "Constants") | `Library::constant` |
@@ -41,10 +43,14 @@ where the measurements agree.
 | 34 | neighbourhood data | one table for everyone | `World::neighbourhood` |
 
 Not modelled yet:
-- 12: one table for everyone, PC "check tree ad range".
 - 16, 20: slots.
-- 21: the stack object's definition.
 - 23, 24, 32, 40.
+
+These are 583 of the session's 382,874 lookups.
+
+Checked: scope 21 on the lot-loaded world gives the original's value in all 2,221 reads
+(the datum offset found on the pool table's six parts, whose sub-indices it reads). Scope 12
+holds in 4,221 reads, with 60 changes made by the engine itself.
 
 The stack object is an object id (scope 10). The object it names is the one whose data
 field 11 holds that id: 17,364 of 17,364 lookups agree. A Sim's motives and person data sit
