@@ -223,6 +223,20 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
             note(k + ": DIFFERENT (the log's taken)");
             static std::map<int, int> shown;
             const int kind = n.operand[4] & 0x7F;
+            if (n.opcode == 31 && kind == 6 && getenv("REPLAY_KIND6")) {
+                // which data fields of the object found equal the frame's first parameter
+                if (const Object* x = r.world.find(s.stack_object_after); x && want == PrimResult::True && !s.params.empty()) {
+                    static std::map<int, int> hits;
+                    static int steps = 0;
+                    steps++;
+                    for (size_t k = 0; k < x->data.size(); k++) if (x->data[k] == s.params[0]) hits[(int)k]++;
+                    if (steps % 200 == 0 || steps == 1) {
+                        std::printf("kind 6 after %d true steps; fields equal to param 0:", steps);
+                        for (auto [k, c] : hits) if (c > steps / 2) std::printf(" %d:%d", k, c);
+                        std::printf("\n");
+                    }
+                }
+            }
             if (n.opcode == 31 && getenv("REPLAY_SHOW_STN") && shown[kind]++ < 6) {
                 std::printf("kind %d at %d:%d by %d operand", kind, s.tree, s.node, me.id());
                 for (uint8_t b : n.operand) std::printf(" %02x", b);

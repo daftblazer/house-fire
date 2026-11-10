@@ -60,6 +60,15 @@ int main() {
     f.stack_object = 9;  // not a part
     CHECK(set_to_next(node(31, {0, 0, 0, 0, 3, 0, 0, 0}), w, vars) == PrimResult::False);
     for (const auto& x : w.objects()) x->leader = 0;
+    // kind 6: the next object whose data field 59 is the frame's first parameter (list 5, 9, 3)
+    for (const auto& x : w.objects()) x->data[59] = x->id() == 9 || x->id() == 3 ? 42 : 0;
+    f.params = {42};
+    f.stack_object = 0;
+    CHECK(set_to_next(node(31, {0, 0, 0, 0, 6, 0, 0, 0}), w, vars) == PrimResult::True && f.stack_object == 9);
+    CHECK(set_to_next(node(31, {0, 0, 0, 0, 6, 0, 0, 0}), w, vars) == PrimResult::True && f.stack_object == 3);
+    CHECK(set_to_next(node(31, {0, 0, 0, 0, 6, 0, 0, 0}), w, vars) == PrimResult::False);
+    for (const auto& x : w.objects()) x->data[59] = 0;
+    f.params.clear();
     // into a local (flag 0x80, scope 25, datum 0)
     f.locals = {0};
     CHECK(set_to_next(node(31, {0, 0, 0, 0, 0x82, 25, 0, 0}), w, vars) == PrimResult::True && f.locals[0] == 5);

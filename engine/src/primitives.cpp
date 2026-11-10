@@ -35,8 +35,13 @@ PrimResult set_to_next(const Node& n, World& world, ScriptVariables& vars) {
     const uint8_t scope = (o[4] & 0x80) ? o[5] : (uint8_t)Scope::StackObject;
     const int16_t data = (o[4] & 0x80) ? (int16_t)o[7] : 0;
     const uint32_t guid = operand_guid(n);
+    // Kind 6: an object whose data field 59 is the frame's first parameter (Castaway's
+    // TrySetToNext, the same in Bustin' Out's log).
+    const std::optional<Variable> p0 = kind == 6 ? vars.get((uint8_t)Scope::Parameter, 0) : std::nullopt;
+    if (kind == 6 && !p0) return PrimResult::Stop;
     auto fits = [&](const Object& x) {
         switch (kind) {
+            case 6: return x.data.size() > 59 && x.data[59] == p0->value;
             case 0: return true;
             case 1: return x.person;
             case 2: return !x.person;
@@ -44,7 +49,7 @@ PrimResult set_to_next(const Node& n, World& world, ScriptVariables& vars) {
             default: return false;
         }
     };
-    if (kind != 0 && kind != 1 && kind != 2 && kind != 3 && kind != 4 && kind != 5) return PrimResult::Stop;
+    if (kind > 6) return PrimResult::Stop;
     const std::optional<Variable> cur = vars.get(scope, data);
     if (!cur) return PrimResult::Stop;
     if (kind == 5) {

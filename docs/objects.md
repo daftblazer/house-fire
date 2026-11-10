@@ -132,7 +132,7 @@ object after the target's in that order, or the first if the target is 0, of a k
 | 3 | the next part of the target's multi-tile object, in list order, round from the last part to the first (false if the target is not a part); a part's object is its saved leader (`lots.md`, "The classes") | 141 same (`replay`) |
 | 4 | an object of the GUID in operand bytes 0-3 | 10,903 same |
 | 5 | the next neighbour by id (Castaway's `Neighborhood::GetNextNeighborID`); after the last, the target 0 and false. The neighbours are NBRS's (below) | 468 same (`replay`) |
-| 6 | (open) objects akin to the GUID in bytes 0-3, read little-endian as the files are: 0x46F4E80B is the boombox, and in the club it finds the DJ booth's parts and the music controller, other stereos (in Castaway, kinds 0, 2 and 6 share one case of the search) | not modelled (2,188 steps) |
+| 6 | an object whose data field 59 is the frame's first parameter (Castaway's `TrySetToNext`, which shares the case with 0 and 2; in Bustin' Out's log field 59 is the parameter for 1,984 of 2,000 objects found). The operand's bytes 0-3 (the boombox's GUID in the club's use) are not read | 2,188 and 549 same (`replay`, two sessions) |
 
 The target is the stack object, or with flag 0x80 in operand byte 4 the variable of scope
 byte 5, datum byte 7. The step is true with the target set, or false if there is no next.
