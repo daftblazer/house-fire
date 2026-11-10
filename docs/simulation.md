@@ -86,6 +86,18 @@ frame above the wait). Of the replay's remaining step differences on the 719-tic
 are nearly all (the rest are the pie menu's checks and the first ticks). They are the
 interaction queue's and autonomy's, which come as a system of their own: the next large one.
 
+What the log shows of the queue so far (the fifth loop):
+- **A Sim's saved queue** (`lots.md`, the Sim's part): each entry has the Sim, the
+  interaction's target and a third object, and the tree the interaction runs (in the
+  target's file); in the club five Sims have one entry each (the dance floor, the booth).
+- **Its delivery:** when a waiting Sim's IdleForInput step comes with an entry queued, the
+  engine first runs, on a frame above, the prefix check (Global 463 "Dream Sequence - Prefix
+  Check Tree", which calls 462) and "hide menu" (265), with the target as stack object; the
+  IdleForInput step then ends on its node, and the entry's tree is pushed above "Wait For
+  Notify" at node 0, its stack object the target and its parameters 0, and runs in the same
+  turn. Checked (`replay`): all 5 queued Sims' first interaction is their entry's tree on its
+  target, in both logs; the Sims with nothing queued (3 and 2) get theirs from autonomy.
+
 Replay figures after its own fixes (2026-11-09: the frames saved below a stack's first step,
 returns into them, the file a rebuilt frame names its trees from): on the 719-tick log 68,273
 steps with the native stack as the log's, 314 not; on the 5,130-tick one (no pass records,

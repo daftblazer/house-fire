@@ -297,7 +297,7 @@ SavedQueueEntry read_queue_entry(SaveStream& r) {
     e.b = r.r32();
     for (int16_t& v : e.shorts) v = (int16_t)r.r16();
     e.c = r.r32();
-    e.d = (int16_t)r.r16();
+    e.tree = (int16_t)r.r16();
     e.e = r.rfloat();
     e.flags = r.r32();  // from version 62
     return e;

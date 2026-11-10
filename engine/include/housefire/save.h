@@ -104,11 +104,14 @@ enum class SavedClass : uint8_t {
     Sim,     // a character (no definition on the disc)
 };
 
-// An entry of a Sim's queue as saved (fn_801CFB68): an id, three objects, the rest to be
-// named.
+// An entry of a Sim's interaction queue as saved (fn_801CFB68; Castaway's Interaction): an
+// id, three objects (the Sim, the interaction's target, which is the pushed frame's stack
+// object, and a third), the tree the interaction runs (in the target's file), the rest to be
+// named (c is 100 in every saved entry: a priority?). Checked: each queued Sim's first
+// interaction is its first entry's tree on its target (docs/simulation.md).
 struct SavedQueueEntry {
     int32_t a = 0, id = 0, b = 0, c = 0, flags = 0;
-    int16_t objects[3] = {}, shorts[4] = {}, d = 0;
+    int16_t objects[3] = {}, shorts[4] = {}, tree = 0;
     float e = 0;
 };
 

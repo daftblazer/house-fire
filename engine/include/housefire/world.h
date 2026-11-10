@@ -40,6 +40,9 @@ struct Object {
     int16_t leader = 0;
     std::vector<int16_t> person_data; // scope 18
     std::vector<float> motives;       // scope 14, kept between -100 and 100
+    // A Sim's interaction queue as the lot saved it: the entry it was on, the rest queued.
+    SavedQueueEntry current;
+    std::vector<SavedQueueEntry> queue;
     // Its tree stack, bottom first: a lot's objects' as the lot saved it (a frame whose tree
     // is not on the disc keeps a null tree).
     std::vector<Frame> stack;

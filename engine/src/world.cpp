@@ -54,6 +54,8 @@ int World::load_lot(const LotChunks& lot) {
         if (lo.saved_class == SavedClass::Sim) {
             o->person_data = lo.person_data;
             o->motives = lo.motives;
+            o->current = lo.current;
+            o->queue = lo.queue;
         }
         for (const SavedFrame& sf : lo.stack) {
             Frame f;

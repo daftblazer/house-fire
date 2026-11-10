@@ -766,4 +766,13 @@ without a commit (record why here).
 
 ## Progress
 
-(none yet)
+Iteration 1 of 16.
+
+- **Iteration 1, chunk 1 (the queue's entries and their delivery).** The engine keeps each
+  Sim's saved queue (`Object::current`, `queue`); an entry's fields named from the log: the
+  Sim, the target, the tree (`SavedQueueEntry::tree`). The delivery read from the log
+  (`simulation.md`): at IdleForInput, the prefix check and "hide menu" on the target, then the
+  entry's tree pushed with the target as stack object. Checked: all 5 queued Sims' first
+  interaction is their entry's, in both logs. Next: the delivery natively (IdleForInput
+  pushing the entry's tree, the checks run by the engine), checked by replay.
+

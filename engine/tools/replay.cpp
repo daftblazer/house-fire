@@ -432,7 +432,8 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
     std::map<uint32_t, std::vector<uint32_t>> frames;  // the log's stacks: frame addresses, bottom first
     std::map<uint32_t, uint32_t> first_seen;           // stack -> tick of its first step
     std::set<uint32_t> first_step;                     // stacks whose first step was seen
-    std::set<uint32_t> unseen;                         // placeholder addresses of saved frames below a first step
+    std::set<uint32_t> unseen;
+    std::set<uint32_t> delivered;                      // Sims whose first interaction was seen                         // placeholder addresses of saved frames below a first step
     std::map<std::tuple<uint32_t, uint32_t, uint16_t>, std::pair<const Tree*, const ObjectFile*>> frame_tree;
     size_t streak = 0, best_streak = 0;
 
@@ -556,6 +557,20 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
             }
             // The native stack before the step against the log's.
             const auto& st = in.stack();
+            // The interaction queue: the first interaction pushed onto a waiting Sim (a tree at
+            // node 0 above "Wait For Notify", Global 281, other than its checks) against the
+            // first entry of the queue the lot saved for it.
+            const StepRec* before = nullptr;
+            for (size_t j = i; j-- > 0;) if (log.steps[j].sim == s.sim) { before = &log.steps[j]; break; }
+            if (o->person && s.node == 0 && before && before->tree == 281 && before->node == 4 && delivered.insert(s.sim).second) {
+                if (o->queue.empty()) note("queue: a waiting Sim's first interaction, with nothing queued (autonomy's)");
+                else {
+                    const SavedQueueEntry& q = o->queue.front();
+                    const bool same = q.tree == (int16_t)s.tree && q.objects[1] == s.stack_object;
+                    note(same ? "queue: a waiting Sim's first interaction the queue's first entry (tree, target)" : "queue: a waiting Sim's first interaction NOT its queue's first entry");
+                    if (!same && getenv("REPLAY_SHOW_PUSH")) std::printf("queue: Sim %d got %d with %d; queued %d with %d\n", o->id(), s.tree, s.stack_object, q.tree, q.objects[1]);
+                }
+            }
             if (first_step.insert(s.sim).second) {
                 // Each lot object's first step against the stack the lot saved.
                 const bool same0 = !st.empty() && st.back().tree && st.back().tree->id == (int16_t)s.tree && st.back().node == s.node;
@@ -593,6 +608,16 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
                 }
                 if (in.done()) note("steps: different: the native stack stopped");
                 else if (st.size() != fr.size()) note(st.size() < fr.size() ? "steps: different: the log's is deeper (a frame pushed)" : "steps: different: the native is deeper");
+                if (!in.done() && st.size() < fr.size() && o->person && getenv("REPLAY_SHOW_PUSH")) {
+                    const Frame& w = st.back();
+                    const Node* wn = w.tree && w.node < w.tree->nodes.size() ? &w.tree->nodes[w.node] : nullptr;
+                    std::printf("push: Sim %d tick %u onto %d:%d (op %d): %d:%d in %s, stack object %d, params", o->id(), t, w.tree ? w.tree->id : -1, w.node,
+                                wn ? wn->opcode : -1, s.tree, s.node, file ? file->path.c_str() : "?", s.stack_object);
+                    for (int16_t p : s.params) std::printf(" %d", p);
+                    std::printf("; saved current id %d objects %d %d %d; queue", o->current.id, o->current.objects[0], o->current.objects[1], o->current.objects[2]);
+                    for (const auto& q : o->queue) std::printf(" [id %d objects %d %d %d shorts %d %d %d %d a %d b %d c %d tree %d]", q.id, q.objects[0], q.objects[1], q.objects[2], q.shorts[0], q.shorts[1], q.shorts[2], q.shorts[3], q.a, q.b, q.c, q.tree);
+                    std::printf("\n");
+                }
                 else if (!st.back().tree || st.back().tree->id != (int16_t)s.tree) {
                     note("steps: different: another tree");
                     static int shown = 0;
