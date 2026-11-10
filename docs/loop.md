@@ -766,7 +766,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 1 of 16.
+Iteration 2 of 16.
 
 - **Iteration 1, chunk 1 (the queue's entries and their delivery).** The engine keeps each
   Sim's saved queue (`Object::current`, `queue`); an entry's fields named from the log: the
@@ -776,3 +776,12 @@ Iteration 1 of 16.
   interaction is their entry's, in both logs. Next: the delivery natively (IdleForInput
   pushing the entry's tree, the checks run by the engine), checked by replay.
 
+
+- **Iteration 2, chunk 1 (the delivery natively).** IdleForInput delivers a queued entry
+  natively: the target's TTAB names the checks (the table's first tree, then the
+  interaction's guard: the "hide menu" seen before was one interaction's guard), run by the
+  engine on their own stack (`Host::run_check`), then the entry's tree pushed. The library
+  reads the TTABs (all versions; 9 and up packed as the save stream). Checked: all 5
+  deliveries native, all 81 check steps the same, the pushed interactions the log's; steps
+  the same on the 719-tick log 68,217. Next: what PushAction (13) queues, and the queue's
+  later deliveries.

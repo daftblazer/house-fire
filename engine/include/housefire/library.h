@@ -33,6 +33,9 @@ struct ObjectFile {
     std::map<uint16_t, std::vector<int16_t>> constants;  // BCON by id
     std::map<uint16_t, std::vector<std::string>> strings;  // STR# by id (every language's, in turn)
     std::map<std::string, uint16_t> tree_by_name;        // BHAV ids by their chunk labels
+    // From the interaction tables (TTAB): an interaction's action tree -> its guard (test) tree,
+    // and -> the tree its table names to run first (version 11's field for the whole table).
+    std::map<uint16_t, uint16_t> guard_of, prefix_of;
     std::vector<Definition> definitions;                 // OBJD, in the file's order
     std::string glob;                                    // the semi-global file it names
     const ObjectFile* semi = nullptr;                    // that file, if there is one

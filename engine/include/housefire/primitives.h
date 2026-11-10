@@ -27,6 +27,17 @@ PrimResult random(const Node& n, World& world, ScriptVariables& vars);
 // name: false. A tree found: Stop, as its call is not modelled (no logged use finds one).
 PrimResult call_named_tree(const Node& n, const Frame& f, const Library& lib);
 
+// IdleForInput (opcode 17), where a Sim waits in "Wait For Notify" (Global 281) for its next
+// interaction. With an entry queued: the engine's checks on the entry's target, as its
+// interaction table (TTAB) names them (the tree the table runs first, then the interaction's
+// guard; run by Host::run_check), then the entry's tree
+// (the target's) pushed on the stack with the target as stack object and zero parameters;
+// the entry leaves the queue, and the step goes on into it (Continue; this node stays, and
+// the interaction's return comes back to it). docs/simulation.md, "Where a Sim's
+// interactions come in". Not modelled yet: nothing queued (autonomy's, or a wait), a check
+// that fails, a host that cannot run checks: Stop.
+PrimResult idle_for_input(Interpreter& in, const Node& n, Object& me, World& world, Host& host);
+
 // PlaySound (23), Update (7) and KillSounds (48): requests to the presentation, queued on the
 // world for the front ends (World::presentation); the step is true. In the logs they are true
 // every time (100, 168 and 2 uses) and never change their frame.

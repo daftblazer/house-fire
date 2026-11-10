@@ -91,12 +91,18 @@ What the log shows of the queue so far (the fifth loop):
   interaction's target and a third object, and the tree the interaction runs (in the
   target's file); in the club five Sims have one entry each (the dance floor, the booth).
 - **Its delivery:** when a waiting Sim's IdleForInput step comes with an entry queued, the
-  engine first runs, on a frame above, the prefix check (Global 463 "Dream Sequence - Prefix
-  Check Tree", which calls 462) and "hide menu" (265), with the target as stack object; the
-  IdleForInput step then ends on its node, and the entry's tree is pushed above "Wait For
-  Notify" at node 0, its stack object the target and its parameters 0, and runs in the same
-  turn. Checked (`replay`): all 5 queued Sims' first interaction is their entry's tree on its
-  target, in both logs; the Sims with nothing queued (3 and 2) get theirs from autonomy.
+  engine runs, on a stack of their own, the checks the target's interaction table (TTAB)
+  names: the tree the table runs first (version 11's field for the whole table: in the club
+  Global 463, "Dream Sequence - Prefix Check Tree", which calls 462), then the interaction's
+  guard (for the booth's 4106 it is Global 265, "hide menu"; for 4128 on object 154, 4129),
+  with the target as stack object. Then the IdleForInput step ends on its node, and the
+  entry's tree is pushed above "Wait For Notify" at node 0, its stack object the target and
+  its parameters 0; it runs in the same turn, and its return comes back to the wait.
+- **Native** (`idle_for_input`, `Host::run_check`; the library reads each file's TTABs for
+  the guards and the table's first tree). Checked (`replay`, both logs): all 5 queued Sims'
+  deliveries made natively, their checks stepped natively through all 81 of the log's steps
+  of them (the same at each), the interactions pushed as the log's. Not modelled yet: a check
+  that fails, and a Sim with nothing queued (autonomy's: 3 and 2 Sims).
 
 Replay figures after its own fixes (2026-11-09: the frames saved below a stack's first step,
 returns into them, the file a rebuilt frame names its trees from): on the 719-tick log 68,273

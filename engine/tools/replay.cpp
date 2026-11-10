@@ -107,6 +107,7 @@ struct ReplayHost : Host {
     PrimResult primitive(Interpreter& in, Frame& f, const Node& n) override;
     const Tree* tree(uint16_t id) override;
     std::span<const int16_t> default_params() override { return defaults; }
+    std::optional<bool> run_check(const Tree* t, const ObjectFile* file, int16_t stack_object) override;
     std::vector<int16_t> defaults;
 };
 
@@ -117,6 +118,11 @@ struct Replay {
     const StepRec* step = nullptr;  // the log's step being replayed
     Bench* bench = nullptr;
     const ObjectFile* file_of_top = nullptr;
+    // The log's steps of the checks a primitive runs (the interaction queue's), in order.
+    const Log* log = nullptr;
+    std::vector<size_t> nested;
+    size_t nested_pos = 0;
+    std::set<int16_t> natively_delivered;
 
     // Brings the native world's variables to what the original's lookups found, counting
     // those that were already the same.
@@ -151,6 +157,40 @@ struct Replay {
     }
 };
 
+// A check tree the engine runs, stepped natively through the log's steps of it.
+std::optional<bool> ReplayHost::run_check(const Tree* t, const ObjectFile* file, int16_t stack_object) {
+    Interpreter chk(*this, Interpreter::Mode::Check);
+    chk.start(t, {}, file);
+    if (chk.done()) return std::nullopt;
+    chk.top().stack_object = stack_object;
+    const StepRec* outer = r.step;
+    const ObjectFile* outer_file = r.file_of_top;
+    while (!chk.done()) {
+        if (r.nested_pos >= r.nested.size()) {
+            note("queue: a check ran past the log's steps of it");
+            if (getenv("REPLAY_SHOW_PUSH")) std::printf("past: Sim %d at %d:%d depth %zu\\n", me.id(), chk.top().tree ? chk.top().tree->id : -1, chk.top().node, chk.stack().size());
+            break;
+        }
+        const StepRec& ns = r.log->steps[r.nested[r.nested_pos++]];
+        const Frame& top = chk.top();
+        if (getenv("REPLAY_TRACE_CHECK") && me.id() == 169)
+            std::printf("  check %d: native %d:%d depth %zu; log %d:%d->%d %c\n", t->id, top.tree ? top.tree->id : -1, top.node, chk.stack().size(), ns.tree, ns.node, ns.after, ns.look ? ns.look : '-');
+        const bool same = top.tree && top.tree->id == (int16_t)ns.tree && top.node == ns.node;
+        note(same ? "queue: a check's step as the log's" : "queue: a check's step DIFFERENT");
+        if (!same && getenv("REPLAY_SHOW_PUSH"))
+            std::printf("check of Sim %d: native %d:%d depth %zu, log %d:%d (so %d, look %c, res %d, after %d)\n", me.id(), top.tree ? top.tree->id : -1, top.node,
+                        chk.stack().size(), ns.tree, ns.node, ns.stack_object, ns.look ? ns.look : '-', ns.result, ns.after);
+        r.step = &ns;
+        r.file_of_top = top.file;
+        chk.reset_iterations();
+        chk.step();
+    }
+    r.step = outer;
+    r.file_of_top = outer_file;
+    if (getenv("REPLAY_TRACE_CHECK")) std::printf("  check %d done %d error %d result %d\n", t->id, chk.done(), (int)chk.error(), chk.result());
+    return chk.done() && chk.error() == Error::None ? std::optional<bool>(chk.result()) : std::nullopt;
+}
+
 const Tree* ReplayHost::tree(uint16_t id) {
     const ObjectFile* f = r.file_of_top ? r.file_of_top : me.file;
     return r.lib.tree(f, id);
@@ -183,6 +223,14 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
             vars.set(dscope, (int16_t)datum, v);
         } else note("primitives: Random: the original's number not in the log (a temp or attribute)");
         return want;
+    }
+    if (n.opcode == 17 && me.person && !me.queue.empty() && !r.nested.empty()) {  // IdleForInput delivering an entry
+        if (getenv("REPLAY_TRACE_CHECK")) std::printf("IdleForInput natively for Sim %d, %zu nested steps, at %zu\n", me.id(), r.nested.size(), r.nested_pos);
+        const PrimResult got = idle_for_input(in, n, me, r.world, *this);
+        if (getenv("REPLAY_TRACE_CHECK")) std::printf("  -> %d, used %zu\n", (int)got, r.nested_pos);
+        note(got == PrimResult::Continue ? "queue: IdleForInput delivered the queued interaction natively" : "queue: IdleForInput natively did NOT deliver");
+        if (got == PrimResult::Continue) r.natively_delivered.insert(me.id());
+        return got == PrimResult::Continue ? got : logged();
     }
     if (n.opcode == 23 || n.opcode == 7 || n.opcode == 48) {  // the presentation's requests
         const PrimResult got = present(n, r.world, me);
@@ -415,6 +463,8 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
 
     Replay rp{lib, world};
     rp.bench = bench;
+    rp.log = &log;
+    std::set<size_t> consumed;  // log steps a native primitive's checks have stepped
     Simulator sim(world, [&](Object& o) {
         auto h = std::make_unique<ReplayHost>(rp, o);
         h->defaults.assign(o.temps.begin(), o.temps.end());
@@ -514,6 +564,40 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
         for (size_t i : by_tick[t]) {
             const StepRec& s = log.steps[i];
             if (engine_run[i]) { note("steps: outside the pass (the engine's own), not run"); continue; }
+            if (consumed.count(i)) continue;
+            {
+                // A Sim waiting at IdleForInput with an entry queued, whose next logged steps are
+                // the engine's checks on a frame above: the IdleForInput step (the log's next
+                // 281:4 of this Sim) is run natively, its checks stepping through those steps.
+                auto id0 = ids.find(s.sim);
+                Object* w = id0 == ids.end() ? nullptr : world.find(id0->second);
+                if (w && w->person && !w->queue.empty() && (s.tree == 463 || s.tree == 265) && s.node == 0) {
+                    Interpreter& win = sim.stack_of(*w);
+                    const auto& wst = win.stack();
+                    const Node* wn = !win.done() && !wst.empty() && wst.back().tree && wst.back().node < wst.back().tree->nodes.size()
+                                         ? &wst.back().tree->nodes[wst.back().node] : nullptr;
+                    size_t k = i;
+                    std::vector<size_t> nest;
+                    for (size_t j : by_tick[t]) {
+                        if (j < i || log.steps[j].sim != s.sim) continue;
+                        if (log.steps[j].tree == 281 && log.steps[j].node == 4) { k = j; break; }
+                        nest.push_back(j);
+                    }
+                    if (wn && wn->opcode == 17 && k != i) {
+                        rp.nested = nest;
+                        rp.nested_pos = 0;
+                        rp.step = &log.steps[k];
+                        rp.file_of_top = wst.back().file;
+                        win.reset_iterations();
+                        win.step();
+                        note(rp.nested_pos == nest.size() ? "queue: the checks used exactly the log's steps of them" : "queue: the checks did NOT use the log's steps of them");
+                        for (size_t j : nest) consumed.insert(j);
+                        consumed.insert(k);
+                        rp.nested.clear();
+                        continue;
+                    }
+                }
+            }
             auto& fr = frames[s.sim];
             auto at = std::find(fr.begin(), fr.end(), s.frame);
             if (at != fr.end()) fr.erase(at + 1, fr.end());
@@ -563,7 +647,8 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
             const StepRec* before = nullptr;
             for (size_t j = i; j-- > 0;) if (log.steps[j].sim == s.sim) { before = &log.steps[j]; break; }
             if (o->person && s.node == 0 && before && before->tree == 281 && before->node == 4 && delivered.insert(s.sim).second) {
-                if (o->queue.empty()) note("queue: a waiting Sim's first interaction, with nothing queued (autonomy's)");
+                if (natively_delivered.count(o->id())) {}  // checked by the native delivery
+                else if (o->queue.empty()) note("queue: a waiting Sim's first interaction, with nothing queued (autonomy's)");
                 else {
                     const SavedQueueEntry& q = o->queue.front();
                     const bool same = q.tree == (int16_t)s.tree && q.objects[1] == s.stack_object;

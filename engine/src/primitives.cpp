@@ -42,6 +42,33 @@ PrimResult call_named_tree(const Node& n, const Frame& f, const Library& lib) {
     return PrimResult::Stop;  // the call: not modelled yet
 }
 
+PrimResult idle_for_input(Interpreter& in, const Node& n, Object& me, World& world, Host& host) {
+    (void)n;
+    if (me.queue.empty()) return PrimResult::Stop;
+    const SavedQueueEntry entry = me.queue.front();
+    const Object* target = world.find(entry.objects[1]);
+    const ObjectFile* global = world.library().global();
+    if (!target || !global) return PrimResult::Stop;
+    const Tree* action = world.library().tree(target->file, (uint16_t)entry.tree);
+    if (!action || !target->file) return PrimResult::Stop;
+    // The checks, each as the target's file names it: the tree its interaction table names to
+    // run first (the club's: Global 463, "Dream Sequence - Prefix Check Tree"), then the
+    // interaction's guard, where the table has them.
+    for (const auto* table : {&target->file->prefix_of, &target->file->guard_of}) {
+        auto c = table->find((uint16_t)entry.tree);
+        if (c == table->end()) continue;
+        const Tree* t = world.library().tree(target->file, c->second);
+        const std::optional<bool> ok = t ? host.run_check(t, target->file, target->id()) : std::nullopt;
+        if (!ok || !*ok) return PrimResult::Stop;
+    }
+    me.queue.erase(me.queue.begin());
+    // The frame the primitive was given is not touched after this: the push can move it.
+    if (!in.push(action, nullptr, 0)) return PrimResult::Stop;
+    in.top().stack_object = target->id();
+    in.top().file = target->file;
+    return PrimResult::Continue;
+}
+
 PrimResult present(const Node& n, World& world, const Object& me) {
     world.presentation.push_back({n.opcode, me.id(), n.operand});
     return PrimResult::True;

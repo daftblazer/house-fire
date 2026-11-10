@@ -3,6 +3,7 @@
 // are a host's: each object (and person) answers them, and finds the trees it may call.
 #pragma once
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -54,6 +55,13 @@ public:
     // set up (TreeSimImpl::Initialize keeps a pointer at +44; Bustin' Out's call, fn_8023EE1C,
     // copies from it). In the PC game they are the object's temporaries.
     virtual std::span<const int16_t> default_params() { return {}; }
+    // Runs a check tree to its return on its own stack (Interpreter::Mode::Check), with this
+    // stack object and file: its result, or nothing if the host cannot (the engine's own
+    // checks: the interaction queue's prefix check, "hide menu").
+    virtual std::optional<bool> run_check(const Tree* t, const struct ObjectFile* file, int16_t stack_object) {
+        (void)t; (void)file; (void)stack_object;
+        return std::nullopt;
+    }
     // A primitive read local k of `f` before anything wrote it (tools/locals_check.py finds
     // the scripts that can do this; on the disc they read zero in the original too).
     virtual void unset_local(const Frame& f, int k) { (void)f; (void)k; }
