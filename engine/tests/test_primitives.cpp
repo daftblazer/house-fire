@@ -55,6 +55,15 @@ int main() {
     f.locals = {0};
     CHECK(set_to_next(node(31, {0, 0, 0, 0, 0x82, 25, 0, 0}), w, vars) == PrimResult::True && f.locals[0] == 5);
 
+    // TestObjectType: the stack object (scope 10, datum 0) and a local (scope 25) against a GUID
+    f.stack_object = 3;
+    CHECK(test_object_type(node(32, {0x11, 0x01, 0, 0, 0, 0, 10, 0}), w, vars) == PrimResult::True);
+    CHECK(test_object_type(node(32, {0x22, 0x02, 0, 0, 0, 0, 10, 0}), w, vars) == PrimResult::False);
+    f.locals = {9};
+    CHECK(test_object_type(node(32, {0x22, 0x02, 0, 0, 0, 0, 25, 0}), w, vars) == PrimResult::True);
+    f.locals = {77};  // no such object
+    CHECK(test_object_type(node(32, {0x22, 0x02, 0, 0, 0, 0, 25, 0}), w, vars) == PrimResult::False);
+
     // a made object takes the next id and goes in front
     auto o = std::make_unique<Object>();
     Object& made = w.make_object(std::move(o));

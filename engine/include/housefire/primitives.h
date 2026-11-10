@@ -14,6 +14,11 @@ namespace housefire {
 // game (docs/objects.md, "SetToNext").
 PrimResult set_to_next(const Node& n, World& world, ScriptVariables& vars);
 
+// TestObjectType (opcode 32): whether the object whose id a variable holds (operand bytes
+// 4-5 the datum, byte 6 the scope) is of the GUID in bytes 0-3. An id no object has: false.
+// Measured on the recompiled game (docs/primitives.md, "TestObjectType").
+PrimResult test_object_type(const Node& n, World& world, ScriptVariables& vars);
+
 // Idle (opcode 0, the PC's Sleep): the stack sleeps for as many of the tick's passes as the
 // frame's parameter (operand: its index) holds, yielding: passed over by the next N - 1 that
 // reach it, stepped on the N-th. Then the parameter is 0 and the node goes to its true target.

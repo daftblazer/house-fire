@@ -56,7 +56,7 @@ using Clock = std::chrono::steady_clock;
 double us(Clock::time_point a, Clock::time_point b) { return std::chrono::duration<double, std::micro>(b - a).count(); }
 struct Bench {
     std::vector<double> ticks;  // the native work of each tick that ran, in µs
-    double steps_us = 0, expression_us = 0, set_to_next_us = 0, idle_us = 0, pass_us = 0, sync_us = 0;
+    double steps_us = 0, expression_us = 0, set_to_next_us = 0, idle_us = 0, other_us = 0, pass_us = 0, sync_us = 0;
     size_t steps = 0, worst_tick = 0;
 };
 
@@ -165,6 +165,26 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
         if (s.result == 2) { r.sim->stop_pass(); return PrimResult::Yield; }
         return s.after == n.true_target ? PrimResult::True : PrimResult::False;
     };
+    if (n.opcode == 32) {  // TestObjectType
+        r.sync_variables(me, f, s);
+        ScriptVariables vars(r.world, me, f);
+        const auto t0 = Clock::now();
+        PrimResult got = test_object_type(n, r.world, vars);
+        if (r.bench) r.bench->other_us += us(t0, Clock::now());
+        const PrimResult want = logged();
+        if (got == want) note(std::string("primitives: TestObjectType: the same natively, ") + (got == PrimResult::True ? "true" : "false"));
+        else {
+            note("primitives: TestObjectType: DIFFERENT (the log's taken)");
+            static int shown = 0;
+            if (getenv("REPLAY_SHOW_DIFF") && shown++ < 8) {
+                std::printf("TestObjectType at %d:%d:", s.tree, s.node);
+                for (const LookupRec& v : s.lookups) std::printf(" [%d/%d=%d]", v.scope, v.data, v.value);
+                std::printf(" native %d, log %d\n", (int)got, (int)want);
+            }
+            got = want;
+        }
+        return got;
+    }
     if (n.opcode == 2 || n.opcode == 31) {
         // SetToNext's read of its target variable is logged as 0 whatever it holds (seen with
         // the stack object), so only the expression's reads are taken; SetToNext starts from
@@ -201,6 +221,17 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
         return got;
     }
     note("primitives: from the log");
+    if (getenv("REPLAY_SHOW_OP") && n.opcode == (uint16_t)atoi(getenv("REPLAY_SHOW_OP"))) {
+        static int shown = 0;
+        if (shown++ < 14) {
+            std::printf("op %d at %d:%d operand", n.opcode, s.tree, s.node);
+            for (uint8_t b : n.operand) std::printf(" %02x", b);
+            std::printf(" -> %s; so %d; lookups", s.after == n.true_target ? "true" : "false", s.stack_object);
+            for (const LookupRec& v : s.lookups) std::printf(" [%d/%d=%d]", v.scope, v.data, v.value);
+            std::printf("\n");
+        }
+    }
+    note("primitives: from the log, opcode " + std::to_string(n.opcode));
     f.params = s.params_after;
     f.locals = s.locals_after;
     f.unset = 0;

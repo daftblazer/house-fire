@@ -2,15 +2,30 @@
 
 namespace housefire {
 
+namespace {
+// A GUID in a node's operand, in the file's byte order (Bustin' Out's files are little-endian).
+uint32_t operand_guid(const Node& n) {
+    const auto& o = n.operand;
+    return n.order == Order::Little ? (uint32_t)o[0] | o[1] << 8 | o[2] << 16 | (uint32_t)o[3] << 24
+                                    : (uint32_t)o[0] << 24 | o[1] << 16 | o[2] << 8 | o[3];
+}
+}  // namespace
+
+PrimResult test_object_type(const Node& n, World& world, ScriptVariables& vars) {
+    const auto& o = n.operand;
+    const int16_t data = (int16_t)(n.order == Order::Little ? o[4] | o[5] << 8 : o[4] << 8 | o[5]);
+    const std::optional<Variable> id = vars.get(o[6], data);
+    if (!id) return PrimResult::Stop;
+    const Object* x = world.find(id->value);
+    return x && x->guid == operand_guid(n) ? PrimResult::True : PrimResult::False;
+}
+
 PrimResult set_to_next(const Node& n, World& world, ScriptVariables& vars) {
     const auto& o = n.operand;
     const uint8_t kind = o[4] & 0x7F;
     const uint8_t scope = (o[4] & 0x80) ? o[5] : (uint8_t)Scope::StackObject;
     const int16_t data = (o[4] & 0x80) ? (int16_t)o[7] : 0;
-    // The GUID in the file's byte order (Bustin' Out's files are little-endian).
-    const uint32_t guid = n.order == Order::Little
-                              ? (uint32_t)o[0] | o[1] << 8 | o[2] << 16 | (uint32_t)o[3] << 24
-                              : (uint32_t)o[0] << 24 | o[1] << 16 | o[2] << 8 | o[3];
+    const uint32_t guid = operand_guid(n);
     auto fits = [&](const Object& x) {
         switch (kind) {
             case 0: return true;

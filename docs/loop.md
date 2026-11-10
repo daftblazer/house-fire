@@ -517,7 +517,7 @@ without a commit.
 
 ## Progress
 
-Iteration 8 of 12.
+Iteration 9 of 12.
 
 - **Iteration 1, chunk 1 (the tree stack and the base object).** Read the loader's code for
   everything after an object's data: the tree stack and its frames, the +192 member, the
@@ -587,3 +587,10 @@ Iteration 8 of 12.
   person or a door, so those parts are not read; Castaway's object files hold no OBJD, so
   the class is found from the data. Chunk 4 is done. Next: chunk 5, the next primitives by
   use.
+
+- **Iteration 9, chunk 5 (TestObjectType).** The primitives the replay still answers from the
+  log, by use: Animate 23,811, Dialog 2,475, CompleteGoal 2,377, IdleForInput 677, Random
+  269, GotoRoutingSlot 206, LookTowards 189, TestObjectType 181, Update 168, Relationship2
+  128, CallNamedTree 116, PlaySound 100 and fewer. TestObjectType needs no new system: it is
+  native (`primitives.md`), all 181 uses the same (all false in this session; the true case
+  in the unit test). Next: CallNamedTree and Random, which need no new system either.

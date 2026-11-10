@@ -61,6 +61,18 @@ Measured on the recompiled game:
 The engine has it as `idle()` (`engine/src/primitives.cpp`), `Interpreter::sleep` and the
 simulator's pass. `tests/test_primitives.cpp` and `tests/test_simulator.cpp` test it.
 
+## TestObjectType (opcode 32)
+
+Whether an object is of a type. The operand: a GUID (bytes 0-3, in the file's byte order),
+then a variable that holds the object's id (bytes 4-5 the datum, byte 6 the scope). True if
+the object with that id is of that GUID; false otherwise, and for an id no object has.
+
+Measured with `replay` on the 5,130-tick session: all 181 uses the same natively. All of them
+are false there (tests of the Sims against one GUID, of one object against another), so the
+true case is checked only by `tests/test_primitives.cpp` so far.
+
+The engine has it as `test_object_type()` (`engine/src/primitives.cpp`).
+
 ## Animate (opcode 44): what the scripts see
 
 Measured on the recompiled game, a session of the new-game route: 23,811 steps, 628 runs of
