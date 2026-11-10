@@ -1169,6 +1169,9 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
     if (!bench && !log.places.empty()) {
         note("routing: the lot's wall edges (each seen from both tiles)", world.walls.wall_edges());
         note("routing: the doors' openings", world.walls.openings());
+        note("routing: the rooms (the regions the walls close)", world.walls.rooms());
+        if (getenv("REPLAY_SHOW_ROUTING"))
+            for (const Walls::Door& d : world.walls.doors()) std::printf("door %d,%d +%d,%d: room %u to %u\n", d.x, d.y, d.dx, d.dy, d.from, d.to);
         std::map<int16_t, std::pair<int, int>> tile;
         for (const PlaceRec& p : log.places) {
             const Object* o = world.find(p.id);
@@ -1218,6 +1221,29 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
                 }
             }
             note(open ? "routing: an original's planned route open natively (walls, doors)" : "routing: an original's planned route through a WALL natively");
+            // The rooms along it (Walls::room): each change of room between two waypoints a
+            // single step through a door's opening (the route broken at its doors), each piece
+            // between within one room (its waypoints' tiles; a diagonal wall's tile, 0, either).
+            bool at_doors = true;
+            size_t changes = 0;
+            for (size_t i = 1; i < pl.points.size(); i++) {
+                const int x0 = pl.points[i - 1].first >> 4, y0 = pl.points[i - 1].second >> 4;
+                const int x1 = pl.points[i].first >> 4, y1 = pl.points[i].second >> 4;
+                const uint16_t r0 = world.walls.room(x0, y0), r1 = world.walls.room(x1, y1);
+                if (r0 == r1 || !r0 || !r1) continue;
+                changes++;
+                const int dx = x1 - x0, dy = y1 - y0;
+                bool door = false;
+                for (const Walls::Door& d : world.walls.doors())
+                    door |= (d.x == x0 && d.y == y0 && d.dx == dx && d.dy == dy) || (d.x == x1 && d.y == y1 && d.dx == -dx && d.dy == -dy);
+                if (!door) {
+                    at_doors = false;
+                    if (getenv("REPLAY_SHOW_ROUTING")) std::printf("plan at tick %u changes room %u -> %u not at a door: %d,%d -> %d,%d\n", pl.tick, r0, r1, x0, y0, x1, y1);
+                }
+                else note("routing: a plan's change of room at a door, a waypoint either side");
+            }
+            if (changes) note(at_doors ? "routing: a plan through rooms broken at each door" : "routing: a plan changing rooms NOT at a door");
+            else note("routing: a plan within one room");
         }
         if (getenv("REPLAY_SHOW_ROUTING"))
             for (const auto& [name, n] : crossed) std::printf("planned routes cross a tile of %s: %zu\n", name.c_str(), n);

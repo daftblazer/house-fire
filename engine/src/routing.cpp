@@ -32,9 +32,47 @@ Walls::Walls(const std::vector<LotArray>& arrays, const World& world) {
             if (std::abs(dx) + std::abs(dy) != 1) continue;
             if (dx < 0 || dy < 0) continue;  // each opening once, from its lower tile
             const uint32_t k = key(x, y, leaving(dx, dy));
-            if (std::find(open_.begin(), open_.end(), k) == open_.end()) open_.push_back(k);
+            if (std::find(open_.begin(), open_.end(), k) == open_.end()) {
+                open_.push_back(k);
+                doors_.push_back({x, y, dx, dy, 0, 0});
+            }
         }
     }
+    find_rooms();
+}
+
+void Walls::find_rooms() {
+    room_.assign(edges_.size(), 0);
+    static constexpr int kSteps[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+    for (uint32_t y0 = 0; y0 < height_; y0++)
+        for (uint32_t x0 = 0; x0 < width_; x0++) {
+            const size_t i0 = (size_t)y0 * width_ + x0;
+            if (room_[i0] || diagonal((int)x0, (int)y0)) continue;
+            const uint16_t r = (uint16_t)++rooms_;
+            std::deque<std::pair<int, int>> q{{(int)x0, (int)y0}};
+            room_[i0] = r;
+            while (!q.empty()) {
+                const auto [x, y] = q.front();
+                q.pop_front();
+                for (const auto& d : kSteps) {
+                    const int nx = x + d[0], ny = y + d[1];
+                    if (nx < 0 || ny < 0 || (uint32_t)nx >= width_ || (uint32_t)ny >= height_) continue;
+                    const size_t n = (size_t)ny * width_ + (size_t)nx;
+                    if (room_[n] || diagonal(nx, ny) || wall_between(x, y, d[0], d[1])) continue;
+                    room_[n] = r;
+                    q.push_back({nx, ny});
+                }
+            }
+        }
+    for (Door& d : doors_) {
+        d.from = room(d.x, d.y);
+        d.to = room(d.x + d.dx, d.y + d.dy);
+    }
+}
+
+uint16_t Walls::room(int x, int y) const {
+    if (x < 0 || y < 0 || (uint32_t)x >= width_ || (uint32_t)y >= height_ || room_.empty()) return 0;
+    return room_[(size_t)y * width_ + (size_t)x];
 }
 
 uint8_t Walls::at(int x, int y) const {

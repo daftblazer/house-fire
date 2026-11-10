@@ -281,7 +281,8 @@ the offsets, and what the six header values are exactly is still open.
 The second array's first byte is the walls (`simulation.md`, "Routing"), indexed y × 64 + x.
 What the rest hold is to be named. In the club: the first is mostly 0 (2,763 of 4,096) with
 tile kinds such as 7, 33 and 18 (the floors?); the second, of 8 bytes a tile, is mostly
-`00 0f 01 01 00 00 00 00` (the walls?); the third mostly 32, then 7 (the ground?).
+`00 0f 01 01 00 00 00 00` (the walls?); the third mostly 32, then 7 (the ground?). At Mom's house the third is 1 inside the house and
+7 outside: inside and out, not the rooms (`simulation.md`, "The rooms").
 
 ## Not decoded yet
 

@@ -36,12 +36,26 @@ public:
     size_t wall_edges() const { return wall_edges_; }
     size_t openings() const { return open_.size(); }
 
+    // The rooms: the regions the walls close (a door's opening left closed), numbered from 1
+    // in the order of their first tile (y, then x); 0 off the grid and on a diagonal wall's
+    // tile (split between two rooms). The lot's third array is not the rooms: it marks the
+    // inside (1) and the outside (7) only, the house's rooms all 1.
+    uint16_t room(int x, int y) const;
+    size_t rooms() const { return rooms_; }
+    // A door: an opening, the tile it is left from (x + dx, y + dy beyond) and the two rooms.
+    struct Door { int x, y, dx, dy; uint16_t from, to; };
+    const std::vector<Door>& doors() const { return doors_; }
+
 private:
     uint8_t at(int x, int y) const;
     uint32_t width_ = 0, height_ = 0;
     std::vector<uint8_t> edges_;
     std::vector<uint32_t> open_;  // (x, y, the edge's bit) of each door's opening
     size_t wall_edges_ = 0;
+    std::vector<uint16_t> room_;
+    size_t rooms_ = 0;
+    std::vector<Door> doors_;
+    void find_rooms();
 };
 
 }  // namespace housefire

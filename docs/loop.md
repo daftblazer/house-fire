@@ -1155,3 +1155,42 @@ original's planned routes open), a shortest tile route (13 of 15 walks as long),
 planner found and logged. Open: Sim 237's own interactions' values; which objects block; the
 planner's waypoints natively (rooms, doors, lines); the walk's speed.
 
+
+# The eighth loop
+
+Planned 2026-11-10 at the user's request, to go on from the seventh, with half an hour between
+iterations. The rules and limits are the same: one well-defined part an iteration, checked by
+replay on the home log (and the club's logs, kept as they are), a piece that cannot be checked
+is not built, one-line commits, never pushed, no RK3566.
+
+## Chunks, in order
+
+1. **The rooms and their doors.** The third array's rooms as regions, the doors joining them;
+   checked: each of the original's 17 planned routes (`G`) breaks at a door between the rooms
+   its pieces lie in.
+2. **The planner's waypoints natively.** From the planner's code (`Route_Plan`, 80222FF4): the
+   rooms' path through the doors, then the waypoints within each room; checked against the 17
+   logged plans, waypoint by waypoint.
+3. **What blocks.** How the planner closes tiles to objects (read in its code, as the data
+   alone did not show it); checked as the plans that go round the dining table and the counter.
+4. **The walk.** A Sim following its plan (`Route_WalkStep`, 801F0410): its speed and turns;
+   checked against the logged places (`P`) tick by tick.
+5. **Sim 237's own interactions' values**, which score lower natively than in the original;
+   checked against the logged choice list (`Y`).
+
+## Limits
+
+Stop after iteration 16, when the chunks are done, or when two iterations in a row end
+without a commit (record why here).
+
+## Progress
+
+Iteration 1 of 16.
+
+- **Iteration 1, chunk 1 (the rooms and their doors).** The third array is not the rooms (1
+  inside, 7 outside); the rooms are the regions the walls close (`Walls::room`, a door left
+  closed, a diagonal wall's tile in none): 4 at Mom's house, the 5 doors joining them.
+  Checked on the home log's 17 plans: 13 within one room, 4 changing rooms only at a door
+  with a waypoint either side; figures unchanged (561,398, 338,305, 68,202, lockstep 7,902).
+  Chunk 1 done. Next: chunk 2, the planner's code read for the order of rooms and the
+  waypoints within a room.

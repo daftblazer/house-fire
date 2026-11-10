@@ -505,12 +505,19 @@ with 8-byte entries, which are waypoints: x and y in sixteenths of a tile (the o
 at any angle, not tiles (Sim 12's first, tick 260: (344, 120), (331, 123), (304, 125), (301,
 125), (297, 185), ... to the front door), and a route breaks at a door: the yard to the door,
 through it (tick 497: (296, 232) to (296, 263)), the house beyond (tick 521). So the original
-plans by rooms (the third array names them: 7 the yard, 1 the house) and their doors, and
-within a room a line of waypoints. Checked: all 17 plans of two waypoints or more open
+plans by rooms and their doors, and within a room a line of waypoints. Checked: all 17 plans of two waypoints or more open
 natively along their lines (`Walls`: no wall crossed where there is no door). Their lines
 cross tiles of counters, the fridge and the stove as well as chairs (near their ends, where a
 Sim reaches an object), so which objects block is still open. Next: the plan's waypoints
 natively (the rooms, the doors between, the line within a room).
+
+**The rooms** (`Walls::room`). The lot's third array is not the rooms: it marks the inside (1)
+and the outside (7), the house's rooms all 1. The rooms are the regions the walls close, a
+door's opening left closed and a diagonal wall's tile in none: Mom's house has 4 (the yard
+with the porches, the main room, and two at the back), joined by its 5 doors. Checked on the
+home log's plans: 13 of the 17 within one room; the other 4 change rooms only at a door, with
+a waypoint on each side of it (a single step through the opening), so a plan is a piece a
+room, joined at the doors.
 
 ## Still open
 
