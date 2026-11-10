@@ -39,23 +39,26 @@ pub fn front(facing: i16) -> Option<(i32, i32)> {
 
 /// The places a routing slot offers around its object: for each direction its flags name (bit
 /// k: k eighths of a turn from the object's front, by its facing), the place that far away at
-/// the slot's optimal proximity (sixteenths; a diagonal's two parts each that far). Places in
-/// sixteenths, as the objects'.
-pub fn slot_places(slot: &crate::library::Slot, x16: i32, y16: i32, facing: i16) -> Vec<(i32, i32)> {
+/// the slot's optimal proximity, with k. A diagonal's two parts are each the proximity times
+/// the square root of a half, cut to a whole sixteenth (16 gives 11: the home log's goals round
+/// the paper girl). Places in sixteenths, as the objects', in the order of the bits.
+pub fn slot_places(slot: &crate::library::Slot, x16: i32, y16: i32, facing: i16) -> Vec<(u8, (i32, i32))> {
+    let p = slot.optimal_proximity;
+    let diagonal = (p as f32 * std::f32::consts::FRAC_1_SQRT_2) as i32;
     let mut out = Vec::new();
-    for k in 0..8 {
+    for k in 0..8u8 {
         if slot.flags & (1 << k) == 0 {
             continue;
         }
         let f = facing + k as i16;
         let d = match front(f) {
-            Some(d) => d,
+            Some(d) => (d.0 * p, d.1 * p),
             None => {
                 let (a, b) = (front(f - 1).unwrap(), front(f + 1).unwrap());
-                (a.0 + b.0, a.1 + b.1)
+                ((a.0 + b.0) * diagonal, (a.1 + b.1) * diagonal)
             }
         };
-        out.push((x16 + d.0 * slot.optimal_proximity, y16 + d.1 * slot.optimal_proximity));
+        out.push((k, (x16 + d.0, y16 + d.1)));
     }
     out
 }

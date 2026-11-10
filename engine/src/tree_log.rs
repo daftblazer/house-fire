@@ -145,6 +145,11 @@ pub struct PlanRec {
     pub tick: u32,
     pub state: u32,
     pub points: Vec<(i32, i32)>,
+    /// The request's goals (the 'H' record before it, in newer logs): 16-byte entries, raw
+    /// words; the first two are the place in sixteenths.
+    pub goals: Vec<[u32; 4]>,
+    /// The goal it took (the request's +88), -1 for none or an older log.
+    pub chosen: i32,
 }
 
 /// The random number autonomy's choice draws ('R').
@@ -222,6 +227,7 @@ pub fn read_log(path: &str) -> Option<Log> {
     let b = std::fs::read(path).ok()?;
     let mut r = Bytes { b: &b, p: 0 };
     let mut log = Log::default();
+    let mut request: Option<(i32, Vec<[u32; 4]>)> = None;
     let mut at: BTreeMap<u32, usize> = BTreeMap::new();
     let mut pending: Option<ExprRec> = None;
     let mut pending_lookups: Vec<LookupRec> = Vec::new();
@@ -307,7 +313,22 @@ pub fn read_log(path: &str) -> Option<Log> {
                     break;
                 }
                 let points = (0..cnt).map(|_| (r.u32() as i32, r.u32() as i32)).collect();
-                log.plans.push(PlanRec { tick: log.ticks, state, points });
+                let (chosen, goals) = request.take().unwrap_or((-1, Vec::new()));
+                log.plans.push(PlanRec { tick: log.ticks, state, points, goals, chosen });
+            }
+            b'H' => {
+                // the request of the plan that follows
+                if !r.has(10) {
+                    break;
+                }
+                r.u32();
+                let chosen = r.u32() as i32;
+                let cnt = r.u16() as usize;
+                if !r.has(16 * cnt) {
+                    break;
+                }
+                let goals = (0..cnt).map(|_| [r.u32(), r.u32(), r.u32(), r.u32()]).collect();
+                request = Some((chosen, goals));
             }
             b'R' => {
                 // the random number autonomy's choice draws

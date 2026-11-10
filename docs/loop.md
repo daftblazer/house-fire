@@ -1185,7 +1185,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 4 of 16.
+Iteration 5 of 16.
 
 - **Iteration 1, chunk 1 (the rooms and their doors).** The third array is not the rooms (1
   inside, 7 outside); the rooms are the regions the walls close (`Walls::room`, a door left
@@ -1225,6 +1225,20 @@ Iteration 4 of 16.
   facing the save gives (5) and her walk then turns. Figures unchanged (561,398, 338,305,
   68,202, lockstep 7,902); clippy clean. Next: a person's facing as it walks (the place
   records' direction), or the planner's waypoints within a room.
+
+- **Iteration 5, chunk 2 (the planner's request, logged; the goals it is given).** The planner
+  (`Route_Plan`) read as far as its request: a vector of 16-byte goals (place, cost, the
+  direction's bit) passed to the search `fn_8024C5DC` (6 KB, its own search `fn_80249BB8` 10 KB:
+  the waypoints are for later iterations), the one taken at the request's +88. The observer logs
+  them (`H`; recomp tree_log.cpp; the new home log has the same 581,110 steps). Natively: a
+  diagonal's parts are proximity × √½ cut to a sixteenth (11 for 16), and a slot offers only
+  places in its object's room with no other object (persons do not count). Checked: three of
+  the four single-proximity requests on native objects the native open places exactly, in order
+  with their bits (the miss the paper girl's, her facing stale); the off-lot one fits a slot's
+  shape; the planner's choice the native nearest in both requests natively taken. Figures
+  unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next: a slot of a
+  range of proximities (the paper girl's area of 48 goals at tick 931), or the search's
+  waypoints (`fn_8024C5DC`'s stages logged).
 
 
 ## The eighth loop paused

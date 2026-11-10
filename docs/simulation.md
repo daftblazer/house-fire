@@ -551,6 +551,25 @@ on. Checked on the home log's five walking GotoRoutingSlot steps: three goals th
 open west one; the chair's four sides, the south one nearest); the two others are slots of the
 paper girl, a person whose facing changes as she walks (the save's 5 is stale by then).
 
+**The planner's request, logged.** `Route_Plan` (80222FF4) is given a request (its r4) whose
+vector of 16-byte goals (at its +0..+4) it passes to the search (`fn_8024C5DC`, which fills the
+waypoints at the state's +1140); the goal it takes is the request's +88 on return (-1 none),
+that goal's +14 kept at the state's +82. The observer logs the goals before the call and the
+index after (`H`, before each `G`; a new home log with the same 581,110 steps). A goal is its
+place in sixteenths, a cost (0x87 for a slot's places, 0x64 for a relative position's) and its
+direction's bit (the slot's flag it came from) in the low byte of the last word. The request
+holds only the open places: a slot of one proximity offers, in the order of its bits, those in
+its object's room (one across a wall is left out though a door leads there: the group meal's
+far side) that no other object stands on (a person does not count: the paper girl at the
+counter's front); a diagonal's two parts are the proximity times the square root of a half, cut
+to a whole sixteenth (11 for 16, the paper girl's seven goals at tick 1220). Checked on the home
+log: of the four single-proximity requests on objects on the lot natively, three the native
+open places exactly (the counter, the group meal, the chair), the fourth the paper girl's (her
+facing stale); the one on an object not on the lot (her at tick 1220) fits a slot's shape. A
+slot of a range of proximities (her slot 8 of the global SLOT, 16 to 64 at resolution 8)
+offers an area of places, 48 at tick 931 (not yet); the planner's choice among the goals is the
+nearest native one in the two requests that took one natively.
+
 ## Still open
 
 - What wakes a sleeping stack early (23 of 2,833 sleeps).

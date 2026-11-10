@@ -71,6 +71,11 @@ def records(path):
             st, res, cnt = struct.unpack_from('<IIH', b, p); p += 10
             if p + 8 * cnt > n: break
             yield 'G', (st, res, [struct.unpack_from('<II', b, p + 8 * i) for i in range(cnt)]); p += 8 * cnt
+        elif k == b'H':  # the planner's request: (request, chosen, [(x, y, word, word)])
+            if p + 10 > n: break
+            rq, ch, cnt = struct.unpack_from('<IiH', b, p); p += 10
+            if p + 16 * cnt > n: break
+            yield 'H', (rq, ch, [struct.unpack_from('<iiII', b, p + 16 * i) for i in range(cnt)]); p += 16 * cnt
         elif k == b'R':  # the random number autonomy's choice draws: (site, result)
             if p + 5 > n: break
             yield 'R', struct.unpack_from('<BI', b, p); p += 5

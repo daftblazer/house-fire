@@ -47,6 +47,7 @@ use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
 use housefire::routing::{Tile, front, slot_places};
+use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
 use housefire::tree_log::{Log, PassRec, StepRec, read_log, same_shape};
@@ -2262,7 +2263,27 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         let Some(sim) = ids.get(&s.sim).copied() else { continue };
         let Some(start) = place_at(sim, s.tick) else { continue };
         let Some(pl) = log.plans.iter().find(|p| p.tick == s.tick && p.points.first() == Some(&start) && p.points.len() >= 2) else { continue };
-        let Some(o) = world.find_object(s.stack_object) else { continue };
+        let Some(o) = world.find_object(s.stack_object) else {
+            // An object not on the lot natively: its goals (logs with 'H') checked by their shape
+            // alone, round the plan's end (its object) as some facing and proximity give them.
+            if let Some(&center) = pl.points.last().filter(|_| !pl.goals.is_empty()) {
+                let bits: i32 = pl.goals.iter().map(|g| (g[3] & 0xFF) as i32).fold(0, |a, b| a | b);
+                let want: Vec<(u8, (i32, i32))> =
+                    pl.goals.iter().map(|g| ((g[3] & 0xFF).trailing_zeros() as u8, (g[0] as i32, g[1] as i32))).collect();
+                let fits = (0..8).any(|f| {
+                    (1..=64).any(|p| {
+                        let slot = Slot { flags: bits, optimal_proximity: p, ..Slot::default() };
+                        slot_places(&slot, center.0, center.1, f) == want
+                    })
+                });
+                counts.note(if fits {
+                    "routing: a request's goals round an object not on the lot natively as a slot's (some facing and proximity)"
+                } else {
+                    "routing: a request's goals round an object not on the lot natively NOT a slot's"
+                });
+            }
+            continue;
+        };
         let Some(file) = o.file else { continue };
         let Some(slot) = lib.routing_slot(file, world.definition(o), scope, number) else { continue };
         let target = place_at(o.id(), s.tick).unwrap_or((o.x16, o.y16));
@@ -2274,22 +2295,60 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 !x.person && x.id() != o.id() && x.on_lot() && x.level == 1 && tile((x.x16, x.y16)) == tile(p)
             })
         };
-        let mut places = slot_places(slot, target.0, target.1, o.facing());
-        places.retain(|&p| !occupied(p) && !walls.route(tile(start), tile(p), None).is_empty());
+        let offered = slot_places(slot, target.0, target.1, o.facing());
+        let mut places = offered.clone();
+        // A place across a wall from its object (another room, though a door may lead there) is
+        // not offered, nor one another object (not a person) stands on.
+        let room = |p: (i32, i32)| walls.room(p.0 >> 4, p.1 >> 4);
+        places.retain(|&(_, p)| !occupied(p) && room(p) == room(target));
+        // The request's goals (logs with 'H'): a slot of one proximity offers exactly the open
+        // places, in order, each with its direction's bit; one of a range offers an area (not yet).
+        if !pl.goals.is_empty() {
+            if slot.min_proximity == slot.max_proximity {
+                let same = places.len() == pl.goals.len()
+                    && places.iter().zip(&pl.goals).all(|(&(k, p), g)| (g[0] as i32, g[1] as i32) == p && g[3] & 0xFF == 1 << k);
+                counts.note(if same {
+                    "routing: a request's goals natively the open places of its slot, in order, with their bits"
+                } else {
+                    "routing: a request's goals natively NOT the open places of its slot"
+                });
+            } else {
+                counts.note("routing: a request's goals from a slot of a range of proximities (an area; not yet)");
+            }
+        }
         let d2 = |p: &(i32, i32)| (p.0 - start.0).pow(2) + (p.1 - start.1).pow(2);
-        let got = places.iter().min_by_key(|p| d2(p)).copied();
+        let got = places.iter().map(|x| x.1).min_by_key(d2);
         counts.note(if got == Some(want) {
             "routing: a routing step's goal natively the plan's (the nearest open place of its slot)"
         } else {
             "routing: a routing step's goal natively NOT the plan's"
         });
-        if show {
+        if let Some(g) = usize::try_from(pl.chosen).ok().and_then(|i| pl.goals.get(i)) {
+            counts.note(if got == Some((g[0] as i32, g[1] as i32)) {
+                "routing: a routing step's goal natively the one the planner took"
+            } else {
+                "routing: a routing step's goal natively NOT the one the planner took"
+            });
+        }
+        if has("REPLAY_SHOW_GOALS") {
+            for &(k, p) in &offered {
+                let on: Vec<String> = world
+                    .objects()
+                    .filter(|x| tile((x.x16, x.y16)) == tile(p))
+                    .map(|x| format!("{} {} level {} person {} lot {}", x.id(), x.file.map_or("-".to_string(), |f| file_name(lib, f)), x.level, x.person, x.on_lot()))
+                    .collect();
+                println!("   place {k} {p:?} tile {:?} room {}: {on:?}", tile(p), walls.room(tile(p).0, tile(p).1));
+            }
+            let logged: Vec<(u32, (i32, i32))> = pl.goals.iter().map(|g| (g[3] & 0xFF, (g[0] as i32, g[1] as i32))).collect();
             println!(
-                "goal at tick {}: slot {number} ({scope}) flags {:x} of {} facing {}: native {got:?}, the plan's {want:?}; places {places:?}",
+                "goals at tick {}: slot {number} ({scope}) flags {:x} proximity {}..{} of {} facing {}: offered {offered:?}, open {places:?}, logged {logged:?} took {}; native {got:?}, the plan's {want:?}",
                 s.tick,
                 slot.flags,
+                slot.min_proximity,
+                slot.max_proximity,
                 o.id(),
-                o.facing()
+                o.facing(),
+                pl.chosen
             );
         }
     }
@@ -2300,6 +2359,10 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             let (Some(a), Some(b)) = (pl.points.first(), pl.points.last()) else { continue };
             let who = world.objects().find(|o| o.person && (o.x16, o.y16) == *a).map_or(-1, |o| o.id() as i32);
             println!("plan tick {} from {},{} to {},{} ({} points), Sim at its start {who}", pl.tick, a.0, a.1, b.0, b.1, pl.points.len());
+            let pts: Vec<String> = pl.points.iter().map(|&(x, y)| format!("{}/{}", x as f32 / 16.0, y as f32 / 16.0)).collect();
+            println!("   points {}", pts.join(" "));
+            let gs: Vec<String> = pl.goals.iter().map(|g| format!("{}/{} {:x} {:x}", g[0] as i32 as f32 / 16.0, g[1] as i32 as f32 / 16.0, g[2], g[3])).collect();
+            println!("   goals (took {}) {}", pl.chosen, gs.join(", "));
             for s in log.steps.iter().filter(|s| s.tick == pl.tick) {
                 let Some(t) = log.tree_of(s) else { continue };
                 let at = s.node as usize * 12;
