@@ -570,5 +570,6 @@ Iteration 6 of 12.
 - **Iteration 6, chunk 3 (the benchmark on the PC).** `replay ... --bench`: the native work
   per tick, five runs, medians (`plan.md`, "The CPU budget"). The PC: 12.3 µs a tick on
   average over the 5,130-tick session, 190 µs at worst past the load; the scripts 7.1 µs, the
-  pass 5.2 µs. Next: the RK3566 (asked the user for SSH access; until then, chunk 4,
-  Castaway's object stream).
+  pass 5.2 µs. Then the RK3566 (the user gave SSH access): 125 µs a tick on average on one
+  A55 core, 1.8 ms at worst past the load, 7.7 ms for the tick after the load; the pass costs
+  as much as the scripts (59 against 67 µs). Next: make the pass cheap, then chunk 4.

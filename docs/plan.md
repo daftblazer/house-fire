@@ -93,7 +93,15 @@ On the 5,130-tick session (67 steps a tick): 12.3 µs a tick on average, 8.1 µs
 105 µs at the 99th percentile, 190 µs at worst once the lot has loaded (689 µs for the
 tick right after it, which sets up every object's stack). The scripts take 7.1 µs of a tick,
 the pass 5.2 µs. On the 719-tick one: 14.7 µs on average, 136 µs at worst. The budget is
-5,000 µs on an A55; the RK3566's figures come when the user gives SSH access.
+5,000 µs on an A55.
+
+**Measured (the RK3566, an RG353VS on ROCKNIX, 2026-11-09).** The same benchmark, a static
+aarch64 build (`-mcpu=cortex-a55`, cross-compiled in a Debian container), pinned to one core
+at 1.8 GHz, the frontend running: 125 µs a tick on average, 80 µs median, 918 µs at the 99th
+percentile, 1.8 ms at worst past the load, 7.7 ms for the tick after it (two runs, within
+2%). About ten times the PC. The scripts take 67 µs of a tick, the pass 59 µs: the pass (a
+lookup for each id, each tick) is as costly as all the scripts, and is the first thing to
+make cheaper. The budget leaves room, but not much to waste, for the systems to come.
 
 ## What does not come over from Bustin' Out's port
 
