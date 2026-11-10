@@ -482,6 +482,23 @@ the Sims cross their tiles). No OBJD field tells them apart (only the GUIDs, amo
 of these); the objects' footprints are next. The walk's line through its tiles (the `P`
 places, about 0.7 sixteenths a tick) is to come.
 
+**Which objects block: not in the definitions or the objects' data.** Among the objects the
+walks show blocking (the dining table's parts, the counters) and those the Sims' tiles cross
+(the chairs, the newspaper, the burglar alarm, a painting, the wall phone, the wall lamps,
+the windows), no OBJD field and no object data field (the 72 the save gives) separates the
+two but the GUID and the id. Two things weaken the tile test besides: the logged tiles are
+those of the smoothed line, which can clip a corner of a tile the route avoids (the chairs by
+the table), and the speed is not constant (0.62 to 0.90 sixteenths a tick over a walk: it
+starts and stops). So the next check is the original's own route, logged.
+
+**The original's routing code**, found by the watch build (`GCN_WATCH_ADDR` on Sim 12's
+place, `GCN_COUNT`) and named in the recomp's `names.txt`: the place's every change is a
+store in `Object_SetPlace` (801F16D4), called from the walker `Route_WalkStep` (801F0410,
+9,875 calls in the home replay); opcode 45, GotoRoutingSlot, is the person switch's case
+`Prim_GotoRoutingSlot` (8021FE94, 647 calls), its worker `Route_Run` (802200C4, 2,002); a
+large function of it, 80222FF4, runs 18 times, about once a walk (15 walks logged): the
+planner, it seems (`Route_Plan`, to be observed).
+
 ## Still open
 
 - What wakes a sleeping stack early (23 of 2,833 sleeps).

@@ -1038,7 +1038,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 14 of 16.
+Iteration 15 of 16.
 
 - **Iteration 1, chunk 1 (a table's first tree per table; PushAction by the object's
   table).** Object 198 is the group meal, whose table has action 4201 twice (guards 4202 and
@@ -1128,4 +1128,13 @@ Iteration 14 of 16.
   9 on its very tiles; the other 2 go round a dining table and a counter (object blocking: not
   native yet, no OBJD field found for it). Figures unchanged (561,398, 338,305, 68,202,
   lockstep 7,902). Next: which objects block (their footprints), then the tie-break.
+
+- **Iteration 15, chunk 4 (which objects block: not found in the data; the routing code
+  found).** No OBJD field and no object data field separates the objects the walks avoid (the
+  dining table, the counters) from those the Sims' tiles cross (the chairs, the newspaper,
+  the wall objects), and the logged tiles are the smoothed line's (it clips corners) with a
+  speed that varies, so blocking cannot be settled from the places. Nothing native built. The
+  watch build found the routing code instead (named in the recomp: the place setter, the
+  walker, GotoRoutingSlot and its worker, and 80222FF4, 18 calls, the planner it seems).
+  Next: the observer logs the planner's result, checked against `Walls::route`.
 

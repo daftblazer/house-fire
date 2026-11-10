@@ -623,7 +623,11 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
     world.load_lot(club);
     if (getenv("REPLAY_SHOW_OBJECTS"))
         for (const auto& o : world.objects())
-            std::printf("object %d: guid %08x, %s\n", o->id(), o->guid, o->file ? o->file->path.c_str() : "-");
+{
+            std::printf("object %d: guid %08x, %s; data", o->id(), o->guid, o->file ? o->file->path.c_str() : "-");
+            for (int16_t v : o->data) std::printf(" %d", v);
+            std::printf("\n");
+        }
     if (const char* dump = getenv("REPLAY_DUMP_ARRAYS"))  // the lot's three arrays, raw, for study
         if (std::FILE* f = std::fopen(dump, "wb")) {
             for (const LotArray& la : read_lot_arrays(club)) std::fwrite(la.bytes.data(), 1, la.bytes.size(), f);
