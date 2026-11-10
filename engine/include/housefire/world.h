@@ -58,6 +58,11 @@ public:
     // type's GUID) and its file. Returns how many had no definition on the disc (the
     // characters, whose definitions are made at run time).
     int load_lot(const LotChunks& lot);
+    // The class the original's loader makes of an object of this definition (none: a
+    // character's): docs/lots.md, "The classes".
+    static SavedClass saved_class(const Definition* d);
+    // A lot's objects as saved, each read by its class.
+    LotObjects read_objects(const LotChunks& lot) const;
     // A lot unloaded: every object gone, the shared tables kept.
     void clear() { objects_.clear(); by_id_.clear(); }
     // An object made during play (CreateObject, the engine's effects): the next id (one more

@@ -221,9 +221,53 @@ void read_base_rest(SaveStream& r, LotObject& o) {
     for (int n = r.r16(); n > 0; n--) o.shorts.push_back((int16_t)r.r16());
 }
 
+void no_elements(SaveStream& r, const char* what) {
+    if (r.r32() != 0) throw FormatError(what);  // never filled on the disc: not read yet
+}
+
+SavedQueueEntry read_queue_entry(SaveStream& r) {
+    SavedQueueEntry e;
+    e.a = r.r32();
+    e.id = r.r32();
+    for (int16_t& o : e.objects) o = (int16_t)r.r16();  // fn_801FDD0C
+    e.b = r.r32();
+    for (int16_t& v : e.shorts) v = (int16_t)r.r16();
+    e.c = r.r32();
+    e.d = (int16_t)r.r16();
+    e.e = r.rfloat();
+    e.flags = r.r32();  // from version 62
+    return e;
+}
+
+// A Sim's own part (fn_80224C88), for version 80.
+void read_sim(SaveStream& r, LotObject& o) {
+    // Its +1136 member (fn_800AD6E8): a count of (bool, 32-bit) pairs, five values.
+    for (int n = r.r16(); n > 0; n--) { r.rbool(); r.r32(); }
+    r.rbool(); r.rfloat(); r.r32(); r.r32(); r.r32();
+    for (int i = 0; i < 16; i++) o.motives.push_back(r.rfloat());
+    for (int i = 0; i < 16; i++) o.motives_b.push_back(r.rfloat());
+    for (int i = 0; i < 80; i++) o.person_data.push_back((int16_t)r.r16());
+    no_elements(r, "ObjM: a Sim's +1160 list is not empty");
+    o.current = read_queue_entry(r);
+    const int32_t n = r.r32();
+    if (n < 0 || n > 8) throw FormatError("ObjM: a Sim's queue out of range");
+    for (int32_t i = 0; i < n; i++) o.queue.push_back(read_queue_entry(r));
+    no_elements(r, "ObjM: a Sim's +1180 list is not empty");
+    no_elements(r, "ObjM: a Sim's +1120 list is not empty");
+}
+
+// A multi-tile object's part (fn_801D3F50) and a door's (fn_8022DE18): read past.
+void read_part(SaveStream& r, bool door) {
+    for (int i = 0; i < 6; i++) r.r32();
+    r.r16();
+    if (!door) return;
+    const int32_t n = count(r, 4096, "ObjM: a door's values out of range");
+    for (int32_t i = 0; i < n; i++) r.rfloat();
+}
+
 }  // namespace
 
-LotObjects read_lot_objects(std::span<const uint8_t> m) {
+LotObjects read_lot_objects(std::span<const uint8_t> m, const std::function<SavedClass(int16_t type)>& class_of) {
     constexpr size_t kStart = 12;
     if (m.size() < kStart + 1 || std::memcmp(m.data() + 8, "MjbO", 4) != 0) throw FormatError("not an ObjM");
     const auto s = m.subspan(kStart);
@@ -272,6 +316,16 @@ LotObjects read_lot_objects(std::span<const uint8_t> m) {
         read_base_rest(h, o);
         if (h.pos() > sections[k].second) throw FormatError("ObjM: an object runs past its section");
         o.base_end = kStart + h.pos();
+        o.saved_class = class_of(o.type);
+        switch (o.saved_class) {
+            case SavedClass::Object: break;
+            case SavedClass::Part: read_part(h, false); break;
+            case SavedClass::Door: read_part(h, true); break;
+            case SavedClass::Sim: read_sim(h, o); break;
+        }
+        h.r32();  // the loader's int
+        h.pad();
+        if (h.pos() != sections[k].second) throw FormatError("ObjM: an object's section does not end at its mark");
     }
     out.lot_section = kStart + sections.back().first;
     out.lot_section_end = kStart + sections.back().second;

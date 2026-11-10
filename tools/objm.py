@@ -138,6 +138,92 @@ def section(m, start, v=VERSION):
         n = r.r16()
         o['shorts'] = [r.r16() for _ in range(n)]
     o['base_end'] = r.pos - START
+    o['_pos'], o['_mask'], o['_cur'] = r.pos, r.mask, getattr(r, 'cur', 0)
+    return o
+
+
+def empty_list(r, what):
+    """A counted list the disc's Sims never fill (fn_8022933C, fn_8022989C, fn_80229D5C):
+    its elements are not read yet."""
+    n = r.r32()
+    if n: raise ValueError(f'{what}: {n} elements')
+
+
+def queue_entry(r, v):
+    """An 88-byte entry of a Sim's queue (fn_801CFB68)."""
+    e = {'a': r.r32(), 'id': r.r32(), 'objects': [r.r16() for _ in range(3)],  # fn_801FDD0C x3
+         'b': r.r32(), 'shorts': [r.r16() for _ in range(4)], 'c': r.r32(), 'd': r.r16(),
+         'e': r.rfloat()}
+    if v > 61: e['flags'] = r.r32()
+    else: raise ValueError('old queue entries are not read')
+    return e
+
+
+def sim_part(r, v):
+    """A Sim's own part (fn_80224C88), for the versions after 63."""
+    if v <= 63: raise ValueError('old Sims are not read')
+    o = {}
+    # The +1136 member (fn_800AD6E8): a count of (bool, 32-bit) pairs, then five values.
+    n = r.r16()
+    o['member'] = [(r.rbool(), r.r32()) for _ in range(n)]
+    o['member_rest'] = [r.rbool(), r.rfloat(), r.r32(), r.r32(), r.r32()]
+    o['motives'] = [r.rfloat() for _ in range(16)]       # +168
+    o['motives_b'] = [r.rfloat() for _ in range(16)]     # +232
+    o['person_data'] = [r.r16() for _ in range(80 if v > 40 else 64)]  # +8
+    empty_list(r, 'the +1160 list')
+    o['current'] = queue_entry(r, v)                     # +1032
+    n = r.r32()
+    if not 0 <= n <= 8: raise ValueError(f'a queue of {n}')
+    o['queue'] = [queue_entry(r, v) for _ in range(n)]   # a ring of 8 at +320
+    empty_list(r, 'the +1180 list')
+    empty_list(r, 'the +1120 list')
+    return o
+
+
+def part_part(r, v):
+    """A multi-tile object's part (fn_801D3F50)."""
+    o = {'a': r.r32(), 'b': r.r32()}
+    if v > 57: o['c'] = r.r32()
+    if v > 39: o['offset'] = [r.r32() for _ in range(3)]
+    o['d'] = r.r16()
+    return o
+
+
+def door_part(r, v):
+    """A multi-tile door's part (fn_8022DE18): a part's, then a count and that many floats."""
+    o = part_part(r, v)
+    if v > 14:
+        n = r.r32()
+        if not 0 <= n <= 4096: raise ValueError(f'{n} door values')
+        o['values'] = [r.rfloat() for _ in range(n)] if v > 37 else [r.r32() for _ in range(n)]
+    return o
+
+
+def object_class(objd_fields):
+    """The class the loader makes an object of, from its definition (OBJD) fields: no
+    definition on the disc, a Sim; a master id (field 8), a part of a multi-tile object,
+    and a door's (type, field 7, 8) part if a door; otherwise the plain object."""
+    if objd_fields is None: return 'sim'
+    if objd_fields[8]: return 'door' if objd_fields[7] == 8 else 'part'
+    return 'object'
+
+
+CLASS_PARTS = {'sim': sim_part, 'part': part_part, 'door': door_part, 'object': None}
+
+
+def whole_section(m, start, end, cls, v=VERSION):
+    """An object's whole section: the base part, the class's, then the loader's int, which
+    must end at the section's mark (end)."""
+    o = section(m, start, v)
+    r = recon.Reader(m, START + o['base_end'])
+    r.compressed = True
+    # base_end is a byte position; the base part may end inside a byte
+    r.pos, r.mask, r.cur = o['_pos'], o['_mask'], o['_cur']
+    f = CLASS_PARTS[cls]
+    if f: o[cls] = f(r, v)
+    o['loader_int'] = r.r32()
+    r.pad()
+    if r.pos - START != end: raise ValueError(f'ends at {r.pos - START}, not {end}')
     return o
 
 

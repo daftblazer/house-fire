@@ -3,6 +3,7 @@
 // lot.py and objm.py are the same, in Python).
 #pragma once
 #include <cstdint>
+#include <functional>
 #include <span>
 #include <string>
 #include <vector>
@@ -23,6 +24,7 @@ public:
     bool rbool() { return r8() != 0; }
     float rfloat();
     uint32_t mark();  // a plain little-endian word
+    void pad() { mask_ = 0; }  // on to the next byte
     size_t pos() const { return pos_; }
 
 private:
@@ -76,6 +78,23 @@ struct SavedFrame {
     bool engine = false;  // a frame the engine started (the original's +8)
 };
 
+// What the loader makes an object of, which decides what its section holds after the base
+// object's part (World::saved_class gives it from the definition).
+enum class SavedClass : uint8_t {
+    Object,  // the base object only
+    Part,    // a part of a multi-tile object (its definition has a master id)
+    Door,    // a part of a multi-tile door
+    Sim,     // a character (no definition on the disc)
+};
+
+// An entry of a Sim's queue as saved (fn_801CFB68): an id, three objects, the rest to be
+// named.
+struct SavedQueueEntry {
+    int32_t a = 0, id = 0, b = 0, c = 0, flags = 0;
+    int16_t objects[3] = {}, shorts[4] = {}, d = 0;
+    float e = 0;
+};
+
 // A lot's object as its table gives it, in the world's list order.
 struct LotObject {
     int16_t id = 0;
@@ -93,16 +112,24 @@ struct LotObject {
     std::vector<SavedFrame> stack;
     std::vector<std::pair<int16_t, int16_t>> pairs;
     std::vector<int16_t> shorts;
-    // Where the base object's part ends; the class's own part (a Sim's motives and so on)
-    // runs from here to section_end.
+    // Where the base object's part ends; the class's own part runs from here to the
+    // loader's int at the end of the section.
     size_t base_end = 0;
+    SavedClass saved_class = SavedClass::Object;
+    // A Sim's own part: its person data (scope 18), its motives (scope 14), a second table
+    // of 16 floats (to be named), the entry it is on and its queue.
+    std::vector<int16_t> person_data;
+    std::vector<float> motives, motives_b;
+    SavedQueueEntry current;
+    std::vector<SavedQueueEntry> queue;
 };
 constexpr int kObjectDataFields = 72, kObjectTemps = 8;
 struct LotObjects {
     std::vector<LotObject> objects;
     size_t lot_section = 0, lot_section_end = 0;  // the lot's own part, after the objects
 };
-// ObjM: the table, then the mark chain (one section per object, then the lot's).
-LotObjects read_lot_objects(std::span<const uint8_t> objm);
+// ObjM: the table, then the mark chain (one section per object, then the lot's). class_of
+// gives the class of an objt type number. Every section must end exactly at its mark.
+LotObjects read_lot_objects(std::span<const uint8_t> objm, const std::function<SavedClass(int16_t type)>& class_of);
 
 }  // namespace housefire

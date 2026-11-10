@@ -517,7 +517,7 @@ without a commit.
 
 ## Progress
 
-Iteration 1 of 12.
+Iteration 2 of 12.
 
 - **Iteration 1, chunk 1 (the tree stack and the base object).** Read the loader's code for
   everything after an object's data: the tree stack and its frames, the +192 member, the
@@ -528,3 +528,12 @@ Iteration 1 of 12.
   with their node in range and exactly its parameter and local counts. The frame's file is
   an index into a load-order list; the engine uses the object's file. Next: the class's own
   part (the Sims' motives and personality, the other classes'), then the lot's section.
+
+- **Iteration 2, chunk 1 (the classes' parts).** Read the four classes' stream functions and
+  found which class each object is from its definition (master id, type), as `lots.md`
+  "The classes" gives. The engine reads every section to exactly its mark and gives the
+  lot's Sims their saved motives and person data. Measured: all 4,572 sections of the 16
+  lots end at their marks; the rule gives the traced class for all 177 in the club. In play,
+  the club Sims' first reads: 22 of 24 motives and 81 of 102 person data fields are the
+  lot's; the rest the engine sets at load (person data 27 and 32 to 1, motive 13), which the
+  native load must model (chunk 2). Next: the lot's own section.

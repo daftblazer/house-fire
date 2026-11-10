@@ -12,15 +12,24 @@ Object& World::add(std::unique_ptr<Object> o, bool front) {
     return r;
 }
 
-int World::load_lot(const LotChunks& lot) {
+LotObjects World::read_objects(const LotChunks& lot) const {
     const std::vector<uint8_t>* objt = lot.find("objt");
     const std::vector<uint8_t>* objm = lot.find("ObjM");
     if (!objt || !objm) throw FormatError("a lot without objt or ObjM");
-    const std::vector<ObjectType> types = read_object_types(*objt);
+    std::map<int, uint32_t> guid_of;  // objt field 4 -> GUID
+    for (const ObjectType& t : read_object_types(*objt)) guid_of[t.fields[4]] = t.guid;
+    return read_lot_objects(*objm, [&](int16_t type) {
+        auto t = guid_of.find(type);
+        return saved_class(t == guid_of.end() ? nullptr : lib_.definition(t->second));
+    });
+}
+
+int World::load_lot(const LotChunks& lot) {
+    const std::vector<ObjectType> types = read_object_types(*lot.find("objt"));
     std::map<int, const ObjectType*> by_number;  // objt field 4
     for (const ObjectType& t : types) by_number[t.fields[4]] = &t;
     int missing = 0;
-    for (const LotObject& lo : read_lot_objects(*objm).objects) {
+    for (const LotObject& lo : read_objects(lot).objects) {
         auto o = std::make_unique<Object>();
         auto t = by_number.find(lo.type);
         if (t != by_number.end()) {
@@ -33,6 +42,10 @@ int World::load_lot(const LotChunks& lot) {
         o->data = lo.data;
         o->attributes = lo.attributes;
         for (int k = 0; k < kObjectTemps && k < (int)lo.temps.size(); k++) o->temps[(size_t)k] = lo.temps[(size_t)k];
+        if (lo.saved_class == SavedClass::Sim) {
+            o->person_data = lo.person_data;
+            o->motives = lo.motives;
+        }
         for (const SavedFrame& sf : lo.stack) {
             Frame f;
             f.tree = lib_.tree(o->file, sf.tree);
@@ -47,6 +60,14 @@ int World::load_lot(const LotChunks& lot) {
         add(std::move(o));
     }
     return missing;
+}
+
+SavedClass World::saved_class(const Definition* d) {
+    // OBJD field 8, the master id (a multi-tile object's parts have one); field 7, the type
+    // (8 a door).
+    if (!d) return SavedClass::Sim;
+    if (d->field(8)) return d->field(7) == 8 ? SavedClass::Door : SavedClass::Part;
+    return SavedClass::Object;
 }
 
 int16_t World::next_id() const {

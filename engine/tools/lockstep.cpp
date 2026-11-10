@@ -14,6 +14,10 @@
 //     the same parameters and locals;
 //   a return: the caller's node moved to the same target.
 //
+// The lot's state: each object variable's first read (scopes 0, 3, 8, and a Sim's 14 and 18)
+// against the lot as the engine loads it; with LOCKSTEP_LOT_DIFFS set, each one that is not
+// the lot's is printed.
+//
 // Each object's file is found from the trees the original ran for it: the disc file whose
 // own, semi-global (its GLOB) and global (Global.iff) trees have those nodes.
 #include <cstdio>
@@ -782,7 +786,7 @@ int main(int argc, char** argv) {
         std::vector<std::set<int16_t>> lot_ids;
         for (const LotChunks& l : lots) {
             std::set<int16_t> ids;
-            for (const LotObject& o : read_lot_objects(*l.find("ObjM")).objects) ids.insert(o.id);
+            for (const LotObject& o : World(lib).read_objects(l).objects) ids.insert(o.id);
             lot_ids.push_back(std::move(ids));
         }
         // Which lot: the one whose table order the original's longest walk over every object
@@ -803,7 +807,7 @@ int main(int argc, char** argv) {
         std::vector<std::vector<int16_t>> orders;
         for (const LotChunks& l : lots) {
             std::vector<int16_t> o;
-            for (const LotObject& x : read_lot_objects(*l.find("ObjM")).objects) o.push_back(x.id);
+            for (const LotObject& x : World(lib).read_objects(l).objects) o.push_back(x.id);
             orders.push_back(std::move(o));
         }
         for (size_t k = 0; k < lots.size(); k++) {
@@ -861,14 +865,26 @@ int main(int argc, char** argv) {
                                                    " (" + (so->file ? so->file->path.substr(so->file->path.rfind('/') + 1) : std::string("?")) + ") native " + std::to_string(f) + " original " + std::to_string(v.value));
                             continue;
                         }
-                        if (v.scope != 3 && v.scope != 0 && v.scope != 8) continue;
+                        if (v.scope != 3 && v.scope != 0 && v.scope != 8 && v.scope != 14 && v.scope != 18) continue;
                         const auto key = std::make_tuple(v.object, (int)v.scope, (int)v.data);
                         if (!done.insert(key).second) continue;
                         auto id = id_of.find(v.object);
                         if (id == id_of.end()) { note("lot state: object not known yet"); continue; }
                         const Object* o = lw.find(id->second);
                         if (!o) { note("lot state: object not in the lot"); continue; }
-                        const std::vector<int16_t>* t = v.scope == 3 ? &o->data : v.scope == 0 ? &o->attributes : nullptr;
+                        if (v.scope == 14) {  // a Sim's motive: the float the lot saved
+                            if (o->motives.empty()) { note("lot state: scope 14: not a Sim of the lot"); continue; }
+                            if (v.data < 0 || (size_t)v.data >= o->motives.size()) { note("lot state: scope 14: past the table"); continue; }
+                            float f;
+                            std::memcpy(&f, &v.fvalue, 4);
+                            note(std::string("lot state: scope 14") + (o->motives[(size_t)v.data] == f ? ": the first read the lot's value" : ": the first read not the lot's (changed before it)"));
+                            if (o->motives[(size_t)v.data] != f && getenv("LOCKSTEP_LOT_DIFFS"))
+                                std::fprintf(stderr, "scope 14 tick %u object %d datum %d: lot %g, read %g\n", s.tick, id->second, v.data, o->motives[(size_t)v.data], f);
+                            continue;
+                        }
+                        const std::vector<int16_t>* t = v.scope == 3 ? &o->data : v.scope == 0 ? &o->attributes
+                                                      : v.scope == 18 ? &o->person_data : nullptr;
+                        if (v.scope == 18 && o->person_data.empty()) { note("lot state: scope 18: not a Sim of the lot"); continue; }
                         int16_t native;
                         if (t) {
                             if (v.data < 0 || (size_t)v.data >= t->size()) { note("lot state: scope " + std::to_string(v.scope) + ": past the table"); continue; }
@@ -878,6 +894,8 @@ int main(int argc, char** argv) {
                             native = o->temps[(size_t)v.data];
                         }
                         note("lot state: scope " + std::to_string(v.scope) + (native == v.value ? ": the first read the lot's value" : ": the first read not the lot's (changed before it)"));
+                        if (native != v.value && v.scope == 18 && getenv("LOCKSTEP_LOT_DIFFS"))
+                            std::fprintf(stderr, "scope 18 tick %u object %d datum %d: lot %d, read %d\n", s.tick, id->second, v.data, native, v.value);
                     }
                     // A written variable's first read after it is not the lot's to check.
                     if (s.has_expr && !s.lookups.empty() && s.lookups.back().caller == 0x80213900)

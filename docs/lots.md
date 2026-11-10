@@ -116,9 +116,41 @@ engine and `tools/objm.py` read version 80 only.
   values each. Not named yet.
 - A 32-bit value, then a 16-bit count and that many 16-bit values. Not named yet.
 
-Then comes the class's own part (a Sim's motives, personality and so on, from
-`fn_800AD6E8`, `fn_80224C88` and others; other objects' from `fn_801D3F50` and the like), an
-int written by the loader, and the next mark.
+Then comes the class's own part (below), an int written by the loader, and the next mark.
+
+## The classes
+
+The loader makes each object of a class, and the class's stream function adds its own part
+after the base object's. Which class follows from the definition (OBJD) of the object's type:
+
+| Class | When | Its part | Over the 16 lots |
+|---|---|---|---|
+| object | otherwise | none (`fn_801F1F20` alone) | 1,754 |
+| part of a multi-tile object | field 8, the master id, is set | `fn_801D3F50`: two ints, an int (v>57), three ints (v>39), a 16-bit value | 1,821 |
+| part of a multi-tile door | that, and field 7, the type, is 8 | the part's, then (v>14) a count and that many floats (v>37) | 944 |
+| Sim | no definition on the disc (a character) | `fn_80224C88`, below | 53 |
+
+A Sim's part, for the versions after 63:
+- its +1136 member (`fn_800AD6E8`): a 16-bit count of (bool, 32-bit) pairs, then a bool, a
+  float and three ints;
+- 16 floats at +168: its motives (scope 14);
+- 16 more floats at +232 (to be named);
+- 80 16-bit values at +8: its person data (scope 18; 64 before version 41). The person data
+  and the motives are 160 bytes apart in the object, as scopes 18 and 14 are;
+- three counted lists the disc never fills (`fn_8022933C`, `fn_8022989C`, `fn_80229D5C`;
+  the engine requires them empty);
+- the entry it is on and its queue: a count (up to 8) and that many entries. An entry
+  (`fn_801CFB68`, 88 bytes): an int, a 32-bit id, three object ids (`fn_801FDD0C`), an int,
+  four 16-bit values, an int, a 16-bit value, a float, and (v>61) an int of flags.
+
+Every section of the 16 lots, read by its class, ends with the loader's int exactly at its
+mark; in the club the rule gives the traced class for all 177 objects.
+
+Checked in play (`lockstep`, the lot state): of the first reads of the club Sims' variables
+before any script writes them, 22 of 24 motives and 81 of 102 person data fields are the
+lot's. The rest are set by the engine as the lot loads (by tick 2): person data 27 and 32
+become 1 for every Sim, and motive 13 is computed (56.2 for two); person data 33 becomes 100
+later in play. The native load will have to do the same.
 
 Over the 16 lots: 4,575 frames, one per object but for one stack of 2 and one of 3. All
 4,522 frames of objects with a definition on the disc name a tree that is there, with the
@@ -127,8 +159,8 @@ other 53 are the characters'.
 
 ## Not decoded yet
 
-- The class's own part of each object's section: the Sims' motives, personality and the
-  rest; the other classes'.
+- The meaning of a multi-tile part's values, a door's floats, and a Sim's second table of
+  floats, +1136 member and queue fields.
 - **The lot's own section.**
 - **The Arry chunks** (floors, walls and the like).
 - **The two 32-bit values and the counted ones** of each table entry.
