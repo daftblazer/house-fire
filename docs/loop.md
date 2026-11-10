@@ -479,3 +479,42 @@ Next, in order:
   started natively, and the Sims' motives and person data);
 - the simulation tick: which stacks run when, the sleep clock and pauses;
 - then the animation data, so that Animate, and the effects it makes, can be native.
+
+# The third loop (planned)
+
+Planned 2026-11-09, after the second loop (above) and Castaway's survey (`survey.md`). Same
+rules as the second loop: one chunk an iteration, checked against the recompiled Bustin'
+Out, game runs only in the agreed light setup, one-line commits never pushed. The CPU budget
+in `plan.md` applies to every system that comes in.
+
+## Chunks, in order
+
+1. **The rest of an object's saved state.** Bustin' Out's object sections after the data
+   (`lots.md`, "Not decoded yet"):
+   - the tree stack (`fn_8023F928`, frames `fn_8023E9A8`), so the scripts running when the
+     lot was saved restart natively;
+   - the Sims' parts (motives, person data, the further table);
+   - the lot's own section.
+   Traced like ObjM's start (`BUSTIN_RECON_LOG`), decoded in the engine, all 16 lots
+   checked.
+2. **The simulation tick, natively.** Which stacks run when, and in what order. The sleep
+   clock (Idle) and pauses. Frames the engine starts (+8). Then a native run of the club lot
+   for ticks on end, checked against the log step by step for the parts that are native,
+   with the rest (routing, animation results) taken from the log.
+3. **The benchmark** (`plan.md`, "The CPU budget"): headless, milliseconds per tick per
+   system and the worst tick, on the PC. Then on the user's RK3566: ask the user for SSH
+   access first, and build for aarch64.
+4. **Castaway's object stream.** ObjM versions 120-130, read from its named code
+   (`ObjectModule`'s stream and the `ReconBuffer` functions in its ELF). Done when all 28
+   lots of its `default.ngh` decode to their ends, as Bustin' Out's 16 do.
+5. **The next primitives by use** that need no new system: from the log's counts, each
+   checked step by step.
+6. **SetToNext's open kinds** (3 multi-tile, 5 neighbours, 6 unidentified) and the dance
+   floor's multi-tile search, if the decoded object state explains them.
+
+Stop after iteration 12, when the chunks are done, or when two iterations in a row end
+without a commit.
+
+## Progress
+
+(none yet)
