@@ -878,7 +878,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 3 of 16.
+Iteration 4 of 16.
 
 - **Iteration 1, chunk 1 (Mom's house read from the save).** The card's save is the
   neighbourhood file with big-endian block headers and chunk tables (`lots.md`, "Saves");
@@ -903,3 +903,10 @@ Iteration 3 of 16.
   for both Sims, some each Sim's own (personality), one proportional to the value
   (`simulation.md`, "The motives"). Next: the update's code (Castaway's `Motives::Sim`,
   `InitDecayRates`, the decay tables) and its rates, then the native update.
+
+- **Iteration 4, chunk 2 (the motive update's code).** Found by a watch on Sim 12's motive
+  5 in a replay (a fresh `GCN_WATCH` build of the recomp, `build-watch-cachy`; the old
+  `build-watch` had the Bazzite paths): `fn_801D0504`, Bustin' Out's `Motives::Sim`, called
+  by `fn_8022501C` each 60 ticks; what it does to motives 5-9, 14, 15 is in `simulation.md`.
+  Its rates are set at run time (zero-filled data the DOL does not hold). Next: where they
+  come from (a watch on one), then the native update, checked against the `N` records.

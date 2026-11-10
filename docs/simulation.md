@@ -142,7 +142,26 @@ each motive by its own amount:
 | 14 | −0.1553 | −0.1428 | |
 | 7 | −0.2027 at −3.51 | −0.4032 at 92.01 | 0.0021 × (value + 100), both |
 
-Motive 13 moves only when something sets it. Castaway names the update's parts: `Motives`
+Motive 13 moves only when something sets it.
+
+**The update's code** (found by watching Sim 12's motive 5 in a replay of a `GCN_WATCH`
+build: 45 of its changes stored by one function). `fn_8022501C(person)`, when the person's
++66 and a flag of its +0's +106 are 0 and a virtual check says so, calls `fn_801D0504` on the
+person's motive block (person + 168; motive m at 4m, a copy of all 16 at +64, the person at
++128): Bustin' Out's `Motives::Sim`. In it, with the threshold 0.0 and motive 11 (its state:
+at or above 0, or below):
+- motive 5: plus one rate (motive 11 ≥ 0), or plus another, less a third while a value
+  from a global object's virtual call lies in a range (the hour?);
+- motive 9: less a rate × how much motive 7 rose since the copy (if it rose);
+- motive 7: less (motive 7 + 100) × a rate (measured: 0.0021);
+- motive 6: less (a rate × person data 3 + another) (each Sim's own: personality);
+- motive 14: less (a rate × person data 6 + another), motive 11 ≥ 0 only;
+- motives 15, 8 and 9: less a rate each (motive 11 ≥ 0), or motive 15 times a rate and 8
+  and 9 less others (below 0);
+- then all 16 clamped to −100 … 100 and copied to +64, and a virtual call on the person.
+Motive 3 is not in it: another update moves it. The 0.0, 100 and −100 are in the DOL; the
+rates (from r13 − 24772 on) are not: they are set at run time, from tuning data
+(Castaway's `MotiveConstantsClient::UpdateConstants`), and are to be found at their source. Castaway names the update's parts: `Motives`
 (`Sim`, `InitDecayRates`), a base decay table (`sMotiveDecayBase`) and changes to it by
 personality (`sMotiveDecayActiveMod`, `NeatMod`, `OutgoingMod`, `PlayfulMod`), and
 `MotiveConstantsClient::UpdateConstants`, which suggests the rates are game data: the
