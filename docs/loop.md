@@ -1204,3 +1204,51 @@ Iteration 2 of 16.
   68,202, lockstep 7,902). Next: the plan's goal from the slot (the object's place, its
   directions and proximity, the side nearest the Sim) against the 17 plans' ends.
 
+
+## The eighth loop paused
+
+Paused after iteration 2 at the user's request, to port the engine to Rust first (the ninth
+loop): memory safety against the crashes and corruption the rules say to fix outright. Its
+chunks 2 (from the goal on) to 5 continue on the Rust engine afterwards.
+
+# The ninth loop: the Rust port
+
+Planned 2026-11-10 at the user's request, with a quarter of an hour between iterations. The
+engine and its tools move from C++ to Rust, behaviour unchanged: the C++ engine is moved to
+`engine-cpp/` and stays the reference until the port is done, the Rust one is built in its
+final place (`engine/`, a Cargo crate: the library, the `replay` and `lockstep` binaries, the
+tests). One module an iteration, ported in the dependency order and checked before the next:
+until the tools are ported, by the ported tests printing the C++ tests' very figures; after,
+by the Rust `replay` and `lockstep` printing the C++ ones' very lines (timings aside) on the
+home log (`--card work/inputs/mom-live/memcard_a.raw`), `tree.log` and `tree3.log`. Builds
+through `tools/capped.sh` (`cargo build --release -j4`, `CARGO_TARGET_DIR=work/target`), no
+crates from outside unless one is needed and named here. Rust's way, not a transcription:
+owned data and indices instead of the C++ pointers, `Result` for the readers' errors,
+wrapping arithmetic only where the original wraps, `mul_add` where the C++ has `fmaf`. Commits
+one-line, never pushed; no game runs are needed (the logs exist); no RK3566.
+
+## Chunks, in order
+
+1. **The crate and the readers.** `engine-cpp/` moved (its build and the docs' commands with
+   it), the Cargo crate set up; `iff`, `disc`, `bhav` ported. Checked: `test_disc`'s script
+   counts (9,529 trees, every one read to its end) from the Rust test.
+2. **The interpreter's core.** `expression`, `interp`, `primitives`; `test_interp`,
+   `test_expression`, `test_primitives` ported, their figures the C++ ones'.
+3. **The library and the world.** `library` (with the SLOT reader), `save`, `world`;
+   `test_disc` and `test_lots` entire, their figures the C++ ones'.
+4. **The simulation.** `simulator`, `motives`, `autonomy`, `routing`; `test_simulator`.
+5. **The log and lockstep.** `tree_log` and `lockstep`: 7,902 differences on the home log,
+   its every line the C++ one's.
+6. **The replay.** `replay`: the home log's and the club's output the C++ one's, line for line
+   (561,398, 338,305, 68,202).
+7. **The C++ engine removed.** `engine-cpp/` deleted, the README, `plan.md` and the docs'
+   commands and file names (`*.cpp`, `*.h`) pointed at the Rust ones.
+
+## Limits
+
+Stop when the chunks are done, after iteration 16, or when two iterations in a row end
+without a commit (record why here). Then the eighth loop resumes.
+
+## Progress
+
+Iteration 0 of 16.

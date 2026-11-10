@@ -1,7 +1,7 @@
 # Plan
 
 One native engine for the six games (the five GameCube Sims games and The Sims 2: Castaway on the Wii), its game logic being each game's behaviour scripts
-(SimAntics BHAV, `survey.md`) run by a native interpreter, with the C++ engine around the
+(SimAntics BHAV, `survey.md`) run by a native interpreter, with the engine (Rust) around the
 scripts written anew to do what the original does. The discs supply scripts, object data and
 assets; nothing of the games' executables is used.
 
