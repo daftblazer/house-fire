@@ -676,7 +676,7 @@ records what it found and moves to the next chunk rather than starting the syste
 
 ## Progress
 
-Iteration 8 of 16.
+Iteration 9 of 16 (the loop ended).
 
 - **Iteration 1, chunk 1 (the neighbours).** NBRS decoded (`objects.md`, "The
   neighbours"): 63 slots, 51 neighbours, read to the chunk's end, ids the slot's number plus
@@ -766,7 +766,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 8 of 16.
+Iteration 9 of 16 (the loop ended).
 
 - **Iteration 1, chunk 1 (the queue's entries and their delivery).** The engine keeps each
   Sim's saved queue (`Object::current`, `queue`); an entry's fields named from the log: the
@@ -817,3 +817,23 @@ Iteration 8 of 16.
   64 by 64 grids a lot (elements of 1, 8 and 1 bytes), run-length coded in bytes; all 48 of
   the 16 lots read to exactly their size and their chunk's end (`read_lot_arrays`,
   `test_lots`). Their meaning (floors, walls, ground?) and routing over them next.
+
+- **Iteration 9, chunk 5 (what the arrays hold).** The objects' headers hold their places in
+  sixteenths of a tile; the first array, indexed x × 64 + y, has a non-zero value under every
+  one of the club's 155 objects on the lot (the floors, it seems). Rotation and the header's
+  exact fields are open (`lots.md`, "The arrays"). Routing itself is not started: the logs
+  do not show where anything is, so a route could not be checked against them.
+
+## Where the fifth loop ended
+
+9 iterations, each with a commit. Done natively and checked: the interaction queue's delivery
+(IdleForInput with the target's TTAB checks, 6 deliveries, 101 check steps), PushAction,
+Dialog (2,475 steps, every pass stop); decoded: the lots' arrays (48 of 48), the Sims'
+queues. Recorded and set aside, each for want of what to check it against: Animate (the
+AnimRef id to animation mapping), the motives (they hardly change in the logs), CompleteGoal
+(the goals' state), routing (no positions in the logs).
+
+What the next loops need first is new logs rather than new code: a session at a home lot
+(motives running, the household's own interactions, autonomy), and the observer logging
+positions (an object's place as the original has it), so that routing and animation can be
+checked. Both are runs of the recompiled game with small read-only observer additions.

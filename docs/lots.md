@@ -243,6 +243,16 @@ after it (padded to 2 bytes); otherwise that many bytes as they are (padded to a
 length). The counts are in bytes, whatever the element size. All 48 arrays of the 16 lots
 read to exactly their size and their chunk's end (`read_lot_arrays`, `test_lots`).
 
+Measured towards naming them: an object's header (`fn_801F1E30`'s six values) holds its
+place in sixteenths of a tile: the dance floor's parts, 16 apart, are at their leader's
+place plus 16 times their saved offset. Taking an object's tile as (header 5, header 4) / 16,
+every one of the club's 155 objects on the lot stands on a non-zero value of the first
+array indexed x × 64 + y (indexed the other way, 48 stand on 0): the floors, it seems, with
+0 for none. Over all 16 lots, 2,342 objects stand on a floor value and 1,933 on 0 (the
+yards), 297 outside the 64 by 64. Of the 1,838 parts of multi-tile objects, 686 are at their
+leader plus 16 × offset (y, x), 441 at (x, y) and 711 at neither: the objects' rotation turns
+the offsets, and what the six header values are exactly is still open.
+
 What they hold is to be named. In the club: the first is mostly 0 (2,763 of 4,096) with
 tile kinds such as 7, 33 and 18 (the floors?); the second, of 8 bytes a tile, is mostly
 `00 0f 01 01 00 00 00 00` (the walls?); the third mostly 32, then 7 (the ground?).
