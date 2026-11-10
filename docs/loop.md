@@ -1298,6 +1298,14 @@ Iteration 12 of 16.
   4, 24); clippy clean. Chunk 3 done but for the persons' rule (taken from the log for now).
   Next: chunk 2's search over the obstacles (the waypoints), or the persons' rule.
 
+- **Iteration 12, chunk 2 (the planner's lines against the native obstacles).** Checked: all
+  62 walked legs of the 17 plans clear of the native blocking obstacles' insides (the 9 others
+  the last legs into the faced object); of the 54 inner waypoints 17 grown-obstacle corners, 16
+  the goal, 16 on the line between their neighbours, 5 other. The search is corner to corner
+  (a visibility graph). Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24);
+  clippy clean. Next: the search's choice (read `fn_80249BB8`, or log its graph), or the persons'
+  rule.
+
 
 ## The eighth loop paused
 

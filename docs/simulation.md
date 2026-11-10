@@ -625,6 +625,18 @@ objects are the planner's, and 16 of the 17 logged obstacle lists natively exact
 (but for 9 rectangles of objects not native); the 17th (tick 1220) drops the paper girl, not
 native, as the one by the Sim.
 
+**The planner's lines and the obstacles.** Against the native obstacle lists: every leg of the
+home log's 17 plans keeps out of the blocking obstacles' insides (62 legs; it may run along an
+edge or touch a corner), but for the 9 last legs into the object a plan ends at (the Sim turns
+to face it there; the object is among the obstacles). Of the 54 waypoints between a plan's ends,
+17 are corners of grown obstacles (round the dining table at tick 1905: the chairs' and the
+table's), 16 the request's goal (the place before the object), 16 lie on the line between their
+neighbours (a sixteenth off the start, a door's sides, a step along a straight line), and 5
+none of these (tick 521's (313, 279), 1791's (403, 304) twice, 1905's (363, 247), 4922's (352,
+403)). So the search goes from corner to corner of the grown obstacles, as a visibility graph
+would; how it picks among them, and the points along its lines, are the search's own (its
+`fn_80249BB8`, to read).
+
 **Which objects block** (`routing::obstacle`). Read from the objects the loop asks about (`J`)
 against the object data the save gives: an object is left out when its flags (object data 8)
 have 0x4 (no extent: rugs, windows, wall lamps, paintings, the alarms, the phone) or it sits in
