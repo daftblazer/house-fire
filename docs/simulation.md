@@ -329,7 +329,15 @@ another file's tree through opcode 28 (430:3 → ScenarioGlobals 8251) goes on n
 without the call (the main replay syncs such frames; a check does not). The choice is taken
 from the log until the score is native.
 
-Still to come: opcode 28's call inside a check, and the score of those that pass (the
+With CallNamedTree native (its calls made inside checks too), a call step's record taken from
+after its callee's (the log writes a step when it ends), and the trees resolved as the
+object's own file names them (a person's table is its semi-global file's, whose 8192+ ids
+the person's file resolves: the paper girl's 8218 was found nowhere before): 410 of the
+three evaluations' 433 checks give the log's result, 3 do not, 20 do not finish; one
+evaluation uses exactly the log's steps; 4,531 check steps as the log's, 296 not. Still off
+by default (with it the replay's matching steps total 160 fewer, the differing 228 fewer).
+
+Still to come: the checks' last differences, and the score of those that pass (the
 adverts, the motives, the distance, the tuning table), checked as each choice among the native
 best four.
 

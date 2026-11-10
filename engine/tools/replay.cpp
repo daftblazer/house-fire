@@ -132,6 +132,7 @@ struct Replay {
     size_t nested_pos = 0;
     std::set<int16_t> natively_delivered;
     std::set<int16_t> present;  // the objects on the lot this tick (the log's list)
+    std::set<size_t> deferred;  // nested records already used out of order (calls')
 
     // Brings the native world's variables to what the original's lookups found, counting
     // those that were already the same.
@@ -175,6 +176,28 @@ std::optional<bool> ReplayHost::run_check(const Tree* t, const ObjectFile* file,
     const StepRec* outer = r.step;
     const ObjectFile* outer_file = r.file_of_top;
     while (!chk.done()) {
+        // A record for a call that ran its callee's steps first is past them: skip it here.
+        while (r.nested_pos < r.nested.size() && r.deferred.count(r.nested[r.nested_pos])) r.nested_pos++;
+        // A node whose step calls a tree (CallNamedTree, opcode 28) is logged when it ends,
+        // after its callee's steps: its record is the next one with its tree and node.
+        {
+            const Frame& top = chk.top();
+            const Node* tn = top.tree && top.node < top.tree->nodes.size() ? &top.tree->nodes[top.node] : nullptr;
+            if (tn && tn->opcode == 28) {
+                size_t k = r.nested_pos;
+                while (k < r.nested.size() && !(r.log->steps[r.nested[k]].tree == (uint16_t)top.tree->id && r.log->steps[r.nested[k]].node == top.node)) k++;
+                if (k < r.nested.size() && k != r.nested_pos) {
+                    const StepRec& cs = r.log->steps[r.nested[k]];
+                    r.deferred.insert(r.nested[k]);
+                    note("queue: a check's call step as the log's (its record after its callee's)");
+                    r.step = &cs;
+                    r.file_of_top = top.file;
+                    chk.reset_iterations();
+                    chk.step();
+                    continue;
+                }
+            }
+        }
         if (r.nested_pos >= r.nested.size()) {
             note("queue: a check ran past the log's steps of it");
             if (getenv("REPLAY_SHOW_PUSH")) std::printf("past: Sim %d at %d:%d depth %zu\\n", me.id(), chk.top().tree ? chk.top().tree->id : -1, chk.top().node, chk.stack().size());
@@ -255,6 +278,12 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
             const StepRec& end = r.log->steps[r.nested[r.nested_pos - 1]];
             (got == (end.node == 254) ? same : different)++;
         };
+        if (getenv("REPLAY_SHOW_AUTONOMY")) {
+            std::printf("evaluation by %d: %zu candidates, present %zu; objects", me.id(), cands.size(), r.present.size());
+            int16_t lastid = -1;
+            for (const Candidate& c : cands) if (c.object->id() != lastid) { lastid = c.object->id(); if (lastid > 190) std::printf(" %d", lastid); }
+            std::printf("; 197 present %d, in world %d\n", (int)r.present.count(197), r.world.find(197) != nullptr);
+        }
         const auto checks = run_evaluation(r.world, me, *this, cands);
         on_check = nullptr;
         size_t unfinished = 0;

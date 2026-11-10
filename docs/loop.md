@@ -1038,7 +1038,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 3 of 16.
+Iteration 4 of 16.
 
 - **Iteration 1, chunk 1 (a table's first tree per table; PushAction by the object's
   table).** Object 198 is the group meal, whose table has action 4201 twice (guards 4202 and
@@ -1060,3 +1060,9 @@ Iteration 3 of 16.
   native at Mom's house, the club's 116 uses unchanged. In the evaluation (`REPLAY_EVALUATION`)
   the checks' results the same went 153 → 195, different 45 → 20 (218 not finished). Next:
   the next thing the checks stop at.
+
+- **Iteration 4, chunk 2 (the evaluation's checks run through).** A call step's record is
+  after its callee's: taken from there inside checks; trees resolved by the object's own file
+  (the paper girl's guard was missed). Checked (`REPLAY_EVALUATION`): 410 of 433 check results
+  as the log's (3 different, 20 unfinished), one evaluation exactly; the defaults and the club
+  unchanged. Next: the last differences, so it can be on by default.

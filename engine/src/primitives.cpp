@@ -76,8 +76,8 @@ PrimResult idle_for_input(Interpreter& in, const Node& n, Object& me, World& wor
     if (entry.interaction >= 0 && tab.table && (size_t)entry.interaction < tab.table->size()) {
         for (uint16_t id : {tab.first, (*tab.table)[(size_t)entry.interaction].guard}) {
             if (!id) continue;
-            const Tree* t = world.library().tree(tab.file, id);
-            const std::optional<bool> ok = t ? host.run_check(t, tab.file, target->id()) : std::nullopt;
+            const Tree* t = world.library().tree(target->file, id);  // as the object's own file names it
+            const std::optional<bool> ok = t ? host.run_check(t, target->file, target->id()) : std::nullopt;
             if (!ok || !*ok) return PrimResult::Stop;
         }
     } else {

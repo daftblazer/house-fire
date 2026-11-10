@@ -48,12 +48,14 @@ std::vector<EvaluationCheck> run_evaluation(const World& world, const Object& me
         if (c.object != last) {  // a new object: its table's first tree, once
             last = c.object;
             if (tab.first) {
-                const Tree* t = world.library().tree(tab.file, tab.first);
-                out.push_back({c.object, tab.first, nullptr, t ? host.run_check(t, tab.file, c.object->id()) : std::nullopt});
+                const Tree* t = world.library().tree(c.object->file, tab.first);
+                out.push_back({c.object, tab.first, nullptr, t ? host.run_check(t, c.object->file, c.object->id()) : std::nullopt});
             }
         }
-        const Tree* g = world.library().tree(tab.file, c.interaction->guard);
-        out.push_back({c.object, c.interaction->guard, &c, g ? host.run_check(g, tab.file, c.object->id()) : std::nullopt});
+        // The trees as the object's own file names them (a person's table is its semi-global
+        // file's, whose ids the object's file resolves).
+        const Tree* g = world.library().tree(c.object->file, c.interaction->guard);
+        out.push_back({c.object, c.interaction->guard, &c, g ? host.run_check(g, c.object->file, c.object->id()) : std::nullopt});
     }
     return out;
 }
