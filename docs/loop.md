@@ -847,3 +847,35 @@ game run on past its end with no input, the usual headless run of 330 s. 6,869 p
 3.8 minutes of play. Unlike the club's logs, the Sims' needs move here: of 37 motive values
 read, 29 change (270 changes), Sims 12 and 237 losing theirs a point at a time and refilling
 some, so the motive system can now be checked. The observer does not log positions yet.
+
+# The sixth loop
+
+Planned 2026-11-10 with the user, now that a home-lot log exists: `work/logs/home.log`, the
+household at Mom's house (above), with the observer's `P` records (each object's place when
+it changes, in sixteenths of a tile). Same rules and limits as the fifth: one well-defined
+part an iteration, checked by replay and lockstep on a log (the home log and the club's), a
+piece that cannot be checked is not built, one-line commits, never pushed, no RK3566.
+
+## Chunks, in order
+
+1. **Mom's house from the save.** The memory card's save holds the neighbourhood in the
+   disc's chunk formats (16 `ObjM`, the `Arry` chunks, `NBRS`, `FAMI`, `HOUS`), so the
+   readers should load it: find the save's lot blocks on the card
+   (`work/inputs/mom-live/memcard_a.raw`), read Mom's house, and run `replay` over the home
+   log from it (the replay taking a lot from the card, not only from the disc).
+2. **The motives.** Their change each tick, SetMotiveDelta (29), and what refills them;
+   checked against the home log's motive reads (29 of 37 values change, 270 changes).
+3. **Autonomy.** What a Sim with nothing queued chooses (the interactions' advertisements
+   and the scores), checked against the interactions the home log's Sims push.
+4. **Routing.** A Sim's walk over the lot's floors and walls, checked against the `P`
+   records (positions a sixteenth of a tile a tick) and GotoRoutingSlot / GotoRelative's
+   results.
+
+## Limits
+
+Stop after iteration 16, when the chunks are done, or when two iterations in a row end
+without a commit (record why here).
+
+## Progress
+
+Iteration 0 of 16.
