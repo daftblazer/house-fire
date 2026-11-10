@@ -3,6 +3,7 @@
 
 pub mod bhav;
 pub mod disc;
+pub mod expression;
 pub mod iff;
 pub mod interp;
 

@@ -1213,8 +1213,8 @@ chunks 2 (from the goal on) to 5 continue on the Rust engine afterwards.
 
 # The ninth loop: the Rust port
 
-Planned 2026-11-10 at the user's request, with a quarter of an hour between iterations. The
-engine and its tools move from C++ to Rust, behaviour unchanged: the C++ engine is moved to
+Planned 2026-11-10 at the user's request, its iterations back to back (the other loops keep
+a quarter of an hour between). The engine and its tools move from C++ to Rust, behaviour unchanged: the C++ engine is moved to
 `engine-cpp/` and stays the reference until the port is done, the Rust one is built in its
 final place (`engine/`, a Cargo crate: the library, the `replay` and `lockstep` binaries, the
 tests). One module an iteration, ported in the dependency order and checked before the next:
@@ -1251,7 +1251,7 @@ without a commit (record why here). Then the eighth loop resumes.
 
 ## Progress
 
-Iteration 2 of 16.
+Iteration 3 of 16.
 
 - **Iteration 1, chunk 1 (the crate and the readers).** The C++ engine moved to
   `engine-cpp/` (built with clang from there, its home-log replay output the very same as
@@ -1267,3 +1267,10 @@ Iteration 2 of 16.
   the C++ `Frame&`) and frames' locals read by index. Checked: `test_interp`'s ten cases as
   Rust tests, every assertion the C++ one's, all passing (the C++ `test_interp: ok`); clippy
   clean. Next: `expression` and `test_expression`.
+
+- **Iteration 3, chunk 2 (the expression primitive).** `expression` ported: the 16-bit
+  arithmetic wrapping as the original's (`wrapping_add`, `_sub`, `_mul`, `_div`), the
+  modulo's -32768 kept as its 16-bit store keeps it, a float's step converted as the C++ does
+  (to 32 bits, then the low 16), an unknown operator an `Option` from the byte. Checked:
+  `test_expression`'s 26 checks as a Rust test, all passing (the C++ `test_expression: ok`);
+  clippy clean. Next: `primitives` and `test_primitives`.
