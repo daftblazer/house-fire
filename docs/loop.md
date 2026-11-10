@@ -878,7 +878,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 8 of 16.
+Iteration 9 of 16.
 
 - **Iteration 1, chunk 1 (Mom's house read from the save).** The card's save is the
   neighbourhood file with big-endian block headers and chunk tables (`lots.md`, "Saves");
@@ -937,3 +937,9 @@ Iteration 8 of 16.
   so `World::motives_run` stands for it, and the club logs' figures are kept. Chunk 2 done as
   far as the home log goes (motive 3 and the asleep path are not in it). Next: chunk 3,
   autonomy.
+
+- **Iteration 9, chunk 3 (autonomy measured).** Find Best Action is opcode 30, run by the
+  Sims' own script (PersonGlobals 8233); the home log has three choices (Sim 12 at ticks 260
+  and 1503, Sim 237 the easel at 1901); the other four interactions are the player's
+  (`simulation.md`, "Autonomy"). Next: the advertisements in the TTAB entries (their motive
+  fields), then the scores, checked as the log's choice among the native best four.

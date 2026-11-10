@@ -232,6 +232,29 @@ personality (`sMotiveDecayActiveMod`, `NeatMod`, `OutgoingMod`, `PlayfulMod`), a
 `MotiveConstantsClient::UpdateConstants`, which suggests the rates are game data: the
 engine's update is to be built from those, checked against every `N` record.
 
+## Autonomy
+
+A Sim with nothing to do chooses for itself through **Find Best Action** (opcode 30,
+Castaway's `cXPerson::TryFindBestAction`), which its own scripts run: in the home log all
+three uses are PersonGlobals 8233 at node 1, with an empty operand. Each pushes the chosen
+interaction on the Sim's stack (the next step is its tree at node 0, a new frame, its stack
+object the target) and the node is stepped again when it returns:
+
+| Tick | Sim | Chosen | Target |
+|---|---|---|---|
+| 260 | 12 | 8215 (a PersonGlobals interaction) | object 62 |
+| 1503 | 12 | 8223 | object 114 |
+| 1901 | 237 | 4097, the easel's | object 152 (the easel) |
+
+The interactions the household starts otherwise in the log (four, at ticks 931 to 1791)
+come through "Wait For Notify" while the recorded input still plays: the player's. The
+scoring is to be built from the interactions' advertisements (their TTAB entries), the
+motives (native now), the distance (the `P` records) and the autonomy tuning table (FCNS 2:
+attenuations, the minimum scores, "random selection count" 4). As the choice is random among
+the best four with the original's own random numbers (which the engine does not copy,
+`plan.md`), the check is that the log's choice is among the native best four, and the
+scores' order where the log shows it.
+
 ## Still open
 
 - What wakes a sleeping stack early (23 of 2,833 sleeps).
