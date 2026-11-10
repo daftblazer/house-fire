@@ -1251,7 +1251,7 @@ without a commit (record why here). Then the eighth loop resumes.
 
 ## Progress
 
-Iteration 6 of 16.
+Iteration 7 of 16.
 
 - **Iteration 1, chunk 1 (the crate and the readers).** The C++ engine moved to
   `engine-cpp/` (built with clang from there, its home-log replay output the very same as
@@ -1305,3 +1305,14 @@ Iteration 6 of 16.
   the club's first objects 178 177 176 174 172 171; the save's 4,582 objects, the first lot's
   206, 54 Sims, 15 motive deltas); clippy clean. Chunk 3 done. Next: `primitives` and
   `test_primitives` (which exercise `ScriptVariables`).
+
+- **Iteration 7, chunk 2 (the primitives `test_primitives` checks).** The interpreter finds
+  trees through a `Trees` trait (the library's, or a test's), so that a primitive can push a
+  call without holding its host; a stack's sleep is its own `Sleep`, Idle given it and the top
+  frame together. Ported: SetToNext, Random, TestObjectType, PlaySound/Update/KillSounds,
+  Dialog, Idle and the motive deltas' step; each takes what it uses (the variables, the
+  world, the object's id). CallNamedTree, IdleForInput, PushAction and SetMotiveDelta are
+  checked by the replay alone, so they come with it (chunk 6). Checked: `test_primitives`'s
+  checks as a Rust test, each the C++ one's (its `me`, outside the world there, is the world's
+  object 5, the id it is given), all passing (the C++ `test_primitives: ok`); clippy clean.
+  Next: chunk 4, `motives` and `simulator` with `test_simulator`.

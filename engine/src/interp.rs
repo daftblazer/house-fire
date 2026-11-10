@@ -54,9 +54,18 @@ pub struct Frame {
     pub engine: bool,
 }
 
-pub trait Host {
-    /// The tree a [`TreeId`] names.
+/// Where the trees a [`TreeId`] names are kept: the library's, or a test's own.
+pub trait Trees {
     fn tree_at(&self, t: TreeId) -> &Tree;
+}
+
+impl Trees for crate::library::Library {
+    fn tree_at(&self, t: TreeId) -> &Tree {
+        crate::library::Library::tree_at(self, t)
+    }
+}
+
+pub trait Host: Trees {
     /// The tree a call names (`tree_kind` says which file); `None` if there is none.
     fn tree(&mut self, id: u16) -> Option<TreeId>;
     /// The primitive at `node`, for the interpreter's top frame.
@@ -93,6 +102,37 @@ pub enum Mode {
     Check,
 }
 
+/// A stack's sleep (Idle): passed over by the next `left` passes of the tick that reach it,
+/// then stepped again. A pass that stops early does not reach the objects after it, so their
+/// sleep does not count down (`docs/simulation.md`).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Sleep {
+    left: u32,
+    sleeping: bool,
+}
+
+impl Sleep {
+    pub fn sleep(&mut self, visits: u32) {
+        self.left = visits;
+        self.sleeping = true;
+    }
+    pub fn asleep(&self) -> bool {
+        self.sleeping && self.left > 0
+    }
+    /// A pass reached the sleeping stack.
+    pub fn pass_over(&mut self) {
+        self.left = self.left.saturating_sub(1);
+    }
+    /// Slept, and is being stepped again.
+    pub fn woke(&self) -> bool {
+        self.sleeping
+    }
+    pub fn wake(&mut self) {
+        self.sleeping = false;
+        self.left = 0;
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Interpreter {
     mode: Mode,
@@ -102,8 +142,7 @@ pub struct Interpreter {
     last_result: bool,
     finished: bool,
     error: Error,
-    left: u32,
-    sleeping: bool,
+    sleep: Sleep,
 }
 
 impl Interpreter {
@@ -116,8 +155,7 @@ impl Interpreter {
             last_result: false,
             finished: false,
             error: Error::None,
-            left: 0,
-            sleeping: false,
+            sleep: Sleep::default(),
         }
     }
 
@@ -128,12 +166,12 @@ impl Interpreter {
 
     /// Start `t` as the bottom frame with these parameters. A tree that cannot start (none, no
     /// nodes, a type-4 tree's negative node) ends at once, as a call to it fails.
-    pub fn start<H: Host + ?Sized>(&mut self, host: &H, t: Option<TreeId>, params: &[i16], file: Option<FileId>) {
+    pub fn start<T: Trees + ?Sized>(&mut self, trees: &T, t: Option<TreeId>, params: &[i16], file: Option<FileId>) {
         self.stack.clear();
         self.finished = false;
         self.error = Error::None;
         self.iterations = 0;
-        if t.is_some_and(|t| self.push(host, t, params)) {
+        if t.is_some_and(|t| self.push(trees, t, params)) {
             self.top().file = file;
         } else {
             self.fail(Error::CallFailed);
@@ -148,8 +186,8 @@ impl Interpreter {
     /// The engine's call (Bustin' Out's fn_8023EE1C, TreeSimImpl::Gosub): the frame's header is
     /// made from the tree (its parameter and local counts), the parameters given are copied in,
     /// and the first node is 0, or for a tree of type 4 the first parameter.
-    pub fn push<H: Host + ?Sized>(&mut self, host: &H, t: TreeId, params: &[i16]) -> bool {
-        let tree = host.tree_at(t);
+    pub fn push<T: Trees + ?Sized>(&mut self, trees: &T, t: TreeId, params: &[i16]) -> bool {
+        let tree = trees.tree_at(t);
         let count = tree.nodes.len() as i32;
         let mut node = 0i32;
         if tree.kind == 4 {
@@ -194,11 +232,11 @@ impl Interpreter {
     }
 
     /// A node's true or false target becomes the top frame's node; 253 is the error exit.
-    fn transition<H: Host + ?Sized>(&mut self, host: &H, value: bool) -> Step {
+    fn transition<T: Trees + ?Sized>(&mut self, trees: &T, value: bool) -> Step {
         let f = self.stack.last().expect("a frame");
         // A frame whose tree was not found (a saved frame naming a tree the files lack): an
         // error, as the original's missing tree, never a read through nothing.
-        let Some(n) = f.tree.and_then(|t| host.tree_at(t).nodes.get(f.node as usize)) else {
+        let Some(n) = f.tree.and_then(|t| trees.tree_at(t).nodes.get(f.node as usize)) else {
             return self.fail(Error::Missing);
         };
         let t = if value { n.true_target } else { n.false_target };
@@ -298,27 +336,19 @@ impl Interpreter {
         }
     }
 
-    /// A stack that sleeps (Idle): passed over by the next `visits` passes of the tick that
-    /// reach it (Simulator), then stepped again. A pass that stops early does not reach the
-    /// objects after it, so their sleep does not count down (`docs/simulation.md`).
-    pub fn sleep(&mut self, visits: u32) {
-        self.left = visits;
-        self.sleeping = true;
+    /// The stack's sleep (Idle).
+    pub fn sleep(&mut self) -> &mut Sleep {
+        &mut self.sleep
     }
     pub fn asleep(&self) -> bool {
-        self.sleeping && self.left > 0
+        self.sleep.asleep()
     }
-    /// A pass reached the sleeping stack.
     pub fn pass_over(&mut self) {
-        self.left = self.left.saturating_sub(1);
+        self.sleep.pass_over()
     }
-    /// Slept, and is being stepped again.
-    pub fn woke(&self) -> bool {
-        self.sleeping
-    }
-    pub fn wake(&mut self) {
-        self.sleeping = false;
-        self.left = 0;
+    /// The sleep and the top frame together, for Idle.
+    pub fn sleep_and_top(&mut self) -> (&mut Sleep, &mut Frame) {
+        (&mut self.sleep, self.stack.last_mut().expect("a frame"))
     }
 
     pub fn done(&self) -> bool {

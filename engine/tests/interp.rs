@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use housefire::TreeId;
 use housefire::bhav::{Node, RETURN_FALSE, RETURN_TRUE, TARGET_ERROR, Tree, TreeKind, tree_kind};
 use housefire::iff::Order;
-use housefire::interp::{Error, Host, Interpreter, Mode, PrimResult, Step};
+use housefire::interp::{Error, Host, Interpreter, Mode, PrimResult, Step, Trees};
 
 /// A node: opcode, targets, operand as four 16-bit fields.
 fn node(op: u16, t: u8, f: u8, v: [i16; 4]) -> Node {
@@ -51,10 +51,13 @@ impl TestHost {
     }
 }
 
-impl Host for TestHost {
+impl Trees for TestHost {
     fn tree_at(&self, t: TreeId) -> &Tree {
         &self.trees[t.0 as usize]
     }
+}
+
+impl Host for TestHost {
     fn tree(&mut self, id: u16) -> Option<TreeId> {
         self.by_id.get(&id).copied()
     }

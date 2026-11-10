@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 
 use housefire::bhav::{Node, Tree};
 use housefire::disc::Disc;
-use housefire::interp::{Error, Host, Interpreter, Mode, PrimResult};
+use housefire::interp::{Error, Host, Interpreter, Mode, PrimResult, Trees};
 use housefire::library::Library;
 use housefire::{FileId, TreeId};
 
@@ -21,10 +21,13 @@ struct RuleHost<'a> {
     own: FileId,
 }
 
-impl Host for RuleHost<'_> {
+impl Trees for RuleHost<'_> {
     fn tree_at(&self, t: TreeId) -> &Tree {
         self.lib.tree_at(t)
     }
+}
+
+impl Host for RuleHost<'_> {
     fn tree(&mut self, id: u16) -> Option<TreeId> {
         self.lib.tree(Some(self.own), id)
     }

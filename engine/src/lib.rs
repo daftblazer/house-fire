@@ -6,6 +6,7 @@ pub mod disc;
 pub mod expression;
 pub mod iff;
 pub mod library;
+pub mod primitives;
 pub mod interp;
 pub mod save;
 pub mod world;
