@@ -165,6 +165,25 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
         if (s.result == 2) { r.sim->stop_pass(); return PrimResult::Yield; }
         return s.after == n.true_target ? PrimResult::True : PrimResult::False;
     };
+    if (n.opcode == 8) {  // Random: the engine's own numbers; the result's range checked, the log's value taken
+        r.sync_variables(me, f, s);
+        ScriptVariables vars(r.world, me, f);
+        const PrimResult got = random(n, r.world, vars);
+        const PrimResult want = logged();
+        note(got == want ? "primitives: Random: the result the same natively" : "primitives: Random: DIFFERENT result");
+        // The original's number, where the log shows it (a parameter or local destination):
+        // within the range, and then set natively so the run goes on with it.
+        const uint8_t dscope = n.operand[2];
+        const int datum = n.operand[0] | n.operand[1] << 8;
+        const auto range = vars.get(n.operand[6], (int16_t)(n.operand[4] | n.operand[5] << 8));
+        const std::vector<int16_t>* after = dscope == 25 ? &s.locals_after : dscope == 9 ? &s.params_after : nullptr;
+        if (after && range && datum < (int)after->size()) {
+            const int16_t v = (*after)[(size_t)datum];
+            note(v >= 0 && (range->value <= 0 ? v == 0 : v < range->value) ? "primitives: Random: the original's number within the range" : "primitives: Random: the original's number OUT of the range");
+            vars.set(dscope, (int16_t)datum, v);
+        } else note("primitives: Random: the original's number not in the log (a temp or attribute)");
+        return want;
+    }
     if (n.opcode == 32) {  // TestObjectType
         r.sync_variables(me, f, s);
         ScriptVariables vars(r.world, me, f);
@@ -228,6 +247,10 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
             for (uint8_t b : n.operand) std::printf(" %02x", b);
             std::printf(" -> %s; so %d; lookups", s.after == n.true_target ? "true" : "false", s.stack_object);
             for (const LookupRec& v : s.lookups) std::printf(" [%d/%d=%d]", v.scope, v.data, v.value);
+            std::printf(" params");
+            for (size_t k = 0; k < s.params.size(); k++) std::printf(" %d>%d", s.params[k], s.params_after[k]);
+            std::printf(" locals");
+            for (size_t k = 0; k < s.locals.size(); k++) std::printf(" %d>%d", s.locals[k], s.locals_after[k]);
             std::printf("\n");
         }
     }

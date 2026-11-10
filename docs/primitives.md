@@ -61,6 +61,20 @@ Measured on the recompiled game:
 The engine has it as `idle()` (`engine/src/primitives.cpp`), `Interpreter::sleep` and the
 simulator's pass. `tests/test_primitives.cpp` and `tests/test_simulator.cpp` test it.
 
+## Random (opcode 8)
+
+A random number into a variable. The operand, as 16-bit little-endian fields: bytes 0-1 the
+destination's datum, byte 2 its scope; bytes 4-5 the range's datum, byte 6 its scope (a
+literal, 7, in every logged use). The destination gets a number from 0 up to the range, and
+the node goes to its true target.
+
+Measured with `replay`: all 339 uses (269 and 70 in two sessions) true natively; of those
+whose destination the log shows (a parameter or a local), all 294 numbers within their
+range. The numbers themselves are the engine's own, a deliberate difference (`plan.md`); the
+replay takes the original's. A range of 0 or less gives 0 (not seen in the logs).
+
+The engine has it as `random()` (`engine/src/primitives.cpp`).
+
 ## TestObjectType (opcode 32)
 
 Whether an object is of a type. The operand: a GUID (bytes 0-3, in the file's byte order),

@@ -14,6 +14,12 @@ namespace housefire {
 // game (docs/objects.md, "SetToNext").
 PrimResult set_to_next(const Node& n, World& world, ScriptVariables& vars);
 
+// Random (opcode 8): a number from 0 up to the range (operand bytes 4-5 its datum, byte 6 its
+// scope) into the destination (bytes 0-1 its datum, byte 2 its scope); true. The numbers are
+// the engine's own (World::rng). Measured: every logged result within its range
+// (docs/primitives.md, "Random").
+PrimResult random(const Node& n, World& world, ScriptVariables& vars);
+
 // TestObjectType (opcode 32): whether the object whose id a variable holds (operand bytes
 // 4-5 the datum, byte 6 the scope) is of the GUID in bytes 0-3. An id no object has: false.
 // Measured on the recompiled game (docs/primitives.md, "TestObjectType").

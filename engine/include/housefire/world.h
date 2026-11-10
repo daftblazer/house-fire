@@ -78,6 +78,19 @@ public:
     const std::map<int16_t, Object*>& by_id() const { return by_id_; }
     uint64_t version() const { return version_; }
 
+    // The game's random numbers (Random): the engine's own generator, not the original's
+    // (docs/plan.md, "Same game, new engine"). Seeded per game; xorshift64*.
+    struct Rng {
+        uint64_t state = 0x9E3779B97F4A7C15ull;
+        uint32_t next() {
+            state ^= state >> 12;
+            state ^= state << 25;
+            state ^= state >> 27;
+            return (uint32_t)((state * 0x2545F4914F6CDD1Dull) >> 32);
+        }
+        // A number from 0 up to n (n above 0), without the bias of a plain modulo.
+        uint32_t below(uint32_t n) { return (uint32_t)(((uint64_t)next() * n) >> 32); }
+    } rng;
     std::vector<int16_t> globals;        // scope 6
     std::vector<int16_t> neighbourhood;  // scope 34
     std::vector<int16_t> ad_range;       // scope 12: one shared value per datum (only 15 is used)

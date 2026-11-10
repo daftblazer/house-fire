@@ -11,6 +11,15 @@ uint32_t operand_guid(const Node& n) {
 }
 }  // namespace
 
+PrimResult random(const Node& n, World& world, ScriptVariables& vars) {
+    const auto& o = n.operand;
+    auto field = [&](int i) { return (int16_t)(n.order == Order::Little ? o[i] | o[i + 1] << 8 : o[i] << 8 | o[i + 1]); };
+    const std::optional<Variable> range = vars.get(o[6], field(4));
+    if (!range) return PrimResult::Stop;
+    const int16_t v = range->value > 0 ? (int16_t)world.rng.below((uint32_t)range->value) : 0;
+    return vars.set(o[2], field(0), v) ? PrimResult::True : PrimResult::Stop;
+}
+
 PrimResult test_object_type(const Node& n, World& world, ScriptVariables& vars) {
     const auto& o = n.operand;
     const int16_t data = (int16_t)(n.order == Order::Little ? o[4] | o[5] << 8 : o[4] << 8 | o[5]);

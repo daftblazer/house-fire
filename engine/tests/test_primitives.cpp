@@ -64,6 +64,16 @@ int main() {
     f.locals = {77};  // no such object
     CHECK(test_object_type(node(32, {0x22, 0x02, 0, 0, 0, 0, 25, 0}), w, vars) == PrimResult::False);
 
+    // Random: into a local, a literal range; always below it, and spread over it
+    f.locals = {0};
+    bool seen[7] = {};
+    for (int i = 0; i < 700; i++) {
+        CHECK(random(node(8, {0, 0, 25, 0, 7, 0, 7, 0}), w, vars) == PrimResult::True);
+        CHECK(f.locals[0] >= 0 && f.locals[0] < 7);
+        if (f.locals[0] >= 0 && f.locals[0] < 7) seen[f.locals[0]] = true;
+    }
+    for (bool b : seen) CHECK(b);
+
     // a made object takes the next id and goes in front
     auto o = std::make_unique<Object>();
     Object& made = w.make_object(std::move(o));

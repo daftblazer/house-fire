@@ -517,7 +517,7 @@ without a commit.
 
 ## Progress
 
-Iteration 9 of 12.
+Iteration 10 of 12.
 
 - **Iteration 1, chunk 1 (the tree stack and the base object).** Read the loader's code for
   everything after an object's data: the tree stack and its frames, the +192 member, the
@@ -594,3 +594,10 @@ Iteration 9 of 12.
   128, CallNamedTree 116, PlaySound 100 and fewer. TestObjectType needs no new system: it is
   native (`primitives.md`), all 181 uses the same (all false in this session; the true case
   in the unit test). Next: CallNamedTree and Random, which need no new system either.
+
+- **Iteration 10, chunk 5 (Random).** Native (`primitives.md`, "Random"), with the engine's
+  own generator as a listed difference (`plan.md`). Measured: all 339 uses true natively,
+  every one of the 294 numbers the log shows within its range. CallNamedTree was looked at
+  first: all 116 uses in the session go false without a call (the tree not found or not
+  run), too little to read its other path from; left for a session that calls one.
+  Next: chunk 6, SetToNext's open kinds.

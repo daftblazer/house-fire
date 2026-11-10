@@ -51,6 +51,7 @@ Deliberate differences:
 |---|---|---|---|
 | A new frame's locals | what the stack's memory held | zero | the scripts that read one first read zero in practice (`interpreter.md`, "The call"); reads are reported |
 | `++`/`--` then compare, on a float variable | compares a word read through a null pointer | compares the new value | a crash-class bug; no script in the logged session does it |
+| Random's numbers | the console's generator, shared with animation, sound and the rest | the engine's own (xorshift64*, `World::rng`), unbiased over the range | the numbers are as random and in the same ranges; a sequence the same as the original's would mean copying every other user of its generator. Lockstep and replay take the original's numbers |
 
 ## The CPU budget
 
