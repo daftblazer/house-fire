@@ -64,6 +64,11 @@ struct PlaceRec { uint32_t tick; int16_t id; int32_t x, y, level; };
 struct ScoreRec { uint32_t tick; float score; std::array<float, 16> motives; std::array<std::array<int16_t, 3>, 16> adverts; };
 struct BaseRec { uint32_t tick; float score; };
 
+// Autonomy's sorted list ('Y': the sort is recursive, so a tick's last is the whole list) and
+// the random number its choice draws ('R').
+struct ChoiceListRec { uint32_t tick; struct Entry { int16_t id; uint16_t interaction; float value; uint32_t takes_best; }; std::vector<Entry> entries; };
+struct RandomRec { uint32_t tick; uint8_t site; uint32_t value; };
+
 // A person's 16 motives when they changed, at the start of a tick (the 'N' record).
 struct MotiveRec { uint32_t tick; int16_t id; std::array<float, 16> motives; };
 
@@ -76,6 +81,8 @@ struct Log {
     std::vector<MotiveRec> motives;  // logs with 'N' records
     std::vector<ScoreRec> scores;    // logs with 'A' records
     std::vector<BaseRec> bases;      // logs with 'B' records
+    std::vector<ChoiceListRec> choice_lists;  // logs with 'Y' records
+    std::vector<RandomRec> randoms;           // logs with 'R' records
     uint32_t ticks = 0;
 };
 
@@ -121,6 +128,29 @@ inline bool read_log(const char* path, Log& log) {
             const uint32_t w = u32();
             std::memcpy(&r.score, &w, 4);
             log.bases.push_back(r);
+        }
+        else if (k == 'Y') {  // autonomy's sorted list
+            if (p + 2 > b.size()) break;
+            const uint16_t cnt = u16();
+            if (p + 16u * cnt > b.size()) break;
+            ChoiceListRec r{log.ticks, {}};
+            for (int i = 0; i < cnt; i++) {
+                ChoiceListRec::Entry e{};
+                e.id = (int16_t)u16();
+                u16();
+                e.interaction = (uint16_t)(u32() & 0xFFFF);
+                const uint32_t w = u32();
+                std::memcpy(&e.value, &w, 4);
+                e.takes_best = u32();
+                r.entries.push_back(e);
+            }
+            log.choice_lists.push_back(std::move(r));
+        }
+        else if (k == 'R') {  // the random number autonomy's choice draws
+            if (p + 5 > b.size()) break;
+            RandomRec r{log.ticks, u8(), 0};
+            r.value = u32();
+            log.randoms.push_back(r);
         }
         else if (k == 'W') {  // an evaluator's curves (tools/tree_log.py)
             if (p + 6 > b.size()) break;

@@ -50,10 +50,29 @@ float interaction_score(const std::vector<ScoreCurve>& curves, const std::vector
 // advert), over 1 + the attenuation × the distance in tiles (fn_801F1C18: from the two
 // places, 20 a level). The attenuation by the interaction's code: 1 none, 2, 3, 4 the tuning
 // table's low, moderate and high (FCNS 2), 0 the interaction's own value.
+float game_sqrt(float s);
 float person_distance(const Object& a, const Object& b);
 float attenuation(const Library& lib, const Interaction& e, bool visitor);
 float candidate_value(const Library& lib, const std::vector<ScoreCurve>& curves, const Object& person,
                       const Candidate& c, float base);
+
+// The list a choice is made from (fn_802266BC): the passing candidates whose value reaches
+// the tuning's minimum (FCNS 2, "min autonomy score for family" or "... for visitors"), best
+// first (values within 1e-7 kept in the candidates' order).
+struct Valued {
+    float value;
+    const Candidate* candidate;
+};
+std::vector<Valued> autonomy_list(const Library& lib, std::vector<Valued> values, bool visitor);
+
+// The choice's place in that list: one of the best "random selection count" (4) by a random
+// number (its remainder by that count, or by the list's length if shorter). Nullopt when the
+// list is empty. The original takes the best instead for a visitor's evaluation and when the
+// best entry has a flag of its interaction's set (not identified: none in the home log), and
+// none for a sitting Sim below "min autonomy score for sitting"; not built, as the log has
+// none of them. Measured: the home log's three choices, from the original's own random
+// numbers ('R'), the same as the original's.
+std::optional<size_t> autonomy_pick(const Library& lib, const std::vector<Valued>& list, uint32_t random);
 
 // One check of an evaluation: the object, the tree (a table's first tree, or a candidate's
 // guard; `candidate` null for a first tree), and its result (nullopt if it did not finish).

@@ -1038,7 +1038,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 11 of 16.
+Iteration 12 of 16.
 
 - **Iteration 1, chunk 1 (a table's first tree per table; PushAction by the object's
   table).** Object 198 is the group meal, whose table has action 4201 twice (guards 4202 and
@@ -1104,3 +1104,13 @@ Iteration 11 of 16.
   records. Checked: 102 candidate scores bit for bit (7 shifted past the set-aside object),
   the three choices at native ranks 2, 1 and 2: all among the best four. Next: the pick among
   the best four natively, and the evaluation's result made by the engine.
+
+- **Iteration 12, chunk 3 (the choice, native).** The original's pick read (the end of
+  `fn_802266BC`): the list sorted, entry `random % min(4, n)`; the observer logs the sorted list
+  (`Y`) and the random number (`R`), a new home log with the same 581,110 steps. The distance
+  needed the game's square root (two Heron steps, up to 4% over): with it every object's value
+  bit for bit. Checked: the three choices made natively with the original's random numbers
+  are the log's, the evaluation's stack object set by the engine; one list the same entire;
+  the home figures (561,398) and the club's (338,305, 68,202) unchanged, lockstep's 7,902 too.
+  Open: Sim 237's own interactions' values. Next: chunk 4, routing's first piece.
+

@@ -413,7 +413,25 @@ each among the best four the tuning's "random selection count" names. The choice
 is the original's random one (its numbers are not the engine's, `plan.md`), so the native
 choice is to pick among the best four with the engine's own numbers.
 
-Still to come: that pick and its result (the stack object, Find Best Action's push) native of those that pass (the
+**The choice, native** (`autonomy_list`, `autonomy_pick`). After the values, the original
+(the end of `fn_802266BC`) sorts its list best first (`Util_Sort`, 80110C38, the comparator
+8022667C: a difference within 1e-7 is a tie) and, for a family member's evaluation whose best
+entry lacks a flag of its interaction's, takes entry `random % min(count, n)`, `count` the
+tuning's "random selection count" (4), `random` the game's generator (`Sim_Random`, 8023C254:
+an LCG); otherwise the best. A sitting Sim's choice below "min autonomy score for sitting" is
+dropped. Its entry's object is the stack object, its interaction's string index kept. The
+distance in the values uses the game's own square root (`fn_801F1BB8`: 1 + s / 20, then two of
+Heron's steps; 4% over at s = 25), which `game_sqrt` copies: with it every object's value is
+the original's bit for bit. The observer logs the sorted list (`Y`) and the random number the
+choice draws (`R`). Checked (a new home log, the same 581,110 steps): one of the three lists the
+same entire (tick 1847), the others' objects' values bit for bit, all three choices made
+natively with the original's random numbers the log's (the stack object set by the engine).
+Open: Sim 237's own interactions value lower natively (7.24e-5 against 8.33e-5 at tick 186;
+the distance to a moving Sim, or a person's adverts), one of them (its interaction 14) missing
+from the native list, and one tie (object 124's two entries) in the other order. The visitor,
+flag and sitting branches are not built: the log has none.
+
+Earlier: the pick and its result (the stack object, Find Best Action's push) native of those that pass (the
 adverts, the motives, the distance, the tuning table), checked as each choice among the native
 best four.
 

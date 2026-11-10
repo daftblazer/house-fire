@@ -120,11 +120,21 @@ float interaction_score(const std::vector<ScoreCurve>& curves, const std::vector
     return total / (float)curves.size();
 }
 
+// The game's square root (fn_801F1BB8): a first guess of 1 + s / 20, then two of Heron's
+// steps; up to 4% over near s = 25, which the choices' values show (docs/simulation.md).
+float game_sqrt(float s) {
+    if (s <= 0.0f) return 0.0f;
+    float x = std::fmaf(s, 0.05f, 1.0f);
+    x = (x + s / x) * 0.5f;
+    x = (x + s / x) * 0.5f;
+    return x;
+}
+
 float person_distance(const Object& a, const Object& b) {
     const int32_t dx = a.x16 - b.x16, dy = a.y16 - b.y16;
     const float flat = (float)(dx * dx + dy * dy) * 0.00390625f;  // 1/256: sixteenths to tiles, squared
     const float up = (float)((a.level - b.level) * 20);
-    return std::sqrt(std::fmaf(up, up, flat));
+    return game_sqrt(std::fmaf(up, up, flat));
 }
 
 float attenuation(const Library& lib, const Interaction& e, bool visitor) {
@@ -142,6 +152,20 @@ float candidate_value(const Library& lib, const std::vector<ScoreCurve>& curves,
     const float score = interaction_score(curves, &c.interaction->adverts, person, person.motives);
     const float factor = 1.0f / std::fmaf(person_distance(person, *c.object), attenuation(lib, *c.interaction, false), 1.0f);
     return (score - base) * factor;
+}
+
+std::vector<Valued> autonomy_list(const Library& lib, std::vector<Valued> values, bool visitor) {
+    const float least = lib.tuning(visitor ? "min autonomy score for visitors" : "min autonomy score for family").value_or(0.0f);
+    std::erase_if(values, [&](const Valued& v) { return v.value < least; });
+    std::stable_sort(values.begin(), values.end(), [](const Valued& a, const Valued& b) { return b.value - a.value < -1e-7f; });
+    return values;
+}
+
+std::optional<size_t> autonomy_pick(const Library& lib, const std::vector<Valued>& list, uint32_t random) {
+    if (list.empty()) return std::nullopt;
+    const uint32_t count = (uint32_t)lib.tuning("random selection count").value_or(1.0f);
+    const uint32_t k = std::min<uint32_t>(std::max<uint32_t>(count, 1), (uint32_t)list.size());
+    return random % k;
 }
 
 }  // namespace housefire

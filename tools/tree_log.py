@@ -57,6 +57,18 @@ def records(path):
         elif k == b'B':
             if p + 8 > n: break
             yield 'B', (struct.unpack_from('<I', b, p)[0], struct.unpack_from('<f', b, p + 4)[0]); p += 8
+        elif k == b'Y':  # autonomy's sorted list: (id, interaction, value, takes-best flag)
+            if p + 2 > n: break
+            cnt = struct.unpack_from('<H', b, p)[0]; p += 2
+            if p + 16 * cnt > n: break
+            rows = []
+            for _ in range(cnt):
+                oid, _x, i4, val, f12 = struct.unpack_from('<hHIfI', b, p); p += 16
+                rows.append((oid, i4 & 0xFFFF, val, f12))
+            yield 'Y', rows
+        elif k == b'R':  # the random number autonomy's choice draws: (site, result)
+            if p + 5 > n: break
+            yield 'R', struct.unpack_from('<BI', b, p); p += 5
         elif k == b'W':
             if p + 6 > n: break
             ev, cnt = struct.unpack_from('<IH', b, p); p += 6

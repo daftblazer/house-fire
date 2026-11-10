@@ -290,6 +290,7 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
         on_check = nullptr;
         size_t unfinished = 0;
         for (const EvaluationCheck& c : checks) unfinished += !c.passed.has_value();
+        std::optional<int16_t> native_choice;
         {
             const auto curves = score_curves(r.lib);
             const float base = interaction_score(curves, nullptr, me, me.motives);
@@ -309,6 +310,52 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
             }
             note("autonomy: a candidate's score the same natively (its own adverts, the native motives)", scores_same);
             if (scores_diff) note("autonomy: a candidate's score DIFFERENT", scores_diff);
+            // The list and the choice natively (autonomy_list, autonomy_pick), against the
+            // original's sorted list ('Y', the tick's last) and with its random number ('R').
+            {
+                std::vector<Valued> vs;
+                for (const auto& [v, c] : values) vs.push_back({v, c});
+                const auto list = autonomy_list(r.lib, vs, false);
+                const ChoiceListRec* logged_list = nullptr;
+                for (const ChoiceListRec& l : r.log->choice_lists) if (l.tick == r.step->tick) logged_list = &l;
+                const RandomRec* rnd = nullptr;
+                for (const RandomRec& x : r.log->randoms) if (x.tick == r.step->tick) rnd = &x;
+                if (logged_list) {
+                    // The list's interaction number is the interaction's string index.
+                    auto index_of = [&](const Candidate& c) { return c.interaction->string_index; };
+                    bool same = logged_list->entries.size() == list.size();
+                    size_t flags_same = 0, flags_diff = 0;
+                    for (size_t i = 0; i < list.size() && i < logged_list->entries.size(); i++) {
+                        const auto& e = logged_list->entries[i];
+                        same = same && e.id == list[i].candidate->object->id() && (int)e.interaction == index_of(*list[i].candidate) && e.value == list[i].value;
+                        if (e.takes_best) flags_diff++; else flags_same++;
+                    }
+                    note(same ? "autonomy: the choice's list the same natively (objects, interactions, values bit for bit)" : "autonomy: the choice's list DIFFERENT");
+                    note("autonomy: the list's entries without the takes-best flag", flags_same);
+                    if (flags_diff) note("autonomy: the list's entries WITH the takes-best flag (not built)", flags_diff);
+                    if (!same && getenv("REPLAY_SHOW_AUTONOMY")) {
+                        std::printf("list at tick %u: log %zu, native %zu\n", r.step->tick, logged_list->entries.size(), list.size());
+                        for (size_t i = 0; i < std::max(list.size(), logged_list->entries.size()); i++) {
+                            if (i < logged_list->entries.size()) { const auto& e = logged_list->entries[i]; std::printf("  log %d/%u=%.9g", e.id, e.interaction, e.value); } else std::printf("  log -");
+                            if (i < list.size() && i < logged_list->entries.size() && getenv("REPLAY_SHOW_DISTANCE")) {
+                                const Candidate& c = *list[i].candidate;
+                                const float sc = interaction_score(curves, &c.interaction->adverts, me, me.motives);
+                                const float att = attenuation(r.lib, *c.interaction, false);
+                                const float implied = att > 0 ? ((sc - base) / logged_list->entries[i].value - 1.0f) / att : -1.0f;
+                                std::printf(" [d %.4f implied %.4f att %.2f me %d,%d,%d obj %d,%d,%d]", person_distance(me, *c.object), implied, att, me.x16, me.y16, me.level, c.object->x16, c.object->y16, c.object->level);
+                            }
+                            if (i < list.size()) std::printf("   native %d/%d(s%d,f%x)=%.9g\n", list[i].candidate->object->id(), index_of(*list[i].candidate), list[i].candidate->interaction->string_index, list[i].candidate->interaction->flags, list[i].value); else std::printf("   native -\n");
+                        }
+                    }
+                }
+                if (rnd) {
+                    const auto at = autonomy_pick(r.lib, list, rnd->value);
+                    const bool ok = at && list[*at].candidate->object->id() == s.stack_object_after;
+                    note(ok ? "autonomy: the native choice (the original's random number) the log's" : "autonomy: the native choice (the original's random number) NOT the log's");
+                    if (getenv("REPLAY_SHOW_AUTONOMY")) std::printf("pick at tick %u: random %u, index %d, native %d, log %d\n", r.step->tick, rnd->value, at ? (int)*at : -1, at ? list[*at].candidate->object->id() : -1, s.stack_object_after);
+                    if (ok) native_choice = list[*at].candidate->object->id();
+                }
+            }
             std::stable_sort(values.begin(), values.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
             size_t rank = 0;
             for (size_t i = 0; i < values.size(); i++)
@@ -323,8 +370,10 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
         note("autonomy: an evaluation's checks, result as the log's", same);
         note("autonomy: an evaluation's checks, result DIFFERENT", different);
         if (unfinished) note("autonomy: an evaluation's checks, not finished", unfinished);
-        // The choice: the log's (the score is not native yet).
-        f.stack_object = s.stack_object_after;
+        // The choice: the native one, made with the original's random number (the engine's
+        // own numbers differ, docs/plan.md); the log's where there is none.
+        f.stack_object = native_choice ? *native_choice : s.stack_object_after;
+        if (native_choice) note("autonomy: an evaluation's result (the stack object) made natively");
         return logged();
     }
     if (n.opcode == 29) {  // SetMotiveDelta
@@ -1106,6 +1155,9 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
     // The motives' own update (update_motives), on each person's logged motives ('N'
     // records): the native update of one record against the next. A pair it does not
     // reproduce is a change the scripts made, or a tick the original did not update it.
+    if (getenv("REPLAY_SHOW_TUNING") && lib.global())
+        for (const auto& [id, t] : lib.global()->tuning)
+            for (const auto& [name, v] : t) std::printf("tuning %u: %s = %g\n", id, name.c_str(), v);
     if (!bench && !log.motives.empty()) {
         MotiveRates rates;
         if (!rates.from(lib)) note("motives: a rate missing from the tuning tables");
