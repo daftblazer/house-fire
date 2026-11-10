@@ -517,7 +517,7 @@ without a commit.
 
 ## Progress
 
-Iteration 3 of 12.
+Iteration 4 of 12.
 
 - **Iteration 1, chunk 1 (the tree stack and the base object).** Read the loader's code for
   everything after an object's data: the tree stack and its frames, the +192 member, the
@@ -546,3 +546,12 @@ Iteration 3 of 12.
   section's three reads. All 16 lots end exactly at the stream's end; their lot parts are
   empty. Chunk 1 is done (the Arry chunks, floors and walls, wait for the systems that use
   them). Next: chunk 2, the native simulation tick.
+
+- **Iteration 4, chunk 2 (the pass).** Read the tick's pass over the objects and measured it
+  (`simulation.md`, `tools/tick_order.py`): each tick, ids 1 up to the highest at the
+  pass's start, asleep objects skipped, each stack stepped until it yields. Measured: 5,128
+  of 5,129 ticks run their objects in id order (the other: an object made in another's turn
+  runs inside it); no pass stops partway; 200 runs are the engine's own (the pie menu's
+  checks on a Sim's stack). The engine has it (`Simulator`, `test_simulator`). Next: a
+  native run of the club over many ticks, checked against the log step by step, the
+  primitives that are not native answered from the log.
