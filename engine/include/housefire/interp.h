@@ -38,6 +38,8 @@ struct Frame {
     // The object file the frame's trees are found in and its constants read from (the
     // original's +12): a call's is its caller's.
     const struct ObjectFile* file = nullptr;
+    // A frame the engine started rather than a script (the original's +8).
+    bool engine = false;
 };
 
 class Interpreter;

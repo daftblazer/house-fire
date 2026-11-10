@@ -37,6 +37,9 @@ struct Object {
     bool person = false;
     std::vector<int16_t> person_data; // scope 18
     std::vector<float> motives;       // scope 14, kept between -100 and 100
+    // Its tree stack, bottom first: a lot's objects' as the lot saved it (a frame whose tree
+    // is not on the disc keeps a null tree).
+    std::vector<Frame> stack;
 
     int16_t id() const { return data.size() > kDataObjectId ? data[kDataObjectId] : 0; }
 };

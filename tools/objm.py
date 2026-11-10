@@ -17,6 +17,9 @@ Layout, as Bustin' Out's loader (fn_801FDE80) reads it; traced on the recompiled
   the rest; the marks let a reader step from object to object. After the last object's
   section comes one more: the lot's own.
 
+section() reads an object's section up to the end of the base object's part: header, tables,
+tree stack and the rest (docs/lots.md, "An object's section").
+
 For every lot this reads the table and walks the mark chain, which must step forward and
 end at the stream's end, with one section per object of the table and one more.
 """
@@ -58,6 +61,84 @@ def header(m, start):
     r = recon.Reader(m, START + start)
     r.compressed = True
     return [r.r32() for _ in range(6)] + [r.r32(), r.r16()]
+
+
+VERSION = 80  # ObjM's version on the disc; the conditions below are the loader's
+
+
+def frame(r, v):
+    """A tree stack frame (fn_8023E9A8)."""
+    f = {}
+    if v > 25: f['stack_object'] = r.r16()
+    f['tree'] = r.r16()
+    f['node'] = r.r16()
+    nlocals, nparams = r.r8() & 0xFF, r.r8() & 0xFF
+    f['params'] = [r.r16() for _ in range(nparams)]
+    f['locals'] = [r.r16() for _ in range(nlocals)]
+    f['engine'] = r.r32()  # +8: set for a frame the engine started
+    if v > 46: f['file'] = r.r16()  # fn_801F961C: an index into the game's file list
+    return f
+
+
+def tree_stack(r, v):
+    """The object's tree stack (fn_8023F928): from version 24, a frame count, a capacity,
+    then the frames, bottom first."""
+    if v < 24: raise ValueError('old tree stacks are not read')
+    n, capacity = r.r32(), r.r32()
+    if not 0 <= n <= 64: raise ValueError(f'a tree stack of {n} frames')
+    return dict(capacity=capacity, frames=[frame(r, v) for _ in range(n)])
+
+
+def int_list(r):
+    """fn_80233084: a count, then that many 32-bit values."""
+    n = r.r32()
+    if not 0 <= n <= 4096: raise ValueError(f'a list of {n}')
+    return [r.r32() for _ in range(n)]
+
+
+def slot_entry(r, v):
+    """fn_802326CC."""
+    e = {'value': r.r32()} if v > 0 else {}
+    e['list'] = int_list(r)
+    return e
+
+
+def slots(r, v):
+    """The object's +192 member (fn_8023243C, then fn_80232E2C on its +36). Its meaning is
+    not known yet; on the disc's lots `a` is -1 and both lists are empty or short."""
+    out = {'a': r.r32()}
+    if out['a'] < 0:
+        if v > 78: out['c'] = r.r32()
+        n = r.r32()
+        if not 0 <= n <= 4096: raise ValueError(f'{n} slot entries')
+        out['entries'] = [slot_entry(r, v) if r.r32() else None for _ in range(n)]  # an int: present
+    else:
+        out['entries'] = [slot_entry(r, v) for _ in range(out['a'])]
+    return out
+
+
+def section(m, start, v=VERSION):
+    """An object's section up to the end of the base object's part (fn_801F1F20). The class's
+    own part (a Sim's motives and so on) follows, then an int, then the next mark."""
+    r = recon.Reader(m, START + start)
+    r.compressed = True
+    o = {'header': [r.r32() for _ in range(6)] + [r.r32(), r.r16()]}
+    n = r.r16()
+    o['attributes'] = [r.r16() for _ in range(n)]
+    o['temps'] = [r.r16() for _ in range(8)]
+    o['data'] = [r.r16() for _ in range(72)]
+    r.r16()  # always 0
+    o['stack'] = tree_stack(r, v)
+    if v > 4: o['slots'] = slots(r, v if v > 6 else 0)
+    if v > 4:  # fn_801F22D0: a count of 36-byte entries, two 16-bit values each
+        n = r.r16()
+        o['pairs'] = [(r.r16(), r.r16()) for _ in range(n)]
+    if v > 65: o['b'] = r.r32()
+    if v > 26:
+        n = r.r16()
+        o['shorts'] = [r.r16() for _ in range(n)]
+    o['base_end'] = r.pos - START
+    return o
 
 
 def main(argv):

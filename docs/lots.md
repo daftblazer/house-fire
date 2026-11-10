@@ -86,16 +86,49 @@ Every family, house, object, Sim, tree stack and relationship is saved through i
 2's map lists their `DoStream` / `ReconStream` functions), and so are the memory card's
 saves.
 
+## An object's section
+
+Read from the loader's code (`fn_801F1F20` and what it calls) and checked against the
+recompiled game's trace of the club: all 176 traced sections end the base object's part at
+exactly the traced position. Every condition below is on the stream's version (80 here); the
+engine and `tools/objm.py` read version 80 only.
+
+- The header (`fn_801F1E30`): six 32-bit values, an int, a 16-bit value.
+- The attributes (a count, then that many), 8 temps and 72 data fields.
+- A 16-bit value, always 0.
+- **The tree stack** (`fn_8023F928`): a frame count and a capacity (512), both 32-bit, then
+  the frames, bottom first. A frame (`fn_8023E9A8`):
+  - the stack object (16; every saved frame has 0);
+  - the tree id (16), as the object's scripts name it;
+  - the node (16);
+  - the counts of locals and of parameters (8 each);
+  - the parameters, then the locals (16 each);
+  - a 32-bit value, set for a frame the engine started (the frame's +8; none on the disc);
+  - the frame's file (`fn_801F961C`), a 16-bit index into the game's list of loaded files.
+    Within each lot every object of a type has the same index; across lots they differ, as
+    the list is built in load order. The engine does not keep it: a frame's file is its
+    object's.
+- The +192 member (`fn_8023243C`): a 32-bit value `a`. If it is negative: a 32-bit value,
+  then a list (`fn_80232E2C`: a count, then for each an int, and if that is set an entry).
+  If not: `a` entries. An entry (`fn_802326CC`) is a 32-bit value and a counted list of
+  32-bit values (`fn_80233084`). On the disc `a` is always -1. Not named yet.
+- A list of pairs (`fn_801F22D0`, the class's virtual): a 16-bit count, then two 16-bit
+  values each. Not named yet.
+- A 32-bit value, then a 16-bit count and that many 16-bit values. Not named yet.
+
+Then comes the class's own part (a Sim's motives, personality and so on, from
+`fn_800AD6E8`, `fn_80224C88` and others; other objects' from `fn_801D3F50` and the like), an
+int written by the loader, and the next mark.
+
+Over the 16 lots: 4,575 frames, one per object but for one stack of 2 and one of 3. All
+4,522 frames of objects with a definition on the disc name a tree that is there, with the
+node in it and exactly its parameter and local counts (`engine/tests/test_lots.cpp`). The
+other 53 are the characters'.
+
 ## Not decoded yet
 
-- **An object's section** (decoded so far):
-  - the header (`fn_801F1E30`: six 32-bit values, an int, a 16-bit value);
-  - its attributes (a count, then that many), 8 temps and 72 data fields (`fn_801F1F20`),
-    read by the engine;
-
-  Still to decode:
-  - the tree stack (`fn_8023F928`, frames `fn_8023E9A8`);
-  - the Sims' motives and the rest.
+- The class's own part of each object's section: the Sims' motives, personality and the
+  rest; the other classes'.
 - **The lot's own section.**
 - **The Arry chunks** (floors, walls and the like).
 - **The two 32-bit values and the counted ones** of each table entry.

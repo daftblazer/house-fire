@@ -33,6 +33,17 @@ int World::load_lot(const LotChunks& lot) {
         o->data = lo.data;
         o->attributes = lo.attributes;
         for (int k = 0; k < kObjectTemps && k < (int)lo.temps.size(); k++) o->temps[(size_t)k] = lo.temps[(size_t)k];
+        for (const SavedFrame& sf : lo.stack) {
+            Frame f;
+            f.tree = lib_.tree(o->file, sf.tree);
+            f.node = sf.node;
+            f.params = sf.params;
+            f.locals = sf.locals;
+            f.stack_object = sf.stack_object;
+            f.file = o->file;
+            f.engine = sf.engine;
+            o->stack.push_back(std::move(f));
+        }
         add(std::move(o));
     }
     return missing;

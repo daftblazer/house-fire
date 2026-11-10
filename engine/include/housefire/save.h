@@ -65,6 +65,17 @@ struct ObjectType {
 };
 std::vector<ObjectType> read_object_types(std::span<const uint8_t> objt);
 
+// A frame of an object's saved tree stack (docs/lots.md, "An object's section"). The tree is
+// named by its id as the object's scripts name it; the file the original saves with it (an
+// index into its list of loaded files, which depends on load order) is not kept: a frame's
+// file is its object's.
+struct SavedFrame {
+    int16_t stack_object = 0;
+    uint16_t tree = 0, node = 0;
+    std::vector<int16_t> params, locals;
+    bool engine = false;  // a frame the engine started (the original's +8)
+};
+
 // A lot's object as its table gives it, in the world's list order.
 struct LotObject {
     int16_t id = 0;
@@ -76,6 +87,15 @@ struct LotObject {
     // attributes (as many as the save gives), its 8 temps and its 72 data fields.
     int32_t header[8] = {};
     std::vector<int16_t> attributes, temps, data;
+    // Then its tree stack, bottom first, and the rest of the base object's part. The rest is
+    // read past but not used yet (to be named): the +192 member's lists, a list of pairs,
+    // a 32-bit value and a list of 16-bit values.
+    std::vector<SavedFrame> stack;
+    std::vector<std::pair<int16_t, int16_t>> pairs;
+    std::vector<int16_t> shorts;
+    // Where the base object's part ends; the class's own part (a Sim's motives and so on)
+    // runs from here to section_end.
+    size_t base_end = 0;
 };
 constexpr int kObjectDataFields = 72, kObjectTemps = 8;
 struct LotObjects {

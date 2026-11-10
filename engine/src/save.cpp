@@ -164,6 +164,65 @@ std::vector<ObjectType> read_object_types(std::span<const uint8_t> c) {
     }
 }
 
+namespace {
+
+constexpr int kVersion = 80;  // ObjM's version on Bustin' Out's disc; the conditions are its loader's
+
+int32_t count(SaveStream& r, int32_t limit, const char* what) {
+    const int32_t n = r.r32();
+    if (n < 0 || n > limit) throw FormatError(what);
+    return n;
+}
+
+// The +192 member (fn_8023243C, its list fn_80232E2C, entries fn_802326CC / fn_80233084):
+// read past.
+void skip_slot_entry(SaveStream& r) {
+    r.r32();
+    for (int32_t n = count(r, 4096, "ObjM: a slot list out of range"); n > 0; n--) r.r32();
+}
+
+void skip_slots(SaveStream& r) {
+    const int32_t a = r.r32();
+    if (a >= 0) {
+        if (a > 4096) throw FormatError("ObjM: slots out of range");
+        for (int32_t i = 0; i < a; i++) skip_slot_entry(r);
+        return;
+    }
+    if (kVersion > 78) r.r32();
+    for (int32_t n = count(r, 4096, "ObjM: slot entries out of range"); n > 0; n--)
+        if (r.r32()) skip_slot_entry(r);  // an int: the entry is there
+}
+
+// After the data: a zero, the tree stack (fn_8023F928, frames fn_8023E9A8, file
+// fn_801F961C), the +192 member, the pairs (fn_801F22D0), a 32-bit value, the shorts.
+void read_base_rest(SaveStream& r, LotObject& o) {
+    r.r16();
+    const int32_t frames = r.r32();
+    if (frames < 0 || frames > 64) throw FormatError("ObjM: a tree stack out of range");
+    r.r32();  // its capacity
+    for (int32_t i = 0; i < frames; i++) {
+        SavedFrame f;
+        f.stack_object = (int16_t)r.r16();
+        f.tree = (uint16_t)r.r16();
+        f.node = (uint16_t)r.r16();
+        const int nlocals = r.r8() & 0xFF, nparams = r.r8() & 0xFF;
+        for (int k = 0; k < nparams; k++) f.params.push_back((int16_t)r.r16());
+        for (int k = 0; k < nlocals; k++) f.locals.push_back((int16_t)r.r16());
+        f.engine = r.r32() != 0;
+        r.r16();  // the original's file index
+        o.stack.push_back(std::move(f));
+    }
+    skip_slots(r);
+    for (int n = r.r16(); n > 0; n--) {
+        const int16_t a = (int16_t)r.r16();
+        o.pairs.push_back({a, (int16_t)r.r16()});
+    }
+    r.r32();
+    for (int n = r.r16(); n > 0; n--) o.shorts.push_back((int16_t)r.r16());
+}
+
+}  // namespace
+
 LotObjects read_lot_objects(std::span<const uint8_t> m) {
     constexpr size_t kStart = 12;
     if (m.size() < kStart + 1 || std::memcmp(m.data() + 8, "MjbO", 4) != 0) throw FormatError("not an ObjM");
@@ -210,6 +269,9 @@ LotObjects read_lot_objects(std::span<const uint8_t> m) {
         for (int i = 0; i < kObjectTemps; i++) o.temps.push_back((int16_t)h.r16());
         for (int i = 0; i < kObjectDataFields; i++) o.data.push_back((int16_t)h.r16());
         if (o.data[11] != o.id) throw FormatError("ObjM: an object's data 11 is not its id");
+        read_base_rest(h, o);
+        if (h.pos() > sections[k].second) throw FormatError("ObjM: an object runs past its section");
+        o.base_end = kStart + h.pos();
     }
     out.lot_section = kStart + sections.back().first;
     out.lot_section_end = kStart + sections.back().second;

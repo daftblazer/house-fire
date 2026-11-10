@@ -480,7 +480,7 @@ Next, in order:
 - the simulation tick: which stacks run when, the sleep clock and pauses;
 - then the animation data, so that Animate, and the effects it makes, can be native.
 
-# The third loop (planned)
+# The third loop
 
 Planned 2026-11-09, after the second loop (above) and Castaway's survey (`survey.md`). Same
 rules as the second loop: one chunk an iteration, checked against the recompiled Bustin'
@@ -517,4 +517,14 @@ without a commit.
 
 ## Progress
 
-(none yet)
+Iteration 1 of 12.
+
+- **Iteration 1, chunk 1 (the tree stack and the base object).** Read the loader's code for
+  everything after an object's data: the tree stack and its frames, the +192 member, the
+  pairs, the trailing values (`lots.md`, "An object's section"). The engine reads them
+  (`SavedFrame`; each lot object's `Object::stack` holds its frames, resolved to trees).
+  Measured: all 176 traced sections of the club end the base part at exactly the traced
+  position; over the 16 lots, all 4,522 frames of objects with a definition resolve to a tree
+  with their node in range and exactly its parameter and local counts. The frame's file is
+  an index into a load-order list; the engine uses the object's file. Next: the class's own
+  part (the Sims' motives and personality, the other classes'), then the lot's section.
