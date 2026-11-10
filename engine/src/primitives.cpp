@@ -33,4 +33,18 @@ PrimResult set_to_next(const Node& n, World& world, ScriptVariables& vars) {
     return PrimResult::False;
 }
 
+PrimResult idle(Interpreter& in, Frame& f, const Node& n, uint32_t now) {
+    const int16_t index = (int16_t)n.operand16(0);
+    if (index < 0 || (size_t)index >= f.params.size()) return PrimResult::True;
+    if (in.woke()) {
+        in.wake();
+        f.params[(size_t)index] = 0;
+        return PrimResult::True;
+    }
+    const int16_t ticks = f.params[(size_t)index];
+    if (ticks <= 0) return PrimResult::True;
+    in.sleep_until(now + (uint32_t)ticks);
+    return PrimResult::Yield;
+}
+
 }  // namespace housefire

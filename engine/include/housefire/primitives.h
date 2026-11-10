@@ -14,4 +14,11 @@ namespace housefire {
 // game (docs/objects.md, "SetToNext").
 PrimResult set_to_next(const Node& n, World& world, ScriptVariables& vars);
 
+// Idle (opcode 0, the PC's Sleep): the stack sleeps for as many simulation ticks as the
+// frame's parameter (operand: its index) holds, yielding; when it is stepped again after
+// them, the parameter is 0 and the node goes to its true target. A missing parameter: no
+// sleep. Measured: 11,950 of 12,257 wake-ups exactly that many ticks on; the other 307 later,
+// by the length of pauses (docs/primitives.md, "Idle").
+PrimResult idle(Interpreter& in, Frame& f, const Node& n, uint32_t now);
+
 }  // namespace housefire

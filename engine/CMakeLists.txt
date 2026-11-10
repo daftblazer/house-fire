@@ -12,7 +12,7 @@ target_include_directories(housefire PUBLIC include)
 target_compile_options(housefire PRIVATE -Wall -Wextra)
 
 enable_testing()
-foreach(t test_interp test_disc test_expression test_lots)
+foreach(t test_interp test_disc test_expression test_lots test_primitives)
   add_executable(${t} tests/${t}.cpp)
   target_link_libraries(${t} housefire)
   add_test(NAME ${t} COMMAND ${t})

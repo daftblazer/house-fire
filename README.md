@@ -19,6 +19,7 @@ CXX=clang++ cmake -S engine -B work/build -G Ninja && ninja -C work/build
 work/build/test_interp                                      # the node step's rules
 work/build/test_expression                                  # the expression primitive's rules
 HOUSEFIRE_BUSTIN_ISO=/path/to/G4ME69.iso work/build/test_lots  # every lot of your disc, as a world
+work/build/test_primitives                                  # SetToNext's and Idle's rules
 HOUSEFIRE_BUSTIN_ISO=/path/to/G4ME69.iso work/build/test_disc  # every script on your disc
 work/build/lockstep LOG G4ME69.iso   # the native interpreter against a log of the recompiled game's
 ```

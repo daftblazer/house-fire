@@ -429,3 +429,13 @@ the new-game route, in a 4 GB scope at low priority, at most 330 s, one run at a
   (my slot, 78), whose systems (the neighbourhood, slots) come later.
 - **Next:** iteration 11, chunk 5: the next primitives by use. Idle (0), then the script
   side of Animate (44) and others, checked step by step.
+
+**Iteration 11** (chunk 5, part one: Idle):
+- **Idle (0)** sleeps the stack for parameter N's ticks: one yield, then no steps at all
+  until the wake. Then the parameter is 0 and the result true.
+  - 11,950 of 12,257 wake-ups are exactly N ticks on.
+  - 307 come later, by pause lengths: the sleep's clock stops while the game is paused.
+- **In the engine:** `idle()`, the interpreter's wake time (`sleep_until`, `asleep`), and
+  `tests/test_primitives.cpp` (Idle and SetToNext's rules, the next-id rule).
+- **Next:** iteration 12, the last: the script side of Animate (44, 24,000 steps: its
+  results, yields and variable writes such as the event local), and the loop's wrap-up.

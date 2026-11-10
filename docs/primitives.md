@@ -42,3 +42,21 @@ object).
 So the expression primitive (2) is most of what the interpreter does; then animation (44),
 change suit (6), sounds (23), set-to-next (31), dialogs (36), random (8). A few opcodes are
 accepted and never used by any script (Bustin' Out: 53, 57).
+
+## Idle (opcode 0)
+
+The PC's Sleep. The operand's first 16 bits are a parameter's index (the rest 0xFFFF). The
+stack sleeps for as many simulation ticks as that parameter holds: the step yields, and the
+stack is not stepped at all until then (no countdown each tick). When it is stepped again,
+the parameter is 0 and the node goes to its true target. A parameter of 0 or less: true at
+once.
+
+Measured on the recompiled game (a session of the new-game route):
+- 11,950 of 12,257 wake-ups come exactly that many ticks after the yield, with the
+  parameter 0 and the true target.
+- The other 307 come later, by a few lengths (227, 101, 168, 17, 269 ticks): pauses, while
+  the logged tick (the simulator's) goes on. So the sleep counts a clock that stops while the
+  game is paused, which comes with the pause system.
+
+The engine has it as `idle()` (`engine/src/primitives.cpp`) and `Interpreter::sleep_until`.
+`tests/test_primitives.cpp` tests it.

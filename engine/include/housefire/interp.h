@@ -97,6 +97,13 @@ public:
         if (k < 64) f.unset &= ~(uint64_t(1) << k);
     }
 
+    // A stack that sleeps (Idle): not stepped until the clock reaches `wake`. The clock is
+    // the simulation's ticks, which stop while the game is paused.
+    void sleep_until(uint32_t wake) { wake_ = wake; sleeping_ = true; }
+    bool asleep(uint32_t now) const { return sleeping_ && now < wake_; }
+    bool woke() const { return sleeping_; }  // slept, and is being stepped again
+    void wake() { sleeping_ = false; }
+
     bool done() const { return finished_; }
     bool result() const { return last_result_; }  // the last return (or a check tree's answer)
     Error error() const { return error_; }
@@ -117,6 +124,8 @@ private:
     bool last_result_ = false;
     bool finished_ = false;
     Error error_ = Error::None;
+    uint32_t wake_ = 0;
+    bool sleeping_ = false;
 };
 
 }  // namespace housefire
