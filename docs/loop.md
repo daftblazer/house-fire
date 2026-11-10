@@ -1038,7 +1038,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 8 of 16.
+Iteration 9 of 16.
 
 - **Iteration 1, chunk 1 (a table's first tree per table; PushAction by the object's
   table).** Object 198 is the group meal, whose table has action 4201 twice (guards 4202 and
@@ -1088,3 +1088,8 @@ Iteration 8 of 16.
   tiles from the two places, 20 a level), which is what iteration 7 tested; f27 = 1, f29 the
   family's or a visitor's minimum, f28 a function of its own (`fn_80267D48`). Next: the
   curves' data and f28 logged, so the score and the value are native.
+
+- **Iteration 9, chunk 3 (the curves and the base, logged).** The observer dumps the motive
+  curves (`W`) and the base score (`B`); a new home log, the same steps. The score recomputed
+  from the curves: 105 of 111 bit for bit, 6 by the last bit. Next: the score native in the
+  engine (and where the curves come from in the game's data), then the choice.

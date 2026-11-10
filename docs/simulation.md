@@ -378,8 +378,20 @@ family's or a visitor's, the tuning's "min autonomy score" for each); f28 is
 `fn_80267D48` on the same evaluator before the candidates (the score of no advert, it seems).
 Still approximate: f28 (the lowest score here) and the code to attenuation mapping.
 
-Still to come: f28 and f30 read exactly, the motive curves (their data) so the score is native,
-and the selection among the best of those that pass (the
+**The curves, logged.** The observer's `W` records dump the evaluator's curves where the base
+score is taken (`Autonomy_BaseScore`, 80267D48, its result a `B` record): 9 curves for each of
+the two evaluators (Sim 12's and Sim 237's), each a motive, points (x, y) and per-segment
+slopes (1 / the segment's width). The score, recomputed from them: for each curve, the advert
+for its motive (the minimum, plus the delta × the personality value / 1000 where it names
+one; a personality p is the table at 0x802D17F8, 12 bytes an entry, its person data field
+and whether it counts 1000 less it), × 0.001, plus the motive; the curve there (the segment
+found from the end: y + (v − x) × slope × (y' − y); beyond the ends, the end's y); averaged.
+Checked: 105 of the 111 logged scores bit for bit, the other 6 off by the last bit (26.283998
+against 26.284000). The bases are logged too (26.91314 at tick 186: the lowest score, as
+approximated before).
+
+Still to come: the last bit, the score and value native in the engine (the curves' source
+in the game's data), and the selection among the best of those that pass (the
 adverts, the motives, the distance, the tuning table), checked as each choice among the native
 best four.
 

@@ -107,6 +107,14 @@ inline bool read_log(const char* path, Log& log) {
             log.passes[log.ticks].stopped_at = u32();
             in_pass = false;
         }
+        else if (k == 'B') { if (p + 8 > b.size()) break; p += 8; }
+        else if (k == 'W') {  // an evaluator's curves (tools/tree_log.py)
+            if (p + 6 > b.size()) break;
+            p += 4;
+            const uint16_t cnt = u16();
+            if (p + (size_t)cnt * (8 + 256 + 128) > b.size()) break;
+            p += (size_t)cnt * (8 + 256 + 128);
+        }
         else if (k == 'A') {  // an autonomy score (tools/tree_log.py)
             if (p + 12 + 64 + 132 > b.size()) break;
             p += 12 + 64 + 132;

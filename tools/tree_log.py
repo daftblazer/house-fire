@@ -54,6 +54,19 @@ def records(path):
                 inner, ptr = struct.unpack_from('<HI', b, p); p += 6
                 rows.append(((off, inner), ptr, b[p:p + 196])); p += 196
             yield 'O', (obj, rows)
+        elif k == b'B':
+            if p + 8 > n: break
+            yield 'B', (struct.unpack_from('<I', b, p)[0], struct.unpack_from('<f', b, p + 4)[0]); p += 8
+        elif k == b'W':
+            if p + 6 > n: break
+            ev, cnt = struct.unpack_from('<IH', b, p); p += 6
+            curves = []
+            for _ in range(cnt):
+                motive, npts = struct.unpack_from('<II', b, p); p += 8
+                pts = struct.unpack_from('<64f', b, p); p += 256
+                slopes = struct.unpack_from('<32f', b, p); p += 128
+                curves.append((motive, [(pts[2 * i], pts[2 * i + 1]) for i in range(min(npts, 32))], list(slopes[:min(npts, 32)])))
+            yield 'W', (ev, curves)
         elif k == b'A':
             if p + 12 + 64 + 132 > n: break
             ev, ad = struct.unpack_from('<II', b, p)
