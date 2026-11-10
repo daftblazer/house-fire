@@ -237,6 +237,14 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
         if (got == PrimResult::Continue) r.natively_delivered.insert(me.id());
         return got == PrimResult::Continue ? got : logged();
     }
+    if (n.opcode == 29) {  // SetMotiveDelta
+        ScriptVariables vars(r.world, me, f);
+        if (auto got = set_motive_delta(n, me, vars)) {
+            note(*got == logged() ? "primitives: SetMotiveDelta the same natively" : "primitives: SetMotiveDelta: DIFFERENT");
+            return *got;
+        }
+        note("primitives: SetMotiveDelta: an influence, the log's taken");
+    }
     if (n.opcode == 36) {  // Dialog: the replay plays the player, answering when the original's did
         if (s.result != 2) r.world.dialog_answer = s.after == n.true_target;
         const PrimResult got = dialog(n, r.world, me);
@@ -470,9 +478,11 @@ void place_quiet_stacks(const Log& log, const World& world, std::map<uint32_t, i
 }  // namespace
 
 // One run of the club over the log: with bench, timed and not counted.
-bool run(const Log& log, const Library& lib, const LotChunks& club, const std::vector<Neighbour>& neighbours, Bench* bench) {
+bool run(const Log& log, const Library& lib, const LotChunks& club, const std::vector<Neighbour>& neighbours, Bench* bench, bool card_lot = false) {
     World world(lib);
     world.load_lot(club);
+    // The disc's club: its motives do not move by themselves (measured; World::motives_run).
+    world.motives_run = card_lot;
     world.neighbours = neighbours;
     if (log.lists.empty() || log.lists[0].ids.size() != world.objects().size()) {
         std::printf("the log does not start with the lot loaded (%zu objects in its first list, %zu in the lot)\n",
@@ -541,18 +551,18 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
         const PassRec pass = have_passes ? log.passes.at(t) : PassRec{};
         if (have_passes) note(sim.cursor() == (int16_t)pass.from ? "passes: the native cursor where the log's pass starts" : "passes: DIFFERENT start");
         std::vector<int16_t> native_turns;
-        std::vector<Object*> motives_due;  // persons whose turn ends with the motive update (in id order)
+        std::vector<std::pair<Object*, bool>> motives_due;  // the persons reached, in id order, and whether their turn ends with the motive update
         size_t motives_done = 0;
         // Their updates, at the end of their turns: before the first step of an object with a
         // higher id (the pass goes up by id), or at the pass's end.
         auto motives_before = [&](int16_t id) {
-            for (; motives_done < motives_due.size() && motives_due[motives_done]->id() < id; motives_done++)
-                sim.end_turn(*motives_due[motives_done]);
+            for (; motives_done < motives_due.size() && motives_due[motives_done].first->id() < id; motives_done++)
+                sim.end_turn(*motives_due[motives_done].first, motives_due[motives_done].second);
         };
         const auto p0 = Clock::now();
         for (auto [o, asleep] : sim.pass_order()) {
             if (pass.stopped_at && o->id() > (int16_t)pass.stopped_at) break;
-            if (sim.begin_turn(*o)) motives_due.push_back(o);
+            if (o->person) motives_due.push_back({o, sim.begin_turn(*o)});
             if (asleep) sim.pass_over(*o);
             else native_turns.push_back(o->id());
         }
@@ -816,7 +826,7 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
                     if (i != 3 && i != 13 && o->motives[(size_t)i] != m.motives[(size_t)i])
                         note("motives: different after the tick: person " + std::to_string(m.id) + " motive " + std::to_string(i) +
                              (std::fabs(o->motives[(size_t)i] - m.motives[(size_t)i]) < 1e-3f ? " (by a last bit)" : ""));
-            if (!same && getenv("REPLAY_SHOW_MOTIVES") && m.id == 237 && shown_motives++ < 6) {
+            if (!same && getenv("REPLAY_SHOW_MOTIVES") && m.id == 237 && t >= 5020 && shown_motives++ < 6) {
                 std::printf("tick %u person %d (object %p):", t, m.id, (void*)o);
                 for (int i : {5, 6, 7, 8, 9, 14, 15}) std::printf("  m%d native %.6g log %.6g", i, o->motives[(size_t)i], m.motives[(size_t)i]);
                 std::printf("\n");
@@ -916,14 +926,14 @@ int main(int argc, char** argv) {
     if (lots.empty()) { std::printf("no lots\n"); return 1; }
     const LotChunks& the_lot = lot_index < 0 || lot_index >= (int)lots.size() ? lots.back() : lots[(size_t)lot_index];
     if (!bench) {
-        if (!run(log, lib, the_lot, neighbours, nullptr)) return 1;
+        if (!run(log, lib, the_lot, neighbours, nullptr, card_path != nullptr)) return 1;
         for (const auto& [k, n] : counts) std::printf("  %-66s %zu\n", k.c_str(), n);
         return 0;
     }
     // The benchmark: five runs, each figure the median of the runs (the PC is shared).
     quiet = true;
     std::vector<Bench> runs(5);
-    for (Bench& b : runs) if (!run(log, lib, the_lot, neighbours, &b)) return 1;
+    for (Bench& b : runs) if (!run(log, lib, the_lot, neighbours, &b, card_path != nullptr)) return 1;
     auto median = [&](auto f) {
         std::vector<double> v;
         for (const Bench& b : runs) v.push_back(f(b));

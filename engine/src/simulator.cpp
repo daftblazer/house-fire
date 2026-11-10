@@ -1,5 +1,7 @@
 #include "housefire/simulator.h"
 
+#include "housefire/primitives.h"
+
 #include <algorithm>
 
 namespace housefire {
@@ -45,11 +47,14 @@ std::vector<std::pair<Object*, bool>> Simulator::pass_order() {
 bool Simulator::begin_turn(Object& o) {
     if (!o.person || o.definition || !motive_rates_ok_) return false;
     if (o.motives.size() < 16 || o.motives_b.size() < 16 || o.person_data.size() < 7) return false;
-    return ++o.turns % 60 == 0;
+    if (++o.turns % 60 != 0) return false;
+    return o.data.size() <= 34 || o.data[34] == 0;  // the gate's object +106 (data field 34)
 }
 
-void Simulator::end_turn(Object& o) {
-    update_motives(motive_rates_, o.motives, o.motives_b, o.person_data[3], o.person_data[6], world_.hour);
+void Simulator::end_turn(Object& o, bool update_due) {
+    if (!o.person || !world_.motives_run) return;
+    apply_motive_deltas(o);
+    if (update_due) update_motives(motive_rates_, o.motives, o.motives_b, o.person_data[3], o.person_data[6], world_.hour);
 }
 
 void Simulator::tick() {
@@ -66,14 +71,14 @@ void Simulator::tick() {
         const bool motives_due = begin_turn(*e.object);
         if (in.asleep()) {
             in.pass_over();
-            if (motives_due) end_turn(*e.object);
+            end_turn(*e.object, motives_due);
             i++;
             continue;
         }
         stop_ = false;
         in.reset_iterations();
         const int steps = in.run();
-        if (motives_due) end_turn(*e.object);
+        end_turn(*e.object, motives_due);
         if (on_turn) on_turn(*e.object, steps);
         if (stop_ || world_.stop_pass) { stopped_at = e.id; break; }
         // A turn that made, removed or renumbered objects: on from the next id.

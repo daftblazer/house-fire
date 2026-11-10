@@ -53,6 +53,19 @@ PrimResult push_action(Interpreter& in, Frame& f, const Node& n, World& world);
 // every answer true (the dialogs' one button); docs/simulation.md, "Dialogs".
 PrimResult dialog(const Node& n, World& world, const Object& me);
 
+// SetMotiveDelta (opcode 29): a running change of one of the Sim's (`me`) motives. Its
+// operand (Castaway's SetMotiveDeltaParam): byte 0 the change's scope and field 4 its datum
+// (a change an hour), byte 1 the stop value's scope and field 6 its datum, byte 2 the motive,
+// byte 3 flags (1 clear all first; 2 and 4 an influence on the Sim or the stack object, not
+// this, nullopt). The change a tick is the hour's / 1800 (30 ticks a second, a game hour a
+// real minute). Measured: the home log's one use, Sim 237 at the easel, fun +48 an hour to
+// 50: its 593 steps of +0.026667 the same (docs/simulation.md, "The motives").
+std::optional<PrimResult> set_motive_delta(const Node& n, Object& me, ScriptVariables& vars);
+
+// A person's running motive changes, as one of its turns begins: each moves its motive by
+// its change, not past its stop value.
+void apply_motive_deltas(Object& person);
+
 // PlaySound (23), Update (7) and KillSounds (48): requests to the presentation, queued on the
 // world for the front ends (World::presentation); the step is true. In the logs they are true
 // every time (100, 168 and 2 uses) and never change their frame.

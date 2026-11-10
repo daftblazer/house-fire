@@ -43,6 +43,9 @@ struct Object {
     std::vector<int16_t> person_data; // scope 18
     std::vector<float> motives;       // scope 14, kept between -100 and 100
     std::vector<float> motives_b;
+    // Its running motive changes (SetMotiveDelta's; the save's +1120 list): each a motive,
+    // its change a tick and the value it stops at, applied as each of its turns begins.
+    std::vector<LotObject::MotiveDelta> motive_deltas;
     uint32_t turns = 0;               // the passes that have reached it (a person's motives update every 60th)     // the motives as of their last update (Motives::Sim's copy)
     // A Sim's interaction queue as the lot saved it: the entry it was on, the rest queued.
     SavedQueueEntry current;
@@ -122,6 +125,12 @@ public:
     // The clock's hour (the motive update reads it only for a sleeping person; the clock is
     // not modelled yet).
     int hour = 12;
+    // Whether the persons' motives move by themselves on this lot (the update and the running
+    // changes). At Mom's house they do (the home log); at the club they do not (its logs:
+    // 1 of 47 motive values changes). What decides it is the update gate's third test, a
+    // virtual call not identified yet (docs/simulation.md, "The motives"); until then the lot's
+    // loader says.
+    bool motives_run = true;
     std::vector<int16_t> globals;        // scope 6
     std::vector<int16_t> neighbourhood;  // scope 34
     std::vector<Neighbour> neighbours;   // the neighbourhood's, in id order (read_neighbours)

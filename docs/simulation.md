@@ -205,10 +205,28 @@ reaching them). At the end of the turn: that turn's scripts read the motives as 
 The gate's +66 is 1 for the paper girl (an NPC with a file of its own), who is never updated;
 0 for the family. Native (`Simulator::begin_turn`, `end_turn`). Checked (`replay --card`):
 the persons' motives after each tick against the `N` records, 99 the same; the reads of
-another's motives (scope 15) that differ fell from 338 to 23. What is left is Sim 237's
-motive 15 (fun), which a running change moves every few ticks: SetMotiveDelta's (the +1120
-list), not native yet. Not yet either: motive 3's own update, the clock's hour (read only
-while asleep), what the gate's +66 is. Castaway names the update's parts: `Motives`
+another's motives (scope 15) that differ fell from 338 to 23. 
+
+**Running changes** (SetMotiveDelta, opcode 29; the save's +1120 list). Its operand, by
+Castaway's `SetMotiveDeltaParam`: byte 0 the change's scope and field 4 its datum, byte 1 the
+stop value's scope and field 6 its datum, byte 2 the motive, byte 3 flags (1 clear all; 2
+and 4 an influence, not modelled). The change is an hour's: a tick's is it / 1800. In the
+home log Sim 237 paints at the easel: `art_easel`'s constants 2 and 3, fun +48 an hour up to
+50, +0.026667 a tick. Each change applies at the end of each of the person's turns, before
+the update; the first in the turn that set it. Native (`set_motive_delta`,
+`apply_motive_deltas`, `Simulator::end_turn`). Checked (`replay --card`): 703 of the 704
+after-tick motive states as the log's (the one left a change to the paper girl's hunger),
+the SetMotiveDelta step the same; the differing scope-15 reads 23 of 41,427.
+
+**At the club** the motives do not move by themselves (its logs: 1 of 47 values changes,
+though five dancers have saved running changes): neither the update nor the changes run.
+What decides it is the gate's third test (a virtual call through the object's +4, not
+identified; its +106 test is data field 34, which is 0 for every Sim at Mom's house and 1 for
+some at the club). Until it is found, the lot's loader says (`World::motives_run`; the replay
+sets it off for the disc's club, which keeps the club logs' figures as they were).
+
+Not yet: motive 3's own update, the clock's hour (read only while asleep), the gate's +66
+(1 for the paper girl) and its third test, an influence's change. Castaway names the update's parts: `Motives`
 (`Sim`, `InitDecayRates`), a base decay table (`sMotiveDecayBase`) and changes to it by
 personality (`sMotiveDecayActiveMod`, `NeatMod`, `OutgoingMod`, `PlayfulMod`), and
 `MotiveConstantsClient::UpdateConstants`, which suggests the rates are game data: the

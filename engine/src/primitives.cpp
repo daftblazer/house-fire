@@ -1,4 +1,5 @@
 #include "housefire/primitives.h"
+#include <algorithm>
 
 namespace housefire {
 
@@ -96,6 +97,33 @@ PrimResult dialog(const Node& n, World& world, const Object& me) {
     world.dialog_object = 0;
     world.dialog_answer.reset();
     return PrimResult::True;
+}
+
+std::optional<PrimResult> set_motive_delta(const Node& n, Object& me, ScriptVariables& vars) {
+    const auto& o = n.operand;
+    auto field = [&](int i) { return (int16_t)(n.order == Order::Little ? o[i] | o[i + 1] << 8 : o[i] << 8 | o[i + 1]); };
+    const uint8_t flags = o[3];
+    if (flags & 6) return std::nullopt;  // an influence: not this
+    if (!me.person) return PrimResult::Stop;
+    if (flags & 1) me.motive_deltas.clear();
+    const auto rate = vars.get(o[0], field(4));
+    const auto stop = vars.get(o[1], field(6));
+    if (!rate || !stop) return PrimResult::Stop;
+    const LotObject::MotiveDelta d{o[2], (float)rate->value / 1800.0f, (float)stop->value};
+    // One change a motive: a new one takes the old one's place (the log has only one use).
+    auto it = std::find_if(me.motive_deltas.begin(), me.motive_deltas.end(), [&](const auto& x) { return x.motive == d.motive; });
+    if (it != me.motive_deltas.end()) *it = d;
+    else me.motive_deltas.push_back(d);
+    return PrimResult::True;
+}
+
+void apply_motive_deltas(Object& p) {
+    for (const auto& d : p.motive_deltas) {
+        if (d.motive < 0 || (size_t)d.motive >= p.motives.size()) continue;
+        float& m = p.motives[(size_t)d.motive];
+        if (d.rate > 0 && m < d.target) m = std::min(m + d.rate, d.target);
+        else if (d.rate < 0 && m > d.target) m = std::max(m + d.rate, d.target);
+    }
 }
 
 PrimResult present(const Node& n, World& world, const Object& me) {

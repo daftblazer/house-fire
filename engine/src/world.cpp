@@ -56,6 +56,7 @@ int World::load_lot(const LotChunks& lot) {
             o->person_data = lo.person_data;
             o->motives = lo.motives;
             o->motives_b = lo.motives_b;
+            o->motive_deltas = lo.motive_deltas;
             o->current = lo.current;
             o->queue = lo.queue;
         }

@@ -878,7 +878,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 7 of 16.
+Iteration 8 of 16.
 
 - **Iteration 1, chunk 1 (Mom's house read from the save).** The card's save is the
   neighbourhood file with big-endian block headers and chunk tables (`lots.md`, "Saves");
@@ -929,3 +929,11 @@ Iteration 7 of 16.
   the end of the turn, not for an NPC with its own file; native in the simulator. Checked:
   99 after-tick motive states as the log's, the differing scope-15 reads 338 → 23. Next: the
   running motive changes (SetMotiveDelta, the +1120 list), Sim 237's fun.
+
+- **Iteration 8, chunk 2 (running motive changes).** SetMotiveDelta native (its operand by
+  Castaway's `SetMotiveDeltaParam`; the change an hour's / 1800), the changes applied at the
+  end of each turn. Checked: 703 of 704 after-tick motive states as the log's. At the club
+  motives do not move by themselves (measured); the gate's test that decides it is not found,
+  so `World::motives_run` stands for it, and the club logs' figures are kept. Chunk 2 done as
+  far as the home log goes (motive 3 and the asleep path are not in it). Next: chunk 3,
+  autonomy.

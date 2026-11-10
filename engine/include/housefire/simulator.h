@@ -28,9 +28,12 @@ public:
     // 8022501C), after its stack has run: in the log the turn's scripts read the motives as
     // they were before it. For a Sim of the family's, not a person with a file of its own (an
     // NPC: the paper girl, whose gate is set). Measured: docs/simulation.md, "The motives".
-    // begin_turn says whether this turn ends with the update; end_turn makes it.
+    // A person's running motive changes (SetMotiveDelta's) apply at the end of each of its
+    // turns too, before the update: the log's first change is in the turn that set it.
+    // begin_turn counts the turn and says whether it ends with the update; end_turn applies
+    // the changes, and the update if due.
     bool begin_turn(Object& o);
-    void end_turn(Object& o);
+    void end_turn(Object& o, bool update_due);
 
     // One tick: the pass over the objects, by id, from where the last one stopped (or id 1)
     // up to the highest id in use when the pass starts (an object made during it waits for
