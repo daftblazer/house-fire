@@ -197,9 +197,18 @@ in one rounding, as the original's `fmadds`). Checked by `replay --card` on each
 13, which it does not touch), 14 more where a script changed a motive in the same interval,
 none that differs. Sims 12 and 237 have person data 3 = 600 and 800, 6 = 800 and 700.
 
-Not yet: when it runs (every 60 ticks, from tick 121; by a virtual call into
-`fn_8022501C`, which skips a person whose +66 or another flag is set: Sim 237's updates stop
-at tick 5042), motive 3's own update, and the clock's hour (read only while asleep). Castaway names the update's parts: `Motives`
+**When it runs** (the observer's `U` records, a hook on `fn_8022501C`, named
+`Person_SimMotives` in the recomp): in a person's own turn, every 60th turn, a turn being a
+pass that reaches it, asleep or not (counted from the lot's load: 60, 120, …; both Sims' 45
+updates, and none in the 2,924 ticks the passes stopped at a dialog at object 196 before
+reaching them). At the end of the turn: that turn's scripts read the motives as they were.
+The gate's +66 is 1 for the paper girl (an NPC with a file of its own), who is never updated;
+0 for the family. Native (`Simulator::begin_turn`, `end_turn`). Checked (`replay --card`):
+the persons' motives after each tick against the `N` records, 99 the same; the reads of
+another's motives (scope 15) that differ fell from 338 to 23. What is left is Sim 237's
+motive 15 (fun), which a running change moves every few ticks: SetMotiveDelta's (the +1120
+list), not native yet. Not yet either: motive 3's own update, the clock's hour (read only
+while asleep), what the gate's +66 is. Castaway names the update's parts: `Motives`
 (`Sim`, `InitDecayRates`), a base decay table (`sMotiveDecayBase`) and changes to it by
 personality (`sMotiveDecayActiveMod`, `NeatMod`, `OutgoingMod`, `PlayfulMod`), and
 `MotiveConstantsClient::UpdateConstants`, which suggests the rates are game data: the

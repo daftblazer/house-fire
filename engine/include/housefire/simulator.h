@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "housefire/interp.h"
+#include "housefire/motives.h"
 #include "housefire/world.h"
 
 namespace housefire {
@@ -18,7 +19,18 @@ public:
     // The host an object's scripts run with (their primitives, and the trees they name).
     using MakeHost = std::function<std::unique_ptr<Host>(Object&)>;
 
-    Simulator(World& world, MakeHost make_host) : world_(world), make_host_(std::move(make_host)) {}
+    Simulator(World& world, MakeHost make_host) : world_(world), make_host_(std::move(make_host)) {
+        motive_rates_ok_ = motive_rates_.from(world.library());
+    }
+
+    // An object's turn (the pass has reached it, asleep or not): a person's turns are
+    // counted, and every 60th ends with its motives' own update (Person_SimMotives,
+    // 8022501C), after its stack has run: in the log the turn's scripts read the motives as
+    // they were before it. For a Sim of the family's, not a person with a file of its own (an
+    // NPC: the paper girl, whose gate is set). Measured: docs/simulation.md, "The motives".
+    // begin_turn says whether this turn ends with the update; end_turn makes it.
+    bool begin_turn(Object& o);
+    void end_turn(Object& o);
 
     // One tick: the pass over the objects, by id, from where the last one stopped (or id 1)
     // up to the highest id in use when the pass starts (an object made during it waits for
@@ -70,6 +82,8 @@ private:
     uint32_t now_ = 0;
     int16_t cursor_ = 0;
     bool stop_ = false;
+    MotiveRates motive_rates_;
+    bool motive_rates_ok_ = false;
 };
 
 }  // namespace housefire

@@ -514,6 +514,8 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
     for (size_t i = 0; i < log.steps.size(); i++) engine_run[i] = have_passes && !log.steps[i].in_pass;
     if (!have_passes) note("log: no pass records (an older log): every step taken as a turn, no tick as paused");
 
+    size_t motive_at = 0;  // the next 'N' record
+    int shown_motives = 0;
     for (uint32_t t = 1; t <= log.ticks; t++) {
         double tick_us = 0;
         const double sync_before = bench ? bench->sync_us : 0;
@@ -539,9 +541,18 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
         const PassRec pass = have_passes ? log.passes.at(t) : PassRec{};
         if (have_passes) note(sim.cursor() == (int16_t)pass.from ? "passes: the native cursor where the log's pass starts" : "passes: DIFFERENT start");
         std::vector<int16_t> native_turns;
+        std::vector<Object*> motives_due;  // persons whose turn ends with the motive update (in id order)
+        size_t motives_done = 0;
+        // Their updates, at the end of their turns: before the first step of an object with a
+        // higher id (the pass goes up by id), or at the pass's end.
+        auto motives_before = [&](int16_t id) {
+            for (; motives_done < motives_due.size() && motives_due[motives_done]->id() < id; motives_done++)
+                sim.end_turn(*motives_due[motives_done]);
+        };
         const auto p0 = Clock::now();
         for (auto [o, asleep] : sim.pass_order()) {
             if (pass.stopped_at && o->id() > (int16_t)pass.stopped_at) break;
+            if (sim.begin_turn(*o)) motives_due.push_back(o);
             if (asleep) sim.pass_over(*o);
             else native_turns.push_back(o->id());
         }
@@ -584,6 +595,7 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
             const StepRec& s = log.steps[i];
             if (engine_run[i]) { note("steps: outside the pass (the engine's own), not run"); continue; }
             if (consumed.count(i)) continue;
+            if (auto id0 = ids.find(s.sim); id0 != ids.end()) motives_before(id0->second);
             {
                 // A Sim waiting at IdleForInput with an entry queued, whose next logged steps are
                 // the engine's checks on a frame above: the IdleForInput step (the log's next
@@ -786,8 +798,31 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
             in.step();
             if (bench) { const double d = us(s0, Clock::now()); bench->steps_us += d; tick_us += d; bench->steps++; }
         }
+        motives_before(INT16_MAX);
         if (have_passes) note(sim.stop_asked() == (pass.stopped_at != 0) ? "passes: stopped (or not) as the log's" : "passes: DIFFERENT stop");
         sim.end_pass(have_passes ? (int16_t)pass.stopped_at : 0);
+        // The persons' motives after the tick against the log's ('N' records), then set to
+        // the log's (what the scripts not native yet wrote).
+        while (motive_at < log.motives.size() && log.motives[motive_at].tick < t) motive_at++;
+        for (; motive_at < log.motives.size() && log.motives[motive_at].tick == t; motive_at++) {
+            const MotiveRec& m = log.motives[motive_at];
+            Object* o = world.find(m.id);
+            if (!o || o->motives.size() < 16) { note("motives: a person not in the world"); continue; }
+            bool same = true;
+            for (int i = 0; i < 16; i++) if (i != 3 && i != 13 && o->motives[(size_t)i] != m.motives[(size_t)i]) same = false;
+            note(same ? "motives: the native motives as the log's after the tick (all but 3 and 13)" : "motives: DIFFERENT after the tick (set to the log's)");
+            if (!same)
+                for (int i = 0; i < 16; i++)
+                    if (i != 3 && i != 13 && o->motives[(size_t)i] != m.motives[(size_t)i])
+                        note("motives: different after the tick: person " + std::to_string(m.id) + " motive " + std::to_string(i) +
+                             (std::fabs(o->motives[(size_t)i] - m.motives[(size_t)i]) < 1e-3f ? " (by a last bit)" : ""));
+            if (!same && getenv("REPLAY_SHOW_MOTIVES") && m.id == 237 && shown_motives++ < 6) {
+                std::printf("tick %u person %d (object %p):", t, m.id, (void*)o);
+                for (int i : {5, 6, 7, 8, 9, 14, 15}) std::printf("  m%d native %.6g log %.6g", i, o->motives[(size_t)i], m.motives[(size_t)i]);
+                std::printf("\n");
+            }
+            std::copy(m.motives.begin(), m.motives.end(), o->motives.begin());
+        }
         if (bench) {
             tick_us -= bench->sync_us - sync_before;  // the replay's own, inside the steps
             if (bench->ticks.empty() || tick_us > bench->ticks[bench->worst_tick]) bench->worst_tick = bench->ticks.size();

@@ -878,7 +878,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 6 of 16.
+Iteration 7 of 16.
 
 - **Iteration 1, chunk 1 (Mom's house read from the save).** The card's save is the
   neighbourhood file with big-endian block headers and chunk tables (`lots.md`, "Saves");
@@ -923,3 +923,9 @@ Iteration 6 of 16.
   (`replay --card`, the `N` records): 75 update steps bit for bit, 14 with a script's change
   besides, none different. Next: when it runs (the caller and its gate, Sim 237's stop at
   tick 5042), so that the simulator runs it itself; then motive 3.
+
+- **Iteration 7, chunk 2 (when the motive update runs).** The observer logs the update's gate
+  (`U` records); a new home log, the same 581,110 steps. Every 60th of a person's turns, at
+  the end of the turn, not for an NPC with its own file; native in the simulator. Checked:
+  99 after-tick motive states as the log's, the differing scope-15 reads 338 → 23. Next: the
+  running motive changes (SetMotiveDelta, the +1120 list), Sim 237's fun.

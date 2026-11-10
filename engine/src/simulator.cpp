@@ -42,6 +42,16 @@ std::vector<std::pair<Object*, bool>> Simulator::pass_order() {
     return out;
 }
 
+bool Simulator::begin_turn(Object& o) {
+    if (!o.person || o.definition || !motive_rates_ok_) return false;
+    if (o.motives.size() < 16 || o.motives_b.size() < 16 || o.person_data.size() < 7) return false;
+    return ++o.turns % 60 == 0;
+}
+
+void Simulator::end_turn(Object& o) {
+    update_motives(motive_rates_, o.motives, o.motives_b, o.person_data[3], o.person_data[6], world_.hour);
+}
+
 void Simulator::tick() {
     // As the original's cursor (its +1424) does, each object is looked at when its id comes
     // up, so a turn that wakes a later object gives it its turn in this pass. The highest id
@@ -53,10 +63,17 @@ void Simulator::tick() {
         const Entry e = order_[i];
         Interpreter& in = *e.in;
         if (in.done()) { i++; continue; }
-        if (in.asleep()) { in.pass_over(); i++; continue; }
+        const bool motives_due = begin_turn(*e.object);
+        if (in.asleep()) {
+            in.pass_over();
+            if (motives_due) end_turn(*e.object);
+            i++;
+            continue;
+        }
         stop_ = false;
         in.reset_iterations();
         const int steps = in.run();
+        if (motives_due) end_turn(*e.object);
         if (on_turn) on_turn(*e.object, steps);
         if (stop_ || world_.stop_pass) { stopped_at = e.id; break; }
         // A turn that made, removed or renumbered objects: on from the next id.

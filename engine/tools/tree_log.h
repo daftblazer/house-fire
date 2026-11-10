@@ -107,6 +107,10 @@ inline bool read_log(const char* path, Log& log) {
             log.passes[log.ticks].stopped_at = u32();
             in_pass = false;
         }
+        else if (k == 'U') {  // a call of the motive update's gate (tools/tree_log.py)
+            if (p + 7 > b.size()) break;
+            p += 7;
+        }
         else if (k == 'N') {  // a person's motives changed (before the tick's 'K')
             if (p + 66 > b.size()) break;
             MotiveRec r{log.ticks, (int16_t)u16(), {}};
