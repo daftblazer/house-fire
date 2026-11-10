@@ -38,6 +38,14 @@ PrimResult call_named_tree(const Node& n, const Frame& f, const Library& lib);
 // that fails, a host that cannot run checks: Stop.
 PrimResult idle_for_input(Interpreter& in, const Node& n, Object& me, World& world, Host& host);
 
+// PushAction (opcode 13): queues an interaction for the Sim that is the stack object: the
+// interaction in place byte 0 of the target's interaction table (its file's TTAB), the
+// target the object whose id local byte 1 holds; true. Measured: the interactions the
+// controller pushes onto the club's Sims are the ones IdleForInput then delivers
+// (docs/simulation.md). Not modelled yet: operand bytes 2 and 3 (1 or 2; 0x0a), a target
+// whose file has several TTABs: Stop.
+PrimResult push_action(Interpreter& in, Frame& f, const Node& n, World& world);
+
 // PlaySound (23), Update (7) and KillSounds (48): requests to the presentation, queued on the
 // world for the front ends (World::presentation); the step is true. In the logs they are true
 // every time (100, 168 and 2 uses) and never change their frame.

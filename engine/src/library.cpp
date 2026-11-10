@@ -69,7 +69,8 @@ std::vector<std::string> read_strings(std::span<const uint8_t> d, Order o) {
 // tools/chunks.py reads the rest). Versions below 9 are plain fields in the file's order;
 // 9 and up are packed as the save stream is (a code byte 1, then its compressed fields; 11
 // opens with one field for the table). A table that does not read adds nothing.
-void read_ttab(std::span<const uint8_t> d, Order o, std::map<uint16_t, uint16_t>& out, std::map<uint16_t, uint16_t>& prefix) {
+void read_ttab(std::span<const uint8_t> d, Order o, std::map<uint16_t, uint16_t>& out, std::map<uint16_t, uint16_t>& prefix,
+               std::vector<std::pair<uint16_t, uint16_t>>& list) {
     try {
         Reader r(d, o);
         const uint16_t n = r.u16();
@@ -86,6 +87,7 @@ void read_ttab(std::span<const uint8_t> d, Order o, std::map<uint16_t, uint16_t>
                 r.u32();
                 if (version > 3) { r.u32(); r.u32(); }
                 r.take((version > 6 ? 6 : 2) * motives);
+                list.push_back({action, guard});
                 if (guard) out.emplace(action, guard);
             }
             return;
@@ -101,6 +103,7 @@ void read_ttab(std::span<const uint8_t> d, Order o, std::map<uint16_t, uint16_t>
             if (motives < 0 || motives > 64) return;
             for (int k = 0; k < 6; k++) f.r32();  // flags, string index, attenuation, threshold, joining
             for (int32_t k = 0; k < motives; k++) { f.r16(); f.r16(); f.r16(); }
+            list.push_back({action, guard});
             if (guard) out.emplace(action, guard);
         }
     } catch (const FormatError&) {
@@ -123,7 +126,12 @@ Library Library::bustin_out(const Disc& d) {
             f->tree_by_name.emplace(c->label, (uint16_t)c->id);
         }
         for (const Chunk* c : f->iff.of("STR#")) f->strings[(uint16_t)c->id] = read_strings(c->data, o);
-        for (const Chunk* c : f->iff.of("TTAB")) read_ttab(c->data, o, f->guard_of, f->prefix_of);
+        for (const Chunk* c : f->iff.of("TTAB")) {
+            std::vector<std::pair<uint16_t, uint16_t>> list;
+            read_ttab(c->data, o, f->guard_of, f->prefix_of, list);
+            if (f->ttabs++ == 0) f->interactions = std::move(list);
+            else f->interactions.clear();  // several tables: which an object uses is not known yet
+        }
         for (const Chunk* c : f->iff.of("BCON")) {
             // A count, a flags byte, then the values.
             if (c->data.size() < 2) continue;

@@ -766,7 +766,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 2 of 16.
+Iteration 3 of 16.
 
 - **Iteration 1, chunk 1 (the queue's entries and their delivery).** The engine keeps each
   Sim's saved queue (`Object::current`, `queue`); an entry's fields named from the log: the
@@ -785,3 +785,9 @@ Iteration 2 of 16.
   deliveries native, all 81 check steps the same, the pushed interactions the log's; steps
   the same on the 719-tick log 68,217. Next: what PushAction (13) queues, and the queue's
   later deliveries.
+
+- **Iteration 3, chunk 1 (PushAction).** Native: an interaction from the target's TTAB (by
+  place) queued for the stack object Sim (`simulation.md`). All 21 and 5 uses the same; one
+  more delivery native (6), 101 check steps the same. Open: operand bytes 2-3, repeated
+  pushes. Chunk 1 is as far as the logs show it; the Sims with nothing queued are autonomy's
+  (a later system). Next: chunk 2, Animate as the scripts see it.

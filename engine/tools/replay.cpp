@@ -232,6 +232,11 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
         if (got == PrimResult::Continue) r.natively_delivered.insert(me.id());
         return got == PrimResult::Continue ? got : logged();
     }
+    if (n.opcode == 13) {  // PushAction
+        const PrimResult got = push_action(in, f, n, r.world);
+        note(got == logged() ? "queue: PushAction the same natively" : got == PrimResult::Stop ? "queue: PushAction not modelled (the log's taken)" : "queue: PushAction DIFFERENT");
+        return logged();
+    }
     if (n.opcode == 23 || n.opcode == 7 || n.opcode == 48) {  // the presentation's requests
         const PrimResult got = present(n, r.world, me);
         r.world.presentation.clear();  // no front end here
@@ -571,7 +576,7 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
                 // 281:4 of this Sim) is run natively, its checks stepping through those steps.
                 auto id0 = ids.find(s.sim);
                 Object* w = id0 == ids.end() ? nullptr : world.find(id0->second);
-                if (w && w->person && !w->queue.empty() && (s.tree == 463 || s.tree == 265) && s.node == 0) {
+                if (w && w->person && !w->queue.empty() && s.node == 0) {
                     Interpreter& win = sim.stack_of(*w);
                     const auto& wst = win.stack();
                     const Node* wn = !win.done() && !wst.empty() && wst.back().tree && wst.back().node < wst.back().tree->nodes.size()

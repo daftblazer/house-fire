@@ -69,6 +69,20 @@ PrimResult idle_for_input(Interpreter& in, const Node& n, Object& me, World& wor
     return PrimResult::Continue;
 }
 
+PrimResult push_action(Interpreter& in, Frame& f, const Node& n, World& world) {
+    Object* sim = world.find(f.stack_object);
+    const Object* target = world.find(in.local(f, n.operand[1]));
+    if (!sim || !target || !target->file || target->file->ttabs != 1) return PrimResult::Stop;
+    const auto& table = target->file->interactions;
+    if (n.operand[0] >= table.size()) return PrimResult::Stop;
+    SavedQueueEntry e;
+    e.objects[0] = sim->id();
+    e.objects[1] = target->id();
+    e.tree = (int16_t)table[n.operand[0]].first;
+    sim->queue.push_back(e);
+    return PrimResult::True;
+}
+
 PrimResult present(const Node& n, World& world, const Object& me) {
     world.presentation.push_back({n.opcode, me.id(), n.operand});
     return PrimResult::True;

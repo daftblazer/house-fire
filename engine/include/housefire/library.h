@@ -36,6 +36,9 @@ struct ObjectFile {
     // From the interaction tables (TTAB): an interaction's action tree -> its guard (test) tree,
     // and -> the tree its table names to run first (version 11's field for the whole table).
     std::map<uint16_t, uint16_t> guard_of, prefix_of;
+    // The file's interactions in its table's order (action, guard), if it has one TTAB.
+    std::vector<std::pair<uint16_t, uint16_t>> interactions;
+    int ttabs = 0;
     std::vector<Definition> definitions;                 // OBJD, in the file's order
     std::string glob;                                    // the semi-global file it names
     const ObjectFile* semi = nullptr;                    // that file, if there is one

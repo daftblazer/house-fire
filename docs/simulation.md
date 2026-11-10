@@ -103,6 +103,15 @@ What the log shows of the queue so far (the fifth loop):
   deliveries made natively, their checks stepped natively through all 81 of the log's steps
   of them (the same at each), the interactions pushed as the log's. Not modelled yet: a check
   that fails, and a Sim with nothing queued (autonomy's: 3 and 2 Sims).
+- **PushAction (13)** queues an interaction for the Sim that is the stack object: the one in
+  place operand byte 0 of the target's interaction table (its file's TTAB, in order), the
+  target the object whose id local byte 1 holds. In the club the party controller (object 2)
+  pushes the dance floor's first interaction (4104) onto Sims 171, 172 and 174, which is what
+  they were saved with, and its own fourth onto 178, again every few ticks. Native
+  (`push_action`): all 21 (and 5) uses true as the log's; one more delivery is then made
+  natively (6 in all, 101 check steps the same). Bytes 2 and 3 (1 or 2; 0x0a: a priority and
+  flags?) and what the original does with an interaction pushed again while one is queued
+  are not known yet: no logged delivery shows them.
 
 Replay figures after its own fixes (2026-11-09: the frames saved below a stack's first step,
 returns into them, the file a rebuilt frame names its trees from): on the 719-tick log 68,273
