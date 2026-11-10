@@ -2555,15 +2555,17 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 let in_blocking = |p: (i32, i32)| obstacles_here.iter().any(|r| r[4] == BLOCKS && p.0 > r[0] && p.0 < r[2] && p.1 > r[1] && p.1 < r[3]);
                 let goal = if in_blocking(end) && pl.points.len() >= 3 { pl.points[pl.points.len() - 2] } else { end };
                 let room = |p: (i32, i32)| walls.room(p.0 >> 4, p.1 >> 4);
-                if room(start) == room(goal) {
+                let same_room = room(start) == room(goal);
+                {
                     let path = corner_path(start, goal, &obstacles_here, walls, half);
                     let is_corner = |p: &(i32, i32)| obstacles_here.iter().filter(|r| r[4] == BLOCKS).any(|r| [(r[0], r[1]), (r[2], r[1]), (r[0], r[3]), (r[2], r[3])].contains(p));
                     let theirs: Vec<(i32, i32)> = pl.points.iter().copied().filter(is_corner).collect();
                     let ours: Vec<(i32, i32)> = path.as_ref().map_or(Vec::new(), |p| p.iter().copied().filter(is_corner).collect());
-                    counts.note(if path.is_some() && ours == theirs {
-                        "routing: a plan within a room natively by the obstacles' corners as the planner's"
-                    } else {
-                        "routing: a plan within a room natively NOT by the planner's corners"
+                    counts.note(match (same_room, path.is_some() && ours == theirs) {
+                        (true, true) => "routing: a plan within a room natively by the obstacles' corners as the planner's",
+                        (true, false) => "routing: a plan within a room natively NOT by the planner's corners",
+                        (false, true) => "routing: a plan through a door natively by the obstacles' corners as the planner's",
+                        (false, false) => "routing: a plan through a door natively NOT by the planner's corners",
                     });
                     if show_obstacles {
                         println!("   corner path tick {}: native {path:?}; the planner's corners {theirs:?}, points {:?}", pl.tick, pl.points);

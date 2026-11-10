@@ -1185,7 +1185,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 14 of 16.
+Iteration 15 of 16.
 
 - **Iteration 1, chunk 1 (the rooms and their doors).** The third array is not the rooms (1
   inside, 7 outside); the rooms are the regions the walls close (`Walls::room`, a door left
@@ -1322,6 +1322,14 @@ Iteration 14 of 16.
   paper girl (a state test, `fn_801FD05C`, not read). Figures unchanged (561,398, 338,305,
   68,202, lockstep 7,902, 4, 24); clippy clean. Next: the planner's in-between points or the
   plans through doors (chunk 2), then the loop's end write-up.
+
+- **Iteration 15, chunk 2 (plans through a door).** The corner search run on the 4 plans that
+  change rooms: 3 by the planner's corners (the two crossings, tick 1901 to the back door); tick
+  260 (yard to the front door) natively by the house's wall corners on a slightly shorter
+  diagonal, the planner west then along the wall. A cost for crossing walk-through obstacles
+  tried at several weights and not kept (it does not give the planner's line). Figures
+  unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next: the loop's
+  end (iteration 16): the write-up of what is native and what is open.
 
 
 ## The eighth loop paused

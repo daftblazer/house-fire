@@ -660,6 +660,16 @@ persons; at exactly 3 tiles the log has them left out (the distance measured mid
 logged places being the tick's start). The 3 others are the paper girl, left out 22.6 and 32
 sixteenths off and when she is not the target: the state test, not yet read.
 
+**Plans through a door.** A plan breaks at a door (`The rooms`), so the pieces that change
+rooms are short: up to a door, through it, from it. The same search (`corner_path`; the door's
+opening is open to `Walls::line_open` and has no wall rectangle) takes the planner's corners in
+3 of the home log's 4: the two crossings (ticks 497 and 2038, straight through), and tick 1901
+(by the counter's two corners to the back door). The 4th, tick 260 from the yard to the front
+door, goes natively by the house's wall corners on a diagonal (146 sixteenths), where the
+planner goes west to an obstacle's corner (301, 125) and down along the wall (150): something it
+counts lies on the diagonal. A cost for crossing the walk-through obstacles (the flower beds,
+the trees, the door's own tile) at any weight does not give its line (tried, not kept).
+
 **Which objects block** (`routing::obstacle`). Read from the objects the loop asks about (`J`)
 against the object data the save gives: an object is left out when its flags (object data 8)
 have 0x4 (no extent: rugs, windows, wall lamps, paintings, the alarms, the phone) or it sits in
