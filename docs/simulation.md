@@ -302,8 +302,17 @@ At the club the replay finds 67 bursts of checks over many objects with about 4 
 checks each, against a native list of 599: either the club's evaluations are spread over many
 ticks a few candidates at a time, or they are something else. Open; the club is not claimed.
 
-Still to come: which candidates pass their guards, and how those score (the adverts, the
-motives, the distance, the tuning table).
+**Which pass.** A check's result is how its bottom frame returns (254 true, 255 false).
+Of the 145 checks, 40 pass at tick 186, 41 at 1443, 42 at 1847 (of 147): the sofas', the
+beds', the fridge's snack (8216), the toilet's (8225), the easel's (4099), the scenario
+controller's (265), the other Sim's social ones (8230, 265, 8297, 8272, …) among them; each
+choice's guard is among those that pass. Natively the guards are to run in the evaluation's
+turn (the check trees through `Host::run_check`, against the log's steps of them, as the
+interaction queue's are), which the replay's flow does not do yet.
+
+Still to come: the guards run natively in the turn, and the score of those that pass (the
+adverts, the motives, the distance, the tuning table), checked as each choice among the native
+best four.
 
 **The advertisements** (the interaction tables, TTAB; `Interaction`, `Library` keeps every
 file's by chunk id). A file can have several tables (a fridge's for cheap, moderate and

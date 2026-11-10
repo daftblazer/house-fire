@@ -878,7 +878,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 14 of 16.
+Iteration 15 of 16.
 
 - **Iteration 1, chunk 1 (Mom's house read from the save).** The card's save is the
   neighbourhood file with big-endian block headers and chunk tables (`lots.md`, "Saves");
@@ -973,3 +973,9 @@ Iteration 14 of 16.
   file's (person_sg for Sims, NPC_SG for NPCs); flag 0x40 keeps an interaction out too.
   Checked: the home log's three evaluations, objects and persons, all 421 checks the same in
   order. The club's bursts (about 4 checks each) do not match and are left open.
+
+- **Iteration 15, chunk 3 (which candidates pass).** The checks' results read from the log
+  (the bottom frame's return): 40, 41 and 42 pass in the three evaluations, each choice's
+  guard among them (`simulation.md`, "Which pass"). The native guard runs need the
+  evaluation inside the replay's turn; not built this iteration, as there is no checked
+  piece of it smaller than that.
