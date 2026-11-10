@@ -131,7 +131,7 @@ object after the target's in that order, or the first if the target is 0, of a k
 | 2 | not a Sim | not run in the session |
 | 3 | the next part of the target's multi-tile object, in list order, round from the last part to the first (false if the target is not a part); a part's object is its saved leader (`lots.md`, "The classes") | 141 same (`replay`) |
 | 4 | an object of the GUID in operand bytes 0-3 | 10,903 same |
-| 5 | the next neighbour, by neighbour id (Castaway's `Neighborhood::GetNextNeighborID`); after the last, false with the target 0. The neighbours are the neighbourhood file's NBRS records (below) | not modelled (468 steps) |
+| 5 | the next neighbour by id (Castaway's `Neighborhood::GetNextNeighborID`); after the last, the target 0 and false. The neighbours are NBRS's (below) | 468 same (`replay`) |
 | 6 | (open) objects akin to the GUID in bytes 0-3, read little-endian as the files are: 0x46F4E80B is the boombox, and in the club it finds the DJ booth's parts and the music controller, other stereos (in Castaway, kinds 0, 2 and 6 share one case of the search) | not modelled (2,188 steps) |
 
 The target is the stack object, or with flag 0x80 in operand byte 4 the variable of scope
@@ -148,15 +148,22 @@ then (the two in front, and others such as 141) are not yet made natively. That 
 
 ### The neighbours (SetToNext kind 5)
 
-In the session the walk is over 51 neighbour ids, ascending: 3-7, 9-11, 13-17, 19, 21-26,
-28, 29, 34, 36-63; after 63 the step is false and the target 0. They come from the
-neighbourhood file (`lots.md`), section 1, a chunk table like a lot's: NGBH, NBRS, then FAMI
-and "User" chunks. NBRS is the PC's layout, not the save stream: 0, its version (80),
-"SRBN", a count of 63 slots, then each slot: a word 0 if empty, else 1, a version (4), a
-name (zero-ended: "template_person", "grimreaper", "robot", "officer2" ...) and the
-neighbour's data. There are 51 records, one for each id walked, in the same order. The id
-of each is still to be found (it is at no fixed offset from the record's start or its name's
-end: the records' person data varies in length), and with it kind 5.
+Kind 5 walks the neighbours by id: from 0 the first, then the next above the target; after
+the last, the target 0 and false. In the session: 51 ids, 3-63 with gaps, and the native
+walk (`read_neighbours`, `World::neighbours`) the same on all 468 steps (`replay`).
+
+The neighbours are the neighbourhood file's (`lots.md`) section 1, a chunk table like a
+lot's (NGBH, NBRS, then FAMI and "User" chunks). NBRS is the PC's layout, not the save
+stream: 0, the version (80), "SRBN", a count of 63 slots, then each slot:
+- an empty one: a word 0;
+- a neighbour: a word 1, the record's version (4), a name (zero-ended, to an even
+  position: the character file, "template_person", "grimreaper", "robot", "maid" ...), an
+  int, an int "mode" (set: 80 16-bit values of person data follow), 128 bytes (to be named;
+  floats among them), the id (16 bits: the slot's number plus one), the GUID, -1, -2, and a
+  count of relationships, each a word 1, the other neighbour's id, a count and that many
+  32-bit values.
+
+All 51 records read to the chunk's exact end, their ids the walk's (`test_lots`).
 
 ## Objects made and removed
 

@@ -44,9 +44,16 @@ PrimResult set_to_next(const Node& n, World& world, ScriptVariables& vars) {
             default: return false;
         }
     };
-    if (kind != 0 && kind != 1 && kind != 2 && kind != 3 && kind != 4) return PrimResult::Stop;
+    if (kind != 0 && kind != 1 && kind != 2 && kind != 3 && kind != 4 && kind != 5) return PrimResult::Stop;
     const std::optional<Variable> cur = vars.get(scope, data);
     if (!cur) return PrimResult::Stop;
+    if (kind == 5) {
+        // The next neighbour by id; after the last, the target 0 and false.
+        for (const Neighbour& nb : world.neighbours)
+            if (nb.id > cur->value) return vars.set(scope, data, nb.id) ? PrimResult::True : PrimResult::Stop;
+        vars.set(scope, data, 0);
+        return PrimResult::False;
+    }
     if (kind == 3) {
         // The next part of the target's multi-tile object, in the list's order, round from the
         // last part to the first; false if the target is not a part of one.

@@ -376,9 +376,10 @@ void place_quiet_stacks(const Log& log, const World& world, std::map<uint32_t, i
 }  // namespace
 
 // One run of the club over the log: with bench, timed and not counted.
-bool run(const Log& log, const Library& lib, const LotChunks& club, Bench* bench) {
+bool run(const Log& log, const Library& lib, const LotChunks& club, const std::vector<Neighbour>& neighbours, Bench* bench) {
     World world(lib);
     world.load_lot(club);
+    world.neighbours = neighbours;
     if (log.lists.empty() || log.lists[0].ids.size() != world.objects().size()) {
         std::printf("the log does not start with the club loaded\n");
         return false;
@@ -605,17 +606,19 @@ int main(int argc, char** argv) {
     Disc d(argv[2]);
     if (!d.ok()) { std::printf("cannot read %s\n", argv[2]); return 1; }
     const Library lib = Library::bustin_out(d);
-    const auto lots = read_lots(d.read("Runtime/default.ngh"));
+    const auto ngh = d.read("Runtime/default.ngh");
+    const auto lots = read_lots(ngh);
+    const auto neighbours = read_neighbours(ngh);
     const bool bench = argc > 3 && std::string(argv[3]) == "--bench";
     if (!bench) {
-        if (!run(log, lib, lots.back(), nullptr)) return 1;
+        if (!run(log, lib, lots.back(), neighbours, nullptr)) return 1;
         for (const auto& [k, n] : counts) std::printf("  %-66s %zu\n", k.c_str(), n);
         return 0;
     }
     // The benchmark: five runs, each figure the median of the runs (the PC is shared).
     quiet = true;
     std::vector<Bench> runs(5);
-    for (Bench& b : runs) if (!run(log, lib, lots.back(), &b)) return 1;
+    for (Bench& b : runs) if (!run(log, lib, lots.back(), neighbours, &b)) return 1;
     auto median = [&](auto f) {
         std::vector<double> v;
         for (const Bench& b : runs) v.push_back(f(b));

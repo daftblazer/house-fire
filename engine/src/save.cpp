@@ -116,26 +116,86 @@ const std::vector<uint8_t>* LotChunks::find(const std::string& type) const {
     return nullptr;
 }
 
+namespace {
+// A block's chunk table (a lot's, the neighbourhood's): n FourCCs (backwards), n offsets from
+// the block's start in the file (header included), n sizes.
+LotChunks chunk_table(const NeighbourhoodBlock& b) {
+    LotChunks lot;
+    lot.block = b.offset;
+    const auto& d = b.data;
+    size_t n = 0;
+    auto alpha = [](uint8_t c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); };
+    while (4 * n + 4 <= d.size() && alpha(d[4 * n]) && alpha(d[4 * n + 1]) && alpha(d[4 * n + 2]) && alpha(d[4 * n + 3])) n++;
+    if (12 * n > d.size()) throw FormatError("a chunk table runs past its block");
+    for (size_t k = 0; k < n; k++) {
+        std::string tag((const char*)d.data() + 4 * k, 4);
+        std::string type(tag.rbegin(), tag.rend());  // stored backwards
+        const uint32_t at = le32(d.data() + 4 * n + 4 * k), size = le32(d.data() + 8 * n + 4 * k);
+        if (at < kHeader || at - kHeader + size > d.size()) throw FormatError("a chunk runs past its block");
+        lot.chunks.push_back({type, std::vector<uint8_t>(d.begin() + (at - kHeader), d.begin() + (at - kHeader + size))});
+    }
+    return lot;
+}
+}  // namespace
+
 std::vector<LotChunks> read_lots(std::span<const uint8_t> file) {
     std::vector<LotChunks> out;
-    for (auto& b : read_neighbourhood(file)) {
-        if (b.section != 3) continue;
-        LotChunks lot;
-        lot.block = b.offset;
-        const auto& d = b.data;
-        size_t n = 0;
-        auto alpha = [](uint8_t c) { return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'); };
-        while (4 * n + 4 <= d.size() && alpha(d[4 * n]) && alpha(d[4 * n + 1]) && alpha(d[4 * n + 2]) && alpha(d[4 * n + 3])) n++;
-        if (12 * n > d.size()) throw FormatError("a lot's chunk table runs past its block");
-        for (size_t k = 0; k < n; k++) {
-            std::string tag((const char*)d.data() + 4 * k, 4);
-            std::string type(tag.rbegin(), tag.rend());  // stored backwards
-            const uint32_t at = le32(d.data() + 4 * n + 4 * k), size = le32(d.data() + 8 * n + 4 * k);
-            if (at < kHeader || at - kHeader + size > d.size()) throw FormatError("a lot's chunk runs past its block");
-            lot.chunks.push_back({type, std::vector<uint8_t>(d.begin() + (at - kHeader), d.begin() + (at - kHeader + size))});
+    for (auto& b : read_neighbourhood(file))
+        if (b.section == 3) out.push_back(chunk_table(b));
+    return out;
+}
+
+std::vector<Neighbour> read_neighbours(std::span<const uint8_t> file) {
+    const std::vector<uint8_t>* nbrs = nullptr;
+    LotChunks t;
+    for (auto& b : read_neighbourhood(file))
+        if (b.section == 1) { t = chunk_table(b); nbrs = t.find("NBRS"); break; }
+    if (!nbrs) throw FormatError("the neighbourhood has no NBRS");
+    const std::vector<uint8_t>& c = *nbrs;
+    size_t p = 0;
+    auto need = [&](size_t n) { if (p + n > c.size()) throw FormatError("NBRS runs past its chunk"); };
+    auto i32 = [&] { need(4); const int32_t v = (int32_t)le32(c.data() + p); p += 4; return v; };
+    auto i16 = [&] { need(2); const int16_t v = (int16_t)le16(c.data() + p); p += 2; return v; };
+    need(16);
+    if (std::memcmp(c.data() + 8, "SRBN", 4) != 0) throw FormatError("not an NBRS");
+    p = 12;
+    const int32_t slots = i32();
+    if (slots < 0 || slots > 4096) throw FormatError("NBRS: slots out of range");
+    std::vector<Neighbour> out;
+    for (int32_t s = 0; s < slots; s++) {
+        if (i32() == 0) continue;  // an empty slot
+        Neighbour n;
+        i32();  // the record's version (4)
+        size_t q = p;
+        while (q < c.size() && c[q]) q++;
+        if (q >= c.size()) throw FormatError("NBRS: a name has no end");
+        n.name.assign((const char*)c.data() + p, q - p);
+        p = q + 1;
+        if (p & 1) p++;
+        i32();
+        const int32_t mode = i32();  // set: the person data follows
+        if (mode)
+            for (int k = 0; k < 80; k++) n.person_data.push_back(i16());
+        need(128);
+        p += 128;  // to be named (floats among them)
+        n.id = i16();
+        n.guid = (uint32_t)i32();
+        i32();
+        i32();
+        const int32_t rels = i32();
+        if (rels < 0 || rels > 4096) throw FormatError("NBRS: relationships out of range");
+        for (int32_t r = 0; r < rels; r++) {
+            i32();
+            Neighbour::Relationship rel;
+            rel.with = (int16_t)i32();
+            const int32_t k = i32();
+            if (k < 0 || k > 64) throw FormatError("NBRS: a relationship's values out of range");
+            for (int32_t j = 0; j < k; j++) rel.values.push_back(i32());
+            n.relationships.push_back(std::move(rel));
         }
-        out.push_back(std::move(lot));
+        out.push_back(std::move(n));
     }
+    if (p != c.size()) throw FormatError("NBRS does not end at its chunk's end");
     return out;
 }
 

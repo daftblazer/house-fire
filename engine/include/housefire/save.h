@@ -58,6 +58,23 @@ std::vector<NeighbourhoodBlock> read_neighbourhood(std::span<const uint8_t> file
 // Its lots (section 3), each by its chunk table.
 std::vector<LotChunks> read_lots(std::span<const uint8_t> file);
 
+// A neighbour of the neighbourhood (its NBRS chunk, the PC's layout: docs/objects.md, "The
+// neighbours"): its id, name (the character file's), GUID, person data (if saved) and its
+// relationships with other neighbours.
+struct Neighbour {
+    int16_t id = 0;
+    std::string name;
+    uint32_t guid = 0;
+    std::vector<int16_t> person_data;
+    struct Relationship {
+        int16_t with = 0;
+        std::vector<int32_t> values;
+    };
+    std::vector<Relationship> relationships;
+};
+// The neighbours, in id order. Throws FormatError if NBRS does not read to its end.
+std::vector<Neighbour> read_neighbours(std::span<const uint8_t> file);
+
 // An object type of a lot (objt): its GUID, six 16-bit fields (field 4 is the type number
 // the lot's objects name) and its name.
 struct ObjectType {

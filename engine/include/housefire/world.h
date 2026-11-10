@@ -96,6 +96,7 @@ public:
     } rng;
     std::vector<int16_t> globals;        // scope 6
     std::vector<int16_t> neighbourhood;  // scope 34
+    std::vector<Neighbour> neighbours;   // the neighbourhood's, in id order (read_neighbours)
     std::vector<int16_t> ad_range;       // scope 12: one shared value per datum (only 15 is used)
 
 private:

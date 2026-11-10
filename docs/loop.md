@@ -676,4 +676,9 @@ records what it found and moves to the next chunk rather than starting the syste
 
 ## Progress
 
-(none yet)
+Iteration 1 of 16.
+
+- **Iteration 1, chunk 1 (the neighbours).** NBRS decoded (`objects.md`, "The
+  neighbours"): 63 slots, 51 neighbours, read to the chunk's end, ids the slot's number plus
+  one; the engine reads them (`read_neighbours`, `World::neighbours`). SetToNext kind 5
+  native: all 468 steps the same. Chunk 1 done. Next: chunk 2, SetToNext kind 6.

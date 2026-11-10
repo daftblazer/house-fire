@@ -62,6 +62,8 @@ int main() {
         std::printf("classes: %zu objects, %zu parts, %zu door parts, %zu Sims (%zu with motives and person data)\n",
                     by_class[0], by_class[1], by_class[2], by_class[3], sims_with_motives);
         std::printf("lots' own parts as expected: %zu\n", lot_parts);
+        const auto nb = read_neighbours(ngh);
+        std::printf("neighbours %zu, ids %d to %d\n", nb.size(), nb.empty() ? 0 : nb.front().id, nb.empty() ? 0 : nb.back().id);
         std::printf("the club's first objects:");
         for (int16_t id : club) std::printf(" %d", id);
         std::printf("\n");
@@ -70,6 +72,7 @@ int main() {
              frames == 4575 && person_frames == 53 && found == 4522 && fit == 4522 &&
              by_class[0] == 1754 && by_class[1] == 1821 && by_class[2] == 944 && by_class[3] == 53 &&
              sims_with_motives == 53 && lot_parts == 16;
+        ok = ok && nb.size() == 51 && nb.front().id == 3 && nb.back().id == 63;
     } catch (const FormatError& e) {
         std::printf("FormatError: %s\n", e.what());
         ok = false;
