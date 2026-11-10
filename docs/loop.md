@@ -1251,7 +1251,7 @@ without a commit (record why here). Then the eighth loop resumes.
 
 ## Progress
 
-Iteration 8 of 16.
+Iteration 9 of 16.
 
 - **Iteration 1, chunk 1 (the crate and the readers).** The C++ engine moved to
   `engine-cpp/` (built with clang from there, its home-log replay output the very same as
@@ -1326,3 +1326,15 @@ Iteration 8 of 16.
   Checked: `test_simulator`'s nine checks as a Rust test, all passing (the C++
   `test_simulator: ok`); the motives' update is checked by the replay (its `N` records), in
   chunk 6; clippy clean. Next: `routing` (the walls, the rooms, the route) and `autonomy`.
+
+- **Iteration 9, chunk 5 (the log and lockstep).** `routing` and `autonomy` have no tests of
+  their own (the replay checks them), so they come with it in chunk 6. `tree_log` ported (a
+  step's tree an index into the log's trees), `lockstep` as `src/bin/lockstep.rs`, and `cfmt`
+  for the C formats its lines use (`%#x`, `%g`, a `snprintf` buffer's length). The C++ keyed
+  a variable's cell by table pointer and index, every table of an object the world lacks the
+  one null pointer; the Rust keys merge them the same way. Its one diagnostic of native
+  addresses shows object keys. Checked: on the home log, `tree.log` and `tree3.log` its whole
+  output is the C++ one's, line for line, those addresses aside (7,902, 4 and 24
+  differences; 177, 139 and 157 lines); 1.2 s against the C++'s 1.4 s on the home log;
+  clippy clean. Chunk 5 done. Next: chunk 6, the replay, with `routing`, `autonomy` and the
+  four primitives it alone checks.

@@ -2,6 +2,7 @@
 //! logic is each game's own behaviour scripts read from the player's disc (`docs/plan.md`).
 
 pub mod bhav;
+pub mod cfmt;
 pub mod disc;
 pub mod expression;
 pub mod iff;
@@ -11,6 +12,7 @@ pub mod primitives;
 pub mod interp;
 pub mod save;
 pub mod simulator;
+pub mod tree_log;
 pub mod world;
 
 /// A tree, by its place in the trees a host keeps (the library's, or a test's).

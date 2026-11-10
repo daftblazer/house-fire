@@ -405,7 +405,7 @@ fn at<T: Default + Clone>(v: &mut Vec<T>, i: i32) -> Option<&mut T> {
 
 /// Where a variable is stored: the table, by its owner, so that two scopes reaching the same
 /// storage give the same cell (for checks against the original).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Table {
     Attributes(Option<ObjectKey>),
     Data(Option<ObjectKey>),
@@ -420,7 +420,17 @@ pub enum Table {
     StackObject,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+impl Table {
+    /// The object whose table this is, for an object's table.
+    pub fn owner(&self) -> Option<Option<ObjectKey>> {
+        match *self {
+            Table::Attributes(o) | Table::Data(o) | Table::PersonData(o) | Table::Motives(o) | Table::Temps(o) => Some(o),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Cell {
     pub table: Table,
     pub index: i32,
