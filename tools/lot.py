@@ -48,8 +48,9 @@ def object_types(c):
         if (p - 12) % 2: p += 1
 
 
-def lots(d):
-    data = d.read('Runtime/default.ngh')
+def lots(d, name=None):
+    name = name or next((p for p in ('Runtime/default.ngh', 'default.ngh') if p in d.files), None)
+    data = d.read(name)
     return [(off, dict(chunk_table(body))) for off, sec, count, ck, body, ok in ngh.blocks(data) if sec == 3]
 
 

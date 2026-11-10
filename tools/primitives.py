@@ -36,6 +36,11 @@ NAMES = {
 # Where a game's handler for an opcode is not the shared one, or the shared one is unknown.
 GAME_NAMES = {
     'GUBE69': {57: 'HUDCreate'},
+    # Castaway names its primitives in its ELF's symbols (cXObject/cXPerson::Try*). Where its
+    # name differs from the one above, or names one we had not, it is its own:
+    'R42E69': {21: 'SyncAudio', 39: 'ListenForInput', 47: 'NotifyPlans', 54: 'ManageClothing',
+               57: 'HUDCreate', 58: 'HUDAddItem', 59: 'HUDManage', 60: 'HUDData', 68: 'CustomUI',
+               69: 'LotTransition', 70: 'FamilyInventory', 71: 'FollowSims', 72: 'SnapObject'},
 }
 
 DISPATCH = {
@@ -45,6 +50,8 @@ DISPATCH = {
                'person': [3, 6, 17, 22, 27, 28, 29, 30, 37, 38, 44, 45, 46, 47, 100]},
     'G4ZE69': {'object': [0, 1, 2, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 23, 24, 25, 26, 28, 29, 31, 32, 33, 34, 35, 36, 39, 40, 41, 42, 43, 44, 46, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 63, 65, 66, 67],
                'person': [3, 6, 17, 22, 27, 29, 30, 37, 38, 44, 45, 46, 47, 62, 64, 100]},
+    'R42E69': {'object': [0, 1, 2, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 23, 24, 25, 26, 28, 29, 31, 32, 33, 35, 36, 39, 40, 41, 42, 43, 44, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 63, 65, 66, 67, 68, 69, 70, 72],
+               'person': [3, 6, 17, 22, 27, 29, 30, 37, 38, 44, 45, 62, 64, 71]},
     'G4OE69': {'object': [0, 1, 2, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 23, 24, 25, 26, 28, 29, 31, 32, 33, 35, 36, 39, 40, 41, 42, 43, 44, 46, 48, 49, 50, 51, 52, 53, 55, 56, 57, 58, 59, 60, 61, 63, 65, 66, 67, 68, 69, 70],
                'person': [3, 6, 17, 22, 27, 28, 29, 30, 37, 38, 44, 45, 62, 64, 71]},
 }

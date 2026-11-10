@@ -100,8 +100,9 @@ std::vector<NeighbourhoodBlock> read_neighbourhood(std::span<const uint8_t> f) {
     std::vector<NeighbourhoodBlock> out;
     for (size_t off = 0; off + kHeader <= f.size(); off += kBlock) {
         const uint8_t* h = f.data() + off;
-        const uint32_t section = le32(h), hs = le32(h + 4), un = le32(h + 8), pk = le32(h + 12), four = le32(h + 20);
-        if (hs != kHeader || four != 4 || pk == 0 || pk > un || un >= (1u << 24) || off + kHeader + pk > f.size()) continue;
+        // The sixth word is the format's version: Bustin' Out's 4, Castaway's 11.
+        const uint32_t section = le32(h), hs = le32(h + 4), un = le32(h + 8), pk = le32(h + 12), version = le32(h + 20);
+        if (hs != kHeader || version == 0 || version >= 64 || pk == 0 || pk > un || un >= (1u << 24) || off + kHeader + pk > f.size()) continue;
         size_t used = 0;
         NeighbourhoodBlock b{(uint32_t)off, section, le32(h + 24), unpack_lzss(f.subspan(off + kHeader, pk), un, &used)};
         if (used != pk) throw FormatError("a block does not unpack from exactly its packed size");

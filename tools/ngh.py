@@ -7,7 +7,8 @@ Usage: ngh.py IMAGE [--dump]
 The file is 4 KB blocks (0xCD where unused). A block that holds data starts with a header of
 seven 32-bit little-endian words:
 
-    section, 28 (the header's size), unpacked size, packed size, checksum, 4, count
+    section, 28 (the header's size), unpacked size, packed size, checksum, a version
+    (Bustin' Out 4, Castaway 11), count
 
 then the packed data: LZSS (a flag byte, low bit first, 1 for a literal byte, 0 for a
 two-byte reference: 12-bit position, the high nibble of the second byte its top, and a
@@ -57,8 +58,8 @@ def blocks(data):
     """(offset, section, count, checksum, unpacked) for each block with a header."""
     out = []
     for off in range(0, len(data) - HEADER, BLOCK):
-        section, hs, un, pk, ck, four, count = struct.unpack_from('<7I', data, off)
-        if hs != HEADER or four != 4 or not 0 < pk <= un < 1 << 24 or off + HEADER + pk > len(data):
+        section, hs, un, pk, ck, version, count = struct.unpack_from('<7I', data, off)
+        if hs != HEADER or not 0 < version < 64 or not 0 < pk <= un < 1 << 24 or off + HEADER + pk > len(data):
             continue
         body, used = lzss(data[off + HEADER:off + HEADER + pk], un)
         out.append((off, section, count, ck, body, used == pk))
@@ -67,7 +68,8 @@ def blocks(data):
 
 def main(argv):
     d = Disc(argv[1])
-    data = d.read('Runtime/default.ngh')
+    name = next((p for p in ('Runtime/default.ngh', 'default.ngh') if p in d.files), None)
+    data = d.read(name)
     bs = blocks(data)
     exact = sum(1 for b in bs if b[5])
     by = collections.Counter(b[1] for b in bs)

@@ -1,6 +1,7 @@
 # House Fire
 
-A native engine for the GameCube Sims games (Edge of Reality and Maxis's EOR engine): one
+A native engine for the GameCube Sims games and The Sims 2: Castaway on the Wii (Edge of
+Reality and Maxis's EOR engine): one
 engine whose game logic is the games' own behaviour scripts, read from the player's disc,
 with only the assets and scripts coming from the disc.
 
@@ -11,6 +12,7 @@ with only the assets and scripts coming from the disc.
 | The Urbz: Sims in the City (2004) | `GUBE69` | EOR/Maxis Engine v3.0 |
 | The Sims 2 (2005) | `G4ZE69` | EOR/Maxis Engine v3.0 |
 | The Sims 2: Pets (2006) | `G4OE69` | EOR/Maxis Engine v3.0 |
+| The Sims 2: Castaway (2007, Wii) | `R42E69` | EOR/Maxis Engine v3.0 (built Aug 25 2007) |
 
 Status: started. `engine/` is the C++ engine (readers and the interpreter's core so far):
 

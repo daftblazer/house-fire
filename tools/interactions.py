@@ -29,7 +29,7 @@ import sys, struct, pathlib, collections
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 import quickdata, resfile, objects
 
-LAYOUT = {'GCIE69': 28, 'G4ME69': 28, 'GUBE69': 32, 'G4ZE69': 36, 'G4OE69': 36}
+LAYOUT = {'GCIE69': 28, 'G4ME69': 28, 'GUBE69': 32, 'G4ZE69': 36, 'G4OE69': 36, 'R42E69': 36}
 MAX_MOTIVES = 64
 
 

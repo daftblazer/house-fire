@@ -4,15 +4,49 @@ prints the games' code; it reports addresses and numbers."""
 import struct
 
 
-def load_dol(d):
-    """{address: instruction word} for the text sections of a DOL."""
+def load_dol(d, data=False):
+    """{address: word} for the text sections of a DOL (and with data=True its data
+    sections too, for jump tables)."""
     offs = struct.unpack('>18I', d[0:72]); addrs = struct.unpack('>18I', d[72:144]); sizes = struct.unpack('>18I', d[144:216])
     m = {}
     for i, (o, a, s) in enumerate(zip(offs, addrs, sizes)):
-        if i < 7:
-            for j in range(0, s, 4):
+        if i < 7 or data:
+            for j in range(0, s - 3, 4):
                 m[a + j] = struct.unpack('>I', d[o + j:o + j + 4])[0]
     return m
+
+
+def jump_table_cases(M, start, end):
+    """A switch compiled as a jump table: `cmplwi rX, N` (with a branch past it to the
+    default; a value first lessened by k with `addi` is taken back up by k),
+    default), then `lis`/`addi` of the table and `lwzx`/`mtctr`/`bctr`. Returns {case:
+    target} for the cases whose target is not the default, or {} if there is no table."""
+    n = table = default = None
+    hi = None
+    bias = 0                                             # `addi rX, rY, -k` before the compare
+    for a in range(start, end, 4):
+        w = M.get(a, 0)
+        op = w >> 26
+        if op == 14 and n is None and sext(w & 0xFFFF, 16) < 0 and (w >> 16 & 31) != 1:
+            bias = -sext(w & 0xFFFF, 16)                 # the case is the value minus k
+        elif op == 10 and n is None:                     # cmplwi crf, rA, UIMM
+            n = w & 0xFFFF
+        elif op == 16 and n is not None and default is None:  # bc: the branch to the default
+            default = a + sext(w & 0xFFFC, 16)
+        elif op == 15 and n is not None:                 # lis rD, hi
+            hi = (w & 0xFFFF) << 16
+        elif op == 14 and hi is not None:                # addi rD, rA, lo
+            table = (hi + sext(w & 0xFFFF, 16)) & 0xFFFFFFFF
+        elif w == 0x4E800420 and table is not None:      # bctr
+            break
+    if n is None or table is None:
+        return {}
+    out = {}
+    for k in range(n + 1):
+        t = M.get(table + 4 * k)
+        if t is not None and t != default:
+            out[k + bias] = t
+    return out
 
 
 def sext(v, b):

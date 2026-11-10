@@ -73,3 +73,49 @@ offset, size, name and 12 bytes (a name hash, a time stamp, a word). Bustin' Out
 `docs/primitives.md`. The dispatch is a virtual `TryElement(StackElem *, short opcode,
 XPrimParam *)` per kind of object (a binary-search switch), the cases calling `Try*`
 methods. Bustin' Out's and The Sims 2's opcode numbers agree, and agree with the PC game's.
+
+## The Sims 2: Castaway (Wii, `R42E69`), the sixth game
+
+Added 2026-11-09. Never released on the GameCube; the Wii version is used (its CPU and
+graphics are the GameCube's, upgraded; the PS2 version's are not). Surveyed from the disc
+at rest, with the same tools:
+
+- **The engine:** "EOR/Maxis Engine v3.0 built 17:57:21 Aug 25 2007", the same line as The
+  Urbz, The Sims 2 and Pets, two years on.
+- **Full symbols.** The disc ships the game's ELF (`tsc_wii_release_dvd.elf`, 44,276
+  symbols), more than The Sims 2's map gives: `TreeSim::DoNodeAction`,
+  `cXObject::TryElement`, `cXObject::InterpValue`, `cXObject::TryExpression`, each primitive
+  `cXObject/cXPerson::Try*` and the save stream, all by name. A copy is in `work/R42E69/`
+  (ignored).
+- **The same layout:** `DATA/edithtre.arc` (scripts), `quickdat.arc`, `datasets.arc`,
+  `levels.arc` and the rest. Neighbourhood files: `default.ngh`, `author.ngh` and fourteen
+  `HutRecipeN.ngh`.
+- **Scripts:** 323 files, 5,043 trees, 50,154 primitive nodes (35,591 of them the
+  expression). All check (`tools/bhav_text.py`): no bad targets, no primitive the game does
+  not accept, no missing own tree.
+- **Primitive dispatch:** both switches are jump tables here (the person one offset by 3);
+  `tools/ppc.py` reads them.
+  - The object switch is Pets' with 21, 47, 54 and 72 added.
+  - The person switch is Pets' without 28.
+  - Its own names (`tools/primitives.py`, `GAME_NAMES`):
+    - 21 SyncAudio;
+    - 39 ListenForInput;
+    - 47 NotifyPlans;
+    - 54 ManageClothing (a dead GBA link in Pets);
+    - 72 SnapObject;
+    - and the first names for 58-60 (HUD), 68 CustomUI, 69 LotTransition, 70
+      FamilyInventory, 71 FollowSims.
+- **Quick data** reads, Castaway's own tables among it: the weather, rain, wind.
+- **The neighbourhood file** is Bustin' Out's container (the block header's version word
+  11, Bustin' Out's 4): a directory, the neighbourhood, a thumbnail and 28 lots. 30 of 31
+  blocks unpack exactly; the thumbnail's is the odd one.
+  - Each lot is again Arry x3, objt and ObjM.
+  - objt reads on all 28 lots.
+  - ObjM is versions 120, 129 and 130 (Bustin' Out's 80), so the v3.0 engine's object
+    stream is to be read from its now named code (`ObjectModule`'s stream and `ReconBuffer`).
+- **No recompiled oracle:** gcn-recomp is GameCube only. As for The Urbz, The Sims 2 and
+  Pets, its behaviour is checked against the rules confirmed on Bustin' Out, against its own
+  code (easy with the symbols), and against The Sims 2 and Pets where the code is shared.
+- **New play:** the island, gathering, crafting, huts, weather and wild animals. It comes as
+  scripts and data like the rest, with the new primitives above and systems of its own (the
+  weather tables) on top.
