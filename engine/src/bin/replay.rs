@@ -2492,6 +2492,58 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 println!("   native list tick {}: {} rects, the planner's {}, kept {}, the Sim's {sim_rect:?}, {hit} the same", pl.tick, native.len(), pl.obstacles.len(), kept.len());
             }
             counts.add("routing: obstacles of objects not in the native world (the log's kept)", unknown);
+            // The plan's waypoints between its ends, by what they are: a corner of one of the
+            // native obstacles (as the planner has them where natively unknown), or not
+            let corners: Vec<(i32, i32)> = native
+                .iter()
+                .zip(&pl.obstacles)
+                .map(|(a, b)| if *a == [0; 5] { b } else { a })
+                .flat_map(|r| [(r[0], r[1]), (r[2], r[1]), (r[0], r[3]), (r[2], r[3])])
+                .collect();
+            // Each leg of the plan keeps out of the blocking obstacles' insides (natively)
+            // (but the last into the object it ends at: the Sim turns to face it there)
+            for (i, leg) in pl.points.windows(2).enumerate() {
+                let (a, b) = (leg[0], leg[1]);
+                let through = native.iter().filter(|r| r[4] == BLOCKS).find(|r| segment_enters(a, b, r));
+                let last = i + 2 == pl.points.len();
+                counts.note(match through {
+                    None => "routing: a plan's leg clear of the native blocking obstacles",
+                    Some(r) if last && b.0 > r[0] && b.0 < r[2] && b.1 > r[1] && b.1 < r[3] => {
+                        "routing: a plan's last leg into the obstacle it ends in (the object faced)"
+                    }
+                    Some(_) => "routing: a plan's leg through a native blocking obstacle",
+                });
+                if show_obstacles && let Some(r) = through {
+                    println!("   leg of tick {} {a:?} to {b:?} through {r:?}", pl.tick);
+                }
+            }
+            let goals: Vec<(i32, i32)> = pl.goals.iter().map(|g| (g[0] as i32, g[1] as i32)).collect();
+            for (i, w) in pl.points.iter().enumerate().skip(1).take(pl.points.len().saturating_sub(2)) {
+                let corner = corners.contains(w);
+                let (prev, next) = (pl.points[i - 1], pl.points[i + 1]);
+                // on the line between its neighbours (to within a sixteenth)
+                let cross = (w.0 - prev.0) as i64 * (next.1 - prev.1) as i64 - (w.1 - prev.1) as i64 * (next.0 - prev.0) as i64;
+                let len = (((next.0 - prev.0).pow(2) + (next.1 - prev.1).pow(2)) as f64).sqrt();
+                let between = len > 0.0 && (cross.abs() as f64) / len <= 1.0;
+                let tile_centre = w.0 & 15 == 8 && w.1 & 15 == 8;
+                counts.note(if corner {
+                    "routing: a waypoint (not an end) a corner of an obstacle"
+                } else if goals.contains(w) {
+                    "routing: a waypoint (not an end) the request's goal"
+                } else if between {
+                    "routing: a waypoint (not an end) on the line between its neighbours"
+                } else if tile_centre {
+                    "routing: a waypoint (not an end) a tile's centre (a door's sides)"
+                } else {
+                    "routing: a waypoint (not an end) none of these"
+                });
+                let corner = corner || goals.contains(w) || between || tile_centre;
+                if show_obstacles && !corner {
+                    let prev = pl.points[i - 1];
+                    let next = pl.points.get(i + 1).copied().unwrap_or(*w);
+                    println!("   waypoint {i} of tick {} {w:?} (from {prev:?} to {next:?}): not a corner", pl.tick);
+                }
+            }
             counts.add("routing: obstacles natively the planner's, rectangle by rectangle", hit);
             counts.add("routing: obstacles natively NOT the planner's", miss + native.len().abs_diff(pl.obstacles.len()));
             counts.note(if native.len() == pl.obstacles.len() && hit + unknown == native.len() {
@@ -2813,4 +2865,22 @@ fn main() -> ExitCode {
     );
     println!("  not native yet (not in these figures): routing, autonomy, animation, the other primitives");
     ExitCode::SUCCESS
+}
+
+/// Whether the segment from a to b passes through the inside of rectangle r (its edges and
+/// corners do not count): clipped to the rectangle's open interior (Liang-Barsky).
+fn segment_enters(a: (i32, i32), b: (i32, i32), r: &[i32; 5]) -> bool {
+    let (dx, dy) = ((b.0 - a.0) as f64, (b.1 - a.1) as f64);
+    let (mut t0, mut t1) = (0.0f64, 1.0f64);
+    for (p, q) in [(-dx, (a.0 - r[0]) as f64), (dx, (r[2] - a.0) as f64), (-dy, (a.1 - r[1]) as f64), (dy, (r[3] - a.1) as f64)] {
+        if p == 0.0 {
+            if q <= 0.0 {
+                return false;
+            }
+        } else {
+            let t = q / p;
+            if p < 0.0 { t0 = t0.max(t) } else { t1 = t1.min(t) }
+        }
+    }
+    t1 - t0 > 1e-9
 }
