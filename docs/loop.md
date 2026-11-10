@@ -1006,3 +1006,36 @@ Open, for the next loop: autonomy's guards run in the turn and the score (the ch
 the native best four); routing (chunk 4, not started: the `P` records and the floors are
 ready for it); at the club, what freezes the motives and what its bursts of checks are;
 motive 3; a table's first tree per table (iteration 16).
+
+# The seventh loop
+
+Planned 2026-11-10 at the user's request, to go on from the sixth. The rules and limits are
+the same: one well-defined part an iteration, checked by replay on the home log (and the
+club's logs, kept as they are), a piece that cannot be checked is not built, one-line
+commits, never pushed, no RK3566.
+
+## Chunks, in order
+
+1. **A table's first tree per table.** `Interaction` (or its table) keeps the version-11
+   field, instead of the file-wide `prefix_of`; then PushAction by the target's own table
+   (iteration 16's attempt), with object 198's table found. Checked: the home log's PushAction
+   uses and the deliveries they lead to, with no step lost.
+2. **The evaluation run natively.** In the turn the log's evaluation happens, the native
+   candidates' checks run (`Host::run_check` against the log's steps of them), each result
+   compared with the log's (40-42 pass in each evaluation).
+3. **The score.** The passing candidates scored from their adverts, the Sim's motives, the
+   distance (the objects' places) and the autonomy tuning table (FCNS 2); checked as each of
+   the three choices among the native best four, and the ranking's stability across the
+   three evaluations.
+4. **Routing, first piece.** A Sim's walk to its chosen object (the `P` records: a sixteenth
+   of a tile a tick) against the floors (the first Arry grid): the path's tiles, checked
+   against the logged places.
+
+## Limits
+
+Stop after iteration 16, when the chunks are done, or when two iterations in a row end
+without a commit (record why here).
+
+## Progress
+
+Iteration 0 of 16.
