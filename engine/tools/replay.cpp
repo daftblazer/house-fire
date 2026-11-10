@@ -232,6 +232,14 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
         if (got == PrimResult::Continue) r.natively_delivered.insert(me.id());
         return got == PrimResult::Continue ? got : logged();
     }
+    if (n.opcode == 36) {  // Dialog: the replay plays the player, answering when the original's did
+        if (s.result != 2) r.world.dialog_answer = s.after == n.true_target;
+        const PrimResult got = dialog(n, r.world, me);
+        r.world.presentation.clear();
+        const bool same = s.result == 2 ? got == PrimResult::Yield && r.world.stop_pass : got == logged();
+        note(same ? (s.result == 2 ? "primitives: Dialog: waiting, as the log's" : "primitives: Dialog: answered, as the log's") : "primitives: Dialog: DIFFERENT");
+        return got;
+    }
     if (n.opcode == 13) {  // PushAction
         const PrimResult got = push_action(in, f, n, r.world);
         note(got == logged() ? "queue: PushAction the same natively" : got == PrimResult::Stop ? "queue: PushAction not modelled (the log's taken)" : "queue: PushAction DIFFERENT");

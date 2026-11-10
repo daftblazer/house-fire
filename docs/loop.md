@@ -766,7 +766,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 5 of 16.
+Iteration 6 of 16.
 
 - **Iteration 1, chunk 1 (the queue's entries and their delivery).** The engine keeps each
   Sim's saved queue (`Object::current`, `queue`); an entry's fields named from the log: the
@@ -802,3 +802,8 @@ Iteration 5 of 16.
   read (`primitives.md`); but the logs show almost no motive change (1 of 47 variables), so
   nothing of the motive system can be checked against them. Recorded; a home-lot session is
   the log it needs. Next: chunk 4, Dialog and CompleteGoal.
+
+- **Iteration 6, chunk 4 (Dialog).** Native, with the player's answer an input the front end
+  gives (`World::dialog_answer`): open, wait and stop the pass, then true. The replay plays
+  the player: all 2,471 waits and 4 answers as the log's, all 719 passes stopped as the
+  log's. Next: CompleteGoal (56).

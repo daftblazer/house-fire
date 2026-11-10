@@ -83,6 +83,21 @@ PrimResult push_action(Interpreter& in, Frame& f, const Node& n, World& world) {
     return PrimResult::True;
 }
 
+PrimResult dialog(const Node& n, World& world, const Object& me) {
+    if (world.dialog_object != me.id()) {  // opening it
+        world.dialog_object = me.id();
+        world.dialog_answer.reset();
+        world.presentation.push_back({n.opcode, me.id(), n.operand});
+    }
+    if (!world.dialog_answer) {
+        world.stop_pass = true;
+        return PrimResult::Yield;
+    }
+    world.dialog_object = 0;
+    world.dialog_answer.reset();
+    return PrimResult::True;
+}
+
 PrimResult present(const Node& n, World& world, const Object& me) {
     world.presentation.push_back({n.opcode, me.id(), n.operand});
     return PrimResult::True;

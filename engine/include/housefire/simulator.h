@@ -27,7 +27,7 @@ public:
     // for the player) ends the pass there, and the next tick's goes on from that object.
     void tick();
     void stop_pass() { stop_ = true; }  // from a primitive, during a turn
-    bool stop_asked() const { return stop_; }  // in a pass done by hand: since the last end_pass
+    bool stop_asked() const { return stop_ || world_.stop_pass; }  // in a pass done by hand: since the last end_pass
     int16_t cursor() const { return cursor_; }  // where the next pass goes on from (0: id 1)
     uint32_t now() const { return now_; }  // ticks run
     // For checks that step the stacks themselves: the objects the pass would reach, in order
@@ -35,7 +35,7 @@ public:
     // done by hand: an object passed over, a pass's end (at an id, or 0 for through).
     std::vector<std::pair<Object*, bool>> pass_order();
     void pass_over(Object& o) { stack_of(o).pass_over(); }
-    void end_pass(int16_t stopped_at) { cursor_ = stopped_at; stop_ = false; now_++; }
+    void end_pass(int16_t stopped_at) { cursor_ = stopped_at; stop_ = false; world_.stop_pass = false; now_++; }
 
     // An object's running stack, made on first need from the frames the object has (a lot's
     // object: as the lot saved them). Its id is the object's, its lifetime the object's in

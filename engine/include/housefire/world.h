@@ -109,6 +109,12 @@ public:
         std::array<uint8_t, 8> operand;  // as the node has it
     };
     std::vector<PresentationEvent> presentation;
+    // A dialog waiting for the player (Dialog): the object whose script opened it (0: none),
+    // and the player's answer once given (the front end sets it). While it waits, the tick's
+    // pass stops after that object's turn (stop_pass, which the simulator takes and clears).
+    int16_t dialog_object = 0;
+    std::optional<bool> dialog_answer;
+    bool stop_pass = false;
     std::vector<int16_t> globals;        // scope 6
     std::vector<int16_t> neighbourhood;  // scope 34
     std::vector<Neighbour> neighbours;   // the neighbourhood's, in id order (read_neighbours)

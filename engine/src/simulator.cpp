@@ -58,7 +58,7 @@ void Simulator::tick() {
         in.reset_iterations();
         const int steps = in.run();
         if (on_turn) on_turn(*e.object, steps);
-        if (stop_) { stopped_at = e.id; break; }
+        if (stop_ || world_.stop_pass) { stopped_at = e.id; break; }
         // A turn that made, removed or renumbered objects: on from the next id.
         if (seen_version_ != world_.version()) {
             refresh();

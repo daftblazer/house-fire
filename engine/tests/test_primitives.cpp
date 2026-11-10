@@ -100,6 +100,15 @@ int main() {
     CHECK(w.presentation.size() == 2 && w.presentation[0].opcode == 23 && w.presentation[0].object == 5 &&
           w.presentation[0].operand[0] == 7 && w.presentation[1].opcode == 48);
 
+    // Dialog: waits (and stops the pass) until the player answers, then true
+    w.presentation.clear();
+    CHECK(dialog(node(36, {0, 0, 1, 0, 0, 0, 0, 0x80}), w, me) == PrimResult::Yield && w.stop_pass && w.dialog_object == 5);
+    CHECK(w.presentation.size() == 1);
+    w.stop_pass = false;
+    CHECK(dialog(node(36, {0, 0, 1, 0, 0, 0, 0, 0x80}), w, me) == PrimResult::Yield && w.stop_pass && w.presentation.size() == 1);
+    w.dialog_answer = true;
+    CHECK(dialog(node(36, {0, 0, 1, 0, 0, 0, 0, 0x80}), w, me) == PrimResult::True && w.dialog_object == 0);
+
     // a made object takes the next id and goes in front
     auto o = std::make_unique<Object>();
     Object& made = w.make_object(std::move(o));

@@ -46,6 +46,13 @@ PrimResult idle_for_input(Interpreter& in, const Node& n, Object& me, World& wor
 // whose file has several TTABs: Stop.
 PrimResult push_action(Interpreter& in, Frame& f, const Node& n, World& world);
 
+// Dialog (opcode 36): opens a dialog for the player (a presentation event, the world's
+// dialog_object) and waits for the answer (World::dialog_answer): each step until then
+// yields and asks the pass to stop (World::stop_pass); the answer given, the node goes to its
+// true target. Measured (replay): all 2,471 waits and 4 answers of the session as the log's,
+// every answer true (the dialogs' one button); docs/simulation.md, "Dialogs".
+PrimResult dialog(const Node& n, World& world, const Object& me);
+
 // PlaySound (23), Update (7) and KillSounds (48): requests to the presentation, queued on the
 // world for the front ends (World::presentation); the step is true. In the logs they are true
 // every time (100, 168 and 2 uses) and never change their frame.

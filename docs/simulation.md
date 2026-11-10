@@ -40,7 +40,12 @@ starts from 1.
 
 A dialog waiting for the player's answer (Dialog, opcode 36) is the original's step result 2:
 the node stays, and the pass stops after this turn. In the logs it is the only primitive with
-that result (2,471 steps). The engine's Dialog will yield and call `Simulator::stop_pass`.
+that result (2,471 steps). The engine's Dialog (`dialog()`) opens the dialog (a presentation
+event, `World::dialog_object`), yields and asks the pass to stop (`World::stop_pass`) until
+the front end gives the player's answer (`World::dialog_answer`), then goes to its true
+target. In the session every dialog answered goes true (four dialogs of the party
+controller's, one of them never answered); the replay plays the player with the original's
+answers: all 2,471 waits and 4 answers as the log's, every pass stopped where its was.
 While a dialog waits, then, only its object runs, once a tick, and everything else, sleep
 included, waits with it: what the game shows as the simulation pausing for the dialog.
 
