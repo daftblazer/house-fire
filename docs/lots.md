@@ -173,6 +173,44 @@ Every lot's part ends exactly at the stream's end, and in the club the traced re
 (`fn_801FDD0C`, the int, `Recon_String2`) start and end where the engine's do. None of it is
 named yet, and the engine uses none of it.
 
+## Castaway
+
+The Sims 2: Castaway's lots (`R42E69`, `default.ngh`: 28 lots, ObjM versions 120, 129 and
+130) are read by `tools/castaway_objm.py`, from its ELF's named code (`ObjectModule::DoStream`,
+`cXObject::ReconStream` and what they call). It is Bustin' Out's stream two years on:
+
+- **The table** is shorter: an object id, then for each object its type (16 bits: from
+  version 47 `ObjectFolder::ReconSelector` streams an index into the objt, before it a GUID)
+  and the next id, ended by 0. Then the same mark chain.
+- **An object's section** (`cXObject::ReconStream`):
+  - the header (`ReconHeader`): six 32-bit values, an int (from 25), a 16-bit value;
+  - the attributes (a count and that many), then two more counted arrays (from 99 and 118);
+  - 8 temps;
+  - the object data as `EdithVariableSet`: a 72-bit set of the fields that are saved (two
+    32-bit words and a byte), then one 16-bit value for each, in field order (Bustin' Out
+    saves all 72);
+  - (until 105) a 16-bit value;
+  - the tree stack (`TreeStack`, `StackElem`): Bustin' Out's;
+  - the relationships (`RelMatrixImpl` at +184: the same as Bustin' Out's "+192 member",
+    which is so its relationships: a value, then a counted list of present-flagged arrays,
+    each an id and a counted list of 32-bit values);
+  - the slots (`ReconSlots`: Bustin' Out's pairs), a counted array of 16-bit values;
+  - a multi-tile part's own (`cXMTObject`): Bustin' Out's part's, and a portal's
+    (`cXPortal`) adds a counted list of floats; a person's (`cXPerson`) is the motives and
+    a good deal more, not read (no lot has one);
+  - the loader's int (from 54), the mark.
+- **The lot's part:** Bustin' Out's.
+
+The class comes from the definition, as in Bustin' Out (`ConstructObject`: a master id makes a
+multi-tile part, of type 8 a portal; single-tile of type 2 a person). Castaway's object files
+have no OBJD chunks, so the tool finds each type's class from the data instead: the classes
+whose reading ends every one of its objects' sections at their mark, across the 28 lots.
+
+Measured: every section of the 28 lots ends at its mark under its type's class, and every
+lot's part ends the stream. 2,611 objects: 2,339 plain, 271 parts of multi-tile objects, 1 of
+a type that reads either way (its values all zero). Where Castaway keeps its definitions is
+still to be found.
+
 ## Not decoded yet
 
 - The meaning of a multi-tile part's values, a door's floats, and a Sim's second table of

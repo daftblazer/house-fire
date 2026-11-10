@@ -517,7 +517,7 @@ without a commit.
 
 ## Progress
 
-Iteration 7 of 12.
+Iteration 8 of 12.
 
 - **Iteration 1, chunk 1 (the tree stack and the base object).** Read the loader's code for
   everything after an object's data: the tree stack and its frames, the +192 member, the
@@ -579,3 +579,11 @@ Iteration 7 of 12.
   tick, a tick 12.3 → 8.7 µs; the replay's checks the same (every turn, every stop, Idle,
   67,001 steps). The RK3566 again when the user next has it on. Next: chunk 4, Castaway's
   object stream.
+
+- **Iteration 8, chunk 4 (Castaway's object stream).** Read `ObjectModule::DoStream`,
+  `cXObject::ReconStream` and their parts from the ELF's names (`lots.md`, "Castaway"); the
+  decoder is `tools/castaway_objm.py`. Measured: all 28 lots decode to their ends, every
+  section at its mark, 2,611 objects (2,339 plain, 271 multi-tile parts). No saved lot has a
+  person or a door, so those parts are not read; Castaway's object files hold no OBJD, so
+  the class is found from the data. Chunk 4 is done. Next: chunk 5, the next primitives by
+  use.
