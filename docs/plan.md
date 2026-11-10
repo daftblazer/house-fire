@@ -85,6 +85,16 @@ Where the cost goes is measured, not guessed. The scripts are cheap: the logged 
 about 71 steps a tick. The heavy parts are expected in routing, autonomy, animation and
 skinning, the systems still to come.
 
+**Measured (the PC, 2026-11-09).** `replay LOG ISO --bench` runs the club natively over a
+logged session five times and gives the medians of the native work alone: the passes, the
+steps, and in them the expression, SetToNext and Idle (the primitives not native yet are
+answered from the log and cost next to nothing; the replay's own checks are not counted).
+On the 5,130-tick session (67 steps a tick): 12.3 µs a tick on average, 8.1 µs median,
+105 µs at the 99th percentile, 190 µs at worst once the lot has loaded (689 µs for the
+tick right after it, which sets up every object's stack). The scripts take 7.1 µs of a tick,
+the pass 5.2 µs. On the 719-tick one: 14.7 µs on average, 136 µs at worst. The budget is
+5,000 µs on an A55; the RK3566's figures come when the user gives SSH access.
+
 ## What does not come over from Bustin' Out's port
 
 The port's own redrawn interface (its "HD UI": `src/hud_read.cpp`, `hud_pieces.h`,

@@ -23,6 +23,7 @@
 // a variable (one a primitive that is not native wrote). Objects that are not the lot's (the
 // household, made as the lot loads, and objects made later) are not run.
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
@@ -46,7 +47,18 @@ using namespace housefire::treelog;
 namespace {
 
 std::map<std::string, size_t> counts;
-void note(const std::string& k, size_t n = 1) { counts[k] += n; }
+bool quiet = false;  // --bench: no counting, only the timings
+void note(const std::string& k, size_t n = 1) { if (!quiet) counts[k] += n; }
+
+// --bench: the native work's time, per tick and per part. The replay's own work (finding
+// trees, comparing with the log, setting the native state to the log's) is not counted.
+using Clock = std::chrono::steady_clock;
+double us(Clock::time_point a, Clock::time_point b) { return std::chrono::duration<double, std::micro>(b - a).count(); }
+struct Bench {
+    std::vector<double> ticks;  // the native work of each tick that ran, in µs
+    double steps_us = 0, expression_us = 0, set_to_next_us = 0, idle_us = 0, pass_us = 0, sync_us = 0;
+    size_t steps = 0, worst_tick = 0;
+};
 
 // A logged tree on the disc: the file whose tree of that id has those nodes, by the nodes'
 // address and the tree's id. The game reuses an unloaded tree's memory for others, and the
@@ -103,11 +115,17 @@ struct Replay {
     World& world;
     Simulator* sim = nullptr;
     const StepRec* step = nullptr;  // the log's step being replayed
+    Bench* bench = nullptr;
     const ObjectFile* file_of_top = nullptr;
 
     // Brings the native world's variables to what the original's lookups found, counting
     // those that were already the same.
     void sync_variables(Object& me, Frame& f, const StepRec& s) {
+        const auto t0 = Clock::now();
+        sync_variables_(me, f, s);
+        if (bench) bench->sync_us += us(t0, Clock::now());
+    }
+    void sync_variables_(Object& me, Frame& f, const StepRec& s) {
         ScriptVariables vars(world, me, f);
         for (const LookupRec& v : s.lookups) {
             if (!(v.flags & 1)) continue;  // the lookup found nothing
@@ -154,8 +172,10 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
         if (n.opcode == 2) r.sync_variables(me, f, s);
         ScriptVariables vars(r.world, me, f);
         PrimResult got;
+        const auto t0 = Clock::now();
         if (n.opcode == 2) got = expression(ExpressionOperand::of(n), vars).result;
         else got = set_to_next(n, r.world, vars);
+        if (r.bench) (n.opcode == 2 ? r.bench->expression_us : r.bench->set_to_next_us) += us(t0, Clock::now());
         const PrimResult want = logged();
         const std::string k = n.opcode == 2 ? "primitives: expression" : "primitives: SetToNext";
         if (got == want) note(k + ": the same natively");
@@ -166,7 +186,9 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
     }
     if (n.opcode == 0) {  // Idle
         const bool was = in.woke();
+        const auto t0 = Clock::now();
         const PrimResult got = idle(in, f, n);
+        if (r.bench) r.bench->idle_us += us(t0, Clock::now());
         if (!was && in.woke() && getenv("REPLAY_SHOW_IDLE")) {
             static int shown = 0;
             if (shown++ < 15) std::printf("Idle: object %d at tick %u, %d:%d, parameter %d, operand %d, params", me.id(), r.sim->now(), s.tree, s.node,
@@ -285,22 +307,17 @@ void place_quiet_stacks(const Log& log, const World& world, std::map<uint32_t, i
 
 }  // namespace
 
-int main(int argc, char** argv) {
-    if (argc < 3) { std::printf("usage: replay LOG ISO\n"); return 2; }
-    Log log;
-    if (!read_log(argv[1], log)) { std::printf("cannot read %s\n", argv[1]); return 1; }
-    Disc d(argv[2]);
-    if (!d.ok()) { std::printf("cannot read %s\n", argv[2]); return 1; }
-    const Library lib = Library::bustin_out(d);
-    const auto lots = read_lots(d.read("Runtime/default.ngh"));
+// One run of the club over the log: with bench, timed and not counted.
+bool run(const Log& log, const Library& lib, const LotChunks& club, Bench* bench) {
     World world(lib);
-    world.load_lot(lots.back());  // the club
+    world.load_lot(club);
     if (log.lists.empty() || log.lists[0].ids.size() != world.objects().size()) {
         std::printf("the log does not start with the club loaded\n");
-        return 1;
+        return false;
     }
 
     Replay rp{lib, world};
+    rp.bench = bench;
     Simulator sim(world, [&](Object& o) {
         auto h = std::make_unique<ReplayHost>(rp, o);
         h->defaults.assign(o.temps.begin(), o.temps.end());
@@ -329,6 +346,8 @@ int main(int argc, char** argv) {
     if (!have_passes) note("log: no pass records (an older log): every step taken as a turn, no tick as paused");
 
     for (uint32_t t = 1; t <= log.ticks; t++) {
+        double tick_us = 0;
+        const double sync_before = bench ? bench->sync_us : 0;
         // A tick without a pass is a paused one: the native clock does not move in it.
         if (have_passes && !log.passes.count(t)) {
             note("ticks: paused (no pass)");
@@ -351,11 +370,13 @@ int main(int argc, char** argv) {
         const PassRec pass = have_passes ? log.passes.at(t) : PassRec{};
         if (have_passes) note(sim.cursor() == (int16_t)pass.from ? "passes: the native cursor where the log's pass starts" : "passes: DIFFERENT start");
         std::vector<int16_t> native_turns;
+        const auto p0 = Clock::now();
         for (auto [o, asleep] : sim.pass_order()) {
             if (pass.stopped_at && o->id() > (int16_t)pass.stopped_at) break;
             if (asleep) sim.pass_over(*o);
             else native_turns.push_back(o->id());
         }
+        if (bench) { const double d = us(p0, Clock::now()); bench->pass_us += d; tick_us += d; }
         std::vector<int16_t> a = logged_turns, b = native_turns;
         std::sort(a.begin(), a.end());
         std::sort(b.begin(), b.end());
@@ -481,10 +502,17 @@ int main(int argc, char** argv) {
             rp.step = &s;
             rp.file_of_top = in.stack().back().file;
             in.reset_iterations();
+            const auto s0 = Clock::now();
             in.step();
+            if (bench) { const double d = us(s0, Clock::now()); bench->steps_us += d; tick_us += d; bench->steps++; }
         }
         if (have_passes) note(sim.stop_asked() == (pass.stopped_at != 0) ? "passes: stopped (or not) as the log's" : "passes: DIFFERENT stop");
         sim.end_pass(have_passes ? (int16_t)pass.stopped_at : 0);
+        if (bench) {
+            tick_us -= bench->sync_us - sync_before;  // the replay's own, inside the steps
+            if (bench->ticks.empty() || tick_us > bench->ticks[bench->worst_tick]) bench->worst_tick = bench->ticks.size();
+            bench->ticks.push_back(tick_us);
+        }
     }
 
     if (getenv("REPLAY_SHOW_FILES")) {
@@ -498,7 +526,49 @@ int main(int argc, char** argv) {
         }
         for (auto& [p, n] : f) std::printf("a lot Sim's own trees in %s: %d steps\n", p.c_str(), n);
     }
-    for (const auto& [k, n] : counts) std::printf("  %-66s %zu\n", k.c_str(), n);
-    std::printf("longest run of steps with the native stack as the log's: %zu\n", best_streak);
+    if (!bench) note("steps: longest run with the native stack as the log's", best_streak);
+    return true;
+}
+
+int main(int argc, char** argv) {
+    if (argc < 3) { std::printf("usage: replay LOG ISO\n"); return 2; }
+    Log log;
+    if (!read_log(argv[1], log)) { std::printf("cannot read %s\n", argv[1]); return 1; }
+    Disc d(argv[2]);
+    if (!d.ok()) { std::printf("cannot read %s\n", argv[2]); return 1; }
+    const Library lib = Library::bustin_out(d);
+    const auto lots = read_lots(d.read("Runtime/default.ngh"));
+    const bool bench = argc > 3 && std::string(argv[3]) == "--bench";
+    if (!bench) {
+        if (!run(log, lib, lots.back(), nullptr)) return 1;
+        for (const auto& [k, n] : counts) std::printf("  %-66s %zu\n", k.c_str(), n);
+        return 0;
+    }
+    // The benchmark: five runs, each figure the median of the runs (the PC is shared).
+    quiet = true;
+    std::vector<Bench> runs(5);
+    for (Bench& b : runs) if (!run(log, lib, lots.back(), &b)) return 1;
+    auto median = [&](auto f) {
+        std::vector<double> v;
+        for (const Bench& b : runs) v.push_back(f(b));
+        std::sort(v.begin(), v.end());
+        return v[v.size() / 2];
+    };
+    auto pct = [](std::vector<double> v, double q) { std::sort(v.begin(), v.end()); return v[(size_t)(q * (double)(v.size() - 1))]; };
+    const size_t ticks = runs[0].ticks.size();
+    std::printf("bench: %zu ticks, %zu native steps (%.1f a tick), 5 runs, medians\n", ticks, runs[0].steps, (double)runs[0].steps / (double)ticks);
+    std::printf("  per tick:  mean %.2f us, median %.2f us, 99th percentile %.2f us, worst %.2f us\n",
+                median([&](const Bench& b) { double t = 0; for (double x : b.ticks) t += x; return t / (double)b.ticks.size(); }),
+                median([&](const Bench& b) { return pct(b.ticks, 0.5); }), median([&](const Bench& b) { return pct(b.ticks, 0.99); }),
+                median([&](const Bench& b) { return b.ticks[b.worst_tick]; }));
+    std::printf("  the worst tick: tick %zu; the worst from tick 10 on (past the load): %.2f us\n", runs[0].worst_tick + 1,
+                median([&](const Bench& b) { return *std::max_element(b.ticks.begin() + std::min<size_t>(9, b.ticks.size() - 1), b.ticks.end()); }));
+    std::printf("  per part, us a tick: scripts (steps) %.2f, of which expression %.2f, SetToNext %.2f, Idle %.2f; the pass %.2f\n",
+                median([&](const Bench& b) { return (b.steps_us - b.sync_us) / (double)b.ticks.size(); }),
+                median([&](const Bench& b) { return b.expression_us / (double)b.ticks.size(); }),
+                median([&](const Bench& b) { return b.set_to_next_us / (double)b.ticks.size(); }),
+                median([&](const Bench& b) { return b.idle_us / (double)b.ticks.size(); }),
+                median([&](const Bench& b) { return b.pass_us / (double)b.ticks.size(); }));
+    std::printf("  not native yet (not in these figures): routing, autonomy, animation, the other primitives\n");
     return 0;
 }

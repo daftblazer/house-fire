@@ -517,7 +517,7 @@ without a commit.
 
 ## Progress
 
-Iteration 5 of 12.
+Iteration 6 of 12.
 
 - **Iteration 1, chunk 1 (the tree stack and the base object).** Read the loader's code for
   everything after an object's data: the tree stack and its frames, the +192 member, the
@@ -566,3 +566,9 @@ Iteration 5 of 12.
   natively (555 not). Also: the lot's Sims run template_person's trees; a return step's tree
   is the frame's (its logged nodes are the caller's). Next: the frames the engine pushes on a
   Sim's stack (its interactions), the rest of the replay's differences, then the benchmark.
+
+- **Iteration 6, chunk 3 (the benchmark on the PC).** `replay ... --bench`: the native work
+  per tick, five runs, medians (`plan.md`, "The CPU budget"). The PC: 12.3 µs a tick on
+  average over the 5,130-tick session, 190 µs at worst past the load; the scripts 7.1 µs, the
+  pass 5.2 µs. Next: the RK3566 (asked the user for SSH access; until then, chunk 4,
+  Castaway's object stream).
