@@ -186,7 +186,20 @@ description (strings zero-ended, padded to even with 0xCD). Table 1 is the motiv
 Table 2 is autonomy's (the minimum scores, attenuations, "random selection count" 4,
 "friendship threshold" 50), 3 rooms' and light's, 4 the family's score. All four read to
 their ends (`Library::tuning`, `test_disc`). The rest of `fn_801CFFB4` derives the rates the
-update uses from these; that is the next piece. Castaway names the update's parts: `Motives`
+update uses from these, as follows (W the wake hours, 16; H the wake hour, 7; S the span,
+180): energy −S / W / 30 a step awake (−0.375) and +S / (24 − W) / 30 asleep (+0.75), less
+the drift while asleep after hour H and before H + W; comfort less lazy + (active − lazy) /
+1000 × person data 3 (0.6 − 0.0002 × p3); asleep is motive 11 below 0.
+
+**Native** (`update_motives`, `MotiveRates::from`; its two personality terms a multiply-add
+in one rounding, as the original's `fmadds`). Checked by `replay --card` on each person's
+`N` records: 75 update steps of the home log the same bit for bit (every motive but 3 and
+13, which it does not touch), 14 more where a script changed a motive in the same interval,
+none that differs. Sims 12 and 237 have person data 3 = 600 and 800, 6 = 800 and 700.
+
+Not yet: when it runs (every 60 ticks, from tick 121; by a virtual call into
+`fn_8022501C`, which skips a person whose +66 or another flag is set: Sim 237's updates stop
+at tick 5042), motive 3's own update, and the clock's hour (read only while asleep). Castaway names the update's parts: `Motives`
 (`Sim`, `InitDecayRates`), a base decay table (`sMotiveDecayBase`) and changes to it by
 personality (`sMotiveDecayActiveMod`, `NeatMod`, `OutgoingMod`, `PlayfulMod`), and
 `MotiveConstantsClient::UpdateConstants`, which suggests the rates are game data: the

@@ -55,6 +55,7 @@ int World::load_lot(const LotChunks& lot) {
             o->person = true;  // an NPC with a definition keeps its own file
             o->person_data = lo.person_data;
             o->motives = lo.motives;
+            o->motives_b = lo.motives_b;
             o->current = lo.current;
             o->queue = lo.queue;
         }

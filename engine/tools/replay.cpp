@@ -26,6 +26,7 @@
 // a variable (one a primitive that is not native wrote). Objects that are not the lot's (the
 // household, made as the lot loads, and objects made later) are not run.
 #include <algorithm>
+#include <cmath>
 #include <chrono>
 #include <cstdlib>
 #include <cstdio>
@@ -38,6 +39,7 @@
 #include "housefire/disc.h"
 #include "housefire/expression.h"
 #include "housefire/library.h"
+#include "housefire/motives.h"
 #include "housefire/primitives.h"
 #include "housefire/save.h"
 #include "housefire/simulator.h"
@@ -805,6 +807,41 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
         for (auto& [p, n] : f) std::printf("a lot Sim's own trees in %s: %d steps\n", p.c_str(), n);
     }
     if (!bench) note("steps: longest run with the native stack as the log's", best_streak);
+
+    // The motives' own update (update_motives), on each person's logged motives ('N'
+    // records): the native update of one record against the next. A pair it does not
+    // reproduce is a change the scripts made, or a tick the original did not update it.
+    if (!bench && !log.motives.empty()) {
+        MotiveRates rates;
+        if (!rates.from(lib)) note("motives: a rate missing from the tuning tables");
+        std::map<int16_t, std::vector<const MotiveRec*>> by_person;
+        for (const MotiveRec& m : log.motives) by_person[m.id].push_back(&m);
+        for (auto& [id, recs] : by_person) {
+            const Object* o = world.find(id);
+            if (!o || !o->person || o->person_data.size() < 7 || o->motives_b.size() < 16) continue;
+            std::array<float, 16> last;
+            std::copy_n(o->motives_b.begin(), 16, last.begin());
+            for (size_t k = 1; k < recs.size(); k++) {
+                std::array<float, 16> now = recs[k - 1]->motives, copy = last;
+                update_motives(rates, now, copy, o->person_data[3], o->person_data[6], 12);
+                bool same = true;
+                for (int i = 0; i < 16; i++) if (i != 3 && i != 13 && now[(size_t)i] != recs[k]->motives[(size_t)i]) same = false;
+                if (!same && getenv("REPLAY_SHOW_MOTIVES")) {
+                    int near = 0;
+                    for (int i = 0; i < 16; i++) if (i != 3 && i != 13 && std::fabs(now[(size_t)i] - recs[k]->motives[(size_t)i]) < 1e-3f) near++;
+                    if (near == 14)
+                        for (int i = 0; i < 16; i++)
+                            if (i != 3 && i != 13 && now[(size_t)i] != recs[k]->motives[(size_t)i])
+                                std::printf("motive %d of %d at tick %u: native %.9g, log %.9g (before %.9g)\n", i, id, recs[k]->tick, now[(size_t)i], recs[k]->motives[(size_t)i], recs[k - 1]->motives[(size_t)i]);
+                }
+                note(same ? "motives: an update the same natively (bit for bit, all but 3 and 13)" : "motives: a change not the update's (a script's, or no update)");
+                // An update step (energy moves only by the update): the copy is the motives after it.
+                if (now[kEnergy] == recs[k]->motives[kEnergy] && recs[k]->motives[kEnergy] != recs[k - 1]->motives[kEnergy]) last = recs[k]->motives;
+                if (!same && now[kEnergy] == recs[k]->motives[kEnergy] && recs[k]->motives[kEnergy] != recs[k - 1]->motives[kEnergy])
+                    note("motives: an update step with a script's change besides");
+            }
+        }
+    }
     return true;
 }
 

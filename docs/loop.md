@@ -878,7 +878,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 5 of 16.
+Iteration 6 of 16.
 
 - **Iteration 1, chunk 1 (Mom's house read from the save).** The card's save is the
   neighbourhood file with big-endian block headers and chunk tables (`lots.md`, "Saves");
@@ -917,3 +917,9 @@ Iteration 5 of 16.
   each to its end); their values are the measured rates (hygiene 0.17, hunger 0.0021,
   bladder 0.3, fun 0.25, energy 180 / 16 / 30). Next: the rates derived in `fn_801CFFB4`,
   then the native update against the `N` records.
+
+- **Iteration 6, chunk 2 (the motive update, native).** The rates `fn_801CFFB4` derives
+  decoded; `update_motives` and `MotiveRates::from` (the tuning tables by name). Checked
+  (`replay --card`, the `N` records): 75 update steps bit for bit, 14 with a script's change
+  besides, none different. Next: when it runs (the caller and its gate, Sim 237's stop at
+  tick 5042), so that the simulator runs it itself; then motive 3.
