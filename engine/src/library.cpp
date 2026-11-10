@@ -106,7 +106,7 @@ std::vector<std::string> read_strings(std::span<const uint8_t> d, Order o) {
 // 9 and up are packed as the save stream is (a code byte 1, then its compressed fields; 11
 // opens with one field for the table). A table that does not read adds nothing.
 void read_ttab(std::span<const uint8_t> d, Order o, std::map<uint16_t, uint16_t>& out, std::map<uint16_t, uint16_t>& prefix,
-               std::vector<std::pair<uint16_t, uint16_t>>& list) {
+               std::vector<std::pair<uint16_t, uint16_t>>& list, std::vector<Interaction>& table_out) {
     try {
         Reader r(d, o);
         const uint16_t n = r.u16();
@@ -114,15 +114,24 @@ void read_ttab(std::span<const uint8_t> d, Order o, std::map<uint16_t, uint16_t>
         const uint16_t version = r.u16();
         if (version < 9) {
             for (int i = 0; i < n; i++) {
-                const uint16_t action = r.u16(), guard = r.u16();
+                Interaction e;
+                e.action = r.u16();
+                e.guard = r.u16();
+                const uint16_t action = e.action, guard = e.guard;
                 uint32_t motives;
-                if (version <= 3) { motives = r.u16(); r.u16(); }
-                else { motives = r.u32(); r.u32(); r.u32(); }
+                if (version <= 3) { motives = r.u16(); e.flags = r.u16(); }
+                else { motives = r.u32(); e.flags = r.u32(); e.string_index = (int32_t)r.u32(); }
                 if (motives > 64) return;
-                if (version > 6) r.u32();
-                r.u32();
-                if (version > 3) { r.u32(); r.u32(); }
-                r.take((version > 6 ? 6 : 2) * motives);
+                if (version > 6) e.attenuation_code = (int32_t)r.u32();
+                { const uint32_t w = r.u32(); std::memcpy(&e.attenuation_value, &w, 4); }
+                if (version > 3) { e.autonomy_threshold = (int32_t)r.u32(); e.joining_index = (int32_t)r.u32(); }
+                for (uint32_t k = 0; k < motives; k++) {
+                    Interaction::Advert a;
+                    if (version > 6) { a.min = r.s16(); a.delta = r.s16(); a.personality = r.u16(); }
+                    else a.delta = r.s16();
+                    e.adverts.push_back(a);
+                }
+                table_out.push_back(std::move(e));
                 list.push_back({action, guard});
                 if (guard) out.emplace(action, guard);
             }
@@ -133,12 +142,27 @@ void read_ttab(std::span<const uint8_t> d, Order o, std::map<uint16_t, uint16_t>
         f.compressed = true;
         const uint16_t table = version >= 11 ? (uint16_t)f.r16() : 0;
         for (int i = 0; i < n; i++) {
-            const uint16_t action = (uint16_t)f.r16(), guard = (uint16_t)f.r16();
+            Interaction e;
+            e.action = (uint16_t)f.r16();
+            e.guard = (uint16_t)f.r16();
+            const uint16_t action = e.action, guard = e.guard;
             if (table) prefix.emplace(action, table);
             const int32_t motives = f.r32();
             if (motives < 0 || motives > 64) return;
-            for (int k = 0; k < 6; k++) f.r32();  // flags, string index, attenuation, threshold, joining
-            for (int32_t k = 0; k < motives; k++) { f.r16(); f.r16(); f.r16(); }
+            e.flags = (uint32_t)f.r32();
+            e.string_index = f.r32();
+            e.attenuation_code = f.r32();
+            { const int32_t w = f.r32(); std::memcpy(&e.attenuation_value, &w, 4); }
+            e.autonomy_threshold = f.r32();
+            e.joining_index = f.r32();
+            for (int32_t k = 0; k < motives; k++) {
+                Interaction::Advert a;
+                a.min = (int16_t)f.r16();
+                a.delta = (int16_t)f.r16();
+                a.personality = (uint16_t)f.r16();
+                e.adverts.push_back(a);
+            }
+            table_out.push_back(std::move(e));
             list.push_back({action, guard});
             if (guard) out.emplace(action, guard);
         }
@@ -169,7 +193,9 @@ Library Library::bustin_out(const Disc& d) {
         }
         for (const Chunk* c : f->iff.of("TTAB")) {
             std::vector<std::pair<uint16_t, uint16_t>> list;
-            read_ttab(c->data, o, f->guard_of, f->prefix_of, list);
+            std::vector<Interaction> table;
+            read_ttab(c->data, o, f->guard_of, f->prefix_of, list, table);
+            if (!table.empty()) f->tables[(uint16_t)c->id] = std::move(table);
             if (f->ttabs++ == 0) f->interactions = std::move(list);
             else f->interactions.clear();  // several tables: which an object uses is not known yet
         }

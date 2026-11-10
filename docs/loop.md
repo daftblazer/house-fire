@@ -878,7 +878,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 9 of 16.
+Iteration 10 of 16.
 
 - **Iteration 1, chunk 1 (Mom's house read from the save).** The card's save is the
   neighbourhood file with big-endian block headers and chunk tables (`lots.md`, "Saves");
@@ -943,3 +943,10 @@ Iteration 9 of 16.
   and 1503, Sim 237 the easel at 1901); the other four interactions are the player's
   (`simulation.md`, "Autonomy"). Next: the advertisements in the TTAB entries (their motive
   fields), then the scores, checked as the log's choice among the native best four.
+
+- **Iteration 10, chunk 3 (the advertisements).** The interaction tables kept whole
+  (`Interaction`: flags, attenuation, threshold, an advert a motive), every file's by chunk
+  id; an object's table is its definition's field 5. The three choices found with what they
+  advertise (hunger +20, bladder +70, fun +10), each the Sim's need then. Next: the score
+  (motives against adverts, attenuation by distance, the tuning table), checked as each
+  logged choice among the native best four.

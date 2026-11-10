@@ -255,6 +255,22 @@ the best four with the original's own random numbers (which the engine does not 
 `plan.md`), the check is that the log's choice is among the native best four, and the
 scores' order where the log shows it.
 
+**The advertisements** (the interaction tables, TTAB; `Interaction`, `Library` keeps every
+file's by chunk id). A file can have several tables (a fridge's for cheap, moderate and
+expensive models); an object uses the one its definition's field 5 names. Each interaction
+advertises, motive by motive, a minimum, a delta and the personality field scaling it; with
+an attenuation (code and value), an autonomy threshold and flags. The three choices:
+
+| Object | Table | Interaction | Advertises |
+|---|---|---|---|
+| 62, a fridge (`appliance_fridge_c_white`) | 128 "Fridge - Cheap" | 8215 (a snack) | hunger +20, attenuation 2 / 0.02, threshold 50 |
+| 114, a toilet (`plumbing_toilet_x`) | 130 "Toilet - Expensive" | 8223 | bladder +70 |
+| 152, the easel (`art_easel`) | 129 | 4097 | fun +10 (minimum 1), attenuation 4 / 0.2 |
+
+Each is what its Sim lacked then: Sim 12 hungry (hunger −3.5 at the load), then its bladder
+low (−5 to −33); Sim 237's fun the lowest of its motives (about 21). Checked: `test_disc`
+reads all 856 tables on the disc and finds the three.
+
 ## Still open
 
 - What wakes a sleeping stack early (23 of 2,833 sleeps).

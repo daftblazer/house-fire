@@ -81,10 +81,28 @@ int main() {
     auto tv = [&](const char* n) { return lib.tuning(n).value_or(-1.0f); };
     std::printf("FCNS: %zu tables, %zu values, %d not read; hyg decrement, awake %g; hunger decrement ratio %g; energy span %g\n",
                 tuning_tables, tuning_values, lib.tuning_failures(), tv("hyg decrement, awake"), tv("hunger decrement ratio"), tv("energy span"));
+    // Interaction tables (TTAB): the home log's three autonomous choices in their objects'
+    // tables (OBJD field 5), each advertising what the Sim lacked (docs/simulation.md,
+    // "Autonomy"): the fridge's snack hunger +20, the toilet bladder +70, the easel fun +10.
+    auto advert = [&](uint32_t guid, uint16_t action, int motive) -> int {
+        const ObjectFile* file = nullptr;
+        const Definition* def = lib.definition(guid, &file);
+        if (!def || !file) return -999;
+        auto t = file->tables.find(def->interaction_table());
+        if (t == file->tables.end()) return -998;
+        for (const Interaction& e : t->second)
+            if (e.action == action) return (size_t)motive < e.adverts.size() ? e.adverts[(size_t)motive].delta : -997;
+        return -996;
+    };
+    const int fridge = advert(0x675C18AF, 8215, 7), toilet = advert(0x3C566968, 8223, 9), easel = advert(0x9FB223CE, 4097, 15);
+    size_t tables = 0;
+    for (const auto& f : lib.files()) tables += f->tables.size();
+    std::printf("TTAB: %zu tables; the fridge's snack hunger %d, the toilet bladder %d, the easel fun %d\n", tables, fridge, toilet, easel);
     const bool ok = bad == 0 && bhavs == 9529 && total == bhavs && ended == total &&
                     table("controller_party", 303) == 5 && table("PersonGlobals", 303) == 1 &&
                     lib.tuning_failures() == 0 && lib.global() && lib.global()->tuning.size() == 4 &&
-                    tv("hyg decrement, awake") == 0.17f && tv("hunger decrement ratio") == 0.0021f && tv("energy span") == 180.0f;
+                    tv("hyg decrement, awake") == 0.17f && tv("hunger decrement ratio") == 0.0021f && tv("energy span") == 180.0f &&
+                    fridge == 20 && toilet == 70 && easel == 10;
     std::printf("test_disc: %s\n", ok ? "ok" : "FAILED");
     return ok ? 0 : 1;
 }

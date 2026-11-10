@@ -24,6 +24,23 @@ struct Definition {
     std::vector<uint16_t> fields;
     uint32_t guid() const { return fields.size() > 13 ? (uint32_t)fields[12] | (uint32_t)fields[13] << 16 : 0; }
     uint16_t field(int i) const { return i >= 0 && (size_t)i < fields.size() ? fields[(size_t)i] : 0; }
+    // The interaction table (TTAB chunk id) the object uses, of its file's: field 5. Measured
+    // on the home log's three autonomous choices (docs/simulation.md, "Autonomy").
+    uint16_t interaction_table() const { return field(5); }
+};
+
+// An interaction of a table (TTAB): the action and guard trees, its flags, how its appeal
+// falls off with distance (attenuation code and value), the motive level below which a Sim
+// considers it by itself (autonomy threshold), and what it advertises: for each motive, a
+// minimum, a delta and the personality field that scales it.
+struct Interaction {
+    uint16_t action = 0, guard = 0;
+    uint32_t flags = 0;
+    int32_t string_index = 0, attenuation_code = 0;
+    float attenuation_value = 0;
+    int32_t autonomy_threshold = 0, joining_index = 0;
+    struct Advert { int16_t min = 0, delta = 0; uint16_t personality = 0; };
+    std::vector<Advert> adverts;  // by motive
 };
 
 struct ObjectFile {
@@ -43,6 +60,7 @@ struct ObjectFile {
     // The file's interactions in its table's order (action, guard), if it has one TTAB.
     std::vector<std::pair<uint16_t, uint16_t>> interactions;
     int ttabs = 0;
+    std::map<uint16_t, std::vector<Interaction>> tables;  // TTAB by chunk id
     std::vector<Definition> definitions;                 // OBJD, in the file's order
     std::string glob;                                    // the semi-global file it names
     const ObjectFile* semi = nullptr;                    // that file, if there is one
