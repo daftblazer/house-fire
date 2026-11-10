@@ -27,6 +27,11 @@ PrimResult random(const Node& n, World& world, ScriptVariables& vars);
 // name: false. A tree found: Stop, as its call is not modelled (no logged use finds one).
 PrimResult call_named_tree(const Node& n, const Frame& f, const Library& lib);
 
+// PlaySound (23), Update (7) and KillSounds (48): requests to the presentation, queued on the
+// world for the front ends (World::presentation); the step is true. In the logs they are true
+// every time (100, 168 and 2 uses) and never change their frame.
+PrimResult present(const Node& n, World& world, const Object& me);
+
 // TestObjectType (opcode 32): whether the object whose id a variable holds (operand bytes
 // 4-5 the datum, byte 6 the scope) is of the GUID in bytes 0-3. An id no object has: false.
 // Measured on the recompiled game (docs/primitives.md, "TestObjectType").

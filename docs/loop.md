@@ -676,7 +676,7 @@ records what it found and moves to the next chunk rather than starting the syste
 
 ## Progress
 
-Iteration 6 of 16.
+Iteration 7 of 16.
 
 - **Iteration 1, chunk 1 (the neighbours).** NBRS decoded (`objects.md`, "The
   neighbours"): 63 slots, 51 neighbours, read to the chunk's end, ids the slot's number plus
@@ -715,3 +715,10 @@ Iteration 6 of 16.
   check trees and pushes the chosen interaction (`simulation.md`). That is the interaction
   queue and autonomy, a system of its own: recorded and skipped. Next: chunk 6, the next
   primitives by use.
+
+- **Iteration 7, chunk 6 (PlaySound, Update, KillSounds).** Requests to the presentation,
+  always true in the logs and never changing their frame: native as events queued on the
+  world for the front ends (`World::presentation`, `primitives.md`). All 270 and 64 uses
+  the same. Of the rest answered from the log, ChangeSuit (appearance), PushAction and
+  IdleForInput (the interaction queue), GenericSimCall, Animate, Dialog, CompleteGoal,
+  routing and SetMotiveDelta are systems. Next: chunk 7, Castaway's definitions.

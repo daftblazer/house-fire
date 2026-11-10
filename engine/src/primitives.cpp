@@ -42,6 +42,11 @@ PrimResult call_named_tree(const Node& n, const Frame& f, const Library& lib) {
     return PrimResult::Stop;  // the call: not modelled yet
 }
 
+PrimResult present(const Node& n, World& world, const Object& me) {
+    world.presentation.push_back({n.opcode, me.id(), n.operand});
+    return PrimResult::True;
+}
+
 PrimResult test_object_type(const Node& n, World& world, ScriptVariables& vars) {
     const auto& o = n.operand;
     const int16_t data = (int16_t)(n.order == Order::Little ? o[4] | o[5] << 8 : o[4] << 8 | o[5]);

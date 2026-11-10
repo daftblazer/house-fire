@@ -92,6 +92,14 @@ int main() {
     }
     for (bool b : seen) CHECK(b);
 
+    // PlaySound, Update, KillSounds: queued for the presentation, true
+    me.data.resize(72);
+    me.data[kDataObjectId] = 5;
+    CHECK(present(node(23, {7, 0, 0, 0, 0, 0, 0, 0}), w, me) == PrimResult::True);
+    CHECK(present(node(48, {0, 0, 0, 0, 0, 0, 0, 0}), w, me) == PrimResult::True);
+    CHECK(w.presentation.size() == 2 && w.presentation[0].opcode == 23 && w.presentation[0].object == 5 &&
+          w.presentation[0].operand[0] == 7 && w.presentation[1].opcode == 48);
+
     // a made object takes the next id and goes in front
     auto o = std::make_unique<Object>();
     Object& made = w.make_object(std::move(o));

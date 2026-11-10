@@ -90,6 +90,17 @@ call itself is never made in the logs, so the engine stops there for now.
 The engine has it as `call_named_tree()`; the library keeps each file's string tables and its
 trees by name.
 
+## PlaySound (23), Update (7), KillSounds (48)
+
+Requests to the presentation: a sound to play, the object's picture to refresh, sounds to stop.
+For the scripts they are true and nothing else: in the session all 270 uses (100, 168 and
+2) are true, never yield and never change their frame. The engine queues each on the world
+(`World::presentation`: the primitive, the object, its operand) for the front ends to take,
+and goes on; the simulation never waits on them, so its run is the same with or without a
+front end. What each operand asks (which sound, which refresh) is the front ends' to read.
+
+The engine has them as `present()`.
+
 ## Random (opcode 8)
 
 A random number into a variable. The operand, as 16-bit little-endian fields: bytes 0-1 the

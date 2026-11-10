@@ -184,6 +184,12 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
         } else note("primitives: Random: the original's number not in the log (a temp or attribute)");
         return want;
     }
+    if (n.opcode == 23 || n.opcode == 7 || n.opcode == 48) {  // the presentation's requests
+        const PrimResult got = present(n, r.world, me);
+        r.world.presentation.clear();  // no front end here
+        note(got == logged() ? "primitives: PlaySound/Update/KillSounds: the same natively" : "primitives: PlaySound/Update/KillSounds: DIFFERENT (the log's taken)");
+        return logged();
+    }
     if (n.opcode == 28) {  // CallNamedTree
         const PrimResult got = call_named_tree(n, f, r.lib);
         const PrimResult want = logged();
@@ -274,6 +280,8 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
         return got;
     }
     note("primitives: from the log");
+    if (s.params != s.params_after || s.locals != s.locals_after || s.stack_object != s.stack_object_after)
+        note("primitives: from the log, opcode " + std::to_string(n.opcode) + ": changes its frame");
     if (getenv("REPLAY_SHOW_OP") && n.opcode == (uint16_t)atoi(getenv("REPLAY_SHOW_OP"))) {
         static int shown = 0;
         if (shown++ < (getenv("REPLAY_SHOW_ALL") ? 100000 : 14)) {

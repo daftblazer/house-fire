@@ -97,6 +97,15 @@ public:
         // A number from 0 up to n (n above 0), without the bias of a plain modulo.
         uint32_t below(uint32_t n) { return (uint32_t)(((uint64_t)next() * n) >> 32); }
     } rng;
+    // What the simulation asks of the presentation (sound, the picture), in the order asked:
+    // the front ends (not written yet) take them each frame. The simulation never waits on
+    // them, so its run is the same with or without a front end.
+    struct PresentationEvent {
+        uint16_t opcode;                 // the primitive: PlaySound 23, Update 7, KillSounds 48
+        int16_t object;                  // the object whose script asked
+        std::array<uint8_t, 8> operand;  // as the node has it
+    };
+    std::vector<PresentationEvent> presentation;
     std::vector<int16_t> globals;        // scope 6
     std::vector<int16_t> neighbourhood;  // scope 34
     std::vector<Neighbour> neighbours;   // the neighbourhood's, in id order (read_neighbours)
