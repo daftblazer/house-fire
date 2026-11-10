@@ -1251,7 +1251,7 @@ without a commit (record why here). Then the eighth loop resumes.
 
 ## Progress
 
-Iteration 4 of 16.
+Iteration 5 of 16.
 
 - **Iteration 1, chunk 1 (the crate and the readers).** The C++ engine moved to
   `engine-cpp/` (built with clang from there, its home-log replay output the very same as
@@ -1283,3 +1283,13 @@ Iteration 4 of 16.
   51 neighbours with ids 3 to 63, and the card's save of 1,318,912 bytes with 16 lots, all the
   C++ ones; clippy clean. Next: `library` (with `test_disc` entire), then `world`
   (`test_lots`' objects and classes), then `primitives`.
+
+- **Iteration 5, chunk 3 (the library).** `library` ported: the files and their trees kept in
+  vectors (`FileId`, `TreeId`), a semi-global file an `Option<FileId>`, an object's
+  interaction table named by its chunk id (not a pointer into the map), a definition by
+  `DefId`; the readers' strings Latin-1, byte for character, so names compare as the C++
+  bytes do; a TTAB that stops reading keeps what it read, as the C++'s. Checked: `test_disc`
+  entire as a Rust test, its output line for line the C++ one's (9,529 trees, 1,689 BCON,
+  every tree run through the Rust interpreter: 1,251,290 steps, the outcomes 21, 1,740, 443,
+  758, 1,921 and 4,646 alike; STR#, FCNS, TTAB and SLOT alike); clippy clean. Next: `world`
+  and the rest of `test_lots`.

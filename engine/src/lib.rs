@@ -5,6 +5,7 @@ pub mod bhav;
 pub mod disc;
 pub mod expression;
 pub mod iff;
+pub mod library;
 pub mod interp;
 pub mod save;
 

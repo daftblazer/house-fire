@@ -38,6 +38,14 @@ impl IffFile {
         if bytes.len() < HEADER || !bytes.starts_with(MAGIC) {
             return None;
         }
+        Some(Self::parse(bytes))
+    }
+
+    /// The same, a file that is not an IFF kept with no chunks.
+    pub fn parse(bytes: Vec<u8>) -> IffFile {
+        if bytes.len() < HEADER || !bytes.starts_with(MAGIC) {
+            return IffFile { bytes, chunks: Vec::new() };
+        }
         let type_char = |c: u8| c.is_ascii_alphanumeric() || c == b'#' || c == b'$' || c == b' ';
         let mut chunks = Vec::new();
         let mut p = HEADER;
@@ -56,13 +64,13 @@ impl IffFile {
                 kind: [h[0], h[1], h[2], h[3]],
                 id: i16::from_be_bytes([h[8], h[9]]),
                 flags: u16::from_be_bytes([h[10], h[11]]),
-                label: label.iter().map(|&c| c as char).collect(),
+                label: latin1(label),
                 start: p + CHUNK_HEADER,
                 len: size - CHUNK_HEADER,
             });
             p += size;
         }
-        Some(IffFile { bytes, chunks })
+        IffFile { bytes, chunks }
     }
 
     /// A chunk's contents, its header excluded.
@@ -78,6 +86,11 @@ impl IffFile {
     pub fn find(&self, kind: &[u8; 4], id: i16) -> Option<&Chunk> {
         self.chunks.iter().find(|c| c.id == id && &c.kind == kind)
     }
+}
+
+/// Bytes as text, each byte its own character (Latin-1), so that names compare as the bytes do.
+pub fn latin1(b: &[u8]) -> String {
+    b.iter().map(|&c| c as char).collect()
 }
 
 /// A read past the end of a chunk, or contents of a form not known.
