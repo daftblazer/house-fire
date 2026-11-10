@@ -345,7 +345,22 @@ matching steps total 566,983 against 566,104 without it, the differing 2,334 aga
 At the club it is off: there it makes the figures worse (the bursts noted above are not
 evaluations as at Mom's house), so `REPLAY_EVALUATION=1` turns it on there only by hand.
 
-Still to come: the score of those that pass (the
+**The score, first measured.** Bustin' Out's scoring function is `fn_80267E9C` (named
+`Autonomy_Score` in the recomp; found by the shape of Castaway's
+`MotiveEffects::GetInteractionScore`: a personality value, or 1000 less it, scaling an
+advert). Over a set of per-motive curves (the evaluator's +0, 20 bytes each: points, slopes, a
+count, the motive) it reads each motive's advert (personality, minimum, delta: the minimum
+plus the delta × the personality value / 1000, or the minimum plus the delta without one),
+adds it × 0.001 to the person's motive (the evaluator's +192 points at its 16 motives), reads
+the curve there, and averages. The observer's `A` records log each call: 111 in the home log
+(36, 37 and 38 in the three evaluations, about the checks that pass), the new log the same
+581,110 steps. The scores differ only in the fourth decimal (26.9131 to 26.9142 at tick 186),
+and alone they do not rank the choices first: at 186 the toilet (bladder +70) is first and
+the chosen fridge snack (hunger +20) fifth; at 1443 the chosen toilet fifth; at 1847 the
+chosen easel third. So the choice weighs more: the distance by each interaction's
+attenuation (the places are logged) and what the evaluation does with these scores.
+
+Still to come: the score's distance and the choice of those that pass (the
 adverts, the motives, the distance, the tuning table), checked as each choice among the native
 best four.
 

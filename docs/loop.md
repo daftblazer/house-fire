@@ -1038,7 +1038,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 5 of 16.
+Iteration 6 of 16.
 
 - **Iteration 1, chunk 1 (a table's first tree per table; PushAction by the object's
   table).** Object 198 is the group meal, whose table has action 4201 twice (guards 4202 and
@@ -1072,3 +1072,8 @@ Iteration 5 of 16.
   Checked: all 433 check results the same, all three evaluations exactly the log's steps; on
   by default for the save's lot (matching steps 566,983 vs 566,104 without, differing 2,334 vs
   2,858), off for the club (worse there; open). Next: chunk 3, the score.
+
+- **Iteration 6, chunk 3 (the score function, logged).** `fn_80267E9C` (Autonomy_Score) found
+  by Castaway's shape, its arithmetic read; the observer logs each call (`A`: the motives, the
+  adverts, the score; a new home log, the same steps). The scores alone do not rank the three
+  choices first (5th, 5th, 3rd): the distance and the selection are next.

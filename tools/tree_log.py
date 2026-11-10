@@ -54,6 +54,13 @@ def records(path):
                 inner, ptr = struct.unpack_from('<HI', b, p); p += 6
                 rows.append(((off, inner), ptr, b[p:p + 196])); p += 196
             yield 'O', (obj, rows)
+        elif k == b'A':
+            if p + 12 + 64 + 132 > n: break
+            ev, ad = struct.unpack_from('<II', b, p)
+            score = struct.unpack_from('<f', b, p + 8)[0]
+            motives = struct.unpack_from('<16f', b, p + 12)
+            adv = b[p + 76:p + 76 + 132]
+            yield 'A', dict(evaluator=ev, adverts=ad, score=score, motives=motives, raw=adv); p += 12 + 64 + 132
         elif k == b'U':
             if p + 7 > n: break
             yield 'U', struct.unpack_from('<hhhB', b, p); p += 7

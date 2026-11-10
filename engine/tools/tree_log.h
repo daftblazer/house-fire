@@ -107,6 +107,10 @@ inline bool read_log(const char* path, Log& log) {
             log.passes[log.ticks].stopped_at = u32();
             in_pass = false;
         }
+        else if (k == 'A') {  // an autonomy score (tools/tree_log.py)
+            if (p + 12 + 64 + 132 > b.size()) break;
+            p += 12 + 64 + 132;
+        }
         else if (k == 'U') {  // a call of the motive update's gate (tools/tree_log.py)
             if (p + 7 > b.size()) break;
             p += 7;
