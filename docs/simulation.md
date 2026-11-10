@@ -570,6 +570,25 @@ slot of a range of proximities (her slot 8 of the global SLOT, 16 to 64 at resol
 offers an area of places, 48 at tick 931 (not yet); the planner's choice among the goals is the
 nearest native one in the two requests that took one natively.
 
+**The planner's obstacles, logged.** The search (`fn_8024C5DC`) goes over the objects and, for
+each on the Sim's level that it does not leave out (`fn_802499DC`), takes its footprint (a
+virtual call, a rectangle {x0, y0, x1, y1} in sixteenths) and a cost: 0x7FFFFFFF, or 10 when a
+virtual flag (its +704 with 10) says so; an object of kind 8 (its +872) adds a strip of a tile
+at cost 10000 on each side its +1248 bits name; a blocking rectangle (or one of kind 2) is grown
+on each side by half a global width (r13 - 28468, 6 in the home log: the 3/16 of a tile the
+waypoints keep from corners); each goes into a vector of 20-byte entries, after which it calls
+an empty function (`Route_ObstacleAdded`, 8024F82C, from 8024CD78). The observer logs the
+vector as the loop last left it (`X`, before each `H`; a new home log with the same 581,110
+steps; the record letter `O` was taken). In the home log's 18 plans, 709 rectangles: 384 a tile
+grown by 3 (22×22), 47 half a tile grown (14×14), and smaller blocking parts (12, 6, 4, with
+16×14 and 16×10); not grown, 64 whole tiles and 164 parts of 4 or 6 at cost 10 (the yard's
+flower beds). Checked: all 709 a footprint within a tile, grown as their cost says. Against the
+native world they do not yet meet: 226 rectangles have a native object at their place, 483 none
+(another tile of a larger object, or objects not on the lot natively), and of the native
+objects within their extent 278 are covered, 1,194 not (the dining table among them, though the
+walk round it at tick 1905 keeps clear of it): which objects the search leaves out, and where
+an object's footprint lies, are next.
+
 ## Still open
 
 - What wakes a sleeping stack early (23 of 2,833 sleeps).

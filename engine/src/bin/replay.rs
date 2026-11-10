@@ -2352,6 +2352,56 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             );
         }
     }
+    // The obstacles the planner gathered for each plan (logs with 'X'): their shapes (a cost of
+    // 0x7FFFFFFF grown by half the width, a cost of 10 not), and how they meet the native
+    // objects (study: REPLAY_SHOW_OBSTACLES, each with the objects whose place lies in it).
+    let show_obstacles = has("REPLAY_SHOW_OBSTACLES");
+    for pl in log.plans.iter().filter(|p| !p.obstacles.is_empty()) {
+        if show_obstacles {
+            println!("obstacles tick {} width {} ({} rects)", pl.tick, pl.obstacle_width, pl.obstacles.len());
+        }
+        let half = pl.obstacle_width / 2;
+        let inside = |o: &housefire::world::Object, r: &[i32; 5]| o.x16 >= r[0] && o.x16 < r[2] && o.y16 >= r[1] && o.y16 < r[3];
+        let solid = |o: &&housefire::world::Object| o.on_lot() && o.level == 1 && !o.person;
+        for r in &pl.obstacles {
+            let (w, h) = (r[2] - r[0], r[3] - r[1]);
+            let grown = r[4] == i32::MAX;
+            let core = if grown { (w - 2 * half, h - 2 * half) } else { (w, h) };
+            counts.note(if core.0 > 0 && core.1 > 0 && core.0 <= 16 && core.1 <= 16 {
+                "routing: an obstacle a part of a tile (blocking: grown by half the width)"
+            } else {
+                "routing: an obstacle NOT a part of a tile grown as its cost says"
+            });
+            let objs: Vec<String> = world
+                .objects()
+                .filter(solid)
+                .filter(|o| inside(o, r))
+                .map(|o| format!("{} {} f{}", o.id(), o.file.map_or("-".to_string(), |f| file_name(lib, f)), o.facing()))
+                .collect();
+            counts.note(if objs.is_empty() {
+                "routing: an obstacle with no native object at its place (another tile of one, or not on the lot natively)"
+            } else {
+                "routing: an obstacle with a native object at its place"
+            });
+            if show_obstacles {
+                println!("   {:?} {w}x{h} cost {}: {objs:?}", &r[..4], r[4]);
+            }
+        }
+        // the native objects within the obstacles' extent that none covers
+        let (x0, y0) = pl.obstacles.iter().fold((i32::MAX, i32::MAX), |a, r| (a.0.min(r[0]), a.1.min(r[1])));
+        let (x1, y1) = pl.obstacles.iter().fold((i32::MIN, i32::MIN), |a, r| (a.0.max(r[2]), a.1.max(r[3])));
+        for o in world.objects().filter(solid).filter(|o| o.x16 >= x0 && o.x16 < x1 && o.y16 >= y0 && o.y16 < y1) {
+            let covered = pl.obstacles.iter().any(|r| inside(o, r));
+            counts.note(if covered {
+                "routing: a native object in the obstacles' extent covered by one"
+            } else {
+                "routing: a native object in the obstacles' extent covered by none"
+            });
+            if show_obstacles && !covered {
+                println!("   none for {} {} at {},{}", o.id(), o.file.map_or("-".to_string(), |f| file_name(lib, f)), o.x16, o.y16);
+            }
+        }
+    }
     // Each plan with the routing primitives its Sim ran in its tick (study: REPLAY_SHOW_PLANS):
     // opcode 27 or 45, the stack object and its place, the operand, the result.
     if has("REPLAY_SHOW_PLANS") {

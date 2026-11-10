@@ -150,6 +150,10 @@ pub struct PlanRec {
     pub goals: Vec<[u32; 4]>,
     /// The goal it took (the request's +88), -1 for none or an older log.
     pub chosen: i32,
+    /// The obstacles the search gathered from the objects (the 'X' record, in newer logs):
+    /// {x0, y0, x1, y1, cost}; and the global width it grows them by half of.
+    pub obstacles: Vec<[i32; 5]>,
+    pub obstacle_width: i32,
 }
 
 /// The random number autonomy's choice draws ('R').
@@ -228,6 +232,7 @@ pub fn read_log(path: &str) -> Option<Log> {
     let mut r = Bytes { b: &b, p: 0 };
     let mut log = Log::default();
     let mut request: Option<(i32, Vec<[u32; 4]>)> = None;
+    let mut obstacles: Option<(i32, Vec<[i32; 5]>)> = None;
     let mut at: BTreeMap<u32, usize> = BTreeMap::new();
     let mut pending: Option<ExprRec> = None;
     let mut pending_lookups: Vec<LookupRec> = Vec::new();
@@ -314,7 +319,21 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
                 let points = (0..cnt).map(|_| (r.u32() as i32, r.u32() as i32)).collect();
                 let (chosen, goals) = request.take().unwrap_or((-1, Vec::new()));
-                log.plans.push(PlanRec { tick: log.ticks, state, points, goals, chosen });
+                let (obstacle_width, obstacles) = obstacles.take().unwrap_or_default();
+                log.plans.push(PlanRec { tick: log.ticks, state, points, goals, chosen, obstacles, obstacle_width });
+            }
+            b'X' => {
+                // the obstacles of the plan that follows
+                if !r.has(6) {
+                    break;
+                }
+                let width = r.u32() as i32;
+                let cnt = r.u16() as usize;
+                if !r.has(20 * cnt) {
+                    break;
+                }
+                let rects = (0..cnt).map(|_| [r.u32() as i32, r.u32() as i32, r.u32() as i32, r.u32() as i32, r.u32() as i32]).collect();
+                obstacles = Some((width, rects));
             }
             b'H' => {
                 // the request of the plan that follows

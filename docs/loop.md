@@ -1185,7 +1185,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 5 of 16.
+Iteration 6 of 16.
 
 - **Iteration 1, chunk 1 (the rooms and their doors).** The third array is not the rooms (1
   inside, 7 outside); the rooms are the regions the walls close (`Walls::room`, a door left
@@ -1239,6 +1239,18 @@ Iteration 5 of 16.
   unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next: a slot of a
   range of proximities (the paper girl's area of 48 goals at tick 931), or the search's
   waypoints (`fn_8024C5DC`'s stages logged).
+
+- **Iteration 6, chunk 3 (the planner's obstacles, logged).** The search's object loop read:
+  each object's footprint (sixteenths) and cost (0x7FFFFFFF, or 10 by a flag; kind 8 adds side
+  strips at 10000), a blocking one grown by half a global width (6: the waypoints' 3/16 from
+  corners). The observer logs the gathered rectangles (`X`, at the empty `Route_ObstacleAdded`
+  the loop calls after each object; recomp names.txt and hle.txt; the new home log has the same
+  581,110 steps). Checked: all 709 rectangles of the 18 plans a footprint within a tile, grown as
+  their cost says. Measured against the native world (not yet built): 226 rectangles with a
+  native object at their place, 483 without; 278 native objects in their extent covered, 1,194
+  not (the dining table too). Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4,
+  24); clippy clean. Next: which objects the search leaves out (`fn_802499DC`) and an object's
+  footprint (its +696 virtual), to build the rectangles natively.
 
 
 ## The eighth loop paused
