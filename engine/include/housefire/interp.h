@@ -99,12 +99,14 @@ public:
         if (k < 64) f.unset &= ~(uint64_t(1) << k);
     }
 
-    // A stack that sleeps (Idle): not stepped until the clock reaches `wake`. The clock is
-    // the simulation's ticks, which stop while the game is paused.
-    void sleep_until(uint32_t wake) { wake_ = wake; sleeping_ = true; }
-    bool asleep(uint32_t now) const { return sleeping_ && now < wake_; }
+    // A stack that sleeps (Idle): passed over by the next `visits` passes of the tick that
+    // reach it (Simulator), then stepped again. A pass that stops early does not reach the
+    // objects after it, so their sleep does not count down (docs/simulation.md).
+    void sleep(uint32_t visits) { left_ = visits; sleeping_ = true; }
+    bool asleep() const { return sleeping_ && left_ > 0; }
+    void pass_over() { if (left_) left_--; }  // a pass reached the sleeping stack
     bool woke() const { return sleeping_; }  // slept, and is being stepped again
-    void wake() { sleeping_ = false; }
+    void wake() { sleeping_ = false; left_ = 0; }
 
     bool done() const { return finished_; }
     bool result() const { return last_result_; }  // the last return (or a check tree's answer)
@@ -126,7 +128,7 @@ private:
     bool last_result_ = false;
     bool finished_ = false;
     Error error_ = Error::None;
-    uint32_t wake_ = 0;
+    uint32_t left_ = 0;
     bool sleeping_ = false;
 };
 

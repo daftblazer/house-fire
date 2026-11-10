@@ -47,6 +47,7 @@ struct Fixture {
     std::vector<int16_t> turns;  // ids, in the order primitive 1 saw them
     Simulator sim{world, [this](Object& o) { return std::make_unique<TestHost>(*this, o); }};
     bool made = false;
+    int16_t stop_at = 0;
     Object& add(int16_t id, const Tree* t) {
         auto o = std::make_unique<Object>();
         o->data.resize(72);
@@ -60,11 +61,14 @@ struct Fixture {
 
 PrimResult TestHost::primitive(Interpreter& in, Frame& f, const Node& n) {
     switch (n.opcode) {
-        case 1: fx.turns.push_back(me.id()); return PrimResult::Yield;
+        case 1:
+            fx.turns.push_back(me.id());
+            if (me.id() == fx.stop_at) fx.sim.stop_pass();  // a dialog waiting for the player
+            return PrimResult::Yield;
         case 4: fx.turns.push_back(me.id()); return PrimResult::True;
         case 2:
             if (in.woke()) { in.wake(); return PrimResult::True; }
-            in.sleep_until(fx.sim.now() + 2);
+            in.sleep(1);  // passed over once, stepped on the next pass
             return PrimResult::Yield;
         case 3:
             if (me.id() == 2 && !fx.made) {
@@ -105,6 +109,22 @@ int main() {
     fx.sim.tick();  // tick 3: asleep
     CHECK((fx.turns == std::vector<int16_t>{1, 2, 3, 6}));
     CHECK(fx.sim.now() == 4);
+    // A turn that stops the pass: the next pass goes on from that object, and the objects
+    // after it are not reached, so 5 (due again, its one pass waited in tick 3) waits.
+    fx.stop_at = 3;
+    fx.turns.clear();
+    fx.sim.tick();  // tick 4: 3 stops the pass
+    CHECK((fx.turns == std::vector<int16_t>{1, 2, 3}) && fx.sim.cursor() == 3);
+    fx.turns.clear();
+    fx.sim.tick();  // from 3, which stops it again
+    CHECK((fx.turns == std::vector<int16_t>{3}) && fx.sim.cursor() == 3);
+    fx.stop_at = 0;
+    fx.turns.clear();
+    fx.sim.tick();  // from 3 to the end: 5 runs and sleeps again, 6
+    CHECK((fx.turns == std::vector<int16_t>{3, 5, 6}) && fx.sim.cursor() == 0);
+    fx.turns.clear();
+    fx.sim.tick();  // a new pass: 5 passed over
+    CHECK((fx.turns == std::vector<int16_t>{1, 2, 3, 6}));
     std::printf("test_simulator: %s\n", failures ? "FAILED" : "ok");
     return failures ? 1 : 0;
 }

@@ -517,7 +517,7 @@ without a commit.
 
 ## Progress
 
-Iteration 4 of 12.
+Iteration 5 of 12.
 
 - **Iteration 1, chunk 1 (the tree stack and the base object).** Read the loader's code for
   everything after an object's data: the tree stack and its frames, the +192 member, the
@@ -555,3 +555,14 @@ Iteration 4 of 12.
   checks on a Sim's stack). The engine has it (`Simulator`, `test_simulator`). Next: a
   native run of the club over many ticks, checked against the log step by step, the
   primitives that are not native answered from the log.
+
+- **Iteration 5, chunk 2 (the pass, natively over many ticks).** `engine/tools/replay` runs
+  the club natively over a log (`simulation.md`, "Checked by replay"). The recomp's observer
+  now logs the pass over the objects with its cursor (`Q`/`q`), which showed what the tick
+  really does: the pass stops after a dialog's turn and the next goes on from there, and Idle
+  sleeps a number of passes, not ticks. The engine has both. Measured on a 719-tick log: every
+  tick's turns the native pass's, every stop where the log's, Idle the same natively every
+  time (5,809), 67,001 steps with the native stack as the log's, 30,845 expressions the same
+  natively (555 not). Also: the lot's Sims run template_person's trees; a return step's tree
+  is the frame's (its logged nodes are the caller's). Next: the frames the engine pushes on a
+  Sim's stack (its interactions), the rest of the replay's differences, then the benchmark.

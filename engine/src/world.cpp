@@ -37,7 +37,13 @@ int World::load_lot(const LotChunks& lot) {
             o->definition = lib_.definition(o->guid, &o->file);
         }
         // No definition on the disc: a character, whose definition is made at run time.
-        if (!o->definition) { missing++; o->person = true; }
+        // Its scripts are the template person's, which every Sim runs (its own trees, 4096 on;
+        // the character files hold only its data).
+        if (!o->definition) {
+            missing++;
+            o->person = true;
+            o->file = lib_.find("template_person");
+        }
         // Its state as the lot saved it.
         o->data = lo.data;
         o->attributes = lo.attributes;

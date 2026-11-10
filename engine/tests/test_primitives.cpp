@@ -60,17 +60,20 @@ int main() {
     Object& made = w.make_object(std::move(o));
     CHECK(made.id() == 10 && w.objects().front().get() == &made);
 
-    // Idle: sleeps parameter 0's ticks, then the parameter is 0 and the result true
+    // Idle: passed over by the next 29 passes that reach it, stepped on the 30th; then the
+    // parameter is 0 and the result true
     NoHost h;
     Interpreter in(h);
     Frame g;
     g.params = {30};
     const Node sleep = node(0, {0, 0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF});
-    CHECK(idle(in, g, sleep, 100) == PrimResult::Yield);
-    CHECK(in.asleep(100) && in.asleep(129) && !in.asleep(130));
-    CHECK(idle(in, g, sleep, 130) == PrimResult::True && g.params[0] == 0);
+    CHECK(idle(in, g, sleep) == PrimResult::Yield);
+    int passed = 0;
+    while (in.asleep()) { in.pass_over(); passed++; }
+    CHECK(passed == 29);
+    CHECK(idle(in, g, sleep) == PrimResult::True && g.params[0] == 0);
     g.params = {0};
-    CHECK(idle(in, g, sleep, 200) == PrimResult::True);
+    CHECK(idle(in, g, sleep) == PrimResult::True);
 
     std::printf("test_primitives: %s\n", failures ? "FAILED" : "ok");
     return failures ? 1 : 0;

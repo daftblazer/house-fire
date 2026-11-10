@@ -34,6 +34,9 @@ def records(path):
             if p + 6 * cnt > n: break
             items = [struct.unpack_from('<Ih', b, p + 6 * i) for i in range(cnt)]; p += 6 * cnt
             yield 'L', (tick, items)
+        elif k in (b'Q', b'q'):  # the pass over the objects starts / returns: its cursor
+            if p + 4 > n: break
+            yield k.decode(), struct.unpack_from('<I', b, p)[0]; p += 4
         elif k == b'C':
             if p + 6 > n: break
             yield 'C', struct.unpack_from('<Ih', b, p); p += 6

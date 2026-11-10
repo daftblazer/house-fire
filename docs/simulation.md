@@ -1,51 +1,83 @@
 # The simulation tick
 
 Which objects' tree stacks run in a tick, and in what order. Read from Bustin' Out's tick
-(`Simulator_SimulateOneTick`, 80237C88, and its pass over the objects, `fn_80238150`) and
-measured on the recompiled game's interpreter log (`tools/tick_order.py`, a log of 5,129
-ticks from a new game into the club). The engine's is `engine/src/simulator.cpp`.
+(`Simulator_SimulateOneTick`, 80237C88, and its pass over the objects, `fn_80238150`, named
+`Simulator_RunObjects` in the recomp) and measured on the recompiled game's interpreter log
+(`tools/tick_order.py`; `engine/tools/replay`). The engine's is `engine/src/simulator.cpp`.
 
 ## The pass
 
-Each tick the simulator walks object ids from 1 up to the highest id in use, taken once when
-the pass starts, looking each one up. For each object there:
-- if it is asleep (Idle: its sleep count, which the pass counts down), it is skipped;
-- otherwise its tree stack is stepped until it yields (or stops).
+Each tick the simulator makes a pass over the objects by id, with a cursor (its +1424) that
+is kept from tick to tick: from where the last pass stopped (or id 1) up to the highest id in
+use, taken once when the pass starts. Each id is looked up when the cursor comes to it. For
+each object there:
+- if its sleep count (the object manager's word for the id, its low half) is above 0, it is
+  counted down and the object is passed over;
+- otherwise its tree stack is stepped until it yields;
+- if the turn left a dialog waiting for the player (below), the pass stops there.
+
+A pass that goes through sets the cursor back to 0, so the next one starts from id 1. One that
+stops leaves it on the object that stopped it, and the next tick's pass goes on from that
+object: the objects before it are not reached, and their sleep does not count down.
 
 So stacks run in id order, not in the world's list order (which is the reverse of it for a
-lot's objects, and has newer objects in front). An object made during the pass has an id
-above the pass's highest and waits for the next tick, except that it starts running its
-first tree inside the turn of the object that made it.
+lot's objects, and has newer objects in front). An object made during the pass has an id above
+the pass's highest and waits for the next tick, except that it starts running its first tree
+inside the turn of the object that made it.
 
-Measured: of the 5,129 ticks, 5,128 have their objects' turns in id order. The one other is
-tick 84, where object 2 makes 179, 179's first steps run inside 2's turn, then 2 goes on.
+Measured (a log with the pass's cursor, the `Q`/`q` records: 719 ticks of the club):
+- every tick's turns are the objects the native pass reaches (`replay`, all 719);
+- 101 passes stop early, every one at Sim 178's dialog ("Dialog", opcode 36, waiting), and
+  each next pass goes on from 178; the native pass stops in exactly those ticks;
+- in a longer log (5,129 ticks), 5,128 ticks have their turns in id order; the other is an
+  object made in another's turn (above).
 
-The pass's position is kept between calls (the simulator's +1424), and the code can end a
-pass partway and go on from there on the next call. No logged tick does: every tick's pass
-starts from the lowest id. The engine does not model it.
+The first pass after a lot loads starts from a cursor the original never set (0xFFFF9754 in
+the log); as that is below 1, the pass covers the objects as one from id 1 would. The engine
+starts from 1.
+
+## Dialogs
+
+A dialog waiting for the player's answer (Dialog, opcode 36) is the original's step result 2:
+the node stays, and the pass stops after this turn. In the logs it is the only primitive with
+that result (2,471 steps). The engine's Dialog will yield and call `Simulator::stop_pass`.
+While a dialog waits, then, only its object runs, once a tick, and everything else, sleep
+included, waits with it: what the game shows as the simulation pausing for the dialog.
+
+## Sleep
+
+Idle (`docs/primitives.md`) puts a stack to sleep for a number of passes, not of ticks: it is
+passed over by the next N − 1 passes that reach it and stepped on the N-th. Measured: all
+2,810 regular sleeps in the log with the cursor, including the 49 that came 101 ticks late
+because the passes in between stopped at a dialog. (23 others ended early: woken by something
+else, not modelled yet.)
 
 ## Runs the engine starts
 
-Apart from the pass, the engine runs trees on a Sim's stack itself: a new frame above the
-stack's top, started at node 0 with no call, each tree run to its return before the next.
-In the log these are the pie menu's checks, "get social eligibility" (PersonGlobals 8230)
-and the interactions' "... TEST" trees, ending with "hide menu" (Global 265), and "Dream
-Sequence - Prefix Check Tree" (Global 463): 200 such runs, after the pass's turns. They are
-for the pie menu's chunk, not the tick's.
-
-`tools/tick_order.py` tells them apart by their shape: the stack had yielded (its last step
-in its own turns stayed on its node), and the run starts a tree at node 0 on a frame above.
+Steps outside the pass (between the `Q` and `q` records there are none of these) are the
+engine's own: a new frame above a Sim's stack, a tree started at node 0 with no call, each
+run to its return. In the logs they are the pie menu's checks, "get social eligibility"
+(PersonGlobals 8230) and the interactions' "... TEST" trees, ending with "hide menu" (Global
+265), and "Dream Sequence - Prefix Check Tree" (Global 463). They belong to the pie menu's
+chunk, not the tick's.
 
 ## The clock
 
-The engine's clock is the number of ticks run. Idle's sleep is counted in it
-(`docs/primitives.md`, "Idle"), and it does not move while the game is paused, as no tick
-runs then.
+`Simulator::now` counts the passes run. Nothing in the tick is counted in ticks: Idle counts
+passes that reach the object.
+
+## Checked by replay
+
+`engine/tools/replay` runs the club natively over a log's ticks: the passes by the simulator,
+each stack stepped natively, the expression, Idle and SetToNext native, the other primitives
+answered from the log; where the native state differs from the log's (a frame the engine
+pushed, a variable a primitive that is not native wrote) it is counted and set to the log's.
+On the 719-tick log: 67,001 steps with the native stack as the log's, 1,329 not (mostly frames
+the engine pushed or popped: interactions, not native yet); 30,845 expressions the same
+natively, 555 not; Idle the same every time (5,809).
 
 ## Still open
 
-- What decides that a tick runs at all (pauses, the game's speed settings): the tick's
-  caller.
+- What wakes a sleeping stack early (23 of 2,833 sleeps).
 - A stack that stops (an error): what the original does with the object.
-- A native run of the club for ticks on end, checked against the log step by step, with the
-  primitives that are not native yet answered from it.
+- The frames the engine pushes on a Sim's stack: its interaction queue.

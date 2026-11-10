@@ -21,3 +21,7 @@ endforeach()
 # The native interpreter in lockstep with a log of the recompiled Bustin' Out's.
 add_executable(lockstep tools/lockstep.cpp)
 target_link_libraries(lockstep housefire)
+
+# The club run natively over the log's ticks.
+add_executable(replay tools/replay.cpp)
+target_link_libraries(replay housefire)

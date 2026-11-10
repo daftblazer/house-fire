@@ -19,12 +19,22 @@ public:
 
     Simulator(World& world, MakeHost make_host) : world_(world), make_host_(std::move(make_host)) {}
 
-    // One tick: every object from id 1 up to the highest id in use when the tick starts, in
-    // id order (an object made during the tick waits for the next one), each stack that is
-    // not asleep stepped until it yields or stops. The clock (now) then moves on; it does
-    // not while the game is paused, as tick is not called then.
+    // One tick: the pass over the objects, by id, from where the last one stopped (or id 1)
+    // up to the highest id in use when the pass starts (an object made during it waits for
+    // the next). A sleeping stack is passed over, which counts its sleep down; any other is
+    // stepped until it yields or stops. A turn that asks for it (stop_pass: a dialog waiting
+    // for the player) ends the pass there, and the next tick's goes on from that object.
     void tick();
-    uint32_t now() const { return now_; }
+    void stop_pass() { stop_ = true; }  // from a primitive, during a turn
+    bool stop_asked() const { return stop_; }  // in a pass done by hand: since the last end_pass
+    int16_t cursor() const { return cursor_; }  // where the next pass goes on from (0: id 1)
+    uint32_t now() const { return now_; }  // ticks run
+    // For checks that step the stacks themselves: the objects the pass would reach, in order
+    // (to the highest id; a stop is not foreseen), with whether each is asleep; and the pass
+    // done by hand: an object passed over, a pass's end (at an id, or 0 for through).
+    std::vector<std::pair<Object*, bool>> pass_order();
+    void pass_over(Object& o) { stack_of(o).pass_over(); }
+    void end_pass(int16_t stopped_at) { cursor_ = stopped_at; stop_ = false; now_++; }
 
     // An object's running stack, made on first need from the frames the object has (a lot's
     // object: as the lot saved them). Its id is the object's, its lifetime the object's in
@@ -44,6 +54,8 @@ private:
     MakeHost make_host_;
     std::unordered_map<const Object*, Run> runs_;
     uint32_t now_ = 0;
+    int16_t cursor_ = 0;
+    bool stop_ = false;
 };
 
 }  // namespace housefire
