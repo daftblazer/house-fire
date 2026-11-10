@@ -1038,7 +1038,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 10 of 16.
+Iteration 11 of 16.
 
 - **Iteration 1, chunk 1 (a table's first tree per table; PushAction by the object's
   table).** Object 198 is the group meal, whose table has action 4201 twice (guards 4202 and
@@ -1098,3 +1098,9 @@ Iteration 10 of 16.
   ("InteractionScoreCurves", text points); `score_curves`, `interaction_score`. Checked: all
   111 logged scores bit for bit, the 3 base scores too. Next: the value and the choice
   natively (the candidates' adverts from the tables, the distance from the places).
+
+- **Iteration 11, chunk 3 (the value, native).** `candidate_value` ((score − base) / (1 +
+  attenuation × distance)) in the replay's evaluation, the places synced from the `P`
+  records. Checked: 102 candidate scores bit for bit (7 shifted past the set-aside object),
+  the three choices at native ranks 2, 1 and 2: all among the best four. Next: the pick among
+  the best four natively, and the evaluation's result made by the engine.

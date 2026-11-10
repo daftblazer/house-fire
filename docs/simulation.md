@@ -401,8 +401,19 @@ advert's × 0.001 as multiply-adds in one rounding, which the last bit needed). 
 (`replay --card`, the `A` and `B` records): all 111 scores bit for bit from the adverts and
 motives they read, and all 3 base scores (the score of no advert).
 
-Still to come: the value (score less base, the distance) and the selection among the best,
-natively of those that pass (the
+**The value, native** (`candidate_value`: (score − base) / (1 + attenuation × distance),
+`person_distance`, `attenuation` from the tuning table by code). In the replay's evaluation,
+each passing candidate's score from its own table adverts and the native motives, its value
+with the places set to the log's each tick (`P`: routing is not native). Checked: 102 of the
+candidates' scores the same as the logged ones bit for bit (7 not: where the session's new
+object 201 is set aside, the pairing with the log's scores shifts); the three choices at
+native ranks 2, 1 and 2 (tick 186: the toilet 0.000357, the chosen fridge snack 0.000125;
+1443: the chosen toilet 0.000548; 1847: 40's 4098 0.0000388, the chosen easel 0.0000328),
+each among the best four the tuning's "random selection count" names. The choice among them
+is the original's random one (its numbers are not the engine's, `plan.md`), so the native
+choice is to pick among the best four with the engine's own numbers.
+
+Still to come: that pick and its result (the stack object, Find Best Action's push) native of those that pass (the
 adverts, the motives, the distance, the tuning table), checked as each choice among the native
 best four.
 

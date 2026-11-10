@@ -120,4 +120,28 @@ float interaction_score(const std::vector<ScoreCurve>& curves, const std::vector
     return total / (float)curves.size();
 }
 
+float person_distance(const Object& a, const Object& b) {
+    const int32_t dx = a.x16 - b.x16, dy = a.y16 - b.y16;
+    const float flat = (float)(dx * dx + dy * dy) * 0.00390625f;  // 1/256: sixteenths to tiles, squared
+    const float up = (float)((a.level - b.level) * 20);
+    return std::sqrt(std::fmaf(up, up, flat));
+}
+
+float attenuation(const Library& lib, const Interaction& e, bool visitor) {
+    switch (e.attenuation_code) {
+        case 0: return e.attenuation_value;
+        case 2: return lib.tuning(visitor ? "visitor low attenuation" : "low attenuation").value_or(0.0f);
+        case 3: return lib.tuning(visitor ? "visitor moderate attenuation" : "moderate attenuation").value_or(0.0f);
+        case 4: return lib.tuning(visitor ? "visitor high attenuation" : "high attenuation").value_or(0.0f);
+        default: return 0.0f;
+    }
+}
+
+float candidate_value(const Library& lib, const std::vector<ScoreCurve>& curves, const Object& person,
+                      const Candidate& c, float base) {
+    const float score = interaction_score(curves, &c.interaction->adverts, person, person.motives);
+    const float factor = 1.0f / std::fmaf(person_distance(person, *c.object), attenuation(lib, *c.interaction, false), 1.0f);
+    return (score - base) * factor;
+}
+
 }  // namespace housefire

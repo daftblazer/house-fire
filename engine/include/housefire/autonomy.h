@@ -46,6 +46,15 @@ float advert_amount(const Interaction::Advert& a, const Object& person);
 float interaction_score(const std::vector<ScoreCurve>& curves, const std::vector<Interaction::Advert>* adverts,
                         const Object& person, const std::vector<float>& motives);
 
+// A candidate's value to a person (fn_802266BC): its score less the base (the score of no
+// advert), over 1 + the attenuation × the distance in tiles (fn_801F1C18: from the two
+// places, 20 a level). The attenuation by the interaction's code: 1 none, 2, 3, 4 the tuning
+// table's low, moderate and high (FCNS 2), 0 the interaction's own value.
+float person_distance(const Object& a, const Object& b);
+float attenuation(const Library& lib, const Interaction& e, bool visitor);
+float candidate_value(const Library& lib, const std::vector<ScoreCurve>& curves, const Object& person,
+                      const Candidate& c, float base);
+
 // One check of an evaluation: the object, the tree (a table's first tree, or a candidate's
 // guard; `candidate` null for a first tree), and its result (nullopt if it did not finish).
 struct EvaluationCheck {

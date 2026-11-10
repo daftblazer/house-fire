@@ -134,6 +134,7 @@ struct Replay {
     std::set<int16_t> present;  // the objects on the lot this tick (the log's list)
     std::set<size_t> deferred;  // nested records already used out of order (calls')
     bool card_lot = false;      // the lot is a save's (--card)
+    size_t score_at = 0;        // the next logged score ('A')
 
     // Brings the native world's variables to what the original's lookups found, counting
     // those that were already the same.
@@ -289,6 +290,36 @@ PrimResult ReplayHost::primitive(Interpreter& in, Frame& f, const Node& n) {
         on_check = nullptr;
         size_t unfinished = 0;
         for (const EvaluationCheck& c : checks) unfinished += !c.passed.has_value();
+        {
+            const auto curves = score_curves(r.lib);
+            const float base = interaction_score(curves, nullptr, me, me.motives);
+            std::vector<std::pair<float, const Candidate*>> values;
+            size_t k = 0, scores_same = 0, scores_diff = 0;
+            for (const EvaluationCheck& c : checks) {
+                if (!c.candidate || !c.passed || !*c.passed) continue;
+                // The log's score of this one (the scores come in the order of the passing guards).
+                const float native_score = interaction_score(curves, &c.candidate->interaction->adverts, me, me.motives);
+                while (r.score_at < r.log->scores.size() && r.log->scores[r.score_at].tick < r.step->tick) r.score_at++;
+                if (r.score_at < r.log->scores.size() && r.log->scores[r.score_at].tick == r.step->tick) {
+                    (native_score == r.log->scores[r.score_at].score ? scores_same : scores_diff)++;
+                    r.score_at++;
+                }
+                values.push_back({candidate_value(r.lib, curves, me, *c.candidate, base), c.candidate});
+                k++;
+            }
+            note("autonomy: a candidate's score the same natively (its own adverts, the native motives)", scores_same);
+            if (scores_diff) note("autonomy: a candidate's score DIFFERENT", scores_diff);
+            std::stable_sort(values.begin(), values.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+            size_t rank = 0;
+            for (size_t i = 0; i < values.size(); i++)
+                if (values[i].second->object->id() == s.stack_object_after) { rank = i + 1; break; }
+            note(rank >= 1 && rank <= 4 ? "autonomy: the log's choice among the native best four" : "autonomy: the log's choice NOT among the native best four");
+            if (getenv("REPLAY_SHOW_AUTONOMY")) {
+                std::printf("choice of %d: object %d, native rank %zu of %zu; best:", me.id(), s.stack_object_after, rank, values.size());
+                for (size_t i = 0; i < values.size() && i < 4; i++) std::printf(" %d/%d=%.6g", values[i].second->object->id(), values[i].second->interaction->action, values[i].first);
+                std::printf("\n");
+            }
+        }
         note("autonomy: an evaluation's checks, result as the log's", same);
         note("autonomy: an evaluation's checks, result DIFFERENT", different);
         if (unfinished) note("autonomy: an evaluation's checks, not finished", unfinished);
@@ -585,10 +616,17 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
     for (size_t i = 0; i < log.steps.size(); i++) engine_run[i] = have_passes && !log.steps[i].in_pass;
     if (!have_passes) note("log: no pass records (an older log): every step taken as a turn, no tick as paused");
 
+    size_t place_at = 0;   // the next 'P' record (places: routing is not native, so set to the log's)
     size_t motive_at = 0;  // the next 'N' record
     int shown_motives = 0;
     for (uint32_t t = 1; t <= log.ticks; t++) {
         double tick_us = 0;
+        for (; place_at < log.places.size() && log.places[place_at].tick < t; place_at++)
+            if (Object* o = world.find(log.places[place_at].id)) {
+                o->x16 = log.places[place_at].x;
+                o->y16 = log.places[place_at].y;
+                o->level = log.places[place_at].level;
+            }
         const double sync_before = bench ? bench->sync_us : 0;
         // A tick without a pass is a paused one: the native clock does not move in it.
         if (have_passes && !log.passes.count(t)) {
