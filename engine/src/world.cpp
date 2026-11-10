@@ -53,7 +53,9 @@ int World::load_lot(const LotChunks& lot) {
         o->relationships = lo.relationships;
         if (lo.saved_class == SavedClass::Part || lo.saved_class == SavedClass::Door)
             o->leader = lo.leader ? lo.leader : lo.id;
-        o->door = lo.saved_class == SavedClass::Door;
+        // A door's part (type 8, field 3 zero); windows are type 8 too, with field 3 set
+        // (measured: all 30 doors and 30 windows on the disc).
+        o->door = lo.saved_class == SavedClass::Door && o->definition && o->definition->field(3) == 0;
         if (lo.saved_class == SavedClass::Sim) {
             o->person = true;  // an NPC with a definition keeps its own file
             o->person_data = lo.person_data;

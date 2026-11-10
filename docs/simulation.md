@@ -465,6 +465,23 @@ object 67 at (18, 14) and its part at (18, 15); Sim 237 through the lattice door
 66); 162 wall edges, 19 doors' openings. Two moves of 197 (the paper girl) are not steps: she
 is placed (37, 5 to 25, 20). The ground floor only: the lot has one walls array.
 
+The doors are type 8 with field 3 zero: windows are type 8 too (saved as doors), with field 3
+set (all 30 doors and all 30 windows on the disc), and do not open their walls. Mom's lot:
+5 doors' openings.
+
+**The route** (`Walls::route`). A Sim's walk goes a tile at a time to a neighbouring tile (x
+or y by 1; its smoothed line crosses diagonals as a staircase), and its tiles are a shortest
+such route: a breadth-first search through the open edges, the tiles of diagonal walls (the
+bay window's corners, 0x10, 0x20) closed. Checked (`replay --card`; a walk is a Sim's tile
+changes until a pause of 40 ticks): 13 of the 15 walks as long as the native route, 9 of them
+on its very tiles (the others an equally short route, the original's choice among them still
+open). The other two (Sim 12 from (22, 15) to (25, 16), 6 steps against 4; Sim 237 from
+(23, 21) to (21, 24), 9 against 5) go round the dining table and a counter: some objects block
+(the tables, the counters) and others do not (the chairs, the newspaper, the wall objects:
+the Sims cross their tiles). No OBJD field tells them apart (only the GUIDs, among the fields
+of these); the objects' footprints are next. The walk's line through its tiles (the `P`
+places, about 0.7 sixteenths a tick) is to come.
+
 ## Still open
 
 - What wakes a sleeping stack early (23 of 2,833 sleeps).

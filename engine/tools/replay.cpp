@@ -1186,6 +1186,42 @@ bool run(const Log& log, const Library& lib, const LotChunks& club, const std::v
             }
             tile[p.id] = {x, y};
         }
+        // Each walk (a Sim's tile changes, a pause of 40 ticks or more ending one) against the
+        // native route between its ends (Walls::route, no object blocking yet).
+        std::map<int16_t, std::vector<std::pair<uint32_t, Walls::Tile>>> seq;
+        for (const PlaceRec& p : log.places) {
+            const Object* o = world.find(p.id);
+            if (!o || !o->person || p.x < 0 || p.y < 0) continue;
+            const Walls::Tile t{p.x >> 4, p.y >> 4};
+            auto& v = seq[p.id];
+            if (v.empty() || v.back().second != t) v.push_back({p.tick, t});
+        }
+        for (auto& [id, v] : seq) {
+            size_t start = 0;
+            for (size_t i = 1; i <= v.size(); i++) {
+                if (i < v.size() && v[i].first - v[i - 1].first < 40) continue;
+                // A walk: v[start - 1 or start] .. v[i - 1] (from the tile it stood on).
+                const size_t from = start > 0 ? start - 1 : start;
+                if (i - 1 > from) {
+                    std::vector<Walls::Tile> logged;
+                    for (size_t k = from; k < i; k++) logged.push_back(v[k].second);
+                    bool jump = false;
+                    for (size_t k = 1; k < logged.size(); k++)
+                        jump |= std::abs(logged[k].first - logged[k - 1].first) + std::abs(logged[k].second - logged[k - 1].second) != 1;
+                    if (!jump) {
+                        const auto r = world.walls.route(logged.front(), logged.back());
+                        const bool same_length = r.size() == logged.size();
+                        note(same_length ? "routing: a walk as long as the native route (walls only)" : "routing: a walk NOT as long as the native route (walls only)");
+                        if (r == logged) note("routing: a walk's tiles the native route's");
+                        if (!same_length && getenv("REPLAY_SHOW_ROUTING")) { for (auto& t : r) std::printf(" %d,%d", t.first, t.second); std::printf("\n"); }
+                        if (getenv("REPLAY_SHOW_ROUTING"))
+                            std::printf("walk of %d from tick %u: %zu steps, native %zu (%d,%d -> %d,%d)\n", id, v[from].first, logged.size() - 1,
+                                        r.empty() ? (size_t)0 : r.size() - 1, logged.front().first, logged.front().second, logged.back().first, logged.back().second);
+                    }
+                }
+                start = i;
+            }
+        }
     }
 
     // The motives' own update (update_motives), on each person's logged motives ('N'

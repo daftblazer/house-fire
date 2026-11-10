@@ -2,6 +2,8 @@
 // Bustin' Out's home log (the Sims' places, 'P').
 #pragma once
 #include <cstdint>
+#include <functional>
+#include <utility>
 #include <vector>
 
 #include "housefire/save.h"
@@ -23,6 +25,14 @@ public:
     bool can_step(int x, int y, int dx, int dy) const;
     // The same, the doors' openings left out.
     bool wall_between(int x, int y, int dx, int dy) const;
+    // A tile split by a diagonal wall (0x10 or 0x20): closed to a Sim's steps.
+    bool diagonal(int x, int y) const { return (at(x, y) & 0x30) != 0; }
+    // A shortest route from tile to tile, a step at a time to a neighbouring tile (x or y by 1)
+    // through open edges, round tiles `blocked` names (the goal excepted) and the diagonal
+    // walls' tiles: the tiles from the start to the goal, both included; empty if none. A
+    // breadth-first search, its neighbours in the order +x, -x, +y, -y.
+    using Tile = std::pair<int, int>;
+    std::vector<Tile> route(Tile from, Tile to, const std::function<bool(Tile)>& blocked = {}) const;
     size_t wall_edges() const { return wall_edges_; }
     size_t openings() const { return open_.size(); }
 

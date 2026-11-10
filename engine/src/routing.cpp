@@ -1,6 +1,7 @@
 #include "housefire/routing.h"
 
 #include <algorithm>
+#include <deque>
 
 #include "housefire/world.h"
 
@@ -49,6 +50,38 @@ bool Walls::can_step(int x, int y, int dx, int dy) const {
     if (!wall_between(x, y, dx, dy)) return true;
     return std::find(open_.begin(), open_.end(), key(x, y, leaving(dx, dy))) != open_.end() ||
            std::find(open_.begin(), open_.end(), key(x + dx, y + dy, entering(dx, dy))) != open_.end();
+}
+
+std::vector<Walls::Tile> Walls::route(Tile from, Tile to, const std::function<bool(Tile)>& blocked) const {
+    if (width_ == 0) return {};
+    auto inside = [&](Tile t) { return t.first >= 0 && t.second >= 0 && (uint32_t)t.first < width_ && (uint32_t)t.second < height_; };
+    if (!inside(from) || !inside(to)) return {};
+    auto index = [&](Tile t) { return (size_t)t.second * width_ + (size_t)t.first; };
+    std::vector<int32_t> prev(edges_.size(), -1);
+    std::deque<Tile> q{from};
+    prev[index(from)] = (int32_t)index(from);
+    static constexpr int kSteps[4][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+    while (!q.empty()) {
+        const Tile c = q.front();
+        q.pop_front();
+        if (c == to) {
+            std::vector<Tile> out{c};
+            for (size_t i = index(c); i != index(from);) {
+                i = (size_t)prev[i];
+                out.push_back({(int)(i % width_), (int)(i / width_)});
+            }
+            std::reverse(out.begin(), out.end());
+            return out;
+        }
+        for (const auto& d : kSteps) {
+            const Tile n{c.first + d[0], c.second + d[1]};
+            if (!inside(n) || prev[index(n)] >= 0 || !can_step(c.first, c.second, d[0], d[1])) continue;
+            if (n != to && (diagonal(n.first, n.second) || (blocked && blocked(n)))) continue;
+            prev[index(n)] = (int32_t)index(c);
+            q.push_back(n);
+        }
+    }
+    return {};
 }
 
 }  // namespace housefire

@@ -1038,7 +1038,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 13 of 16.
+Iteration 14 of 16.
 
 - **Iteration 1, chunk 1 (a table's first tree per table; PushAction by the object's
   table).** Object 198 is the group meal, whose table has action 4201 twice (guards 4202 and
@@ -1121,4 +1121,11 @@ Iteration 13 of 16.
   natively, 2 through doors, none through a wall; the figures (561,398, 338,305, 68,202,
   lockstep 7,902) unchanged. Next: the path search, its tiles against Sim 12's logged walk to
   the fridge (tick 307 on).
+
+- **Iteration 14, chunk 4 (routing: the route).** `Walls::route`, a breadth-first search over
+  the walls (four ways, diagonal walls' tiles closed); windows (type 8 with field 3 set) no
+  longer open their walls. Checked on the home log's 15 walks: 13 as long as the native route,
+  9 on its very tiles; the other 2 go round a dining table and a counter (object blocking: not
+  native yet, no OBJD field found for it). Figures unchanged (561,398, 338,305, 68,202,
+  lockstep 7,902). Next: which objects block (their footprints), then the tie-break.
 

@@ -41,7 +41,7 @@ struct Object {
     // A multi-tile object's parts: the id of its leader (the leader's own id for itself); 0
     // for a single-tile object.
     int16_t leader = 0;
-    bool door = false;  // a door's part (OBJD type 8; World::saved_class)
+    bool door = false;  // a door's part (OBJD type 8, field 3 zero: a window has it set)
     std::vector<int16_t> person_data; // scope 18
     std::vector<float> motives;       // scope 14, kept between -100 and 100
     std::vector<float> motives_b;
