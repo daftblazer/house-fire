@@ -1204,11 +1204,17 @@ on in 6 plans, 24, 15, 127 and (-8, -16) in others; none in 1): the approach's, 
 23708 and (-16, -8) fit no step. The 15s look like a length-16 facing truncated, so the point is
 likely where the Sim faces on arriving (a facing vector, or the target's own place for the odd
 ones): it is the request's, not the search's, and is to be read where the plan appends it. Where: Route_Plan (80222FF4, after fn_8024C5DC), from 80223254 on, takes the way's last
-point and branches on the request's +56. At -3 it steps one tile (16) on from the last point,
-the way the routing object faces: its +40, & 7, the eight directions as +-1 on each axis, then
-<< 4 (80223338..80223428). At -1 or -2 it works from a second point, an object's +200/+204,
+point and branches on the request's +56. At -3 it can step one tile (16) on from the last point,
+the way the routing object faces (its +40, & 7, the eight directions as +-1 on each axis, then
+<< 4, 80223338..80223428), after a test on the way's last two points. At -1 or -2 it works from a second point, an object's +200/+204,
 through fn_801CC380 (80223460 on), which is likely where the 15s and the odd (127, 0) and
-(-16, -8) come from. The other kinds are past 80223888, still to read.
+(-16, -8) come from. The other kinds are past 80223888, still to read. (Route_Plan's r22 is the request + 16, so the kind is the request's +72, the flags +48.)
+Logged now ('h', after 'H'): the home run's 17 plans are kind -3 five times, -2 ten times and 4
+twice. Kind 4 gives (0, +16) both times. Kind -2 gives one-tile steps, (+16, 0) or (0, +-16),
+not set by the routing object's facing (facing 0 and 4 both give (+16, 0)), so they point
+towards the target object. Kind -3 has the irregular ones, (127, 0), (0, 15) twice, (0, -24)
+and (-16, -8): its branch works from the way's last two points and a test (802232A4..80223428)
+before it steps, so it is more than a facing step.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a

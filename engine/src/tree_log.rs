@@ -171,6 +171,10 @@ pub struct PlanRec {
     /// The request's grower settings at that search ('r'): +32 the aspect trim's switch, +36
     /// its ratio, +40 the cell cap's switch, +44 the cap, +48 the cost of a cell in no region.
     pub grower: [u32; 5],
+    /// What the plan read for its point after the goal ('h', after 'H', in newer logs): the
+    /// request's +72 (the kind: -3 a step the routing object's way, -1/-2 towards an object),
+    /// its +48, and the routing object's facing.
+    pub approach: Option<[i32; 3]>,
 }
 
 /// A walker's step ('Z', Route_Follow 800AE0A4): its follower and its state before and after.
@@ -279,6 +283,7 @@ pub fn read_log(path: &str) -> Option<Log> {
     let mut coarse: Option<Vec<(i32, i32)>> = None;
     let mut lookup_regions: Option<[Vec<[i32; 5]>; 2]> = None;
     let mut grower: Option<[u32; 5]> = None;
+    let mut approach: Option<[i32; 3]> = None;
     let mut at: BTreeMap<u32, usize> = BTreeMap::new();
     let mut pending: Option<ExprRec> = None;
     let mut pending_lookups: Vec<LookupRec> = Vec::new();
@@ -371,7 +376,8 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let coarse = coarse.take().unwrap_or_default();
                 let lookup_regions = lookup_regions.take().unwrap_or_default();
                 let grower = grower.take().unwrap_or_default();
-                log.plans.push(PlanRec { tick: log.ticks, state, points, goals, chosen, obstacles, obstacle_width, tested, regions, coarse, lookup_regions, grower });
+                let approach = approach.take();
+                log.plans.push(PlanRec { tick: log.ticks, state, points, goals, chosen, obstacles, obstacle_width, tested, regions, coarse, lookup_regions, grower, approach });
             }
             b'I' => {
                 // the planner's search's coarse way (stored turned: y, x)
@@ -386,6 +392,13 @@ pub fn read_log(path: &str) -> Option<Log> {
                     let y = r.u32() as i32;
                     (r.u32() as i32, y)
                 }).collect());
+            }
+            b'h' => {
+                // what the plan read for its point after the goal
+                if !r.has(12) {
+                    break;
+                }
+                approach = Some([r.u32() as i32, r.u32() as i32, r.u32() as i32]);
             }
             b'r' => {
                 // the search's region lookup's two lists

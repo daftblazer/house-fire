@@ -108,6 +108,9 @@ def records(path):
             if len(lists) < 2 or p + 20 > n: break
             settings = struct.unpack_from('<5I', b, p); p += 20  # +32 aspect on, +36 ratio, +40 cap on, +44 cap, +48 no-region cost
             yield 'r', (lists[0], lists[1], settings)
+        elif k == b'h':  # what the plan reads for its point after the goal: (kind, flags, facing)
+            if p + 12 > n: break
+            yield 'h', struct.unpack_from('<iii', b, p); p += 12
         elif k == b'H':  # the planner's request: (request, chosen, [(x, y, word, word)])
             if p + 10 > n: break
             rq, ch, cnt = struct.unpack_from('<IiH', b, p); p += 10
