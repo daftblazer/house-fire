@@ -2864,11 +2864,20 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         *t = t.max(d);
     }
     let mut plan_at = 0;
+    // the walk run free: a native place a follower, set at its walk's start (state 1) and then
+    // moved only by the native steps (with its own native speed), against the logged place after
+    // each frame that moves
+    let mut free: BTreeMap<u32, ((f32, f32), f32)> = BTreeMap::new();
     for f in &log.follows {
         while plan_at < log.plans.len() && log.plans[plan_at].tick <= f.tick {
             plan_at += 1;
         }
         let (b, a) = (f.before, f.after);
+        if b.state == 1 {
+            // its speed the native one the follower's last walk left (step by step)
+            let v = speed.get(&f.follower).copied().unwrap_or(0.0);
+            free.insert(f.follower, ((b.x, b.y), v));
+        }
         // (a walk starts at the speed the follower's last one stopped at: its +144 is not reset)
         if (b.x, b.y) == (a.x, a.y) {
             continue;
@@ -2910,6 +2919,34 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         let (v, s) = walk_step(speed.get(&f.follower).copied().unwrap_or(0.0), top, growth, b.factor, left);
         speed.insert(f.follower, v);
         let at = along_line(&walk, i, t, s);
+        // the free-running place: on the same line, from where the native walk has it
+        if let Some(((fx, fy), fv)) = free.get(&f.follower).copied() {
+            let loc = (0..walk.len().saturating_sub(1))
+                .map(|j| {
+                    let (p, q) = (walk[j], walk[j + 1]);
+                    let (dx, dy) = (q.0 - p.0, q.1 - p.1);
+                    let l2 = dx * dx + dy * dy;
+                    let t = if l2 > 0.0 { (((fx - p.0) * dx + (fy - p.1) * dy) / l2).clamp(0.0, 1.0) } else { 0.0 };
+                    (((fx - p.0 - t * dx).powi(2) + (fy - p.1 - t * dy).powi(2)).sqrt(), j, t)
+                })
+                .min_by(|x, y| x.0.total_cmp(&y.0));
+            if let Some((d, j, t)) = loc.filter(|l| l.0 < 0.05) {
+                let _ = d;
+                let fleft = (j..walk.len() - 1).map(leg).sum::<f32>() - t * leg(j);
+                let (nv, ns) = walk_step(fv, top, growth, b.factor, fleft);
+                let nat = along_line(&walk, j, t, ns);
+                free.insert(f.follower, (nat, nv));
+                let off = ((nat.0 - a.x).powi(2) + (nat.1 - a.y).powi(2)).sqrt();
+                if show_walks && off >= 0.01 && ((fx - b.x).powi(2) + (fy - b.y).powi(2)).sqrt() < 0.01 {
+                    println!("free walk parts tick {} {:x} state {}->{} factor {}: native {nat:?} speed {nv:.4} (was {fv:.4}), the original's ({:.3},{:.3}) step {:.4}", f.tick, f.follower, b.state, a.state, b.factor, a.x, a.y, ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt());
+                }
+                counts.note(if off < 0.01 {
+                    "routing: a walk run free natively at the original's place (to a hundredth of a sixteenth)"
+                } else {
+                    "routing: a walk run free natively NOT at the original's place"
+                });
+            }
+        }
         let off = ((at.0 - a.x).powi(2) + (at.1 - a.y).powi(2)).sqrt();
         if show_walks && off >= 0.003 {
             println!(

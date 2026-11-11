@@ -1586,7 +1586,7 @@ iterations in a row end without a commit (record why here).
 
 ## Progress
 
-Iteration 15 of 24.
+Iteration 16 of 24.
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1706,3 +1706,10 @@ Iteration 15 of 24.
   like the other plans' in-between points) is needed for it: chunk 2's. Chunk 3 done otherwise
   (15 of 16). No code changed. Next: chunk 5, the native routes in the simulator (the routing
   primitives planning and walking), its first piece checkable against the lockstep.
+
+- **Iteration 16, chunk 5 (the walk run free).** The native walk from each walk's start without the
+  log between its frames (its speed carried natively): 1,270 of 1,465 moving frames at the
+  original's place to a hundredth; it parts at six frames (two in a door's fast mode, a ramp, two
+  brakes, one start at speed). Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24);
+  clippy clean. Next: the six frames (the door's fast mode first), then the walk in the simulator
+  (a routing primitive yielding until its native walk arrives).

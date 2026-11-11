@@ -828,6 +828,13 @@ line natively the original's to a thousandth (23 set aside, on no logged line). 
 begun just after one cut short at speed (tick 1909: it starts near its top), the brake of one walk
 (ticks 1639 to 1645), the walk up to the door at tick 4922, and the door's own states (4, 5).
 
+**The walk run free.** The same steps without the log between them: a walker's place set at its
+walk's start (state 1, its speed the one its last walk left natively) and then moved only by the
+native step along its line, frame after frame, against the logged place after each. On the home
+log: 1,270 of the 1,465 frames that move at the original's place to a hundredth of a sixteenth;
+the walks part from it at six frames only (the door's fast mode at ticks 488 and 512, a ramp at
+1275, the brakes at 1639 and 4915, and the walk begun at speed at 1909), and once parted stay off.
+
 **Which objects block** (`routing::obstacle`). Read from the objects the loop asks about (`J`)
 against the object data the save gives: an object is left out when its flags (object data 8)
 have 0x4 (no extent: rugs, windows, wall lamps, paintings, the alarms, the phone) or it sits in
