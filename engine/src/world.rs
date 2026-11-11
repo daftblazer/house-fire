@@ -39,6 +39,7 @@ pub mod scope {
     pub const STACK_ATTRIBUTE_BY_PARAMETER: u8 = 22;
     pub const NEIGHBOUR_IN_STACK_OBJECT: u8 = 24;
     pub const LOCAL: u8 = 25;
+    pub const STACK_SPRITE_FLAGS: u8 = 27;
     pub const CONSTANT: u8 = 26;
     pub const MY_PERSON_DATA_BY_TEMP: u8 = 30;
     pub const NEIGHBOURHOOD: u8 = 34;
@@ -100,6 +101,10 @@ pub struct Object {
     /// Its relationships with other objects, as the lot saved them (the relationship system,
     /// Relationship2, is not native yet).
     pub relationships: Vec<SavedRelationship>,
+    /// Its dynamic sprite flags (scope 27, The Sims' "dynamic sprite flags" of the stack
+    /// object: a word per index, set by scripts and read by its graphics; not in the save as far
+    /// as read, so its first values are taken from what scripts read).
+    pub sprite_flags: Vec<i16>,
 }
 
 impl Object {
@@ -459,6 +464,7 @@ pub enum Table {
     PersonData(Option<ObjectKey>),
     Motives(Option<ObjectKey>),
     Temps(Option<ObjectKey>),
+    SpriteFlags(Option<ObjectKey>),
     Globals,
     Neighbourhood,
     AdRange,
@@ -471,7 +477,7 @@ impl Table {
     /// The object whose table this is, for an object's table.
     pub fn owner(&self) -> Option<Option<ObjectKey>> {
         match *self {
-            Table::Attributes(o) | Table::Data(o) | Table::PersonData(o) | Table::Motives(o) | Table::Temps(o) => Some(o),
+            Table::Attributes(o) | Table::Data(o) | Table::PersonData(o) | Table::Motives(o) | Table::Temps(o) | Table::SpriteFlags(o) => Some(o),
             _ => None,
         }
     }
@@ -526,6 +532,11 @@ impl<'a, 'lib> ScriptVariables<'a, 'lib> {
                 at(&mut self.world.get_mut(self.stack_object()?).attributes, p as i32)
             }
             LOCAL => self.frame.locals.get_mut(usize::try_from(d).ok()?),
+            STACK_SPRITE_FLAGS => {
+                // the stack object's flag word numbered by my temp `d`
+                let t = *self.world.get(me).temps.get(usize::try_from(d).ok()?)? as i32;
+                at(&mut self.world.get_mut(self.stack_object()?).sprite_flags, t)
+            }
             MY_PERSON_DATA_BY_TEMP => {
                 let o = self.world.get_mut(me);
                 if !o.person || !(0..8).contains(&d) {
@@ -572,6 +583,7 @@ impl<'a, 'lib> ScriptVariables<'a, 'lib> {
             CHECK_TREE_AD_RANGE => c(Table::AdRange, di),
             PARAMETER => c(Table::Params, di),
             LOCAL => c(Table::Locals, di),
+            STACK_SPRITE_FLAGS => c(Table::SpriteFlags(so), *self.world.get(self.me).temps.get(usize::try_from(d).ok()?)? as i32),
             STACK_OBJECT => c(Table::StackObject, 0),
             STACK_ATTRIBUTE_BY_PARAMETER => {
                 let p = *self.frame.params.get(usize::try_from(d).ok()?)?;
