@@ -306,14 +306,19 @@ pub fn refine(way: &Way) -> Vec<(i32, i32)> {
     pts
 }
 
+/// One tile's step (x, y) in each of the eight directions an object faces (its data 1).
+pub const DIRECTION_STEP: [(i32, i32); 8] = [(-1, 0), (-1, 1), (0, 1), (1, 1), (1, 0), (1, -1), (0, -1), (-1, -1)];
+
 /// The point a plan adds after its goal, (x, y) like the plan's points, from the request's kind
-/// and flags, the target point (x, y) and the plan's points so far: kind -3 runs the last leg on
-/// once more; kinds -2 and -1 step one tile from the last point in the eight-way direction to the
-/// target (-1 away from it), or with the flags' 0x100 go to the target itself. None for a kind
-/// not yet read, or a -3 whose last leg has no length (that one steps the routing object's way).
-pub fn point_after_goal(kind: i32, flags: i32, target: (i32, i32), points: &[(i32, i32)]) -> Option<(i32, i32)> {
+/// and flags, the target point (x, y), the direction of the object it faces by, and the plan's
+/// points so far: kind -3 runs the last leg on once more; kinds -2 and -1 step one tile from the
+/// last point in the eight-way direction to the target (-1 away from it), or with the flags' 0x100
+/// go to the target itself; other kinds step one tile in direction (facing + kind) & 7. None
+/// when nothing is added: a point equal to the last, or a -3 whose last leg has no length (that
+/// one steps the routing object's way, not modelled), or no facing known.
+pub fn point_after_goal(kind: i32, flags: i32, target: (i32, i32), facing: Option<i32>, points: &[(i32, i32)]) -> Option<(i32, i32)> {
     let &last = points.last()?;
-    match kind {
+    let point = match kind {
         -3 => {
             let &prev = points.get(points.len().checked_sub(2)?)?;
             (prev != last).then(|| (2 * last.0 - prev.0, 2 * last.1 - prev.1))
@@ -334,6 +339,10 @@ pub fn point_after_goal(kind: i32, flags: i32, target: (i32, i32), points: &[(i3
             }
             Some((last.0 + 16 * ux, last.1 + 16 * uy))
         }
-        _ => None,
-    }
+        _ => {
+            let (dx, dy) = DIRECTION_STEP[((facing? + kind) & 7) as usize];
+            Some((last.0 + 16 * dx, last.1 + 16 * dy))
+        }
+    }?;
+    (point != last).then_some(point)
 }

@@ -1231,7 +1231,11 @@ included; only a leg of no length falls back to one tile the routing object's wa
 (-1, 0), (-1, +1), (0, +1), (+1, +1), (+1, 0), (+1, -1), (0, -1), (-1, -1), times 16 (the -3
 fallback uses the same table on the routing object's +40). Kind 4's (0, +16) is direction 2, so
 f is 6 there: the target object's own facing, not the routing object's (logged as 4 and 7). A
-point equal to the last one is not added (802239C4..802239FC). Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+point equal to the last one is not added (802239C4..802239FC). The facing virtual is
+fn_801F5F4C, the object-data getter, asked for data 1: the object's direction. 'h' now names
+that object (its id; the +144 word logged beside it is 0 throughout, data 1 is not kept there),
+and the native world's data 1 for it gives both kind-4 points: with kinds -3, -2 and -1, 15 of
+16 in replay, the miss the diagonal -2 that adds no point (tick 1791). Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth

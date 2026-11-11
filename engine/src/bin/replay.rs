@@ -2687,7 +2687,8 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             }
             // the point the plan adds after its goal (logs with 'h')
             if let (true, Some(a)) = (fits, pl.approach) {
-                let ours = point_after_goal(a[0], a[1], (a[3], a[4]), &refined);
+                let facing = world.find_object(a[5] as i16).and_then(|o| o.data.get(1)).map(|&d| d as i32);
+                let ours = point_after_goal(a[0], a[1], (a[3], a[4]), facing, &refined);
                 let theirs = pl.points.get(refined.len()).copied();
                 if let Some(p) = ours {
                     counts.note(if Some(p) == theirs {
@@ -2696,7 +2697,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                         "planner: a plan's point after its goal natively NOT its own"
                     });
                     if Some(p) != theirs && !counts.quiet && has("REPLAY_SHOW_SEARCH") {
-                        println!("after goal tick {}: kind {} theirs {theirs:?}; native {p:?}", pl.tick, a[0]);
+                        println!("after goal tick {}: kind {} facer {} facing {facing:?} theirs {theirs:?}; native {p:?}", pl.tick, a[0], a[5]);
                     }
                 } else {
                     counts.note("planner: a plan's point after its goal not modelled (its kind)");

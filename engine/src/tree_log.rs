@@ -174,8 +174,9 @@ pub struct PlanRec {
     /// What the plan read for its point after the goal ('h', after 'H', in newer logs): the
     /// request's +72 (the kind: -3 a step the routing object's way, -1/-2 towards an object),
     /// its +48, the routing object's facing, and the target point it steps towards (+200, +204
-    /// of the request's +80 object as its virtual moves it).
-    pub approach: Option<[i32; 5]>,
+    /// of the request's +80 object as its virtual moves it), then the object whose direction the
+    /// other kinds step by: its id and its +144 (logged as its data 1, but 0 throughout).
+    pub approach: Option<[i32; 7]>,
 }
 
 /// A walker's step ('Z', Route_Follow 800AE0A4): its follower and its state before and after.
@@ -284,7 +285,7 @@ pub fn read_log(path: &str) -> Option<Log> {
     let mut coarse: Option<Vec<(i32, i32)>> = None;
     let mut lookup_regions: Option<[Vec<[i32; 5]>; 2]> = None;
     let mut grower: Option<[u32; 5]> = None;
-    let mut approach: Option<[i32; 5]> = None;
+    let mut approach: Option<[i32; 7]> = None;
     let mut at: BTreeMap<u32, usize> = BTreeMap::new();
     let mut pending: Option<ExprRec> = None;
     let mut pending_lookups: Vec<LookupRec> = Vec::new();
@@ -396,7 +397,7 @@ pub fn read_log(path: &str) -> Option<Log> {
             }
             b'h' => {
                 // what the plan read for its point after the goal
-                if !r.has(20) {
+                if !r.has(28) {
                     break;
                 }
                 approach = Some(std::array::from_fn(|_| r.u32() as i32));
