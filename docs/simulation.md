@@ -960,7 +960,9 @@ clock runs at the game's speed (`FrameClock::frames_to_tick_at`): a tick takes 0
 speed, so in the fast mode (5) a walker gets a frame every 3 or 4 ticks; with that 3,822 of the
 3,835 ticks a walker moves in hold the original's frames (3,736 before), and the one run left
 (from tick 304, into the fast mode) returns 4 ticks late: the speed switches a few ticks before
-the first fast frame shows it.
+the first fast frame shows it. Ruled out as its cause: the clock kept in a normal tick's time
+(a frame adding its time times the speed, so a leftover is not rescaled at the switch: 3,730
+ticks) and each tick taking the speed of the next frame rather than the last (3,800).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
