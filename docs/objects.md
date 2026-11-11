@@ -34,6 +34,8 @@ where the measurements agree.
 | 15 | stack object's motive | the stack object's | the same |
 | 16 | stack object's slot | the object in the stack object's slot (datum): the one whose container field (data 2) is the stack object and slot field (data 3) the datum; 0 if none | `ScriptVariables::get` (164 of the home log's 175 reads with Grab, DropOnto and Snap native in replay, the club's 1 and 1) |
 | 20 | my slot | the same of me: an object's slot 0 holds the Sim snapped into it (Snap makes the stack object the actor's container, slot 0) | `ScriptVariables::get` (all 62, 77 and 15 reads of the three logs) |
+| 40 | my relationship with the stack object | value `datum` of the relationship list I keep for it (`Object::relationships`, the save's RelArray); 0 if none or shorter | `ScriptVariables::get` (94, 3 and 3 reads the same; all 0: data 19-23, past every saved list, so a non-zero value is not checked yet) |
+| 41 | the stack object's relationship with me | the same, the other way | 31 reads the same (all 0, likewise) |
 | 18 | my person data | 2 bytes a field, before the object part (object - 0x638) | `Object::person_data` |
 | 19 | stack object's person data | the stack object's | the same |
 | 12 | (PC: check tree ad range) | one shared 16-bit value (8035ADC8; datum 15 is the only one used), set by scripts and by the engine | `World::ad_range` |

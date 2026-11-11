@@ -247,6 +247,19 @@ fn sync_variables(world: &mut World, counts: &mut Counts, shown: &mut Shown, me:
             continue; // the lookup found nothing
         }
         let Some(got) = vars.get(v.scope as u8, v.data) else {
+            if env("REPLAY_SHOW_SCOPE").is_some_and(|e| atoi(&e) == v.scope as i64) && shown.next("scope", 40) {
+                let so = s.stack_object;
+                println!(
+                    "scope {} datum {} (not modelled): log {} (flags {}); me {}, stack object {so}, tree {}:{}",
+                    v.scope,
+                    v.data,
+                    v.value,
+                    v.flags,
+                    vars.world.get(vars.me).id(),
+                    s.tree,
+                    s.node
+                );
+            }
             note!(counts, "variables: scope {}: not modelled", v.scope);
             continue;
         };
@@ -261,6 +274,9 @@ fn sync_variables(world: &mut World, counts: &mut Counts, shown: &mut Shown, me:
             continue;
         }
         if got.value == v.value {
+            if env("REPLAY_SHOW_SCOPE_SAME").is_some_and(|e| atoi(&e) == v.scope as i64) && shown.next("scope same", 20) {
+                println!("scope {} datum {}: the same, {}", v.scope, v.data, v.value);
+            }
             note!(counts, "variables: scope {}: the same natively", v.scope);
             continue;
         }
@@ -1396,6 +1412,13 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
         patched = l;
         &patched
     };
+    if has("REPLAY_SHOW_RELATIONSHIPS") {
+        for o in world.objects().filter(|o| !o.relationships.is_empty()) {
+            for r in &o.relationships {
+                println!("relationship of {} with {}: {:?}", o.id(), r.with, r.values);
+            }
+        }
+    }
     if has("REPLAY_SHOW_OBJECTS") {
         for o in world.objects() {
             let mut l = format!("object {}: guid {:08x}, {}; data", o.id(), o.guid, o.file.map_or("-".to_string(), |f| lib.file(f).path.clone()));

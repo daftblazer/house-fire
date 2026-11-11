@@ -33,6 +33,8 @@ pub mod scope {
     pub const STACK_PERSON_DATA: u8 = 19;
     pub const STACK_SLOT: u8 = 16;
     pub const MY_SLOT: u8 = 20;
+    pub const MY_RELATIONSHIP: u8 = 40;
+    pub const STACK_RELATIONSHIP: u8 = 41;
     pub const STACK_DEFINITION: u8 = 21;
     pub const STACK_ATTRIBUTE_BY_PARAMETER: u8 = 22;
     pub const NEIGHBOUR_IN_STACK_OBJECT: u8 = 24;
@@ -618,6 +620,19 @@ impl Variables for ScriptVariables<'_, '_> {
                     .find(|o| so != 0 && o.id() != so && o.data.get(DATA_CONTAINER) == Some(&so) && (hand || o.data.get(DATA_SLOT) == Some(&d)))
                     .map_or(0, Object::id);
                 return int(id);
+            }
+            scope::MY_RELATIONSHIP | scope::STACK_RELATIONSHIP => {
+                // A relationship's value d: mine with the stack object (40), or the stack
+                // object's with me (41); 0 when there is none or it is shorter
+                let (me_id, so) = (self.world.get(self.me).id(), self.frame.stack_object);
+                let (from, to) = if scope == scope::MY_RELATIONSHIP { (me_id, so) } else { (so, me_id) };
+                let v = self
+                    .world
+                    .find_object(from)
+                    .and_then(|o| o.relationships.iter().find(|r| r.with == to as i32))
+                    .and_then(|r| usize::try_from(d).ok().and_then(|d| r.values.get(d)))
+                    .map_or(0, |&v| v as i16);
+                return int(v);
             }
             scope::STACK_DEFINITION => {
                 // The stack object's definition as the engine keeps it: a 32-bit version, then
