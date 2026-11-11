@@ -629,8 +629,13 @@ drawn (8024F504). The observer logs these draws too (`R`, sites 2 and 3: a new h
 steps and figures the same): at tick 931, 339 for the scores (8024F030) and 48 for the pick
 (8024F504), one a goal; at tick 1579, 165 for scores (its 43 goals round the paper girl, not her
 slot's places, are scored with a random part too) and none for a pick. All 48 goals' scores at
-tick 931 are among the drawn ones, though not in the draws' order: which place each draw scores
-is the builder's loop, still to read. The planner's choice among the goals is the
+tick 931 are among the drawn ones. The builder's order: direction by direction (bit order), then
+forward step, then sideways step, the sideways step from minus the forward one up to but not
+including it, so the eight wedges tile the area (47 places a direction at 16 to 64 by 8). Each
+place takes the next draw for its score: with that, all 48 goals' scores at tick 931 are their
+places' draws. One direction stops short, the paper girl's northeast after 10 places (the builder
+stops when its classifier, fn_80248F4C, puts a place in category 3, setting its +176 flag; not
+yet read: the check takes the short direction's count from the draws' total). The planner's choice among the goals is the
 nearest native one in the two requests that took one natively.
 
 **The planner's obstacles, logged.** (Read turned at first: see "The obstacles' objects" below.) The search (`fn_8024C5DC`) goes over the objects and, for

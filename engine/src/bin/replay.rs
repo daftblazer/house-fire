@@ -2481,6 +2481,50 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                         "routing: a goal of a range slot NOT among its area's open places"
                     });
                 }
+                // the scores by the builder's draws (logs with 'R' site 2): each place in the area's
+                // order takes the next draw, a direction perhaps stopping short (its classifier,
+                // fn_80248F4C, not yet read: the one short direction's count taken from the draws'
+                // total); each goal's score that of its place
+                let draws: Vec<u32> = log.randoms.iter().filter(|r| r.tick == pl.tick && r.site == 2).map(|r| r.value).collect();
+                if slot.flags & 0x2000 != 0 && !draws.is_empty() {
+                    let area = slot_area(slot, target.0, target.1, facing);
+                    let per: Vec<usize> = (0..8u8).map(|k| area.iter().filter(|x| x.0 == k).count()).collect();
+                    let short = draws.len() as i64 - per.iter().sum::<usize>() as i64;
+                    // which direction stops short: the one whose shortening fits the goals best
+                    let score_with = |sk: usize, sn: usize| {
+                        let mut it = draws.iter();
+                        // (direction, place, score)
+                        let mut scored: Vec<(u8, (i32, i32), u32)> = Vec::new();
+                        for (k, &count) in per.iter().enumerate() {
+                            let n = if k == sk { sn } else { count };
+                            for &(d, place) in area.iter().filter(|x| x.0 as usize == k).take(n) {
+                                if let Some(&r) = it.next() {
+                                    scored.push((d, place, 135 + r % 20 - 10));
+                                }
+                            }
+                        }
+                        pl.goals
+                            .iter()
+                            .filter(|g| scored.iter().any(|&(d, p, sc)| (d, p) == ((g[3] & 0xFF).trailing_zeros() as u8, (g[0] as i32, g[1] as i32)) && sc == g[2]))
+                            .count()
+                    };
+                    let best = (0..8)
+                        .filter(|&k| short <= 0 && per[k] as i64 + short >= 0)
+                        .map(|k| (score_with(k, (per[k] as i64 + short) as usize), k))
+                        .max();
+                    if let Some((hits, sk)) = best {
+                        if has("REPLAY_SHOW_GOALS") {
+                            println!("area draws at tick {}: {} draws, direction {sk} short by {}", pl.tick, draws.len(), -short);
+                        }
+                        for i in 0..pl.goals.len() {
+                            counts.note(if i < hits {
+                                "routing: a range slot goal's score its place's draw, in the builder's order (one direction's count from the draws)"
+                            } else {
+                                "routing: a range slot goal's score NOT its place's draw in the builder's order"
+                            });
+                        }
+                    }
+                }
                 if has("REPLAY_SHOW_GOALS") {
                     println!("area at tick {}: facing {facing} (native {}), {n} of {} goals among {} places, {} open; slot {slot:?}", pl.tick, o.facing(), pl.goals.len(), slot_area(slot, target.0, target.1, facing).len(), open.len());
                 }

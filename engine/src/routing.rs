@@ -75,11 +75,14 @@ pub fn slot_goal_score(slot: &crate::library::Slot, names_object: bool) -> std::
 
 /// The places a routing slot of a range of proximities offers (an area): for each direction its
 /// flags name (bit k, `k` eighths of a turn from the object's front), the points of that
-/// direction's own grid (forward and sideways steps of the slot's resolution) within 45 degrees of
-/// it and between the least and greatest proximity; a diagonal's grid turned with it, its places
-/// rounded to the sixteenth. Each with its k, before any is taken out as closed (a place may lie
-/// in two directions' areas). Measured on the home log: all 48 goals of the paper girl's slot 8
-/// (16 to 64 at 8) at tick 931.
+/// direction's own grid (forward and sideways steps of the slot's resolution) within its eighth of
+/// the turn, the sideways step from minus the forward one up to but not including it (so the
+/// eight wedges tile the area), between the least and greatest proximity; a diagonal's grid
+/// turned with it, its places rounded to the sixteenth. In the builder's order (fn_8024E480): by
+/// direction, then forward step, then sideways step, each place scored with its own random draw
+/// when the slot is flagged (`slot_goal_score`), before any is taken out as closed. Measured on
+/// the home log: 47 places a direction, all 48 goals of the paper girl's slot 8 (16 to 64 at 8)
+/// at tick 931 with their scores from the draws in this order.
 pub fn slot_area(slot: &crate::library::Slot, x16: i32, y16: i32, facing: i16) -> Vec<(u8, (i32, i32))> {
     let (lo, hi, res) = (slot.min_proximity, slot.max_proximity, slot.resolution.max(1));
     let mut out = Vec::new();
@@ -97,7 +100,7 @@ pub fn slot_area(slot: &crate::library::Slot, x16: i32, y16: i32, facing: i16) -
             }
         };
         for ahead in (0..=hi).step_by(res as usize) {
-            for side in (-ahead..=ahead).filter(|s| s % res == 0) {
+            for side in (-ahead..ahead).filter(|s| s % res == 0) {
                 let d2 = ahead * ahead + side * side;
                 if d2 < lo * lo || d2 > hi * hi {
                     continue;
