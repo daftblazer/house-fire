@@ -1234,8 +1234,10 @@ f is 6 there: the target object's own facing, not the routing object's (logged a
 point equal to the last one is not added (802239C4..802239FC). The facing virtual is
 fn_801F5F4C, the object-data getter, asked for data 1: the object's direction. 'h' now names
 that object (its id; the +144 word logged beside it is 0 throughout, data 1 is not kept there),
-and the native world's data 1 for it gives both kind-4 points: with kinds -3, -2 and -1, 15 of
-16 in replay, the miss the diagonal -2 that adds no point (tick 1791). Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+and the native world's data 1 for it gives both kind-4 points. The diagonal -2 that adds none
+(tick 1791) is the one plan that took no goal (the request's +88 left at -1; it is tried again
+at once from the same start and then adds its point): a plan without a goal adds no point.
+With that, every plan's point after its goal (or its lack of one) natively, 16 of 16. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
