@@ -63,6 +63,43 @@ pub fn slot_places(slot: &crate::library::Slot, x16: i32, y16: i32, facing: i16)
     out
 }
 
+/// The places a routing slot of a range of proximities offers (an area): for each direction its
+/// flags name (bit k, `k` eighths of a turn from the object's front), the points of that
+/// direction's own grid (forward and sideways steps of the slot's resolution) within 45 degrees of
+/// it and between the least and greatest proximity; a diagonal's grid turned with it, its places
+/// rounded to the sixteenth. Each with its k, before any is taken out as closed (a place may lie
+/// in two directions' areas). Measured on the home log: all 48 goals of the paper girl's slot 8
+/// (16 to 64 at 8) at tick 931.
+pub fn slot_area(slot: &crate::library::Slot, x16: i32, y16: i32, facing: i16) -> Vec<(u8, (i32, i32))> {
+    let (lo, hi, res) = (slot.min_proximity, slot.max_proximity, slot.resolution.max(1));
+    let mut out = Vec::new();
+    for k in 0..8u8 {
+        if slot.flags & (1 << k) == 0 {
+            continue;
+        }
+        let f = facing + k as i16;
+        // the direction's forward and sideways units, and their scale (a diagonal's sum of two)
+        let (u, w, scale) = match (front(f), front(f + 2)) {
+            (Some(u), Some(w)) => (u, w, 1.0f32),
+            _ => {
+                let add = |a: (i32, i32), b: (i32, i32)| (a.0 + b.0, a.1 + b.1);
+                (add(front(f - 1).unwrap(), front(f + 1).unwrap()), add(front(f + 1).unwrap(), front(f + 3).unwrap()), std::f32::consts::FRAC_1_SQRT_2)
+            }
+        };
+        for ahead in (0..=hi).step_by(res as usize) {
+            for side in (-ahead..=ahead).filter(|s| s % res == 0) {
+                let d2 = ahead * ahead + side * side;
+                if d2 < lo * lo || d2 > hi * hi {
+                    continue;
+                }
+                let at = |a: i32, b: i32| ((ahead * a + side * b) as f32 * scale).round() as i32;
+                out.push((k, (x16 + at(u.0, w.0), y16 + at(u.1, w.1))));
+            }
+        }
+    }
+    out
+}
+
 /// An object's footprint on its tile, {x0, y0, x1, y1} in sixteenths: the tile less its
 /// definition's footprint mask (OBJD field 75), whose nibble k (the low first) is the inset of
 /// the side k quarter turns from the object's front (`front(facing + 2k)`). Measured on the home

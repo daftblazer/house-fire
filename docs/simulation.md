@@ -607,7 +607,12 @@ log: of the four single-proximity requests on objects on the lot natively, three
 open places exactly (the counter, the group meal, the chair), the fourth the paper girl's (her
 facing stale); the one on an object not on the lot (her at tick 1220) fits a slot's shape. A
 slot of a range of proximities (her slot 8 of the global SLOT, 16 to 64 at resolution 8)
-offers an area of places, 48 at tick 931 (not yet); the planner's choice among the goals is the
+offers an area of places, 48 at tick 931 (`routing::slot_area`): for each direction its flags
+name, the points of that direction's own grid (steps of the resolution forward and sideways)
+within 45 degrees of it and between the least and greatest proximity, a diagonal's grid turned
+with it and its places rounded. All 48 goals lie in their bits' areas (408 places before the
+closed are taken out), by facing 0: the paper girl's facing then, not the save's 5. Which places
+stay (the room, the objects, the order of the 48) is still open. The planner's choice among the goals is the
 nearest native one in the two requests that took one natively.
 
 **The planner's obstacles, logged.** (Read turned at first: see "The obstacles' objects" below.) The search (`fn_8024C5DC`) goes over the objects and, for

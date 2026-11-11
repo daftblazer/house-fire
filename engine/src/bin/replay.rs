@@ -46,7 +46,7 @@ use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
-use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
+use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
 use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
@@ -2431,7 +2431,25 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                     "routing: a request's goals natively NOT the open places of its slot"
                 });
             } else {
-                counts.note("routing: a request's goals from a slot of a range of proximities (an area; not yet)");
+                // a slot of a range: each goal one of its area's places, with its direction's bit
+                // (by the object's native facing, else by the facing the goals' bits give: the
+                // paper girl's save facing is stale)
+                let fits = |f: i16| {
+                    let area = slot_area(slot, target.0, target.1, f);
+                    pl.goals.iter().filter(|g| area.contains(&((g[3] & 0xFF).trailing_zeros() as u8, (g[0] as i32, g[1] as i32)))).count()
+                };
+                let native = fits(o.facing());
+                let (facing, n) = if native == pl.goals.len() { (o.facing(), native) } else { (0..8).map(|f| (f, fits(f))).max_by_key(|x| x.1).unwrap() };
+                for i in 0..pl.goals.len() {
+                    counts.note(match (i < n, facing == o.facing()) {
+                        (true, true) => "routing: a goal of a range slot natively one of its area's places (its bit's grid)",
+                        (true, false) => "routing: a goal of a range slot one of its area's places (its bit's grid; the facing the bits give)",
+                        _ => "routing: a goal of a range slot NOT one of its area's places",
+                    });
+                }
+                if has("REPLAY_SHOW_GOALS") {
+                    println!("area at tick {}: facing {facing} (native {}), {n} of {} goals among {} places", pl.tick, o.facing(), pl.goals.len(), slot_area(slot, target.0, target.1, facing).len());
+                }
             }
         }
         let d2 = |p: &(i32, i32)| (p.0 - start.0).pow(2) + (p.1 - start.1).pow(2);

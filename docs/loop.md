@@ -1589,7 +1589,7 @@ one another straight away (the user's: no more quarter-hour waits).
 
 ## Progress
 
-Iteration 26 (resumed after the end write-up at 24; no iteration limit).
+Iteration 27 (resumed after the end write-up at 24; no iteration limit).
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1785,6 +1785,14 @@ Iteration 26 (resumed after the end write-up at 24; no iteration limit).
   persons the loop's. Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24);
   clippy clean. Next: the range slot's area (the 48 goals at tick 931), or the start speed
   after a walk cut short.
+
+- **Iteration 27, chunk 4 (a range slot's area).** The 48 goals of the paper girl's slot 8 (16
+  to 64 at 8) at tick 931 read as an area: each direction's own grid within 45 degrees of it
+  and in the range, a diagonal's turned and rounded (`routing::slot_area`). Checked: 48 of 48
+  goals among the area's places with their bits, by the facing the bits give (0; her native
+  facing the save's stale 5). Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4,
+  24); clippy clean. Next: which of the area's places the request keeps and in what order
+  (the room, the objects, perhaps the gradient), or the girl's facing at the time.
 
 ## The tenth loop's end
 
