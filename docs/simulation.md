@@ -1068,7 +1068,14 @@ both cells are grown by 1 on every side (fn_80248D20(r, 1, 1): y0-1, x0-1, y1+1,
 intersected (fn_80248DD8: the overlap, all zero unless they overlap strictly on both axes), and
 the point is the overlap's centre, each axis (lo + hi) / 2 rounded toward zero. So the graph's
 nodes are its free cells, the search runs cell to cell, and the coarse way's points are the
-midpoints of the shared edges: the "string through cell openings" before refining.
+midpoints of the shared edges: the "string through cell openings" before refining. Checked on a one-off dump of
+the graph's cells and nodes at the home run's first search (reverted): every node's point is
+that centre for its parent's cell and its own (12 of 12; the start node keeps the start), and
+every node's kind is its cell's cost (13 of 13). The cells are not a whole-lot grid: 13 rects,
+all round the start and along the way to the goal (y 67..185, x 23..601), e.g. cell 0 (96, 323,
+117, 333), the start's, cost 0; cell 4 the cost-10 obstacle itself (117, 325, 123, 331); cells 3,
+5 its sides to y 185; cell 1 the paved strip from 355 to the goal (80, 355, 96, 601). So the
+cells are cut as the search needs them, from the D and X rects; how is next.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
