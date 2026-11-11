@@ -2174,6 +2174,9 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
                 f.stack_object = s.stack_object;
             }
             if interp.asleep() {
+                if has("REPLAY_MAKE_NATIVE") {
+                    println!("asleep: tick {} id {} tree {:#x} node {}", s.tick, o_id, s.tree, s.node);
+                }
                 h.counts.note("steps: the log ran a stack the native has asleep");
                 interp.sleep().wake();
             }
