@@ -1152,7 +1152,14 @@ finishes: still 13 of 23 (plan 14 comes closer, its way's second half exact; pla
 cap, plan 16 finds none). The union of the last yard D (43) and house D (27) for an empty D is
 worse (12; plan 12 lost). So which regions an empty-D search uses is not to be guessed: the
 region lookup reads two lists through the graph (*(8035D2F4 + 4), and *(8035D2F4 + 8) when not
-null); they are the thing to log.
+null); they are the thing to log. Logged now ('r', after each 'I'): the first list is the X obstacles
+as the search had them, the second the D regions with the blocked ones already grown by 7 (the
+lot's border (0, 0, 16, 624) is (-7, -7, 23, 631) there). The empty-D plans use the yard's 43
+regions (plans 2, 3, 16) or the house's 27 (12, 14), not simply the previous plan's. On the
+logged lists the model gives 15 of 23 coarse ways exactly (plan 16 now too). The misses left:
+plans 9 and 10 start one way off (313 for 317 in y at the first crossing), plan 3 lacks a point
+next to its start (233, 296), and 2, 4 and 14 differ inside the house. The first three look like
+the start's cell.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a

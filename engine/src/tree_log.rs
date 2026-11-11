@@ -164,6 +164,10 @@ pub struct PlanRec {
     /// The planner's search's coarse way through its map's nodes ('I', in newer logs), the last
     /// before the plan: (x, y) in sixteenths.
     pub coarse: Vec<(i32, i32)>,
+    /// The two rect lists the search's region lookup walked ('r', after that 'I', in newer
+    /// logs): the graph's +4 vector and the one behind its +8 (empty when null); {y0, x0, y1,
+    /// x1, cost}, raw (turned).
+    pub lookup_regions: [Vec<[i32; 5]>; 2],
 }
 
 /// A walker's step ('Z', Route_Follow 800AE0A4): its follower and its state before and after.
@@ -270,6 +274,7 @@ pub fn read_log(path: &str) -> Option<Log> {
     let mut tested: Option<Vec<(i16, bool, i32)>> = None;
     let mut regions: Option<Vec<[i32; 5]>> = None;
     let mut coarse: Option<Vec<(i32, i32)>> = None;
+    let mut lookup_regions: Option<[Vec<[i32; 5]>; 2]> = None;
     let mut at: BTreeMap<u32, usize> = BTreeMap::new();
     let mut pending: Option<ExprRec> = None;
     let mut pending_lookups: Vec<LookupRec> = Vec::new();
@@ -360,7 +365,8 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let tested = tested.take().unwrap_or_default();
                 let regions = regions.take().unwrap_or_default();
                 let coarse = coarse.take().unwrap_or_default();
-                log.plans.push(PlanRec { tick: log.ticks, state, points, goals, chosen, obstacles, obstacle_width, tested, regions, coarse });
+                let lookup_regions = lookup_regions.take().unwrap_or_default();
+                log.plans.push(PlanRec { tick: log.ticks, state, points, goals, chosen, obstacles, obstacle_width, tested, regions, coarse, lookup_regions });
             }
             b'I' => {
                 // the planner's search's coarse way (stored turned: y, x)
@@ -375,6 +381,21 @@ pub fn read_log(path: &str) -> Option<Log> {
                     let y = r.u32() as i32;
                     (r.u32() as i32, y)
                 }).collect());
+            }
+            b'r' => {
+                // the search's region lookup's two lists
+                let mut lists: [Vec<[i32; 5]>; 2] = Default::default();
+                for list in &mut lists {
+                    if !r.has(2) {
+                        break;
+                    }
+                    let cnt = r.u16() as usize;
+                    if !r.has(20 * cnt) {
+                        break;
+                    }
+                    *list = (0..cnt).map(|_| [r.u32() as i32, r.u32() as i32, r.u32() as i32, r.u32() as i32, r.u32() as i32]).collect();
+                }
+                lookup_regions = Some(lists);
             }
             b'Z' => {
                 // a walker's step (Route_Follow)
