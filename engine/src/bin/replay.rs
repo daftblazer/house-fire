@@ -3514,7 +3514,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                         // that holds the walk
                         if let Some(ticks) = frame_ticks.get(&f.follower)
                             && let Some(ret) = routing_return_tick(ticks, frames, turn_frames(angle))
-                            && let Some(run) = routing_runs.iter().filter(|r| r.3 <= start_tick && r.4 >= f.tick).min_by_key(|r| r.4 - r.3)
+                            && let Some(run) = routing_runs.iter().filter(|r| r.3 <= start_tick + 1 && r.4 >= f.tick).min_by_key(|r| r.4 - r.3)
                         {
                             returns.entry((run.0, run.1, run.2)).or_default().push((run.3, ret));
                             counts.note(if run.4 == ret {
@@ -3725,6 +3725,13 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 }
             }
             start = i;
+        }
+    }
+    if show_walks {
+        for r in &routing_runs {
+            if !returns.get(&(r.0, r.1, r.2)).is_some_and(|v| v.iter().any(|x| x.0 == r.3)) {
+                println!("routing run not modelled: sim {:x} tree {} node {} from tick {} to {}", r.0, r.1, r.2, r.3, r.4);
+            }
         }
     }
     returns

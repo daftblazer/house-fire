@@ -962,7 +962,11 @@ its walker (past its plan's start) goes from there through the plan's points aft
 less the sixteenth the planner nudged off it; and a walk end is a door's crossing only when its
 routing run goes on more than 5 ticks past the plan that follows. With both, all 16 whole walks
 and 15 routing runs native and right, 10 of 12 with the frame clock native, and the host decides
-1,898 routing steps natively, none different (97 left, in one run). With the frame clock native as well (`FrameClock` at
+1,898 routing steps natively, none different (97 left, in one run). That run's walk starts the
+tick before its first yield (the primitive plans in the tick the one before returns): with a
+run allowed to begin a tick after its walk, all 16 of the home log's routing runs are native,
+11 of 13 with the frame clock native too, and the host decides 1,989 routing steps natively,
+none different (6 left, outside any run's span). With the frame clock native as well (`FrameClock` at
 its fitted phase giving each frame's tick; only the walk's start taken from the log), 7 of the 8
 runs it covers return on the original's tick (2 start before the ticks it is fitted over). The
 clock runs at the game's speed (`FrameClock::frames_to_tick_at`): a tick takes 0.042 s over the
