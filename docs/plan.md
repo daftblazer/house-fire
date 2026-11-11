@@ -125,6 +125,14 @@ of their work is now native rather than answered from the log. The ticks past th
 the budget with room; tick 2, which builds every object's stack, does not (8.9 ms of 5): to
 be spread or made cheaper, or done during the load, before the systems to come add to it.
 
+**The planner (2026-11-11, on the PC).** `replay --bench` now also times the native planner on
+each of the home log's 18 plans (the whole request: the goal choice, the search, the
+refinement, the point after the goal), 21 times with the rounds interleaved, each plan's median,
+in each of the bench's 5 runs, three times over (15 samples): a plan's median 30-32 µs, the
+worst 136-143 µs (tick 260, the yard to the front door, and tick 1901, both one goal), all 18
+together 0.83-0.85 ms. A tick plans at most once a Sim, so the worst is about 3% of the 5 ms
+budget on the PC; the RK3566's figure is the user's to measure (the same command there).
+
 ## What does not come over from Bustin' Out's port
 
 The port's own redrawn interface (its "HD UI": `src/hud_read.cpp`, `hud_pieces.h`,

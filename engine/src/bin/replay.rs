@@ -1305,6 +1305,43 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
     // walk checks run on the native planner's ways (study REPLAY_LOGGED_PLANS: the log's instead)
     let patched;
     let mut native_plans = (0, 0);
+    // --bench: the native planner's cost, each plan's whole request (goal choice, search,
+    // refinement, the point after the goal) timed 21 times, the rounds interleaved over the plans
+    // (a busy PC), each plan's median
+    if bench.is_some() {
+        let plans: Vec<&PlanRec> = log.plans.iter().filter(|pl| native_plan_points(pl, &world).is_some()).collect();
+        let mut times: Vec<Vec<f64>> = vec![Vec::new(); plans.len()];
+        for _ in 0..21 {
+            for (k, pl) in plans.iter().enumerate() {
+                let t0 = Instant::now();
+                std::hint::black_box(native_plan_points(pl, &world));
+                times[k].push(us(t0));
+            }
+        }
+        let mut medians: Vec<(f64, usize)> = times
+            .iter_mut()
+            .enumerate()
+            .map(|(k, t)| {
+                t.sort_by(f64::total_cmp);
+                (t[t.len() / 2], k)
+            })
+            .collect();
+        medians.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let total: f64 = medians.iter().map(|m| m.0).sum();
+        if let Some(&(worst, k)) = medians.last() {
+            let pl = plans[k];
+            println!(
+                "bench: the planner on {} plans, us a plan (medians of 21): median {:.1}, worst {:.1} (tick {}, {} goals, {} points), all {:.1}",
+                plans.len(),
+                medians[medians.len() / 2].0,
+                worst,
+                pl.tick,
+                pl.goals.len(),
+                pl.points.len(),
+                total
+            );
+        }
+    }
     let log = if has("REPLAY_LOGGED_PLANS") {
         log
     } else {
