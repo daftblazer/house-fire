@@ -676,7 +676,17 @@ plan's line: 852 of the home log's 854 within a sixteenth and a half of it (the 
 girl's, moved off the lot after her walk). Along the line the place moves a sixteenth every one or
 two ticks (about 0.7 a tick: so a fractional position underneath, the logged place its rounding),
 3 to 6 every four ticks through a door (the door's own animation), and its starts and stops are
-the speed's (`Route_WalkStep`, to read).
+the speed's.
+
+**The walk's speed, measured.** Along the line (the study `REPLAY_SHOW_WALKS`), away from a walk's
+first and last 10 ticks: 0.82 to 0.85 sixteenths a tick on the home log's 7 long walks (0.818 to
+0.852, about a tile in 19 ticks), less over a short walk (0.58 to 0.74: a start and a stop). A
+walk's first move comes 1 to 89 ticks after its plan (26 for several: a Sim standing up, turning,
+or a script's animation first). So the speed is not one constant, and the logged places alone do
+not give it exactly. `Route_WalkStep` (801F0410, as the recomp's names.txt has it) is not the
+walk's step: it moves an object (each of its parts, from `fn_801D3524`, the group's move) to a
+place it is given; the distance a tick is decided above it, likely from the walk's animation
+(its root's motion), which the engine does not read yet.
 
 **Which objects block** (`routing::obstacle`). Read from the objects the loop asks about (`J`)
 against the object data the save gives: an object is left out when its flags (object data 8)

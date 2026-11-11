@@ -1586,7 +1586,7 @@ iterations in a row end without a commit (record why here).
 
 ## Progress
 
-Iteration 1 of 24.
+Iteration 2 of 24.
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1594,3 +1594,11 @@ Iteration 1 of 24.
   a tick along straight legs, 3 to 6 every 4 ticks through doors. Figures unchanged (561,398,
   338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next: the walk's speed and its start
   (`Route_WalkStep`, 801F0410: the distance a tick), against the places tick by tick.
+
+- **Iteration 2, chunk 1 (the walk's speed, measured).** Cruising 0.82 to 0.85 sixteenths a tick
+  over the 7 long walks (short walks slower: the start and stop), a first move 1 to 89 ticks
+  after the plan. `Route_WalkStep` (801F0410) found to be an object's move to a given place (from
+  `fn_801D3524`, a group's move), not the walk's step; the distance a tick comes from above it,
+  likely the walk animation. No native walk built (the log does not give its speed exactly).
+  Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next: the
+  caller that picks the walk's next place (log its distance a tick), or chunk 2 meanwhile.

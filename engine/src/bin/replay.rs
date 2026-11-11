@@ -2713,6 +2713,20 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         }
         if show_walks {
             println!("walk of {sim} on the plan of tick {} ({} points) to tick {until}:{line}", pl.tick, pl.points.len());
+            // its speed: the length along the line over the ticks, from its first move to its
+            // last (sixteenths a tick)
+            let moves: Vec<(u32, f64)> = log.places.iter().filter(|r| r.id == sim && r.tick > pl.tick && r.tick <= until).map(|r| (r.tick, along((r.x, r.y)).1)).collect();
+            if let (Some(a), Some(b)) = (moves.first(), moves.last())
+                && b.0 > a.0
+            {
+                println!("   speed {:.3} a tick over {} ticks ({:.1} sixteenths), first move at tick {} ({} after the plan)", (b.1 - a.1) / (b.0 - a.0) as f64, b.0 - a.0, b.1 - a.1, a.0, a.0 - pl.tick);
+                let mid: Vec<&(u32, f64)> = moves.iter().filter(|m| m.0 >= a.0 + 10 && m.0 + 10 <= b.0).collect();
+                if let (Some(c), Some(d)) = (mid.first(), mid.last())
+                    && d.0 > c.0 + 20
+                {
+                    println!("   cruising {:.4} a tick over {} ticks", (d.1 - c.1) / (d.0 - c.0) as f64, d.0 - c.0);
+                }
+            }
         }
     }
     // Each plan with the routing primitives its Sim ran in its tick (study: REPLAY_SHOW_PLANS):
