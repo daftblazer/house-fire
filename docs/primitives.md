@@ -253,6 +253,20 @@ the meal its stack object): an animation event, with the animation (stage 4). 82
   202, both to (408, 264). Natively `snap`, the home log's one of kind 0. Kinds 5 (931, Sim 12
   onto itself), 6 (5066) and 1 (one in each club session) are not modelled.
 
+CreateObjectInstance's byte 4 takes the values 0-9 on the disc (6 the most, 336 nodes): The
+Sims' "where" (0 in front of me, 1 on top of me, 2 in my hand, 3 in front of the stack object, 4
+the stack object's slot 0, 5 underneath me, 6 out of the world, 8 next to me in a local's
+direction). Natively 2, 4 (the centre of the stack object's tile) and 6 ((-16, -16)). The chips
+(4) start in the fridge's slot; the meal (4) in the meal group's, then Sim 12 grabs it in the same
+tick; the trash pile (6) out of the world, then FindLocationFor (opcode 16) puts it at (392, 296)
+in the same step: not native yet.
+
+Checked in lockstep at each tick's end, every logged place of an object that is not a person:
+a held object (container field an object) is at its holder's place (272 of 272, the holder's
+logged place that tick: the chips Sim 12 carries at 957-989 and 1270-1282, the tenth loop's "two
+Sims moving as one", are this), a dropped one no longer held (DropOnto clears the field); the
+others 5 of 6 the native place, the one left the trash pile's FindLocationFor.
+
 So of the tenth loop's 13 snaps, 4 are DropOnto, 2 Grab, 1 Snap (and 202's with it), 3 made
 objects' first places (CreateObjectInstance's byte 4, open), 1 an animation event and 1 the
 engine's marker.

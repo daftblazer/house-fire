@@ -185,6 +185,25 @@ fn main() -> ExitCode {
         None => d.read("Runtime/default.ngh").unwrap_or_default(),
     };
     let lib = Library::bustin_out(&d);
+    // study (LOCKSTEP_SURVEY_OP=N): the disc's nodes of primitive N by operand bytes 4 and 5
+    if let Some(op) = std::env::var("LOCKSTEP_SURVEY_OP").ok().and_then(|v| v.parse::<u16>().ok()) {
+        let mut by: BTreeMap<(u8, u8), (usize, BTreeSet<String>)> = BTreeMap::new();
+        for f in lib.files() {
+            for &t in f.trees.values() {
+                for n in lib.tree_at(t).nodes.iter().filter(|n| n.opcode == op) {
+                    let e = by.entry((n.operand[4], n.operand[5])).or_default();
+                    e.0 += 1;
+                    if e.1.len() < 4 {
+                        e.1.insert(f.path.rsplit('/').next().unwrap_or("").to_string());
+                    }
+                }
+            }
+        }
+        for ((b4, b5), (n, files)) in &by {
+            println!("opcode {op} byte 4 {b4} byte 5 {b5}: {n} nodes, e.g. {files:?}");
+        }
+        return ExitCode::SUCCESS;
+    }
     let all: Vec<FileId> = (0..lib.files().len() as u32).map(FileId).collect();
     let path = |f: FileId| lib.file(f).path.as_str();
     let tree = |s: &StepRec| log.tree_of(s);
@@ -1181,7 +1200,36 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
     };
     let mut li = 0;
     let mut shown = 0;
+    let mut place_at = log.places.iter().position(|p| p.tick > 0).unwrap_or(log.places.len()); // the next 'P' after the lot's
     for (i, s) in log.steps.iter().enumerate() {
+        // The places the log has for the ticks before this step's (each the end of its tick),
+        // against this world's for objects that are not persons: made, grabbed, dropped and
+        // snapped natively (persons walk: routing's, not this world's)
+        while place_at < log.places.len() && log.places[place_at].tick < s.tick {
+            let p = log.places[place_at];
+            place_at += 1;
+            let Some(o) = lw.find_object(p.id).filter(|o| !o.person && !lw.find_object(p.id).is_some_and(|o| o.file.is_some_and(|f| lib.file(f).path.contains("template_person")))) else { continue };
+            // a held object (container field an object) is at its holder's place: the holder's
+            // as the log has it that tick (a person's place is routing's)
+            let holder = o.data.get(DATA_CONTAINER).copied().filter(|&h| h > 0 && h != p.id && lw.find(h).is_some());
+            if let Some(h) = holder {
+                let at = log.places.iter().rfind(|q| q.id == h && q.tick <= p.tick).map(|q| (q.x, q.y, q.level));
+                notes.note(if at == Some((p.x, p.y, p.level)) {
+                    "objects: a held object's place at a tick's end its holder's (the original's)"
+                } else {
+                    "objects: a held object's place at a tick's end NOT its holder's"
+                });
+                if at != Some((p.x, p.y, p.level)) && std::env::var_os("LOCKSTEP_SHOW_DROPS").is_some() {
+                    println!("held {} by {h} at tick {}: holder {at:?}, original {:?}", p.id, p.tick, (p.x, p.y, p.level));
+                }
+                continue;
+            }
+            let same = (o.x16, o.y16, o.level) == (p.x, p.y, p.level);
+            notes.note(if same { "objects: an object's place at a tick's end natively the original's (not a person)" } else { "objects: an object's place at a tick's end NOT the original's (not a person)" });
+            if !same && std::env::var_os("LOCKSTEP_SHOW_DROPS").is_some() {
+                println!("place of {} at tick {}: native {:?}, original {:?}", p.id, p.tick, (o.x16, o.y16, o.level), (p.x, p.y, p.level));
+            }
+        }
         // The disc's node (its operand in the file's order); SetToNext as the log's tree has it,
         // CreateObjectInstance by the disc's (its maker's tree has no record in the log).
         let disc_node = || step_object[i].and_then(|o| lib.tree(Some(o), s.tree)).and_then(|t| lib.tree_at(t).nodes.get(s.node as usize)).copied();
@@ -1319,7 +1367,8 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
             // CreateObjectInstance natively on this world: the new object's id against the
             // maker's stack object after, its GUID against the file its own steps run (the next
             // list then finds it made)
-            let Some(k) = create_object(&node, &mut lw) else {
+            let me = sim_object.get(&s.sim).and_then(|p| ptr_id.get(p)).copied().unwrap_or(-1);
+            let Some(k) = create_object(&node, &mut lw, me, s.stack_object) else {
                 notes.note("objects: CreateObjectInstance: no definition of the GUID");
                 continue;
             };
@@ -1328,7 +1377,11 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
                 let me = sim_object.get(&s.sim).and_then(|p| ptr_id.get(p)).copied().unwrap_or(-1);
                 let at = |id: i16| lw.find_object(id).map(|o| (o.id(), o.x16, o.y16, o.level, o.data.get(1).copied()));
                 let first = log.places.iter().find(|p| p.id == id && p.tick + 1 >= s.tick).map(|p| (p.tick, p.x, p.y, p.level));
-                println!("made {id} at tick {} operand {:02x?}: maker {:?} (me {:?}), stack object before {:?}; its first place {first:?}", s.tick, node.operand, at(me), me, at(s.stack_object));
+                let slot0 = lw.find_object(s.stack_object).and_then(|o| {
+                    let d = o.definition.map(|d| lib.def(d))?;
+                    lib.file(o.file?).slots.get(&d.slot_table()).map(|t| t.iter().filter(|s| s.kind != 3).map(|s| (s.kind, s.x, s.y, s.z, s.facing)).take(2).collect::<Vec<_>>())
+                });
+                println!("made {id} at tick {} operand {:02x?}: maker {:?} (me {:?}), stack object before {:?} (first container slots {slot0:?}); its first place {first:?}", s.tick, node.operand, at(me), me, at(s.stack_object));
             }
             notes.note(if id == s.stack_object_after { "objects: CreateObjectInstance natively, the id the original's" } else { "objects: CreateObjectInstance natively, the id DIFFERENT" });
             // the object's pointer: the one the next list has at that id

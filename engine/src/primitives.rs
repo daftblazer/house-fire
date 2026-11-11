@@ -99,8 +99,11 @@ pub fn test_object_type(n: &Node, vars: &mut ScriptVariables) -> PrimResult {
 /// definition's field 56, taking the lowest id free and going in front of the list
 /// (`World::make_object`). None if the GUID has no definition. Where it goes (byte 4), its init
 /// tree (run inside the maker's step) and the maker's stack object are the caller's.
-/// Measured: the home log's three (`docs/primitives.md`, "CreateObjectInstance").
-pub fn create_object(n: &Node, w: &mut World) -> Option<ObjectKey> {
+/// Where it goes, operand byte 4 (The Sims' numbering): 2 in the maker's hand (its place, held:
+/// container field the maker), 4 the stack object's slot 0 (the centre of its tile), 6 out of
+/// the world ((-16, -16), as an object off the lot); the others are not modelled (where the
+/// object starts). Measured: the home log's three (`docs/primitives.md`, "CreateObjectInstance").
+pub fn create_object(n: &Node, w: &mut World, me: i16, stack_object: i16) -> Option<ObjectKey> {
     let guid = u32::from_le_bytes([n.operand[0], n.operand[1], n.operand[2], n.operand[3]]);
     let lib = w.library();
     let d = lib.definition(guid)?;
@@ -110,13 +113,29 @@ pub fn create_object(n: &Node, w: &mut World) -> Option<ObjectKey> {
     o.file = Some(d.file);
     o.data = vec![0; 72];
     o.attributes = vec![0; lib.def(d).field(56) as usize];
+    match n.operand[4] {
+        2 => {
+            if let Some(m) = w.find_object(me) {
+                (o.x16, o.y16, o.level) = (m.x16, m.y16, m.level);
+                o.data[crate::world::DATA_CONTAINER] = me;
+            }
+        }
+        4 => {
+            if let Some(t) = w.find_object(stack_object) {
+                (o.x16, o.y16, o.level) = (((t.x16 >> 4) << 4) + 8, ((t.y16 >> 4) << 4) + 8, t.level);
+            }
+        }
+        6 => (o.x16, o.y16) = (-16, -16),
+        _ => {}
+    }
     Some(w.make_object(o))
 }
 
 /// DropOnto (opcode 43, operand byte 4 a flag): the object the actor holds (the first whose
 /// container field, data 2, is the actor) goes to the centre of the stack object's tile, on its
-/// level. Returns the dropped object's id and new place. Measured: the home log's four (the meal
-/// onto the counter and the stove, 202 onto the dining table), each the place the log has next.
+/// level, and is no longer held (container 0). Returns the dropped object's id and new place.
+/// Measured: the home log's four (the meal onto the counter and the stove, 202 onto the dining
+/// table), each the place the log has next.
 pub fn drop_onto(w: &mut World, me: i16, stack_object: i16) -> Option<(i16, i32, i32, i32)> {
     let to = w.find_object(stack_object)?;
     let (x, y, level) = (((to.x16 >> 4) << 4) + 8, ((to.y16 >> 4) << 4) + 8, to.level);
@@ -128,6 +147,7 @@ pub fn drop_onto(w: &mut World, me: i16, stack_object: i16) -> Option<(i16, i32,
     o.x16 = x;
     o.y16 = y;
     o.level = level;
+    o.data[crate::world::DATA_CONTAINER] = 0; // no longer held
     Some((o.id(), x, y, level))
 }
 
