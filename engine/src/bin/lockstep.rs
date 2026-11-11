@@ -1062,6 +1062,14 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
         let mut id_of: BTreeMap<u32, i16> = BTreeMap::new(); // the original's object pointer -> id
         let mut done: BTreeSet<(u32, i32, i32)> = BTreeSet::new();
         let diffs = std::env::var_os("LOCKSTEP_LOT_DIFFS").is_some();
+        // the tick an id first leaves the original's list (after it, the id may be another
+        // object's, not the lot's)
+        let mut left: BTreeMap<i16, u32> = BTreeMap::new();
+        for w in log.lists.windows(2) {
+            for id in w[0].ids.iter().filter(|id| !w[1].ids.contains(id)) {
+                left.entry(*id).or_insert(w[1].tick);
+            }
+        }
         for s in &log.steps {
             for v in &s.lookups {
                 if v.caller != EXPR_LHS && v.caller != EXPR_RHS {
@@ -1069,6 +1077,10 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
                 }
                 if v.scope == 3 && v.data as usize == DATA_OBJECT_ID {
                     id_of.insert(v.object, v.value);
+                }
+                if v.scope == 21 && left.get(&s.stack_object).is_some_and(|&t| s.tick > t) {
+                    notes.note("scope 21: the stack object's id left the lot before (another object's now)");
+                    continue;
                 }
                 if v.scope == 21 {
                     // The stack object's definition: field `datum` of its OBJD.
