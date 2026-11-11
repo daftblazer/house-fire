@@ -243,6 +243,12 @@ pub fn weighed_path(start: (i32, i32), goal: (i32, i32), obstacles: &[[i32; 5]],
 pub const WALK_TOP_ADULT: f32 = 19.840_021;
 pub const WALK_TOP_CHILD: f32 = 17.280_02;
 pub const WALK_TOP_FAST: f32 = 64.960_07;
+/// A walker's top a second by its body's age: the first of its file's body strings (STR# 200,
+/// "adult" or "child"). The original asks the person's body (fn_80059194, through the body's
+/// skeleton entry); a child walks slower.
+pub fn walk_top(body_age: Option<&str>) -> f32 {
+    if body_age == Some("child") { WALK_TOP_CHILD } else { WALK_TOP_ADULT }
+}
 /// The walker's frame: the global its step reads (r13 - 29720), 0.033 s.
 pub const WALK_FRAME: f32 = 0.033;
 /// The time a walker takes to reach its top from a stand (its speed grows by the top over it).

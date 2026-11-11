@@ -1582,11 +1582,13 @@ cannot be checked is not built, one-line commits, never pushed, no RK3566.
 ## Limits
 
 Stop after iteration 24, at 05:00 on 2026-11-11 (moved from 08:00 at the user's request), when the chunks are done, or when two
-iterations in a row end without a commit (record why here).
+iterations in a row end without a commit (record why here). Resumed at 04:25 on 2026-11-11 at the
+user's request with no iteration or time limit: it stops when the chunks are done or when two
+iterations in a row end without a commit.
 
 ## Progress
 
-Iteration 24 of 24 (the loop ended).
+Iteration 25 (resumed after the end write-up at 24; no iteration limit).
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1763,6 +1765,15 @@ Iteration 24 of 24 (the loop ended).
   338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next: the loop's end (iteration 24).
 
 - **Iteration 24 (the loop's end).** This write-up; figures as at iteration 23.
+
+- **Iteration 25, chunk 4 (the adult/child test; resumed).** `fn_80059194` read through the
+  observer (a stderr study, not kept): the walker's body's skeleton entry, so the age of the body
+  strings (STR# 200's first: "adult", "child"), not person data 58. `routing::walk_top` from the
+  person's file; each follower's person found by its logged place. Checked: all 3 walkers' tops
+  the original's, and the walk's figures with them native as before (1,653 steps, 1,270 free
+  frames, 8 of 10 whole walks, 8 of 10 primitives). Figures unchanged (561,398, 338,305, 68,202,
+  lockstep 7,902, 4, 24); clippy clean. Next: the paper girl's state test (`fn_801FD05C`), or
+  the start speed after a walk cut short.
 
 ## The tenth loop's end
 

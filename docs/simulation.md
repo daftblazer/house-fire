@@ -816,8 +816,13 @@ follower's +132 is 1; the speed grows by the top over 0.5 s (802A8DC8), the brak
 distance at that rate. So a frame's top is top × 0.033 (0.65472, 0.57024) and its growth top ×
 0.033² / 0.5 (0.04321, 0.03764): the logged figures. With the constants in place of the logged
 tops the same 1,511 steps are exact. Which top a walker has is the original's test through the
-follower's +8 (`fn_80059194`, two virtual calls deep), not yet read: natively it is still told
-by the walker's largest logged step.
+follower's +8 (`fn_80059194`): its person's body (a virtual on its +1004, then 8022A45C and
+8022A46C) has a skeleton entry at +108 whose +4 is 1 for an adult (else one at +112, tested the
+other way). That is the body's age, the first of the body strings (STR# 200: "adult" in
+`template_person`, "child" in `npc_papergirl`), not the scripts' age (person data 58, 20 for all
+three walkers of the home log). Natively `routing::walk_top` takes it from the person's file:
+all 3 walkers' tops the original's. A template person's body comes from the save's character, so
+a child Sim of a save still needs its body strings from there.
 
 **A walk's start and end.** A walk starts at the speed the follower's last walk stopped at: its
 speed (+144) is not reset (the "0.02 beyond the ramp" of the earlier figures was that). And it

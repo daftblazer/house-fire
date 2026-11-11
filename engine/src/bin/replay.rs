@@ -46,7 +46,7 @@ use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
-use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
+use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
 use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
@@ -2858,10 +2858,47 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
     // constants (`walk_rates`); its largest logged step only tells an adult from a child.
     let mut speed: BTreeMap<u32, f32> = BTreeMap::new();
     let mut tops: BTreeMap<u32, f32> = BTreeMap::new();
+    // which person a follower walks: the one whose logged place at a tick it moves in is its own
+    // (to a sixteenth); its top natively from its file's body strings (`walk_top`)
+    let mut walker_of: BTreeMap<u32, i16> = BTreeMap::new();
+    {
+        let mut at = 0;
+        for f in &log.follows {
+            if walker_of.contains_key(&f.follower) || (f.before.x, f.before.y) == (f.after.x, f.after.y) {
+                continue;
+            }
+            while at < log.places.len() && log.places[at].tick < f.tick {
+                at += 1;
+            }
+            let here = log.places[at..].iter().take_while(|p| p.tick == f.tick);
+            let found: Vec<i16> = here.filter(|p| ((p.x as f32) - f.after.x).abs() < 1.0 && ((p.y as f32) - f.after.y).abs() < 1.0).map(|p| p.id).collect();
+            if let [id] = found[..] {
+                walker_of.insert(f.follower, id);
+            }
+        }
+    }
+    let native_top: BTreeMap<u32, f32> = walker_of
+        .iter()
+        .filter_map(|(&fo, &id)| {
+            let o = world.objects().find(|o| o.id() == id)?;
+            let age = o.file.and_then(|fi| lib.file(fi).strings.get(&200)).and_then(|t| t.first()).map(String::as_str);
+            Some((fo, walk_top(age)))
+        })
+        .collect();
     for f in log.follows.iter().filter(|f| f.before.factor == 1.0) {
         let d = ((f.after.x - f.before.x).powi(2) + (f.after.y - f.before.y).powi(2)).sqrt();
         let t = tops.entry(f.follower).or_insert(0.0);
         *t = t.max(d);
+    }
+    // checked: each walker's native top against the logged steps' (its largest step at normal
+    // speed nearest the adult's or the child's)
+    for (fo, &seen) in &tops {
+        let logged = [WALK_TOP_ADULT, WALK_TOP_CHILD].into_iter().min_by(|a, b| (a * WALK_FRAME - seen).abs().total_cmp(&(b * WALK_FRAME - seen).abs())).unwrap();
+        counts.note(match native_top.get(fo) {
+            Some(&n) if n == logged => "routing: a walker's top natively the original's (its body's age, STR# 200)",
+            Some(_) => "routing: a walker's top natively NOT the original's",
+            None => "routing: a walker whose person is not found (its top not checked)",
+        });
     }
     let mut plan_at = 0;
     // the walk run free: a native place a follower, set at its walk's start (state 1) and then
@@ -2884,8 +2921,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         }
         // the walker's top a second: the DOL's adult or child constant (which: the one nearest
         // its logged full step; the original's test, through the follower's +8, not yet read)
-        let Some(&seen) = tops.get(&f.follower) else { continue };
-        let per_second = [WALK_TOP_ADULT, WALK_TOP_CHILD].into_iter().min_by(|a, b| (a * WALK_FRAME - seen).abs().total_cmp(&(b * WALK_FRAME - seen).abs())).unwrap();
+        let Some(&per_second) = native_top.get(&f.follower) else { continue };
         let (top, growth) = walk_rates(per_second);
         // the line it is on
         let found = log.plans[..plan_at].iter().rev().take(6).find_map(|pl| {
@@ -3117,8 +3153,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                     });
                     if let Some(line) = line {
                         let total: f32 = line.windows(2).map(|w| ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt()).sum();
-                        let top = tops.get(&f.follower).copied().unwrap_or(0.0);
-                        let per_second = [WALK_TOP_ADULT, WALK_TOP_CHILD].into_iter().min_by(|a, b| (a * WALK_FRAME - top).abs().total_cmp(&(b * WALK_FRAME - top).abs())).unwrap();
+                        let per_second = native_top.get(&f.follower).copied().unwrap_or(WALK_TOP_ADULT);
                         let (wtop, growth) = walk_rates(per_second);
                         let (mut v, mut gone, mut frames) = (v0, 0.0f32, 0u32);
                         let game = speeds.get(&f.follower).cloned().unwrap_or_default();
