@@ -934,7 +934,11 @@ frame (0.033 s), the factor folded into the ramp. With the 1.001 and data 9's te
 frames (1646's is the brake, data 9 cleared that tick; 2036's keeps its speed, data 9 still
 set), and, with a whole walk run on when its walker's data 9 is set and started from the speed
 the walker carries natively (not its last logged step), all 10 whole walks and all 10 routing
-primitives' returns.
+primitives' returns. A walk that runs on ends at the plan's last point but one (state 5 goes on
+from there): with it 1,695 of 1,697 steps and 1,459 of 1,461 frames run free. The two left (512,
+in the fast mode, and 4919) end past their walk's end by exactly the frame's budget left over
+(3.274 − 3.179 and 0.655 − 0.287): the rest of the frame spent going on towards the follower's
+point; tick 2035's does not (its point then a stale one, elsewhere): not yet read.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a

@@ -3185,6 +3185,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         let Some(&per_second) = native_top.get(&f.follower) else { continue };
         let (top, growth) = walk_rates(per_second);
         // the line it is on
+        let runs_on_now = walker_of.get(&f.follower).is_some_and(|&w| data9_at(w, f.tick));
         let found = log.plans[..plan_at].iter().rev().take(6).find_map(|pl| {
             let pts: Vec<(f32, f32)> = pl.points.iter().map(|&(x, y)| (x as f32, y as f32)).collect();
             // the walk ends at the request's chosen goal: a plan's last leg past it, into what the
@@ -3193,7 +3194,9 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             let room = |p: (i32, i32)| walls.room(p.0 >> 4, p.1 >> 4);
             let last = *pl.points.last().unwrap_or(&(0, 0));
             let faced = pl.points.len() >= 3 && goal.is_some_and(|g| pl.points[pl.points.len() - 2] == g && room(last) == room(g));
-            let walk = if pts.len() >= 3 && (faced || pl.obstacles.is_empty()) { &pts[..pts.len() - 1] } else { &pts[..] };
+            // a walk that runs on (its walker's data 9 set) ends at the plan's last point but one
+            // too: state 5 goes on from there towards the last
+            let walk = if pts.len() >= 3 && (faced || pl.obstacles.is_empty() || runs_on_now) { &pts[..pts.len() - 1] } else { &pts[..] };
             let mut best: Option<(f32, usize, f32)> = None;
             for i in 0..walk.len().saturating_sub(1) {
                 let (p, q) = (walk[i], walk[i + 1]);
@@ -3209,7 +3212,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         });
         // the walk runs on without braking when its walker goes straight on into state 5 (the
         // move to its +116/+120): when its object data 9 is set, natively from its scripts
-        let on_past = walker_of.get(&f.follower).is_some_and(|&w| data9_at(w, f.tick));
+        let on_past = runs_on_now;
         let Some((walk, i, t)) = found else {
             counts.note("routing: a walker's step not on a logged plan's line (set aside)");
             continue;
