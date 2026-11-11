@@ -979,7 +979,10 @@ ticks) and each tick taking the speed of the next frame rather than the last (3,
 started afresh on entering the fast mode puts the first fast frame where the log has it, and
 with it all 14 covered runs return on the original's tick; but no rule found for leaving the
 fast mode keeps the phase after it (afresh again: 3,178 ticks; the leftover kept: 3,168; scaled
-as the same part of a tick: 1,853), so it is not kept.
+as the same part of a tick: 1,853), so it is not kept. The DOL has no 0.042, but 1/24 at
+8037BC58 and 8037DB70: with it as the tick and the frame at 0.033 only 2,413 ticks hold the
+original's frames, so the clock's ratio (14 frames in 11 ticks, 0.033 / 0.042) is not those two
+constants; its real source is still to find.
 
 The club's logs (`tree.log`, `tree3.log`) are older than the places, walkers and plans records
 (`P`, `Z`, `G`, `H`): their routing runs cannot be checked natively, and the replay's host takes
