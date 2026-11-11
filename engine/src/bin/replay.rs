@@ -1378,10 +1378,14 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
     let mut finder = TreeFinder { lib, cache: HashMap::new(), shown: 0 };
     let mut ids = stack_ids(log);
     place_quiet_stacks(log, &h.world, &mut ids, &mut h.counts, lib);
+    let mut native_places: BTreeMap<(i16, u32), (i32, i32)> = BTreeMap::new();
+    let use_native_places = has("REPLAY_NATIVE_PLACES");
     // the routing runs' native returns, for the routing primitives' steps (its own counts dropped:
     // the full pass after the steps counts them)
     if !quiet && !log.places.is_empty() {
-        h.routing_returns = routing(log, lib, &h.world, &mut Counts { quiet: true, ..Default::default() }, &ids);
+        let native = routing(log, lib, &h.world, &mut Counts { quiet: true, ..Default::default() }, &ids);
+        h.routing_returns = native.returns;
+        native_places = native.places;
     }
 
     // The log's steps by tick, in order.
@@ -1416,10 +1420,22 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
         let mut tick_us = 0.0;
         while place_at < log.places.len() && log.places[place_at].tick < t {
             let p = log.places[place_at];
+            // study (REPLAY_NATIVE_PLACES): a walking Sim's place from the native walk where the
+            // routing pass has one
+            let (x, y) = if use_native_places { native_places.get(&(p.id, p.tick)).copied().unwrap_or((p.x, p.y)) } else { (p.x, p.y) };
+            if use_native_places {
+                h.counts.note(if !native_places.contains_key(&(p.id, p.tick)) {
+                    "places: the log's (no native walk there)"
+                } else if (x, y) == (p.x, p.y) {
+                    "places: the native walk's, the same as the log's"
+                } else {
+                    "places: the native walk's, NOT the log's"
+                });
+            }
             if let Some(k) = h.world.find(p.id) {
                 let o = h.world.get_mut(k);
-                o.x16 = p.x;
-                o.y16 = p.y;
+                o.x16 = x;
+                o.y16 = y;
                 o.level = p.level;
             }
             place_at += 1;
@@ -2281,8 +2297,17 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
 /// the tick it returns natively (its walk, turn and frames as `routing_return_tick` gives them).
 type RoutingReturns = BTreeMap<(u32, u16, u16), Vec<(u32, u32)>>;
 
-fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &BTreeMap<u32, i16>) -> RoutingReturns {
+/// What the routing pass gives the host: each routing run's native return tick, and each walking
+/// Sim's native place at the ticks the log has one (by id and tick).
+#[derive(Default)]
+struct NativeRouting {
+    returns: RoutingReturns,
+    places: BTreeMap<(i16, u32), (i32, i32)>,
+}
+
+fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &BTreeMap<u32, i16>) -> NativeRouting {
     let mut returns: RoutingReturns = BTreeMap::new();
+    let mut native_places: BTreeMap<(i16, u32), (i32, i32)> = BTreeMap::new();
     let walls = &world.walls;
     let show = has("REPLAY_SHOW_ROUTING");
     counts.add("routing: the lot's wall edges (each seen from both tiles)", walls.wall_edges());
@@ -3796,6 +3821,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                                 let Some(k) = ticks.iter().take(gone_after.len()).rposition(|&t| t <= r.tick) else { continue };
                                 let (x, y) = along_line(&line, 0, 0.0, gone_after[k]);
                                 let ours = ((x + 0.5).floor() as i32, (y + 0.5).floor() as i32);
+                                native_places.insert((id, r.tick), ours);
                                 counts.note(if ours == (r.x, r.y) {
                                     "routing: a walking Sim's place each tick natively the original's (the walker's, rounded)"
                                 } else {
@@ -4036,7 +4062,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             }
         }
     }
-    returns
+    NativeRouting { returns, places: native_places }
 }
 
 fn main() -> ExitCode {

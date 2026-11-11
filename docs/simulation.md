@@ -1353,7 +1353,11 @@ its distance along the line made a point (`along_line`) and rounded: the Sim's l
 919 times while it walks; the 22 others are one sixteenth off on one axis. Of those, 14 are the place one frame later and
 4 one frame earlier (a frame on the tick's edge: when in the tick the object takes its walker's
 place is not fixed by the follower's logged frames), and 4 are one walk's (Sim 237 at 4923..4930,
-off on both axes: its line near the end not quite the one it walked). Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+off on both axes: its line near the end not quite the one it walked). Put in the host's world in
+place of the log's (study REPLAY_NATIVE_PLACES): 919 of the log's 1,410 place records come from
+the native walk (897 the same, 22 a sixteenth off), the other 491 stay the log's (places outside
+the whole walks: the tick-0 placements, walks the check sets aside, other moves), and every other
+count is as before. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
