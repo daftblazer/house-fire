@@ -81,6 +81,11 @@ pub trait Host: Trees {
     /// (`tools/locals_check.py` finds the scripts that can do this; on the disc they read zero
     /// in the original too).
     fn unset_local(&mut self, _interp: &Interpreter, _frame: usize, _k: usize) {}
+    /// The check tree ad range (scope 12), if the host keeps one: a candidate's guard starts
+    /// with it as its interaction's advertisement and may change it (autonomy's evaluation).
+    fn ad_range_mut(&mut self) -> Option<&mut Vec<i16>> {
+        None
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

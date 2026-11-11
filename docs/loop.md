@@ -1586,7 +1586,7 @@ iterations in a row end without a commit (record why here).
 
 ## Progress
 
-Iteration 8 of 24.
+Iteration 9 of 24.
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1652,3 +1652,11 @@ Iteration 8 of 24.
   exactly (a count in the replay). All three numbers change by Sim and tick (24's delta 47 is 54,
   then 0), written at run time. Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4,
   24); clippy clean. Next: who writes motive 14's advertisement (a watch build on its address).
+
+- **Iteration 9, chunk 6 (the check tree ad range).** The writer found in the log's expressions:
+  a candidate's guard adds to scope 12's motive 14 (the check tree ad range), which starts as its
+  interaction's advertisement (`fn_80219530`). Natively: the evaluation sets the ad range before
+  each guard and scores with what it leaves (`Host::ad_range_mut`). Checked: all 109 scores bit for
+  bit (3 out of the log's order), every list value; lists 2 of 3 entire, the third but a tie's
+  order (object 124). Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy
+  clean. Chunk 6 done but that tie. Next: the tie, or chunk 2/3 (the planner's points, the misses).

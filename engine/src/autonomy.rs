@@ -79,12 +79,15 @@ pub fn autonomy_candidates(world: &World, me: ObjectKey) -> Vec<Candidate> {
 
 /// One check of an evaluation: the object, the tree (a table's first tree, or a candidate's
 /// guard; `candidate` `None` for a first tree), and its result (`None` if it did not finish).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct EvaluationCheck {
     pub object: ObjectKey,
     pub tree: u16,
     pub candidate: Option<usize>,
     pub passed: Option<bool>,
+    /// The check tree ad range after a candidate's guard (scope 12, a motive's advertisement
+    /// delta by motive), as the score then reads it; empty if the host keeps none.
+    pub ad_range: Vec<i16>,
 }
 
 /// The evaluation (opcode 3, run by the Sims' "try autonomy", PersonGlobals 8233): every
@@ -102,14 +105,28 @@ pub fn run_evaluation<H: Host + ?Sized>(lib: &Library, host: &mut H, candidates:
             let tab = lib.table_of(c.object_file, c.person, c.def.map(|d| lib.def(d)));
             if tab.first != 0 {
                 let t = lib.tree(c.object_file, tab.first);
-                out.push(EvaluationCheck { object: c.object, tree: tab.first, candidate: None, passed: run(host, t, c) });
+                out.push(EvaluationCheck { object: c.object, tree: tab.first, candidate: None, passed: run(host, t, c), ad_range: Vec::new() });
             }
         }
         // The trees as the object's own file names them (a person's table is its semi-global
         // file's, whose ids the object's file resolves).
-        let guard = c.interaction(lib).guard;
+        let e = c.interaction(lib);
+        let guard = e.guard;
         let g = lib.tree(c.object_file, guard);
-        out.push(EvaluationCheck { object: c.object, tree: guard, candidate: Some(k), passed: run(host, g, c) });
+        // its guard starts with the ad range its interaction's advertisement (each motive's
+        // delta) and may add to it (a social interaction's appeal); what it leaves is scored
+        let kept = host.ad_range_mut().map(|r| {
+            let old = r.clone();
+            r.clear();
+            r.extend((0..16).map(|m| e.adverts.get(m).map_or(0, |a| a.delta)));
+            old
+        });
+        let passed = run(host, g, c);
+        let ad_range = match (kept, host.ad_range_mut()) {
+            (Some(old), Some(r)) => std::mem::replace(r, old),
+            _ => Vec::new(),
+        };
+        out.push(EvaluationCheck { object: c.object, tree: guard, candidate: Some(k), passed, ad_range });
     }
     out
 }
@@ -281,9 +298,9 @@ pub fn attenuation(lib: &Library, e: &Interaction, visitor: bool) -> f32 {
 
 /// A candidate's value to a person (fn_802266BC): its score less the base (the score of no
 /// advert), over 1 + the attenuation × the distance in tiles.
-pub fn candidate_value(lib: &Library, curves: &[ScoreCurve], person: &Object, object: &Object, c: &Candidate, base: f32) -> f32 {
+pub fn candidate_value(lib: &Library, curves: &[ScoreCurve], person: &Object, object: &Object, c: &Candidate, adverts: &[crate::library::Advert], base: f32) -> f32 {
     let e = c.interaction(lib);
-    let score = interaction_score(curves, Some(&e.adverts), person, &person.motives);
+    let score = interaction_score(curves, Some(adverts), person, &person.motives);
     let factor = 1.0 / person_distance(person, object).mul_add(attenuation(lib, e, false), 1.0);
     (score - base) * factor
 }

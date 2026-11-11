@@ -315,6 +315,10 @@ impl Host for ReplayHost<'_, '_> {
         self.lib.tree(f, id)
     }
 
+    fn ad_range_mut(&mut self) -> Option<&mut Vec<i16>> {
+        Some(&mut self.world.ad_range)
+    }
+
     /// A check tree the engine runs, stepped natively through the log's steps of it.
     fn run_check(&mut self, t: TreeId, file: Option<FileId>, stack_object: i16, defaults: &[i16]) -> Option<bool> {
         let log = self.log;
@@ -788,13 +792,25 @@ impl ReplayHost<'_, '_> {
                 let cand = &cands[ci];
                 // The log's score of this one (the scores come in the order of the passing
                 // guards).
-                let native_score = interaction_score(&curves, Some(&cand.interaction(lib).adverts), person, &person.motives);
+                // its advertisement as its guard left the ad range (scope 12): the deltas
+                let mut adverts = cand.interaction(lib).adverts.to_vec();
+                for (m, a) in adverts.iter_mut().enumerate() {
+                    if let Some(&d) = c.ad_range.get(m) {
+                        a.delta = d;
+                    }
+                }
+                let native_score = interaction_score(&curves, Some(&adverts), person, &person.motives);
                 while self.score_at < log.scores.len() && log.scores[self.score_at].tick < s.tick {
                     self.score_at += 1;
                 }
                 if self.score_at < log.scores.len() && log.scores[self.score_at].tick == s.tick {
+                    let tick_scores = log.scores.iter().filter(|x| x.tick == s.tick);
                     if native_score == log.scores[self.score_at].score {
                         scores_same += 1;
+                    } else if tick_scores.clone().any(|x| x.score == native_score) {
+                        // the log's order of the tick's scores is not the candidates' here (one
+                        // more of its calls before): one of the tick's, bit for bit
+                        self.counts.note("autonomy: a candidate's score the same natively as one of the tick's (out of the log's order)");
                     } else {
                         scores_diff += 1;
                         // with motive 14's advertisement as the original scored it (its logged
@@ -861,7 +877,7 @@ impl ReplayHost<'_, '_> {
                     o
                 };
                 let (chooser, object) = (placed(person), placed(self.world.get(cand.object)));
-                values.push((candidate_value(lib, &curves, &chooser, &object, cand, base), ci));
+                values.push((candidate_value(lib, &curves, &chooser, &object, cand, &adverts, base), ci));
             }
             self.counts.add("autonomy: a candidate's score the same natively (its own adverts, the native motives)", scores_same);
             if scores_diff != 0 {

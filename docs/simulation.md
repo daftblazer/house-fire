@@ -451,6 +451,19 @@ original made it`). Against the table's: interaction 24's delta 47 is 54 at tick
 the score reads them (a script's write, it may be: a social interaction's appeal by relationship).
 Who writes them is next (a watch on the advertisement's memory).
 
+**The check tree ad range** (scope 12; `Host::ad_range_mut`, `EvaluationCheck::ad_range`). The
+writer is the candidate's own guard: before it runs, `fn_80219530` makes the interaction's
+advertisement the check tree ad range (scope 12, one delta a motive, data 0 to 15), and a social
+interaction's guard adds to motive 14's (`scope 12 data 14 += local 0`: 47 + 7 = 54 for Sim 237's
+interaction 24 at tick 186, 10 + 5 = 15 for its 13); the score then reads the ad range's deltas.
+Natively: the evaluation sets the ad range to each candidate's deltas before its guard, keeps what
+the guard leaves for its score and value, and puts the earlier ad range back (its datum 15 is the
+shared value scripts use). Checked on the home log: all 109 scores the original's bit for bit (3
+of them a place out of the log's order at tick 1443, which has one more call of the score than
+candidates: compared as one of the tick's), and every value of the three choice lists; two lists
+the same entire, the third (tick 1443) but for object 124's two equal entries, in the other order.
+(The motive-14 entry the `A` record carries is the ad range's, which explains its other order.)
+
 Earlier: the pick and its result (the stack object, Find Best Action's push) native of those that pass (the
 adverts, the motives, the distance, the tuning table), checked as each choice among the native
 best four.
