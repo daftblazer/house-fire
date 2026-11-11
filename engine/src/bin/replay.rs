@@ -457,8 +457,21 @@ impl Host for ReplayHost<'_, '_> {
                 } else {
                     "primitives: GotoRoutingSlot/GotoRelativePosition: DIFFERENT (the log's taken)"
                 });
+            } else if let Some(pl) = log.plans.iter().filter(|p| p.tick == s.tick && p.approach.is_some_and(|a| a[7] as i16 == me_id)).last() {
+                // the step that plans (its Sim's plan made this tick): with a way, it comes back to
+                // its own node and walks from the next; with none, it goes on at once
+                let native_again = !pl.points.is_empty();
+                self.counts.note(if s.result == 0 && native_again == (s.after == s.node) {
+                    "primitives: GotoRoutingSlot/GotoRelativePosition: the planning step natively as the log's (again with a way, on without one)"
+                } else {
+                    "primitives: GotoRoutingSlot/GotoRelativePosition: the planning step NOT as the log's"
+                });
             } else {
                 self.counts.note("primitives: GotoRoutingSlot/GotoRelativePosition: its run not modelled (the log's taken)");
+                if has("REPLAY_SHOW_ROUTE_RUNS") {
+                    let plans: Vec<_> = log.plans.iter().filter(|p| p.tick == s.tick).map(|p| (p.approach.map(|a| a[7]), p.chosen, p.points.len(), p.points.first().copied())).collect();
+                    println!("route run not modelled: tick {} sim {me_id:?} tree {} node {} opcode {} result {} after {}; plans then (planner, chosen, points, start): {plans:?}", s.tick, s.tree, s.node, n.opcode, s.result, s.after);
+                }
             }
             return self.logged(s, n);
         }

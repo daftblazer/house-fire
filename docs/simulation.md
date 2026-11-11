@@ -1328,7 +1328,14 @@ the log's records; it stays open, the one request of 4 whose goals are not its s
 range slot round her at tick 931 is global slot 8, and its goal is the backward search's; the
 routing step's goal check now takes that for a range slot, the planner's 3 of 4 with 1579 the
 open one. A person's facing taken from its last logged step, for its slot's places, changes no
-count: the save's facing serves the slots that are checked.) Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+count: the save's facing serves the slots that are checked.)
+
+The routing primitives' steps in the native host: besides a run's yields and its return (1,989
+as the log's), the step that plans is its own case: the Sim's plan is made that tick, and with a
+way the step comes back to its own node (result 0, after = its node) to walk from the next; with
+none (a request of no goals, tick 1503) it goes on at once. 4 of 4 such steps natively as the
+log's; 2 more steps (1618, 5066) return at once with no plan logged at all (the planner not
+called: likely the Sim already there), not modelled. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
