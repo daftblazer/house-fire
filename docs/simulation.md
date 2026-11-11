@@ -947,7 +947,12 @@ walker's data 9 alone does not: the plan at 520 has it set and no such point). R
 walker off the plan's start (520 and 1900 are, without the point), the walker in state 5 (520 is,
 without it), the walker still moving in state 5 (1900 is, without it; 496 is not, with it), and
 the walker's place or state-5 point rounded (4921's x is the third point's way, not the walker's).
-The point is start + the sign of (third − start) on each axis in all 3.
+The point is start + the sign of (third − start) on each axis in all 3. The search's point test,
+fn_8024C408 (called four times by fn_8024C5DC), asks of a rectangle vector whether the 1 by 1
+rectangle at a point overlaps a blocking entry (cost 0x7FFFFFFF, through fn_80268D78 at 8024C448);
+the nudge may follow from it, but neither the logged obstacles (`X`) nor the search's own
+rectangles (`D`) block the three nudged starts (nor any other start): which vector it tests at
+the start is still to read.
 
 **Where a walk ends, at a door.** The walk ends at the request's chosen goal, the plan's last leg
 past it (into what the Sim faces) not walked; but at a door the home log has both: the yard's walk
