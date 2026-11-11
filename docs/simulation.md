@@ -1340,7 +1340,14 @@ either. At 1618 the step comes back to its node and the stack's next step on tha
 ticks later (1670, when Sim 12's logged plan starts its yields): the primitive gave up or handed
 over without planning. At 5066 it goes to node 254, the tree's return, and returns there: the Sim
 already at its goal. Which check of the primitive's sends each there is not in the log; both stay
-open. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+open.
+
+The places the host sets from the log ('P', each Sim's place each tick it changes) and the
+walker: 'P' is the walker's float place (the follower's +40/+44, stored turned, (y, x)) rounded
+to the nearest sixteenth. Pairing each Sim with the follower whose latest place lies within 2 of
+its records (a rough pairing: two pairs of Sims share a follower), the rounded place is the
+logged one 1,142 of 1,203 times (floor or truncation 362, ceiling 430). So for the native host
+to walk a Sim it is the native walker's float place, rounded, that becomes the object's place. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
