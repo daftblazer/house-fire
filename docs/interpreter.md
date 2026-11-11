@@ -61,7 +61,11 @@ tree id, node 0, +4 from the caller, +8 zero, +12 the file, the counts from the 
 - **No parameters given** (a call node whose operand is all -1): the parameters are copied
   from the array the interpreter was set up with (`TreeSimImpl::Initialize(int, short *)`
   keeps its pointer at +44). Not the caller's. In the PC game these are the object's
-  temporaries. Measured: all 48,248 calls of a session agree once this is modelled.
+  temporaries. Measured: all 48,248 calls of a session agree once this is modelled. It is a
+  pointer, so the values are the temps as they are at the call, not when the stack was set
+  up: the simulator (and replay) give the interpreter the object's current temps before each
+  turn. With that, frame parameters set to the log's: home 749 → 415, `tree.log` 2,518 → 151,
+  `tree3.log` 594 → 31.
 - **A tree of type 4** starts at the node its first parameter names, the last node if that
   is past the end; a negative one fails the call.
 - **Locals are not cleared.** A new frame's locals are whatever the stack's memory held

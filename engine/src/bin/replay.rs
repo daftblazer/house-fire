@@ -2045,7 +2045,11 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                 }
             }
             let fr_len = frames[&s.sim].len();
+            let temps = h.world.get(ok).temps.to_vec();
             let interp = sim.stack_of(&h.world, ok);
+            // a call that gives no parameters passes the object's temps as they are now (the
+            // interpreter keeps a pointer to them, +44)
+            interp.set_defaults(temps);
             let same = !interp.done() && interp.stack().len() == fr_len && st_top.is_some_and(|(t, n, _)| t == Some(s.tree as i16) && n == s.node);
             if has("REPLAY_TRACE_MAKERS") && matches!((s.tree, s.node), (0x2007, 1) | (0x2022, 1) | (0x200f, 6)) && s.look == b'X' && !consumed.contains(&i) {
                 println!("  maker step {i}: tree found {:?}, native stack same {same} (native top {st_top:?}, depth {} of {fr_len}), node opcode {:?}", lib.file(file).path, interp.stack().len(), lib.tree_at(tree).nodes.get(s.node as usize).map(|n| n.opcode));

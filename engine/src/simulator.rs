@@ -224,6 +224,9 @@ impl Simulator {
             }
             interp.reset_iterations();
             host.set_me(e.key);
+            // a call that gives no parameters passes the object's temps as they are now (the
+            // original's interpreter keeps a pointer to them, +44)
+            interp.set_defaults(host.world().get(e.key).temps.to_vec());
             let steps = interp.run(host, 1 << 20);
             end_turn(&self.rates, host.world(), e.key, motives_due);
             host.on_turn(e.key, steps);
