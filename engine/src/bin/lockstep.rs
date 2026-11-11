@@ -185,6 +185,20 @@ fn main() -> ExitCode {
         None => d.read("Runtime/default.ngh").unwrap_or_default(),
     };
     let lib = Library::bustin_out(&d);
+    // study (LOCKSTEP_SLOTS=name): the slots of the files whose path holds the name
+    if let Ok(name) = std::env::var("LOCKSTEP_SLOTS") {
+        for f in lib.files().iter().filter(|f| f.path.contains(&name)) {
+            for d in &f.definitions {
+                println!("{}: definition {} slot table {}", f.path, d.id, d.slot_table());
+            }
+            for (id, t) in &f.slots {
+                for s in t {
+                    println!("  SLOT {id}: {s:?}");
+                }
+            }
+        }
+        return ExitCode::SUCCESS;
+    }
     // study (LOCKSTEP_SURVEY_OP=N): the disc's nodes of primitive N by operand bytes 4 and 5
     if let Some(op) = std::env::var("LOCKSTEP_SURVEY_OP").ok().and_then(|v| v.parse::<u16>().ok()) {
         let mut by: BTreeMap<(u8, u8), (usize, BTreeSet<String>)> = BTreeMap::new();

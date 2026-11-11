@@ -645,7 +645,13 @@ zeroed to mark it. All 48 goals at tick 931 are the places the 48 draws take, in
 single westward wedge round the girl (392, 344), forward 16 to 72 and sideways ascending, its +
 edge included (no neighbouring direction flagged), all kept (43, under the cap: no pick draws),
 scored with 165 draws. Its range and score rule (scores 116 to 139) and why the request widens
-are not yet read (the primitive's other operands, or the builder's fallback). The planner's choice among the goals is the
+are not yet read (the primitive's other operands, or the builder's fallback). (The eleventh loop,
+iteration 27:) the object is not the paper girl, who left at 466: 197 at 1579 is the "go here and
+show" marker (`destination_gohereandshow.iff`, made by the engine at 1503 at (392, 344)). Its one
+routing slot is 16 to 16 too, but with flags 0x45 (the girl's 0x44: bit 0 more), and the routing
+step (its own tree 0x100b node 7, as at 1617) has operand byte 4 = 1: either may be what widens
+the request to the wedge 16 to 72 ahead. Replay's world still has the girl as 197 there (the
+marker is the engine's, not made natively): the right object first, then the widening rule. The planner's choice among the goals is the
 nearest native one in the two requests that took one natively.
 
 **The planner's obstacles, logged.** (Read turned at first: see "The obstacles' objects" below.) The search (`fn_8024C5DC`) goes over the objects and, for
