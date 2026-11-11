@@ -1135,7 +1135,15 @@ two, 'I' before its J, D, X, H and G) it gives 12 coarse ways exactly. Every fir
 yard is among them. Not yet: the plans' second searches where they differ from the first (plan
 0's second runs to 461 and 473 along the strip, not 355: another setting, perhaps the map's cell
 cap), the searches through the house (plans 2, 4, 14, 16: their walls and doors), plan 9 (no
-start cell in the model), and plan 10's second point (313 for 317).
+start cell in the model), and plan 10's second point (313 for 317). Why two searches (fn_8024C5DC, 8024D20C..8024D5F0): the request's
++136 is the cell cap's switch and +140 the cap (128, or the caller's +440); the first search
+runs with the cap off (+136 cleared at 8024D340), only when the switch was on and a count
+(fn_80235EDC of +444) is under 256. If it finds no way the plan fails (+144 := 3). If it finds
+one, the switch goes back on and the search runs again from a fresh init, and that second way is
+the plan's. With the cap on, a cell may not be longer than 128 on either side (the grower's step
+is then 128 / 4 = 32 as before). With the cap in the model for every second (or only) search,
+plan 0's second way comes out exactly too: 13 of 23. The misses left are the house's (plans 2,
+3, 4, 14, 16), plan 9 and plan 10.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
