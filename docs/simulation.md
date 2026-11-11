@@ -888,7 +888,14 @@ its +116/+120 after a walk, at 1645: 0.557, so its first step 0.557 + 0.043): th
 into a walk is its last frame's, state 5's too. State 5 is not native yet (it does not brake as
 a walk toward its point: at 2036 it keeps its top 2.3 short of it), so its speed is taken from
 its logged step; with that, 1,677 of the 1,697 steps on a line natively the original's and
-1,431 of the 1,461 frames run free (the parts left: 488 and 512, 1275, 1639, 2035, 4915).
+1,431 of the 1,461 frames run free. A walk followed by state 5 does not brake: it reaches its end
+at speed and runs on (the home log's 5 walks into state 5, at 487, 511, 1643, 2034 and 4918, end
+at their top or the fast mode's; the 11 into state 4 brake to a stop). Which walks run on is
+state 5's rule (the follower's +116/+120 set: not yet read; not the request's goal, which at 1639
+is the walk's end), taken for now from the log's next state. With it, 1,691 of 1,697 steps and
+1,444 of 1,461 frames run free; the rest the fast mode's two walks (488, 512), a ramp at 1275,
+and two runs on that end mid-line (2035) or past the line's end (4919: a step that runs on is
+not stopped at the end).
 
 **Where a walk ends, at a door.** The walk ends at the request's chosen goal, the plan's last leg
 past it (into what the Sim faces) not walked; but at a door the home log has both: the yard's walk

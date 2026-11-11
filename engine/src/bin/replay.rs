@@ -3055,7 +3055,19 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
     // moved only by the native steps (with its own native speed), against the logged place after
     // each frame that moves
     let mut free: BTreeMap<u32, ((f32, f32), f32)> = BTreeMap::new();
-    for f in &log.follows {
+    // for each walker frame, whether its walk is followed by state 5 (the first frame from state
+    // 4 after it going to 5): found backwards through the log
+    let mut runs_on = vec![false; log.follows.len()];
+    {
+        let mut next4: BTreeMap<u32, u32> = BTreeMap::new();
+        for (i, f) in log.follows.iter().enumerate().rev() {
+            if f.before.state == 4 {
+                next4.insert(f.follower, f.after.state);
+            }
+            runs_on[i] = next4.get(&f.follower) == Some(&5);
+        }
+    }
+    for (fi, f) in log.follows.iter().enumerate() {
         while plan_at < log.plans.len() && log.plans[plan_at].tick <= f.tick {
             plan_at += 1;
         }
@@ -3106,13 +3118,19 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             }
             best.filter(|x| x.0 < 0.05).map(|(_, i, t)| (walk.to_vec(), i, t))
         });
+        // the walk runs on without braking when its walker goes straight on into state 5 (the
+        // move to its +116/+120): as the log's next state 4 has it (state 5's rule not yet read)
+        let on_past = runs_on[fi];
         let Some((walk, i, t)) = found else {
             counts.note("routing: a walker's step not on a logged plan's line (set aside)");
             continue;
         };
         let leg = |j: usize| ((walk[j + 1].0 - walk[j].0).powi(2) + (walk[j + 1].1 - walk[j].1).powi(2)).sqrt();
         let left = (i..walk.len() - 1).map(leg).sum::<f32>() - t * leg(i);
-        let (v, s) = walk_step(speed.get(&f.follower).copied().unwrap_or(0.0), top, growth, b.factor, left);
+        // no brake when it runs on (the step still ends at the walk's end)
+        let brake_left = if on_past { f32::INFINITY } else { left };
+        let (v, s) = walk_step(speed.get(&f.follower).copied().unwrap_or(0.0), top, growth, b.factor, brake_left);
+        let s = s.min(left);
         speed.insert(f.follower, v);
         let at = along_line(&walk, i, t, s);
         // the free-running place: on the same line, from where the native walk has it
@@ -3129,7 +3147,8 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             if let Some((d, j, t)) = loc.filter(|l| l.0 < 0.05) {
                 let _ = d;
                 let fleft = (j..walk.len() - 1).map(leg).sum::<f32>() - t * leg(j);
-                let (nv, ns) = walk_step(fv, top, growth, b.factor, fleft);
+                let (nv, ns) = walk_step(fv, top, growth, b.factor, if on_past { f32::INFINITY } else { fleft });
+                let ns = ns.min(fleft);
                 let nat = along_line(&walk, j, t, ns);
                 free.insert(f.follower, (nat, nv));
                 let off = ((nat.0 - a.x).powi(2) + (nat.1 - a.y).powi(2)).sqrt();
@@ -3146,7 +3165,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         let off = ((at.0 - a.x).powi(2) + (at.1 - a.y).powi(2)).sqrt();
         if show_walks && off >= 0.003 {
             println!(
-                "walk miss tick {} {:x} state {}->{} factor {} at ({:.3},{:.3}) to ({:.3},{:.3}): native ({:.3},{:.3}) step {s:.4} speed {v:.4} left {left:.3} leg {i}/{}",
+                "walk miss runs on {on_past} tick {} {:x} state {}->{} factor {} at ({:.3},{:.3}) to ({:.3},{:.3}): native ({:.3},{:.3}) step {s:.4} speed {v:.4} left {left:.3} leg {i}/{}",
                 f.tick, f.follower, b.state, a.state, b.factor, b.x, b.y, a.x, a.y, at.0, at.1, walk.len() - 1
             );
         }
