@@ -1018,7 +1018,12 @@ counter's (349, 317), (331, 368) to the door's (336, 368); 521's, 260's, 1905's)
 ends or for points in the open (tick 2's (461, 86) where the plan has (461, 88), on the paved
 region's edge). So the refinement looks like a string pulled taut through the openings between
 the map's cells, its points their ends (obstacles' corners, cells' edges): the map's cells are
-the next thing to read.
+the next thing to read. The search's +0 (80C26600, 80C26638) is not the node graph but its
+request: the start at +12/+16 and the goal's rectangle at +72 to +84 (turned: tick 2's {88, 600,
+89, 601}, the goal (600, 88)), a pointer at +8 (8102E764 at tick 2, 8102E814 at 521) to what
+holds the nodes, a 4-byte vector at +56. So the nodes expanded (1 to 17) are likely cells of the
+free space between the obstacles and the search's rectangles, the coarse points the crossings
+between them: +8's structure is next.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
