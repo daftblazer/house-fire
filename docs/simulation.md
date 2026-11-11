@@ -703,6 +703,18 @@ exactly (k times the step's growth), 262 shorter (a stop, a turn, a waypoint rea
 step). At 0.6547 a frame the Sims' 0.82 a simulation tick is about 1.25 frames a tick: the walk
 runs by the frame, not the tick.
 
+**The walker's step** (`routing::walk_step`, `along_line`). Walking (factor 1) the speed grows by
+its growth a frame (the top over 15.15 frames) to its top, and near the end is held to what lets
+it stop there, sqrt(2 × growth × the distance left) (the stops' steps fit it to the thousandth:
+4.269 left gives 0.608); the distance runs along the line, round its corners within a step (the
+chord between two places is then shorter), to the walk's end: the plan's last point but for a
+plan of three or more, whose last leg into the faced object is not walked. The fast mode (factor
+5) has neither ramp nor brake: its top times 5 from the first frame, the last step the distance
+left. Checked on every logged step that moves (`Z`), each from its logged place: 1,511 of the
+1,700 on a logged plan's line natively the original's to a thousandth of a sixteenth (24 more not
+on one, set aside). The rest: one walk of Sim 237 whose steps each run 0.02 beyond the ramp, and
+the door's states (4 and 5). The top is each walker's first full step (not yet native).
+
 **Which objects block** (`routing::obstacle`). Read from the objects the loop asks about (`J`)
 against the object data the save gives: an object is left out when its flags (object data 8)
 have 0x4 (no extent: rugs, windows, wall lamps, paintings, the alarms, the phone) or it sits in

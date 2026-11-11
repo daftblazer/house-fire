@@ -159,6 +159,25 @@ pub struct PlanRec {
     pub tested: Vec<(i16, bool)>,
 }
 
+/// A walker's step ('Z', Route_Follow 800AE0A4): its follower and its state before and after.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FollowRec {
+    pub tick: u32,
+    pub follower: u32,
+    pub before: FollowState,
+    pub after: FollowState,
+}
+
+/// A follower's state (+28: 1 starting, 2 walking, 3 arrived, ...), its place (sixteenths, as
+/// floats) and its speed factor (+124: 1, or 5 for the fast mode).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FollowState {
+    pub state: u32,
+    pub x: f32,
+    pub y: f32,
+    pub factor: f32,
+}
+
 /// The random number autonomy's choice draws ('R').
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RandomRec {
@@ -189,6 +208,7 @@ pub struct Log {
     pub choice_lists: Vec<ChoiceListRec>,
     pub randoms: Vec<RandomRec>,
     pub plans: Vec<PlanRec>,
+    pub follows: Vec<FollowRec>,
     pub ticks: u32,
 }
 
@@ -328,15 +348,26 @@ pub fn read_log(path: &str) -> Option<Log> {
                 log.plans.push(PlanRec { tick: log.ticks, state, points, goals, chosen, obstacles, obstacle_width, tested });
             }
             b'Z' => {
-                // a walker's step (Route_Follow): read past for now
+                // a walker's step (Route_Follow)
                 if !r.has(70) {
                     break;
                 }
-                r.u32();
+                let follower = r.u32();
                 r.i16();
-                for _ in 0..16 {
-                    r.u32();
+                let mut w = [[0u32; 8]; 2];
+                for half in &mut w {
+                    for x in half.iter_mut() {
+                        *x = r.u32();
+                    }
                 }
+                let side = |h: &[u32; 8]| FollowState {
+                    state: h[0],
+                    // stored turned (y, x)
+                    x: f32::from_bits(h[2]),
+                    y: f32::from_bits(h[1]),
+                    factor: f32::from_bits(h[5]),
+                };
+                log.follows.push(FollowRec { tick: log.ticks, follower, before: side(&w[0]), after: side(&w[1]) });
             }
             b'F' => {
                 // a person moved to a place (801F0410), with its callers: read past for now

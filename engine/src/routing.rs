@@ -191,6 +191,35 @@ pub fn corner_path(start: (i32, i32), goal: (i32, i32), obstacles: &[[i32; 5]], 
     Some(path)
 }
 
+/// A walker's step a frame (`Route_Follow`, 800AE0A4; `docs/simulation.md`, "The walker's
+/// step"): from its speed the frame before (`speed`, 0 at its start) to this frame's, and the
+/// distance it moves along its line. Walking (factor 1) the speed grows by `growth` a frame to
+/// `top`, and near the end is no more than will let it stop there (sqrt(2 growth left));
+/// the fast mode (factor 5) goes at its top times the factor from the first frame to the
+/// last. Never past the end (`left`, sixteenths along the line).
+pub fn walk_step(speed: f32, top: f32, growth: f32, factor: f32, left: f32) -> (f32, f32) {
+    let v = if factor != 1.0 { top } else { top.min(speed + growth).min((2.0 * growth * left).sqrt()) };
+    (v, (v * factor).min(left))
+}
+
+/// A point `s` along a line (its points, sixteenths) from leg `i` at fraction `t` of it, never
+/// past its end.
+pub fn along_line(points: &[(f32, f32)], mut i: usize, mut t: f32, mut s: f32) -> (f32, f32) {
+    while i + 1 < points.len() {
+        let (a, b) = (points[i], points[i + 1]);
+        let len = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
+        let left = (1.0 - t) * len;
+        if s <= left || i + 2 == points.len() {
+            let u = if len > 0.0 { t + s.min(left) / len } else { t };
+            return (a.0 + u * (b.0 - a.0), a.1 + u * (b.1 - a.1));
+        }
+        s -= left;
+        i += 1;
+        t = 0.0;
+    }
+    points.last().copied().unwrap_or_default()
+}
+
 /// A tile, (x, y).
 pub type Tile = (i32, i32);
 

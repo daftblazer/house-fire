@@ -46,7 +46,7 @@ use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
-use housefire::routing::{BLOCKS, Tile, corner_path, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
+use housefire::routing::{BLOCKS, Tile, along_line, corner_path, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
 use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
@@ -2728,6 +2728,65 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 }
             }
         }
+    }
+    // The walker's steps natively (`walk_step`), each from its logged place along the line it
+    // walks (the latest plan whose line it is on, less the last leg into a faced object when the
+    // plan has one), against the logged place after it. A walker's top is its first full step
+    // in the log (not yet native: 0.6547 for the adults, 0.5702 for the paper girl), its growth a
+    // frame the top over 15.15 frames.
+    let mut speed: BTreeMap<u32, f32> = BTreeMap::new();
+    let mut tops: BTreeMap<u32, f32> = BTreeMap::new();
+    for f in log.follows.iter().filter(|f| f.before.factor == 1.0) {
+        let d = ((f.after.x - f.before.x).powi(2) + (f.after.y - f.before.y).powi(2)).sqrt();
+        let t = tops.entry(f.follower).or_insert(0.0);
+        *t = t.max(d);
+    }
+    let mut plan_at = 0;
+    for f in &log.follows {
+        while plan_at < log.plans.len() && log.plans[plan_at].tick <= f.tick {
+            plan_at += 1;
+        }
+        let (b, a) = (f.before, f.after);
+        if b.state == 1 {
+            speed.insert(f.follower, 0.0);
+        }
+        if (b.x, b.y) == (a.x, a.y) {
+            continue;
+        }
+        let Some(&top) = tops.get(&f.follower) else { continue };
+        let growth = top / 15.15;
+        // the line it is on
+        let found = log.plans[..plan_at].iter().rev().take(6).find_map(|pl| {
+            let pts: Vec<(f32, f32)> = pl.points.iter().map(|&(x, y)| (x as f32, y as f32)).collect();
+            let walk = if pts.len() >= 3 { &pts[..pts.len() - 1] } else { &pts[..] };
+            let mut best: Option<(f32, usize, f32)> = None;
+            for i in 0..walk.len().saturating_sub(1) {
+                let (p, q) = (walk[i], walk[i + 1]);
+                let (dx, dy) = (q.0 - p.0, q.1 - p.1);
+                let l2 = dx * dx + dy * dy;
+                let t = if l2 > 0.0 { (((b.x - p.0) * dx + (b.y - p.1) * dy) / l2).clamp(0.0, 1.0) } else { 0.0 };
+                let d = ((b.x - p.0 - t * dx).powi(2) + (b.y - p.1 - t * dy).powi(2)).sqrt();
+                if best.is_none_or(|x| d < x.0) {
+                    best = Some((d, i, t));
+                }
+            }
+            best.filter(|x| x.0 < 0.05).map(|(_, i, t)| (walk.to_vec(), i, t))
+        });
+        let Some((walk, i, t)) = found else {
+            counts.note("routing: a walker's step not on a logged plan's line (set aside)");
+            continue;
+        };
+        let leg = |j: usize| ((walk[j + 1].0 - walk[j].0).powi(2) + (walk[j + 1].1 - walk[j].1).powi(2)).sqrt();
+        let left = (i..walk.len() - 1).map(leg).sum::<f32>() - t * leg(i);
+        let (v, s) = walk_step(speed.get(&f.follower).copied().unwrap_or(0.0), top, growth, b.factor, left);
+        speed.insert(f.follower, v);
+        let at = along_line(&walk, i, t, s);
+        let off = ((at.0 - a.x).powi(2) + (at.1 - a.y).powi(2)).sqrt();
+        counts.note(if off < 0.003 {
+            "routing: a walker's step natively the original's (to a thousandth of a sixteenth)"
+        } else {
+            "routing: a walker's step natively NOT the original's"
+        });
     }
     // Each plan with the routing primitives its Sim ran in its tick (study: REPLAY_SHOW_PLANS):
     // opcode 27 or 45, the stack object and its place, the operand, the result.

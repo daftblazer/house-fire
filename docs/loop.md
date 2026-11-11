@@ -1586,7 +1586,7 @@ iterations in a row end without a commit (record why here).
 
 ## Progress
 
-Iteration 3 of 24.
+Iteration 4 of 24.
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1614,3 +1614,11 @@ Iteration 3 of 24.
   clippy clean. Next: the step natively (the ramp, the top, the factor, the waypoint reached
   within a step) against every `Z` step; where the top and the growth come from (the walker's
   animation or the person's data).
+
+- **Iteration 4, chunk 1 (the walker's step, native).** `routing::walk_step` and `along_line`:
+  walking, the speed grows by its growth a frame to its top and near the end is held to
+  sqrt(2 growth left); the fast mode (factor 5) at its top times 5, no ramp or brake; along the
+  line round corners, to the end less a faced object's leg. Checked: 1,511 of the 1,700 logged
+  steps on a plan's line natively the original's to a thousandth of a sixteenth (24 set aside).
+  Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next: the
+  tops (0.6547 adults, 0.5702 the child) from the person's data, Sim 237's 0.02, the doors' states.
