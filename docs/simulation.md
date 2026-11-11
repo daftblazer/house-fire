@@ -1340,7 +1340,12 @@ either. At 1618 the step comes back to its node and the stack's next step on tha
 ticks later (1670, when Sim 12's logged plan starts its yields): the primitive gave up or handed
 over without planning. At 5066 it goes to node 254, the tree's return, and returns there: the Sim
 already at its goal. Which check of the primitive's sends each there is not in the log; both stay
-open.
+open. (The eleventh loop, iteration 26:) both are pushes, not returns: the stack's next step is
+node 0 of another tree in a new frame, as for the 5 routing steps lockstep now answers Continue.
+At 1618 GotoRoutingSlot in the meal group's 0x2053 node 0 (operand `01 00 02 00 01`: slot 1, the
+global file's, a flag) is followed by 0x2054 or 0x206e; at 5066 the dining table's 0x201a node 74
+(`03 00 01 00 00`: slot 3, its own) by 0x200f. So a routing primitive can start a tree of the
+object's instead of planning; which of its checks chooses that is still not in the log.
 
 The places the host sets from the log ('P', each Sim's place each tick it changes) and the
 walker: 'P' is the walker's float place (the follower's +40/+44, stored turned, (y, x)) rounded
