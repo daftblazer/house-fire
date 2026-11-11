@@ -1089,7 +1089,19 @@ cells grow in A* order: expanding node 3 (cell 0) adds 6 (cells 2-7: three under
 the cost-10 obstacle's x edges, two thin side strips, and one above), node 9 (cell 7) adds 3,
 node 11 (cell 9) adds none (its neighbour, cell 1, is already cut), node 2 (cell 1) adds 2. The
 second search goes 2, 8, 11, 14, 15, 17 and the third 1, 5, 5 (start and goal in one cell).
-So the native planner needs: a cell round a point, and a cell's neighbours across each side.
+So the native planner needs: a cell round a point, and a cell's neighbours across each side. A rule fitted
+by hand to that dump (raw order: y0, x0, y1, x1): a cell's sides go in the order x0, y1, x1, y0;
+on each, take every stretch of the line just past the side that is free (no obstacle, no cell yet)
+and of one cost; grow it sideways along that line first, as far as the same cost and nothing in
+the way allow (an X obstacle, a blocked D grown by 7, a cost edge, an existing cell); then grow
+it outward the same way. It gives cells 2-10 exactly (9 of 9): e.g. cell 10, from cell 7's y0
+side at x 323..333, first runs sideways to 601 (the border) and only then up to 67, where X (45,
+349, 67, 371) stops the whole width; cell 2 runs sideways to 125 and then out to 304, the paved
+region's edge. Not yet: cells 11 and 12 from cell 1's y1 side (355..601 at y 96). Grown whole,
+it would stop at 156, where the cost-10 rects (156..164, 492..500) begin. Instead it splits at
+x 492, the near edge of what blocks it: 355..492 runs on to 185, the house grown by 7, and
+492..601 stops at 156. The split rule (and whether a middle obstacle makes three) is for the
+cutter's code, fn_8026B39C / fn_8026901C.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
