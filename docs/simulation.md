@@ -1111,9 +1111,18 @@ neither side exceeds the cap. A failed move is undone and the step halves, round
 A side whose step is 0 is skipped; it stops when all four are 0 (or after 200 tries). So a cell's
 shape depends on the order its sides reach their stops, which explains cells 11 and 12: they are
 whatever the race of steps 32, 16, 8, ... gives, not a split. Then, if map +32 is on, a cell
-longer than map +36 times its width is cut back round its seed (fn_8022F890). Next: those three
-tests and the map's flags +32..+44 for the home lot, then the grower natively, against the 13
-dumped cells.
+longer than map +36 times its width is cut back round its seed (fn_8022F890). The three tests, read:
+fn_80268440 is the first existing cell that strictly overlaps the rect (its index), else -1;
+fn_80268FC0(a, b) is "a lies inside b"; fn_802684C4 walks the map's rect list and gives the
+first strictly overlapping blocked one (cost 0x7FFFFFFF), failing that the last overlapping one,
+failing that none (and a second list, behind a flag, the same way). So a move is kept while the
+rect still finds the seed's own region, is not blocked, overlaps no cell, and lies inside that
+region: a yard seed, in no region, must stay clear of every rect. Simulated (a script on the
+first plan's D and X, the blocked D grown by 7, no cap): from a seed at the start (104, 328) it
+gives (96, 323, 117, 333) and from the goal (88, 600) it gives (80, 355, 96, 601), the dump's
+cells 0 and 1 exactly, a point seed or a 1x1 one alike. The start cell's cost is logged as 0
+where the yard's is 3: the start's is set apart. Next: the neighbour seeds (in the step's cutter),
+then the grower natively.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
