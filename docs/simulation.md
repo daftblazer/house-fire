@@ -975,7 +975,16 @@ speed, so in the fast mode (5) a walker gets a frame every 3 or 4 ticks; with th
 (from tick 304, into the fast mode) returns 4 ticks late: the speed switches a few ticks before
 the first fast frame shows it. Ruled out as its cause: the clock kept in a normal tick's time
 (a frame adding its time times the speed, so a leftover is not rescaled at the switch: 3,730
-ticks) and each tick taking the speed of the next frame rather than the last (3,800).
+ticks) and each tick taking the speed of the next frame rather than the last (3,800). The clock
+started afresh on entering the fast mode puts the first fast frame where the log has it, and
+with it all 14 covered runs return on the original's tick; but no rule found for leaving the
+fast mode keeps the phase after it (afresh again: 3,178 ticks; the leftover kept: 3,168; scaled
+as the same part of a tick: 1,853), so it is not kept.
+
+The club's logs (`tree.log`, `tree3.log`) are older than the places, walkers and plans records
+(`P`, `Z`, `G`, `H`): their routing runs cannot be checked natively, and the replay's host takes
+their results from the log (new club logs would need a club replay, which the loop's game runs
+do not have).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
