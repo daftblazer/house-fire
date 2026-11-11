@@ -2425,8 +2425,8 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             // a goal's score (its third word), for the goals that are the slot's own places: the
             // slot's, with its random part
             let score = |counts: &mut Counts, g: &[u32; 4]| {
-                counts.note(if slot_goal_score(slot).contains(&g[2]) {
-                    "routing: a slot goal's score natively the original's (135, and the random part when flagged)"
+                counts.note(if slot_goal_score(slot, g[3] >> 16 != 0).contains(&g[2]) {
+                    "routing: a slot goal's score natively the original's (135, 90 more for a named object, the random part when flagged)"
                 } else {
                     "routing: a slot goal's score natively NOT the original's"
                 });
@@ -2520,6 +2520,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 o.facing(),
                 pl.chosen
             );
+            println!("   slot fields {slot:?}; scores {:?}; last words {:x?}", pl.goals.iter().map(|g| g[2]).collect::<Vec<_>>(), pl.goals.iter().map(|g| g[3]).collect::<Vec<_>>());
         }
     }
     // The obstacles the planner gathered for each plan (logs with 'X'): their shapes (a cost of

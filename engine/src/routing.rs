@@ -65,9 +65,12 @@ pub fn slot_places(slot: &crate::library::Slot, x16: i32, y16: i32, facing: i16)
 
 /// A slot's goal's score (the goal's third word), as fn_8024E480 gives it: 135 for the routing
 /// slots of the home log (their gradient 0, so no fall with distance), and with the slot's flag
-/// 0x2000 a random part, `random % 20 - 10` (Sim_Random, from 8024F030). Returns its range.
-pub fn slot_goal_score(slot: &crate::library::Slot) -> std::ops::RangeInclusive<u32> {
-    if slot.flags & 0x2000 != 0 { 125..=144 } else { 135..=135 }
+/// 0x2000 a random part, `random % 20 - 10` (Sim_Random, from 8024F030); 90 more when the request
+/// names the object its goals are for (the goals' last word's high half: its id; measured, tick
+/// 1790's second request on the table, not yet read in the builder). Returns its range.
+pub fn slot_goal_score(slot: &crate::library::Slot, names_object: bool) -> std::ops::RangeInclusive<u32> {
+    let base = if names_object { 225 } else { 135 };
+    if slot.flags & 0x2000 != 0 { base - 10..=base + 9 } else { base..=base }
 }
 
 /// The places a routing slot of a range of proximities offers (an area): for each direction its

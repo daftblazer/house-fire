@@ -620,9 +620,12 @@ The goal's third word is its score (fn_8024E480, the builder): 100 less the dist
 slot's gradient, with bonuses (25, 20) by tests not yet read, and with the slot's flag 0x2000 a
 random part, `random % 20 - 10` (the draws from 8024F030). For the home log's slots (gradient 0)
 it is 135 (0x87), and 125 to 144 on the paper girl's flagged slot 8 (`routing::slot_goal_score`):
-50 of the 52 goals that are their slots' own places. The 2 others (tick 1790's second request,
-its goals carrying the table's id, 49, in their last word) score 225. The 48 kept are not the
-best: they are drawn (8024F504). The planner's choice among the goals is the
+50 of the 52 goals that are their slots' own places. The 2 others are tick 1790's second
+request, made just after the first on the same table with the same two places: its goals carry
+the table's id (49) in their last word's high half and score 225, 90 more. With that bonus for a
+request that names its object (measured, not yet read: the base is the builder's `[r1+144]` or
+`r14` by its tests at 8024EC3C), all 52. The 48 kept at tick 931 are not the best: they are
+drawn (8024F504). The planner's choice among the goals is the
 nearest native one in the two requests that took one natively.
 
 **The planner's obstacles, logged.** (Read turned at first: see "The obstacles' objects" below.) The search (`fn_8024C5DC`) goes over the objects and, for
