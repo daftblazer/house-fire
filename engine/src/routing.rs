@@ -361,6 +361,26 @@ pub fn run_on_point(prev: (f32, f32), last: (f32, f32), wide: bool) -> (f32, f32
     (prev.0 + (last.0 - prev.0).clamp(-reach, reach), prev.1 + (last.1 - prev.1).clamp(-reach, reach))
 }
 
+/// A whole walk (`walk_step` frame after frame): `length` sixteenths along its line from speed
+/// `start`, its top and growth a frame (`walk_rates`), the game's speed each frame (`factor_at`:
+/// 0 paused, 1, 5 fast; frames past the given ones at 1), and whether it runs on (its walker's
+/// object data 9 set: no brake). The frames it takes to arrive and its speed then. A routing
+/// primitive's walker turns after it (`turn_frames`) and the primitive returns a frame later.
+pub fn walk_frames(length: f32, start: f32, top: f32, growth: f32, runs_on: bool, factor_at: &[f32]) -> (u32, f32) {
+    let (mut v, mut gone, mut frames) = (start, 0.0f32, 0u32);
+    while length - gone > 1e-4 && frames < 100_000 {
+        let factor = factor_at.get(frames as usize).copied().unwrap_or(1.0);
+        if factor > 0.0 {
+            let left = length - gone;
+            let (nv, s) = walk_step(v, top, growth, factor, if runs_on { f32::INFINITY } else { left });
+            v = nv;
+            gone += s.min(left);
+        }
+        frames += 1;
+    }
+    (frames, v)
+}
+
 /// The simulation's tick against the walker's frame (`WALK_FRAME`): 0.042 s, measured (the home
 /// log's ticks hold 1 or 2 frames, 14 in 11 ticks; `docs/simulation.md`, "Frames and ticks").
 pub const TICK_TIME: f32 = 0.042;

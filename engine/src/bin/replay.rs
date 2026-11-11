@@ -46,7 +46,7 @@ use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
-use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, slot_pick, run_on_point, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
+use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, slot_pick, run_on_point, walk_frames, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
 use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
@@ -3428,19 +3428,8 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                         let per_second = native_top.get(&f.follower).copied().unwrap_or(WALK_TOP_ADULT);
                         let (wtop, growth) = walk_rates(per_second);
                         let runs_on = walker_of.get(&f.follower).is_some_and(|&w| data9_at(w, f.tick));
-                        let (mut v, mut gone, mut frames) = (v0, 0.0f32, 0u32);
                         let game = speeds.get(&f.follower).cloned().unwrap_or_default();
-                        while total - gone > 1e-4 && frames < 10000 {
-                            let factor = game.get(frames as usize).copied().unwrap_or(1.0);
-                            if factor > 0.0 {
-                                // a walk that runs on (its walker's data 9 set) does not brake
-                                let brake = if runs_on { f32::INFINITY } else { total - gone };
-                                let (nv, s) = walk_step(v, wtop, growth, factor, brake);
-                                v = nv;
-                                gone += s.min(total - gone);
-                            }
-                            frames += 1;
-                        }
+                        let (frames, _) = walk_frames(total, v0, wtop, growth, runs_on, &game);
                         let native = frames + turn_frames(angle);
                         let original = walked + n;
                         // the routing primitive natively: its return the tick after its walker's
