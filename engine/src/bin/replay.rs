@@ -457,7 +457,7 @@ impl Host for ReplayHost<'_, '_> {
                 } else {
                     "primitives: GotoRoutingSlot/GotoRelativePosition: DIFFERENT (the log's taken)"
                 });
-            } else if let Some(pl) = log.plans.iter().filter(|p| p.tick == s.tick && p.approach.is_some_and(|a| a[7] as i16 == me_id)).last() {
+            } else if let Some(pl) = log.plans.iter().rfind(|p| p.tick == s.tick && p.approach.is_some_and(|a| a[7] as i16 == me_id)) {
                 // the step that plans (its Sim's plan made this tick): with a way, it comes back to
                 // its own node and walks from the next; with none, it goes on at once
                 let native_again = !pl.points.is_empty();
