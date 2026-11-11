@@ -98,15 +98,16 @@ def records(path):
             w, cnt = struct.unpack_from('<iH', b, p); p += 6
             if p + 20 * cnt > n: break
             yield 'X', (w, [struct.unpack_from('<iiiii', b, p + 20 * i) for i in range(cnt)]); p += 20 * cnt
-        elif k == b'r':  # the search's region lookup's two lists: ([(y0, x0, y1, x1, cost)], [...])
+        elif k == b'r':  # the search's region lookup's two lists and the request's grower settings
             lists = []
             for _ in range(2):
                 if p + 2 > n: break
                 cnt, = struct.unpack_from('<H', b, p); p += 2
                 if p + 20 * cnt > n: break
                 lists.append([struct.unpack_from('<iiiii', b, p + 20 * i) for i in range(cnt)]); p += 20 * cnt
-            if len(lists) < 2: break
-            yield 'r', tuple(lists)
+            if len(lists) < 2 or p + 20 > n: break
+            settings = struct.unpack_from('<5I', b, p); p += 20  # +32 aspect on, +36 ratio, +40 cap on, +44 cap, +48 no-region cost
+            yield 'r', (lists[0], lists[1], settings)
         elif k == b'H':  # the planner's request: (request, chosen, [(x, y, word, word)])
             if p + 10 > n: break
             rq, ch, cnt = struct.unpack_from('<IiH', b, p); p += 10

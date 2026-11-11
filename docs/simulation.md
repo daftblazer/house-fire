@@ -1167,7 +1167,14 @@ next side. Fixed, and checked on a one-off dump of every search's cells (reverte
 coarse ways exact, and the cells of 9 searches equal the original's in full. Left: searches 7
 and 19 (of 23, in log order), start cells off by a little (search 20's y0 247 for 249, search
 7's y1 368 for 359), and the cost of a cell in no region: 3 in the yard plans' searches but 0 in
-the house plans' (cells of equal shape, cost 3 in the model, 0 in the original).
+the house plans' (cells of equal shape, cost 3 in the model, 0 in the original). That cost is the
+request's +48 (fn_80269514 at 80269684: a cell in a region takes the region's cost, else
+*(*graph + 48)), now logged with the request's other grower settings at the end of 'r': +48 is
+3 in the yard plans and 0 in the house's; the cap's switch +40 is on only in second searches
+(the house plans' single searches run uncapped; +44 is then stale); the aspect trim's +32 is
+off in every search of the home run. On the logged settings: still 21 of 23 ways, but 8 searches'
+cells equal in full, and the first differences now come right after the start cell: the order
+in which neighbours are cut in the house (searches 9-20).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a

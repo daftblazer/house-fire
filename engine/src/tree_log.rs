@@ -168,6 +168,9 @@ pub struct PlanRec {
     /// logs): the graph's +4 vector and the one behind its +8 (empty when null); {y0, x0, y1,
     /// x1, cost}, raw (turned).
     pub lookup_regions: [Vec<[i32; 5]>; 2],
+    /// The request's grower settings at that search ('r'): +32 the aspect trim's switch, +36
+    /// its ratio, +40 the cell cap's switch, +44 the cap, +48 the cost of a cell in no region.
+    pub grower: [u32; 5],
 }
 
 /// A walker's step ('Z', Route_Follow 800AE0A4): its follower and its state before and after.
@@ -275,6 +278,7 @@ pub fn read_log(path: &str) -> Option<Log> {
     let mut regions: Option<Vec<[i32; 5]>> = None;
     let mut coarse: Option<Vec<(i32, i32)>> = None;
     let mut lookup_regions: Option<[Vec<[i32; 5]>; 2]> = None;
+    let mut grower: Option<[u32; 5]> = None;
     let mut at: BTreeMap<u32, usize> = BTreeMap::new();
     let mut pending: Option<ExprRec> = None;
     let mut pending_lookups: Vec<LookupRec> = Vec::new();
@@ -366,7 +370,8 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let regions = regions.take().unwrap_or_default();
                 let coarse = coarse.take().unwrap_or_default();
                 let lookup_regions = lookup_regions.take().unwrap_or_default();
-                log.plans.push(PlanRec { tick: log.ticks, state, points, goals, chosen, obstacles, obstacle_width, tested, regions, coarse, lookup_regions });
+                let grower = grower.take().unwrap_or_default();
+                log.plans.push(PlanRec { tick: log.ticks, state, points, goals, chosen, obstacles, obstacle_width, tested, regions, coarse, lookup_regions, grower });
             }
             b'I' => {
                 // the planner's search's coarse way (stored turned: y, x)
@@ -396,6 +401,10 @@ pub fn read_log(path: &str) -> Option<Log> {
                     *list = (0..cnt).map(|_| [r.u32() as i32, r.u32() as i32, r.u32() as i32, r.u32() as i32, r.u32() as i32]).collect();
                 }
                 lookup_regions = Some(lists);
+                if !r.has(20) {
+                    break;
+                }
+                grower = Some([r.u32(), r.u32(), r.u32(), r.u32(), r.u32()]);
             }
             b'Z' => {
                 // a walker's step (Route_Follow)
