@@ -47,7 +47,7 @@ use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
 use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, slot_pick, run_on_point, walk_frames, routing_return_tick, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
-use housefire::planner::{coarse_way, refine, Growth, MapRect};
+use housefire::planner::{coarse_way, point_after_goal, refine, Growth, MapRect};
 use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
@@ -2684,6 +2684,23 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             });
             if !fits && !counts.quiet && has("REPLAY_SHOW_SEARCH") {
                 println!("refine tick {}: theirs {:?}; native {refined:?}", pl.tick, pl.points);
+            }
+            // the point the plan adds after its goal (logs with 'h')
+            if let (true, Some(a)) = (fits, pl.approach) {
+                let ours = point_after_goal(a[0], a[1], (a[3], a[4]), &refined);
+                let theirs = pl.points.get(refined.len()).copied();
+                if let Some(p) = ours {
+                    counts.note(if Some(p) == theirs {
+                        "planner: a plan's point after its goal natively its own"
+                    } else {
+                        "planner: a plan's point after its goal natively NOT its own"
+                    });
+                    if Some(p) != theirs && !counts.quiet && has("REPLAY_SHOW_SEARCH") {
+                        println!("after goal tick {}: kind {} theirs {theirs:?}; native {p:?}", pl.tick, a[0]);
+                    }
+                } else {
+                    counts.note("planner: a plan's point after its goal not modelled (its kind)");
+                }
             }
         }
         counts.note(if same {

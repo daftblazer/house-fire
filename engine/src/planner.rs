@@ -305,3 +305,35 @@ pub fn refine(way: &Way) -> Vec<(i32, i32)> {
     }
     pts
 }
+
+/// The point a plan adds after its goal, (x, y) like the plan's points, from the request's kind
+/// and flags, the target point (x, y) and the plan's points so far: kind -3 runs the last leg on
+/// once more; kinds -2 and -1 step one tile from the last point in the eight-way direction to the
+/// target (-1 away from it), or with the flags' 0x100 go to the target itself. None for a kind
+/// not yet read, or a -3 whose last leg has no length (that one steps the routing object's way).
+pub fn point_after_goal(kind: i32, flags: i32, target: (i32, i32), points: &[(i32, i32)]) -> Option<(i32, i32)> {
+    let &last = points.last()?;
+    match kind {
+        -3 => {
+            let &prev = points.get(points.len().checked_sub(2)?)?;
+            (prev != last).then(|| (2 * last.0 - prev.0, 2 * last.1 - prev.1))
+        }
+        -2 | -1 if flags & 0x100 != 0 => Some(target),
+        -2 | -1 => {
+            let (dx, dy) = (target.0 - last.0, target.1 - last.1);
+            let (sx, sy) = (dx.signum(), dy.signum());
+            let (mut ux, mut uy) = if dx.abs() > 2 * dy.abs() {
+                (sx, 0)
+            } else if 2 * dx.abs() < dy.abs() {
+                (0, sy)
+            } else {
+                (sx, sy)
+            };
+            if kind == -1 {
+                (ux, uy) = (-ux, -uy);
+            }
+            Some((last.0 + 16 * ux, last.1 + 16 * uy))
+        }
+        _ => None,
+    }
+}

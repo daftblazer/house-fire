@@ -1223,9 +1223,12 @@ fn_801F65DC, a bare return: r23 is the +80 object moved by the vtable's +1336 (-
 112 in the home run), and its +200/+204 is the target point (x, y), now logged in 'h'. Against
 it: kind -2 steps one tile towards the target, 9 of 10 (the target is always the next tile, so
 the point is the target itself; the tenth's target is a diagonal tile and the plan adds no point).
-Kind -3 mirrors the target through the way's last point: 3 exact ((0, 24) -> (0, -24), (16, 8) ->
-(-16, -8)), 2 a unit short (16 -> 15), 1 with target and last point equal ((127, 0)). Kind 4,
-target equal to the last point twice, gives (0, +16).
+Kind -3 is not about the target: it runs the plan's last leg on once more (802232A4..80223320:
+the last two of the plan's points, last + (last - prev)), 5 of 5, the 15s and the (127, 0)
+included; only a leg of no length falls back to one tile the routing object's way (its +40 & 7,
+80223328 on). Kind 4, target equal to the last point twice, gives (0, +16): its branch (past
+80223888) is still to read. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+-1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
