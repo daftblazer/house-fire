@@ -752,6 +752,17 @@ replay's corner search is now weighed by the floor by default: 15 of the 16 chec
 planner's corners (4 of 4 through a door, 11 of 12 within a room; the one left, tick 521 in the
 house, not the floor's).
 
+**Tick 521, the miss left.** From the front door to the fridge, in one room but for the opening
+in the wall at x 320 (y 272 to 320, which both lines pass): the planner's line (131.0 sixteenths)
+is longer than the native shortest (126.6), bending in small steps, (301, 259), (313, 279), (349,
+313), along the counter's top edge to its corner (371, 317), and on to the goal. None of its
+points is a corner of an obstacle or of the search's own rectangles (`D`: the house's outer walls,
+the walls as lines, the room's openings), grown or not. So the planner's line is not the visibility
+graph's optimum here: its search finds a route its own way (by a grid, and then pulls it straight,
+it may be: the in-between points of the other plans look the same) and the corner search agrees
+with it where the two coincide, 15 plans of 16. Reproducing it is the search's code (`fn_8026A210`
+and its callees: chunk 2).
+
 **The walk keeps to its plan's line.** The planning Sim's logged places (`P`, at each tick's start,
 whole sixteenths, logged when they change) from its plan's tick to its next plan, against the
 plan's line: 852 of the home log's 854 within a sixteenth and a half of it (the 2 others the paper

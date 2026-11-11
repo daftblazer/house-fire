@@ -1586,7 +1586,7 @@ iterations in a row end without a commit (record why here).
 
 ## Progress
 
-Iteration 14 of 24.
+Iteration 15 of 24.
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1698,3 +1698,11 @@ Iteration 14 of 24.
   planner's corners (tick 260 fixed). The planner's weight in its code not found (its costs are read
   deeper, in `fn_8026A210`'s callees). Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902,
   4, 24); clippy clean. Next: tick 521 (in the house), or chunk 5 (native routes in the simulator).
+
+- **Iteration 15, chunk 3 (tick 521 examined).** Its line is not a corner search's: longer than
+  the native shortest (131.0 against 126.6), bending in small steps that are no corners of the
+  obstacles or of the search's rectangles (`D` for the house: outer walls, walls as lines, the
+  opening at x 320 that both pass). The planner's own search (a grid then pulled straight, it seems,
+  like the other plans' in-between points) is needed for it: chunk 2's. Chunk 3 done otherwise
+  (15 of 16). No code changed. Next: chunk 5, the native routes in the simulator (the routing
+  primitives planning and walking), its first piece checkable against the lockstep.
