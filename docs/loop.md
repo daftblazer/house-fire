@@ -1586,7 +1586,7 @@ iterations in a row end without a commit (record why here).
 
 ## Progress
 
-Iteration 18 of 24.
+Iteration 19 of 24.
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1728,3 +1728,10 @@ Iteration 18 of 24.
   log: 5 moves to the point at +116/+120 (the door's). Figures unchanged (561,398, 338,305, 68,202,
   lockstep 7,902, 4, 24); clippy clean. Next: the walk in the simulator (the routing primitive
   yielding through walk and turn).
+
+- **Iteration 19, chunk 5 (a whole walk's length).** The frames a routing primitive waits through,
+  natively (the walk run from its start at the carried speed, then the turn), against the
+  original's from state 1 to 4: 5 of 10 walks exactly; the misses the fast mode (2, the yard's
+  long walks), a walk cut short (1), the start speed (2). Figures unchanged (561,398, 338,305,
+  68,202, lockstep 7,902, 4, 24); clippy clean. Next: when the fast mode comes on (the follower's
+  +124 set to 5: the observer at its write), or the frames to ticks (a primitive yields by ticks).

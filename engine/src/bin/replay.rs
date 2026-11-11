@@ -2966,8 +2966,23 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
     {
         let mut last_way: BTreeMap<u32, (f32, f32)> = BTreeMap::new();
         let mut arrived: BTreeMap<u32, (u32, u32, (f32, f32))> = BTreeMap::new();
+        // each follower's walk: its start's tick and place, its speed then, and its frames to arrive
+        let mut walk_starts: BTreeMap<u32, (u32, (f32, f32), f32, u32)> = BTreeMap::new();
+        let mut speed_now: BTreeMap<u32, f32> = BTreeMap::new();
         for f in &log.follows {
             let (b, a) = (f.before, f.after);
+            if b.state == 1 {
+                let v = speed_now.get(&f.follower).copied().unwrap_or(0.0);
+                walk_starts.insert(f.follower, (f.tick, (b.x, b.y), v, 0));
+            }
+            if b.state <= 2
+                && let Some(w) = walk_starts.get_mut(&f.follower)
+            {
+                w.3 += 1;
+            }
+            if (a.x, a.y) != (b.x, b.y) {
+                speed_now.insert(f.follower, ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt());
+            }
             if (a.x, a.y) != (b.x, b.y) {
                 last_way.insert(f.follower, (a.x - b.x, a.y - b.y));
             }
@@ -3002,6 +3017,39 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 });
                 if show_walks {
                     println!("turn at tick {t0}: {:.1} degrees, {n} frames, natively {}", angle.to_degrees(), turn_frames(angle));
+                }
+                // the whole walk natively: from its start (state 1) along its line at the native
+                // speed to its end, then the turn, against the original's frames from 1 to 4
+                if let Some(&(start_tick, start, v0, walked)) = walk_starts.get(&f.follower) {
+                    let line = log.plans.iter().rev().filter(|p| p.tick <= start_tick).find_map(|p| {
+                        let pts: Vec<(f32, f32)> = p.points.iter().map(|&(x, y)| (x as f32, y as f32)).collect();
+                        let i = pts.iter().position(|q| (q.0 - start.0).abs() < 0.5 && (q.1 - start.1).abs() < 0.5)?;
+                        let j = pts.iter().position(|q| (q.0 - end.0).abs() < 0.5 && (q.1 - end.1).abs() < 0.5)?;
+                        (j > i).then(|| pts[i..=j].to_vec())
+                    });
+                    if let Some(line) = line {
+                        let total: f32 = line.windows(2).map(|w| ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt()).sum();
+                        let top = tops.get(&f.follower).copied().unwrap_or(0.0);
+                        let per_second = [WALK_TOP_ADULT, WALK_TOP_CHILD].into_iter().min_by(|a, b| (a * WALK_FRAME - top).abs().total_cmp(&(b * WALK_FRAME - top).abs())).unwrap();
+                        let (wtop, growth) = walk_rates(per_second);
+                        let (mut v, mut gone, mut frames) = (v0, 0.0f32, 0u32);
+                        while total - gone > 1e-4 && frames < 10000 {
+                            let (nv, s) = walk_step(v, wtop, growth, 1.0, total - gone);
+                            v = nv;
+                            gone += s;
+                            frames += 1;
+                        }
+                        let native = frames + turn_frames(angle);
+                        let original = walked + n;
+                        counts.note(if native == original {
+                            "routing: a whole walk natively the original's frames (walk and turn)"
+                        } else {
+                            "routing: a whole walk natively NOT the original's frames"
+                        });
+                        if show_walks {
+                            println!("whole walk from tick {start_tick}: {total:.1} long, natively {frames} + {} frames, the original's {walked} + {n}", turn_frames(angle));
+                        }
+                    }
                 }
             }
         }

@@ -854,6 +854,14 @@ way to the plan's last point past its end. Checked on the home log: all 13 walk 
 2035) take the original's frames exactly. Then (`Z`) states 4 and 5 are the door's: 5 moves the
 walker straight to a point it keeps at +116/+120 (3 into the door's opening at tick 496).
 
+**A whole walk's length.** What a routing primitive waits on: from the walk's start (state 1, its
+speed the one carried) natively along its line to its end, then the turn, against the original's
+frames from state 1 to state 4. Of the home log's 10 walks that end in a turn: 5 exactly (the house's
+short walks to the counter, the stove, the paper girl); the two long walks in the yard (ticks 7
+and 304) go partly in the fast mode, which is not native (when it comes on: the door, and off the
+screen it may be); one (tick 1931) is cut short (its state 4 far later); two are off by a frame and
+by six (the speed they start with).
+
 **Which objects block** (`routing::obstacle`). Read from the objects the loop asks about (`J`)
 against the object data the save gives: an object is left out when its flags (object data 8)
 have 0x4 (no extent: rugs, windows, wall lamps, paintings, the alarms, the phone) or it sits in
