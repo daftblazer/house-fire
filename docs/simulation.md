@@ -1250,8 +1250,14 @@ ends parented on cell 12 at g 97.40, f 142.32. A link 8 -> 13 would have given i
 the same wherever on the opening it crossed), below cell 12's 141.26, and the search would have
 taken it first, as the model does. So the original makes no 8 -> 13 link though their grown
 rects overlap (y 312..314, x 348..370) and no blocked rect lies at the crossing (the nearest,
-(317, 349, 339, 371), is below cell 13). Its link test drops some overlap the model keeps; the
-rule is to be read in the step (fn_8026A038 round its fn_8026875C calls). Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+(317, 349, 339, 371), is below cell 13). (That was wrong:) a second dump with the nodes' +8/+12 and the graph's +60 shows the links: +60
+is a flat list of node indices, and a node's +8/+12 its count and start in it (node 10, cell 8:
+list[18..23) = 7, 14, 15, 16, 17; node 15, cell 13: 14, 2, 16, 10), so 8 and 13 are linked both
+ways. The search pops by least f (its order's f rise: 124.96, 127.14, 129.2, 134.1, 139.2, 141.26,
+141.89), and the model's step cost gives node 10's other children exactly (14: 85.22, 16: 111.13,
+17: 93.89). But to come after node 14 (f 141.26), node 15 must have entered at f >= 141.26, and
+no crossing on the 8-13 opening gives that with the same cost (at most 141.0, at (313, 369)): the
+original costs that one step otherwise, or relaxes it otherwise. Still open. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
