@@ -1226,8 +1226,12 @@ the point is the target itself; the tenth's target is a diagonal tile and the pl
 Kind -3 is not about the target: it runs the plan's last leg on once more (802232A4..80223320:
 the last two of the plan's points, last + (last - prev)), 5 of 5, the 15s and the (127, 0)
 included; only a leg of no length falls back to one tile the routing object's way (its +40 & 7,
-80223328 on). Kind 4, target equal to the last point twice, gives (0, +16): its branch (past
-80223888) is still to read. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+80223328 on). Every other kind (4 here) steps one tile in direction (f + kind) & 7, f the virtual at vtable
++708 of the target's +4 object (80223888..802239BC), on the table (dx, dy) by direction 0..7:
+(-1, 0), (-1, +1), (0, +1), (+1, +1), (+1, 0), (+1, -1), (0, -1), (-1, -1), times 16 (the -3
+fallback uses the same table on the routing object's +40). Kind 4's (0, +16) is direction 2, so
+f is 6 there: the target object's own facing, not the routing object's (logged as 4 and 7). A
+point equal to the last one is not added (802239C4..802239FC). Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
