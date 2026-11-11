@@ -1601,6 +1601,10 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
         // The steps, in the log's order.
         for &i in &by_tick[t as usize] {
             let s = &log.steps[i];
+            let traced = has("REPLAY_TRACE_MAKERS") && matches!((s.tree, s.node), (0x2007, 1) | (0x2022, 1) | (0x200f, 6)) && s.look == b'X';
+            if traced {
+                println!("maker step {i} tick {} tree {:#x} node {}: engine's {}, consumed {}, id {:?}", s.tick, s.tree, s.node, engine_run[i], consumed.contains(&i), ids.get(&s.sim));
+            }
             if engine_run[i] {
                 h.counts.note("steps: outside the pass (the engine's own), not run");
                 continue;
@@ -1794,6 +1798,9 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
                 tf = Some((ot, of));
             }
             let Some((tree, file)) = tf else {
+                if has("REPLAY_TRACE_MAKERS") && matches!((s.tree, s.node), (0x2007, 1) | (0x2022, 1) | (0x200f, 6)) && s.look == b'X' {
+                    println!("  maker step {i}: tree not found (tree record {:?}, the object's file {:?})", log.tree_of(s).map(|r| (r.tree, r.raw.len() / 12)), o_file.map(|f| &lib.file(f).path));
+                }
                 h.counts.note("steps: tree not found on the disc");
                 note!(h.counts, 
                     "steps: tree not found: {}{}",
@@ -1856,6 +1863,9 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
             let fr_len = frames[&s.sim].len();
             let interp = sim.stack_of(&h.world, ok);
             let same = !interp.done() && interp.stack().len() == fr_len && st_top.is_some_and(|(t, n, _)| t == Some(s.tree as i16) && n == s.node);
+            if has("REPLAY_TRACE_MAKERS") && matches!((s.tree, s.node), (0x2007, 1) | (0x2022, 1) | (0x200f, 6)) && s.look == b'X' && !consumed.contains(&i) {
+                println!("  maker step {i}: tree found {:?}, native stack same {same} (native top {st_top:?}, depth {} of {fr_len}), node opcode {:?}", lib.file(file).path, interp.stack().len(), lib.tree_at(tree).nodes.get(s.node as usize).map(|n| n.opcode));
+            }
             if same {
                 h.counts.note("steps: the native stack as the log's");
                 streak += 1;
