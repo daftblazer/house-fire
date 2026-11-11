@@ -261,6 +261,13 @@ direction). Natively 2, 4 (the centre of the stack object's tile) and 6 ((-16, -
 tick; the trash pile (6) out of the world, then FindLocationFor (opcode 16) puts it at (392, 296)
 in the same step: not native yet.
 
+A made object's own init sets its flags (data 8) at once, in the tick it is made: 0, then 16
+(walk-through) for the chips and the meal, read three times by its init's steps. Its container
+(data 2) is first read after a Grab (12, Sim 12): nothing in the log shows what byte 4 = 4 leaves
+there, so `create_object` does not set it. For replay this means a made object is an obstacle
+of the right kind only once its init has run natively (flags 16, a walk-through one), not with
+the flags it is made with (0, a blocking one): what iteration 18's attempt lacked.
+
 Checked in lockstep at each tick's end, every logged place of an object that is not a person:
 a held object (container field an object) is at its holder's place (272 of 272, the holder's
 logged place that tick: the chips Sim 12 carries at 957-989 and 1270-1282, the tenth loop's "two
