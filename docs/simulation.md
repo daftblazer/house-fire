@@ -938,7 +938,10 @@ primitives' returns. A walk that runs on ends at the plan's last point but one (
 from there): with it 1,695 of 1,697 steps and 1,459 of 1,461 frames run free. The two left (512,
 in the fast mode, and 4919) end past their walk's end by exactly the frame's budget left over
 (3.274 − 3.179 and 0.655 − 0.287): the rest of the frame spent going on towards the follower's
-point; tick 2035's does not (its point then a stale one, elsewhere): not yet read.
+point; tick 2035's does not (its point then a stale one, elsewhere): not yet read. The plans'
+lines end where the walks do (512 at 248, 4919 at 392), so the overshoot goes beyond the plan,
+towards what the follower's +116/+120 holds before its state 5 sets it ((296, 263) and (344,
+407)); what sets those is not yet found.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
@@ -950,9 +953,9 @@ the walker's place or state-5 point rounded (4921's x is the third point's way, 
 The point is start + the sign of (third − start) on each axis in all 3. The search's point test,
 fn_8024C408 (called four times by fn_8024C5DC), asks of a rectangle vector whether the 1 by 1
 rectangle at a point overlaps a blocking entry (cost 0x7FFFFFFF, through fn_80268D78 at 8024C448);
-the nudge may follow from it, but neither the logged obstacles (`X`) nor the search's own
-rectangles (`D`) block the three nudged starts (nor any other start): which vector it tests at
-the start is still to read.
+but it is never called in the home run (a study hook on it printed nothing), so the nudge
+comes from elsewhere in fn_8024C5DC; neither the logged obstacles (`X`) nor the search's own
+rectangles (`D`) block the three nudged starts anyway.
 
 **Where a walk ends, at a door.** The walk ends at the request's chosen goal, the plan's last leg
 past it (into what the Sim faces) not walked; but at a door the home log has both: the yard's walk
