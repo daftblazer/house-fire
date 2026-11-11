@@ -1292,7 +1292,8 @@ start in its cell at g = 16 * (best - score), A* to the Sim's place, the way's g
 the home log's requests of several goals take the planner's goal 4 of 4 (tick 931's 48 goals,
 1220's seven of one score, where several share a cell and the nearest wins, and two more); the
 fifth (tick 1791) took none in the original, which tried again at once with the same goals and
-took the one the native search takes. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+took the one the native search takes. `native_plan_points` now takes its goal from the request (its only goal, or the
+backward search's of several) rather than from the end of the logged search: still 18 of 18. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
