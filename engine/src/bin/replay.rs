@@ -1238,6 +1238,10 @@ fn top_node(lib: &Library, i: &Interpreter) -> Option<Node> {
 /// settings the plan's last search had, from its coarse way's start to its end, refined, and the
 /// point after the goal (none if the plan took no goal); (x, y) like the plan's points.
 fn native_plan_points(pl: &PlanRec, world: &World) -> Option<Vec<(i32, i32)>> {
+    // a request with no goals (logs with 'h', which every plan of such a log has) plans nothing
+    if pl.goals.is_empty() && pl.approach.is_some() {
+        return Some(Vec::new());
+    }
     if pl.coarse.len() < 2 || pl.lookup_regions[0].is_empty() {
         return None;
     }

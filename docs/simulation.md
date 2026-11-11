@@ -1266,7 +1266,9 @@ hook also shows a step back to a node's own parent costs 1, and the step into th
 matters to the ways.) With that in the planner: every stage 17 of 17 (the search's coarse ways,
 the refined points, the point after the goal), and replay now runs its walk checks on the native
 plans (the log's taken only where the log lacks 'r' and 'h'; study REPLAY_LOGGED_PLANS), with
-every count as before. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+every count as before. The home log's 18th plan has no search ('I'): its request has no goals
+(chosen -1, an empty 'G'), and natively too a request with no goals plans nothing: 18 of 18
+plans' points natively, in the log's place. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
