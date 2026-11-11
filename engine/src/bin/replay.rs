@@ -3070,6 +3070,28 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
     // moved only by the native steps (with its own native speed), against the logged place after
     // each frame that moves
     let mut free: BTreeMap<u32, ((f32, f32), f32)> = BTreeMap::new();
+    // Natively, whether a walk runs on: the walker's object data 9 (Route_Follow's test, fn_801F5F4C)
+    // as its scripts set it (an expression "my object data 9 := literal": scope 3, data 9, op 5,
+    // its value from the node's operands) since its last routing primitive ended (GotoRoutingSlot
+    // or GotoRelativePosition returning: the primitive clears it, Route_Run at 80220918).
+    let mut data9: BTreeMap<i16, Vec<(u32, i16)>> = BTreeMap::new();
+    for st in &log.steps {
+        let Some(t) = log.tree_of(st) else { continue };
+        let at = st.node as usize * 12;
+        if at + 12 > t.raw.len() {
+            continue;
+        }
+        let raw = &t.raw[at..at + 12];
+        let op = u16::from_be_bytes([raw[0], raw[1]]) & 0x7FFF;
+        let Some(&who) = ids.get(&st.sim) else { continue };
+        let be = |i: usize| i16::from_be_bytes([raw[i], raw[i + 1]]);
+        if op == 2 && be(4) == 9 && raw[9] == 5 && raw[10] == 3 && raw[11] == 7 {
+            data9.entry(who).or_default().push((st.tick, be(6)));
+        } else if matches!(op, 27 | 45) && st.result != 1 {
+            data9.entry(who).or_default().push((st.tick, 0));
+        }
+    }
+    let data9_at = |who: i16, tick: u32| data9.get(&who).and_then(|v| v.iter().rfind(|e| e.0 <= tick)).is_some_and(|e| e.1 != 0);
     // for each walker frame, whether its walk is followed by state 5 (the first frame from state
     // 4 after it going to 5): found backwards through the log
     let mut runs_on = vec![false; log.follows.len()];
@@ -3081,6 +3103,18 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             }
             runs_on[i] = next4.get(&f.follower) == Some(&5);
         }
+    }
+    // checked: at each walk's end (state 2 to 3), the native data 9 against the log's run on
+    for (i, f) in log.follows.iter().enumerate().filter(|(_, f)| f.before.state == 2 && f.after.state == 3) {
+        let Some(&who) = walker_of.get(&f.follower) else {
+            counts.note("routing: a walk's end whose walker is not found (its run on not checked)");
+            continue;
+        };
+        counts.note(if data9_at(who, f.tick) == runs_on[i] {
+            "routing: a walk's run on natively the original's (its walker's object data 9 as its scripts set it)"
+        } else {
+            "routing: a walk's run on natively NOT the original's"
+        });
     }
     // state 5's point natively (`run_on_point`), from the latest plan whose last waypoint but
     // one is where the walker enters it, against the follower's +116/+120 after
@@ -3106,7 +3140,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             println!("state 5 at tick {} {:x}: at {at:?}, plan {:?}, native {nat:?}, the original's {got:?}, +132 {}", f.tick, f.follower, p.points, f.before.mode);
         }
     }
-    for (fi, f) in log.follows.iter().enumerate() {
+    for f in &log.follows {
         while plan_at < log.plans.len() && log.plans[plan_at].tick <= f.tick {
             plan_at += 1;
         }
@@ -3158,8 +3192,8 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             best.filter(|x| x.0 < 0.05).map(|(_, i, t)| (walk.to_vec(), i, t))
         });
         // the walk runs on without braking when its walker goes straight on into state 5 (the
-        // move to its +116/+120): as the log's next state 4 has it (state 5's rule not yet read)
-        let on_past = runs_on[fi];
+        // move to its +116/+120): when its object data 9 is set, natively from its scripts
+        let on_past = walker_of.get(&f.follower).is_some_and(|&w| data9_at(w, f.tick));
         let Some((walk, i, t)) = found else {
             counts.note("routing: a walker's step not on a logged plan's line (set aside)");
             continue;

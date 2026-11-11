@@ -891,8 +891,7 @@ its logged step; with that, 1,677 of the 1,697 steps on a line natively the orig
 1,431 of the 1,461 frames run free. A walk followed by state 5 does not brake: it reaches its end
 at speed and runs on (the home log's 5 walks into state 5, at 487, 511, 1643, 2034 and 4918, end
 at their top or the fast mode's; the 11 into state 4 brake to a stop). Which walks run on is
-state 5's rule (the follower's +116/+120 set: not yet read; not the request's goal, which at 1639
-is the walk's end), taken for now from the log's next state. With it, 1,691 of 1,697 steps and
+the walker's object data 9 (see "State 5, the run on" below). With it, 1,691 of 1,697 steps and
 1,444 of 1,461 frames run free; the rest the fast mode's two walks (488, 512), a ramp at 1275,
 and two runs on that end mid-line (2035) or past the line's end (4919: a step that runs on is
 not stopped at the end).
@@ -905,12 +904,12 @@ and 0 at the 17 others), the follower goes to state 5 with its point (+116/+120)
 but one (where the walk ends) towards the last, at most 3 on each axis (the DOL's 3.0 at
 802A8D40; 9.0 at 802A8D3C when the follower's +132 is 1). Checked: the 3 entries into state 5
 with a logged plan ending there (ticks 496, 1645, 2037) natively the original's point; the 2
-others (the fast mode's at 519, the overshoot at 4920) have no plan ending where they start. Who
-sets a person's data 9 is not yet found: the scripts' expressions write it only three times (ticks
-0, 84 and 1790, none of them the walkers'), both routing primitives clear it (Route_Run at
-80220918 and fn_8021F15C at 8021F780, through the object's setter at its class's +588), and the
-routing steps' operands do not tell the run-on walks apart (`REPLAY_SHOW_ROUTE_OPS`). The replay
-still takes "runs on" from the log's next state.
+others (the fast mode's at 519, the overshoot at 4920) have no plan ending where they start. A
+person's data 9 is set by its own scripts: an expression "my object data 9 := 1" (scope 3, data 9,
+op 5) in the routing trees run before a walk (trees 8215 and 4107 of the home log), and cleared
+when the routing primitive ends (Route_Run, 80220918, through the object's setter). Natively the
+replay keeps that per person from the steps it runs (the expression's literal; a GotoRoutingSlot
+or GotoRelativePosition returning clears it): all 16 walk ends' run on as the original's.
 
 **Where a walk ends, at a door.** The walk ends at the request's chosen goal, the plan's last leg
 past it (into what the Sim faces) not walked; but at a door the home log has both: the yard's walk
