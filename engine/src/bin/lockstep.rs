@@ -359,9 +359,10 @@ fn main() -> ExitCode {
                     1 => PrimResult::Yield,
                     2 => PrimResult::Stop,
                     // a primitive that runs a tree (RunFunctionalTree 20, CallNamedTree 28,
-                    // GosubFoundAction 30) and stayed on its node: it pushed the tree and goes
-                    // on into it (Continue), its node unchanged
-                    _ if matches!(n.opcode, 20 | 28 | 30) && s.after == s.node && n.true_target as u16 != s.node && n.false_target as u16 != s.node => PrimResult::Continue,
+                    // GosubFoundAction 30, and the routing primitives 27 and 45, whose next step
+                    // is a pushed tree's node 0) and stayed on its node: it pushed the tree and
+                    // goes on into it (Continue), its node unchanged
+                    _ if matches!(n.opcode, 20 | 27 | 28 | 30 | 45) && s.after == s.node && n.true_target as u16 != s.node && n.false_target as u16 != s.node => PrimResult::Continue,
                     _ if s.after == n.true_target as u16 => PrimResult::True,
                     _ => PrimResult::False,
                 };
