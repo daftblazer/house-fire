@@ -2902,6 +2902,13 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                                 }
                             }).collect();
                             println!("snap tick {}: {}", pl.tick, snapped.join(" "));
+                            // and against the search's own rectangles (logs with 'D'): the nearest
+                            // of their corners to each coarse point
+                            let dc: Vec<(i32, i32)> = pl.regions.iter().flat_map(|r| [(r[0], r[1]), (r[2], r[1]), (r[0], r[3]), (r[2], r[3])]).collect();
+                            let near: Vec<String> = pl.coarse.iter().map(|&p| {
+                                dc.iter().min_by_key(|c| (c.0 - p.0).pow(2) + (c.1 - p.1).pow(2)).map_or(format!("{p:?}"), |c| format!("{p:?}~{c:?}"))
+                            }).collect();
+                            println!("regions tick {} ({} rects): {}", pl.tick, pl.regions.len(), near.join(" "));
                         }
                         if has("REPLAY_SHOW_COARSE") && !counts.quiet {
                             println!("coarse tick {}: the search's {:?}; native {path:?}; the plan {:?}", pl.tick, pl.coarse, pl.points);

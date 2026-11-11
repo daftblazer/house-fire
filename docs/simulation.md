@@ -1023,7 +1023,12 @@ request: the start at +12/+16 and the goal's rectangle at +72 to +84 (turned: ti
 89, 601}, the goal (600, 88)), a pointer at +8 (8102E764 at tick 2, 8102E814 at 521) to what
 holds the nodes, a 4-byte vector at +56. So the nodes expanded (1 to 17) are likely cells of the
 free space between the obstacles and the search's rectangles, the coarse points the crossings
-between them: +8's structure is next.
+between them: +8's structure is next. It holds, at its +0, the search's own rectangles
+(20-byte {y0, x0, y1, x1, cost}): 43 in the yard's map, 27 in the house's, the `D` records'
+counts. The coarse points are not their corners (the nearest at least 8 away; `REPLAY_SHOW_COARSE`
+prints them), so the nodes are cells cut from these rectangles and the obstacles, the coarse
+points likely the midpoints of the openings between them: the cutting (in fn_8024C5DC before
+fn_8026C9AC, or fn_8026B39C) is next.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
