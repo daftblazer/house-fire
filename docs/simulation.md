@@ -954,7 +954,10 @@ walker's start: the whole walk frame after frame, the turn, one frame more, and 
 tick after that frame's (the frame clock as logged); each step before it a yield. On the home log
 all 10 runs whose walk ends in a turn return on the original's tick, and all 1,430 of their steps
 (yields and returns) are the original's; the replay's host decides those steps so too (1,427
-of them as it reaches them, none different). With the frame clock native as well (`FrameClock` at
+of them as it reaches them, none different). A walk that runs on ends the same way with a turn of
+no angle (one frame arrived, state 3 to 4, then the frame into state 5): with it 12 runs modelled
+(5 run-on ends right), all 12 return on the original's tick, and the host decides 1,586 routing
+steps natively, none different (409 left in runs not modelled). With the frame clock native as well (`FrameClock` at
 its fitted phase giving each frame's tick; only the walk's start taken from the log), 7 of the 8
 runs it covers return on the original's tick (2 start before the ticks it is fitted over). The
 clock runs at the game's speed (`FrameClock::frames_to_tick_at`): a tick takes 0.042 s over the

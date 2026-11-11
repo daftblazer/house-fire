@@ -2976,7 +2976,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
     // The walk (study: REPLAY_SHOW_WALKS): the planning Sim's logged places from its plan's tick
     // to its next plan (or 600 ticks), each against the plan's line: its distance from it and
     // how far along it (sixteenths).
-    let show_walks = has("REPLAY_SHOW_WALKS");
+    let show_walks = has("REPLAY_SHOW_WALKS") && !counts.quiet;
     for (k, pl) in log.plans.iter().enumerate() {
         let Some(&start) = pl.points.first() else { continue };
         let Some(sim) = world
@@ -3367,7 +3367,8 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
     };
     if show_walks {
         for r in &routing_runs {
-            println!("routing run: sim {:x} tree {} node {} yields from tick {} to its return at {} (result {})", r.0, r.1, r.2, r.3, r.4, r.5);
+            println!("routing run: sim {:x} tree {} node {} yields from tick {} to its return at {} (result {}) ({} steps)", r.0, r.1, r.2, r.3, r.4, r.5,
+                log.steps.iter().filter(|st| (st.sim, st.tree, st.node) == (r.0, r.1, r.2) && st.tick >= r.3 && st.tick <= r.4).count());
         }
     }
     // A routing primitive's return: after its walker is done (state 4) the follower runs one
@@ -3442,19 +3443,28 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                     let q = p.points[p.points.len() - 2];
                     ((q.0 as f32 - end.0).abs() < 1.0 && (q.1 as f32 - end.1).abs() < 1.0).then(|| p.points[p.points.len() - 1])
                 });
-                let (Some(faced), Some(w)) = (faced, last_way.get(&f.follower).copied()) else { continue };
-                let a1 = w.1.atan2(w.0);
-                let a2 = (faced.1 as f32 - end.1).atan2(faced.0 as f32 - end.0);
-                let pi = std::f32::consts::PI;
-                let angle = ((a2 - a1 + pi).rem_euclid(2.0 * pi) - pi).abs();
-                let crossing = log.plans.iter().any(|p| p.tick > t0 && p.tick <= t0 + 5);
-                if crossing {
-                    continue;
-                }
-                counts.note(if turn_frames(angle) == n {
-                    "routing: a walk's end turning natively the original's frames (3 degrees a frame)"
+                // a walk that runs on (its walker's data 9 set) does not turn: one frame arrived,
+                // then state 5 (as a turn of no angle)
+                let runs_on_end = walker_of.get(&f.follower).is_some_and(|&w| data9_at(w, f.tick));
+                let angle = if runs_on_end {
+                    0.0
                 } else {
-                    "routing: a walk's end turning natively NOT the original's frames"
+                    let (Some(faced), Some(w)) = (faced, last_way.get(&f.follower).copied()) else { continue };
+                    let a1 = w.1.atan2(w.0);
+                    let a2 = (faced.1 as f32 - end.1).atan2(faced.0 as f32 - end.0);
+                    let pi = std::f32::consts::PI;
+                    let angle = ((a2 - a1 + pi).rem_euclid(2.0 * pi) - pi).abs();
+                    let crossing = log.plans.iter().any(|p| p.tick > t0 && p.tick <= t0 + 5);
+                    if crossing {
+                        continue;
+                    }
+                    angle
+                };
+                counts.note(match (runs_on_end, turn_frames(angle) == n) {
+                    (false, true) => "routing: a walk's end turning natively the original's frames (3 degrees a frame)",
+                    (false, false) => "routing: a walk's end turning natively NOT the original's frames",
+                    (true, true) => "routing: a run-on walk's end natively the original's frames (one arrived)",
+                    (true, false) => "routing: a run-on walk's end natively NOT the original's frames",
                 });
                 if show_walks {
                     println!("turn at tick {t0}: {:.1} degrees, {n} frames, natively {}; done at tick {}", angle.to_degrees(), turn_frames(angle), f.tick);
