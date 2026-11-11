@@ -1101,7 +1101,19 @@ region's edge. Not yet: cells 11 and 12 from cell 1's y1 side (355..601 at y 96)
 it would stop at 156, where the cost-10 rects (156..164, 492..500) begin. Instead it splits at
 x 492, the near edge of what blocks it: 355..492 runs on to 185, the house grown by 7, and
 492..601 stops at 156. The split rule (and whether a middle obstacle makes three) is for the
-cutter's code, fn_8026B39C / fn_8026901C.
+cutter's code, fn_8026B39C / fn_8026901C. The grower, read (fn_8026901C(graph, rect)): it grows a seed rect, not
+a stretch at a time. Four steps, one a side in the order y0, x0, y1, x1, start at -s, -s, +s, +s,
+with s = 32, or a quarter of the map's cell cap (map +44, at least 1) when the cap is on (map +40).
+It goes round the sides: move the side by its step, and keep the move only if the rect is still
+in the same region as the seed (fn_802684C4, not blocked: cost != 0x7FFFFFFF), overlaps no
+existing cell (fn_80268440 = -1), and is of the seed's kind (fn_80268FC0), and, with the cap on,
+neither side exceeds the cap. A failed move is undone and the step halves, rounding toward zero.
+A side whose step is 0 is skipped; it stops when all four are 0 (or after 200 tries). So a cell's
+shape depends on the order its sides reach their stops, which explains cells 11 and 12: they are
+whatever the race of steps 32, 16, 8, ... gives, not a split. Then, if map +32 is on, a cell
+longer than map +36 times its width is cut back round its seed (fn_8022F890). Next: those three
+tests and the map's flags +32..+44 for the home lot, then the grower natively, against the 13
+dumped cells.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
