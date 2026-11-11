@@ -688,6 +688,21 @@ walk's step: it moves an object (each of its parts, from `fn_801D3524`, the grou
 place it is given; the distance a tick is decided above it, likely from the walk's animation
 (its root's motion), which the engine does not read yet.
 
+**The walker found** (`Route_Follow`, 800AE0A4). The observer logs each call of 801F0410 for a
+person with its return addresses (`F`): 9,827 of the home log's 9,863 come from 800AE0A4, a
+follower's step (and 3 levels up, 800AB820, 8005BD68). Its follower (r3): +4 the object's
+handle, +12 the waypoints (8-byte entries), +28 a state (1 starting, 2 walking), +40 and +44 the
+place as floats, stored turned (y, x) like the planner's obstacles, +124 a speed factor (1, or 5);
+the step is per frame, the global at r13 - 29720 being 1/30. Logged before and after each call
+(`Z`; a new home log, the same 581,110 steps): only three followers move, Sim 12's, Sim 237's
+and the paper girl's (their first places their plans' starts, turned). The step grows by a
+fixed amount a frame (0.0432 sixteenths for the Sims, 0.0376 for the paper girl, a child) to a
+top (0.6547 and 0.5702: each its top over 15.15 frames), times the speed factor (5: 3.27 and
+2.85). Of the 1,724 steps that move, 1,416 are the top times the factor exactly, 46 the ramp
+exactly (k times the step's growth), 262 shorter (a stop, a turn, a waypoint reached within the
+step). At 0.6547 a frame the Sims' 0.82 a simulation tick is about 1.25 frames a tick: the walk
+runs by the frame, not the tick.
+
 **Which objects block** (`routing::obstacle`). Read from the objects the loop asks about (`J`)
 against the object data the save gives: an object is left out when its flags (object data 8)
 have 0x4 (no extent: rugs, windows, wall lamps, paintings, the alarms, the phone) or it sits in

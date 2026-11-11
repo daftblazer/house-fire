@@ -327,6 +327,27 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let tested = tested.take().unwrap_or_default();
                 log.plans.push(PlanRec { tick: log.ticks, state, points, goals, chosen, obstacles, obstacle_width, tested });
             }
+            b'Z' => {
+                // a walker's step (Route_Follow): read past for now
+                if !r.has(70) {
+                    break;
+                }
+                r.u32();
+                r.i16();
+                for _ in 0..16 {
+                    r.u32();
+                }
+            }
+            b'F' => {
+                // a person moved to a place (801F0410), with its callers: read past for now
+                if !r.has(38) {
+                    break;
+                }
+                r.i16();
+                for _ in 0..9 {
+                    r.u32();
+                }
+            }
             b'J' => {
                 // the objects the loop of the plan that follows tested: the part's address, the
                 // id of the listed object it belongs to, its offset, left out, 24 words of it

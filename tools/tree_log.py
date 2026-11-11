@@ -71,6 +71,13 @@ def records(path):
             st, res, cnt = struct.unpack_from('<IIH', b, p); p += 10
             if p + 8 * cnt > n: break
             yield 'G', (st, res, [struct.unpack_from('<II', b, p + 8 * i) for i in range(cnt)]); p += 8 * cnt
+        elif k == b'Z':  # a walker's step: (follower, id, 8 words before, 8 words after)
+            if p + 70 > n: break
+            v = struct.unpack_from('<Ih16I', b, p); p += 70
+            yield 'Z', (v[0], v[1], v[2:10], v[10:18])
+        elif k == b'F':  # a person moved to a place: (id, x, y, to x, to y, r5, lr, 3 return addresses)
+            if p + 38 > n: break
+            yield 'F', struct.unpack_from('<hiiiiIIIII', b, p); p += 38
         elif k == b'J':  # the objects the planner's loop tested: [(object, id, offset, left out, 24 words)]
             if p + 2 > n: break
             cnt, = struct.unpack_from('<H', b, p); p += 2

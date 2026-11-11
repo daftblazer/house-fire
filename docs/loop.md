@@ -1586,7 +1586,7 @@ iterations in a row end without a commit (record why here).
 
 ## Progress
 
-Iteration 2 of 24.
+Iteration 3 of 24.
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1602,3 +1602,15 @@ Iteration 2 of 24.
   likely the walk animation. No native walk built (the log does not give its speed exactly).
   Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next: the
   caller that picks the walk's next place (log its distance a tick), or chunk 2 meanwhile.
+
+- **Iteration 3, chunk 1 (the walker found and its steps measured).** Two observer records: `F`
+  (each person's move through 801F0410, with its return addresses: 9,827 of 9,863 from
+  800AE0A4) and `Z` (that follower's state, its float place stored turned, its speed factor and
+  the frame's 1/30, before and after each step); recomp names.txt `Route_Follow`. The new home
+  log has the same 581,110 steps. Measured: a step grows by 0.0432 sixteenths a frame (0.0376 for
+  the paper girl) to 0.6547 (0.5702), times a factor (1 or 5); 1,416 of the 1,724 moving steps the
+  top exactly, 46 the ramp exactly, 262 shorter (stops, turns, waypoints). The walk is per frame
+  (about 1.25 frames a tick). Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24);
+  clippy clean. Next: the step natively (the ramp, the top, the factor, the waypoint reached
+  within a step) against every `Z` step; where the top and the growth come from (the walker's
+  animation or the person's data).
