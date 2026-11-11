@@ -46,7 +46,7 @@ use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
-use housefire::routing::{BLOCKS, OFF_PAVED_WEIGHT, Tile, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
+use housefire::routing::{BLOCKS, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
 use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
@@ -2959,6 +2959,52 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         } else {
             "routing: a walker's step natively NOT the original's"
         });
+    }
+    // The turn at a walk's end (`turn_frames`): the frames a follower stays arrived (state 3)
+    // against the angle from its last step's way to what it faces (the plan's last point past its
+    // end), each walk's end that turns (a door's crossing walks on: set aside, its next plan at once)
+    {
+        let mut last_way: BTreeMap<u32, (f32, f32)> = BTreeMap::new();
+        let mut arrived: BTreeMap<u32, (u32, u32, (f32, f32))> = BTreeMap::new();
+        for f in &log.follows {
+            let (b, a) = (f.before, f.after);
+            if (a.x, a.y) != (b.x, b.y) {
+                last_way.insert(f.follower, (a.x - b.x, a.y - b.y));
+            }
+            if b.state == 2 && a.state == 3 {
+                arrived.insert(f.follower, (f.tick, 0, (a.x, a.y)));
+            }
+            if b.state == 3
+                && let Some(e) = arrived.get_mut(&f.follower)
+            {
+                e.1 += 1;
+            }
+            if b.state == 3 && a.state == 4
+                && let Some((t0, n, end)) = arrived.remove(&f.follower)
+            {
+                let faced = log.plans.iter().rev().filter(|p| p.tick <= t0 && p.points.len() >= 3).find_map(|p| {
+                    let q = p.points[p.points.len() - 2];
+                    ((q.0 as f32 - end.0).abs() < 1.0 && (q.1 as f32 - end.1).abs() < 1.0).then(|| p.points[p.points.len() - 1])
+                });
+                let (Some(faced), Some(w)) = (faced, last_way.get(&f.follower).copied()) else { continue };
+                let a1 = w.1.atan2(w.0);
+                let a2 = (faced.1 as f32 - end.1).atan2(faced.0 as f32 - end.0);
+                let pi = std::f32::consts::PI;
+                let angle = ((a2 - a1 + pi).rem_euclid(2.0 * pi) - pi).abs();
+                let crossing = log.plans.iter().any(|p| p.tick > t0 && p.tick <= t0 + 5);
+                if crossing {
+                    continue;
+                }
+                counts.note(if turn_frames(angle) == n {
+                    "routing: a walk's end turning natively the original's frames (3 degrees a frame)"
+                } else {
+                    "routing: a walk's end turning natively NOT the original's frames"
+                });
+                if show_walks {
+                    println!("turn at tick {t0}: {:.1} degrees, {n} frames, natively {}", angle.to_degrees(), turn_frames(angle));
+                }
+            }
+        }
     }
     // Each plan with the routing primitives its Sim ran in its tick (study: REPLAY_SHOW_PLANS):
     // opcode 27 or 45, the stack object and its place, the operand, the result.

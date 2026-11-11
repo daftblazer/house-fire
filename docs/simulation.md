@@ -846,6 +846,14 @@ right but misses the starts of the crossings that follow (1,257 of 1,465 frames 
 two door walks apart is the door's own state machine (the follower's states 4 and 5, its fast
 mode at the yard's door), still to read.
 
+**The turn at a walk's end** (`routing::turn_frames`). Arrived (state 3), a walker turns to face
+what it walked to, 3 degrees a frame, and is done (state 4) a frame after: ⌊angle / 3°⌋ + 1 frames
+(90 degrees 31 frames, 180 61, 27.6 10, 62.3 21; straight on, 1). The angle from its last step's
+way to the plan's last point past its end. Checked on the home log: all 13 walk ends that turn
+(the ends a new plan follows within 5 ticks set aside: a door's crossing walks on, as at tick
+2035) take the original's frames exactly. Then (`Z`) states 4 and 5 are the door's: 5 moves the
+walker straight to a point it keeps at +116/+120 (3 into the door's opening at tick 496).
+
 **Which objects block** (`routing::obstacle`). Read from the objects the loop asks about (`J`)
 against the object data the save gives: an object is left out when its flags (object data 8)
 have 0x4 (no extent: rugs, windows, wall lamps, paintings, the alarms, the phone) or it sits in

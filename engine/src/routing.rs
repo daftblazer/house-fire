@@ -264,6 +264,18 @@ pub fn walk_step(speed: f32, top: f32, growth: f32, factor: f32, left: f32) -> (
     (v, (v * factor).min(left))
 }
 
+/// A walker's turn a frame once it has arrived, to face what it walks to (the follower's state 3):
+/// 3 degrees (measured on the home log's walks: 90 degrees in 31 frames, 180 in 61).
+pub const TURN_PER_FRAME: f32 = std::f32::consts::PI / 60.0;
+
+/// The frames a walker stays arrived (state 3) turning through `angle` radians before it is done
+/// (state 4): a frame for each whole 3 degrees, and one.
+pub fn turn_frames(angle: f32) -> u32 {
+    // (a hundredth of a step's slack: the angle here from the last step's way, the original's
+    // from its heading, which a right angle gives whole)
+    (angle / TURN_PER_FRAME + 0.01) as u32 + 1
+}
+
 /// A point `s` along a line (its points, sixteenths) from leg `i` at fraction `t` of it, never
 /// past its end.
 pub fn along_line(points: &[(f32, f32)], mut i: usize, mut t: f32, mut s: f32) -> (f32, f32) {
