@@ -1104,7 +1104,9 @@ x 492, the near edge of what blocks it: 355..492 runs on to 185, the house grown
 cutter's code, fn_8026B39C / fn_8026901C. The grower, read (fn_8026901C(graph, rect)): it grows a seed rect, not
 a stretch at a time. Four steps, one a side in the order y0, x0, y1, x1, start at -s, -s, +s, +s,
 with s = 32, or a quarter of the map's cell cap (map +44, at least 1) when the cap is on (map +40).
-It goes round the sides: move the side by its step, and keep the move only if the rect is still
+It goes round the sides (a failed move halves that side's step and tries the same side again;
+only a kept move or a zero step goes on to the next side): move the side by its step, and keep
+the move only if the rect is still
 in the same region as the seed (fn_802684C4, not blocked: cost != 0x7FFFFFFF), overlaps no
 existing cell (fn_80268440 = -1), and is of the seed's kind (fn_80268FC0), and, with the cap on,
 neither side exceeds the cap. A failed move is undone and the step halves, rounding toward zero.
@@ -1159,7 +1161,13 @@ regions (plans 2, 3, 16) or the house's 27 (12, 14), not simply the previous pla
 logged lists the model gives 15 of 23 coarse ways exactly (plan 16 now too). The misses left:
 plans 9 and 10 start one way off (313 for 317 in y at the first crossing), plan 3 lacks a point
 next to its start (233, 296), and 2, 4 and 14 differ inside the house. The first three look like
-the start's cell.
+the start's cell. They were the grower: it retries a side after a failed move (the failure path
+goes back to 80269238, which does not step the side on), where the model had gone on to the
+next side. Fixed, and checked on a one-off dump of every search's cells (reverted): 21 of 23
+coarse ways exact, and the cells of 9 searches equal the original's in full. Left: searches 7
+and 19 (of 23, in log order), start cells off by a little (search 20's y0 247 for 249, search
+7's y1 368 for 359), and the cost of a cell in no region: 3 in the yard plans' searches but 0 in
+the house plans' (cells of equal shape, cost 3 in the model, 0 in the original).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
