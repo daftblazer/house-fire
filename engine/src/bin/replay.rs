@@ -2545,6 +2545,9 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                     let theirs: Vec<_> = pl.goals.iter().map(|g| ((g[3] & 0xFF).trailing_zeros(), g[0] as i32, g[1] as i32)).collect();
                     println!("slot goals tick {}: object {} at {target:?} facing {}: native places {places:?} (offered {offered:?}); the request's {theirs:?}", pl.tick, o.id(), o.facing());
                     println!("   the step: sim {} tree {} number {number} scope {scope} stack object {} raw {raw:?}", s.sim, s.tree, s.stack_object);
+                    for id in [12i16, 197, 198, 202, 237] {
+                        println!("   person {id} at tick {}: {:?}", pl.tick, log.places.iter().rfind(|p| p.id == id && p.tick <= pl.tick).map(|p| (p.x, p.y, p.tick)));
+                    }
                     // which slot's area holds the request's goals (the object's table and the global one)
                     let tables = [world.definition(o).and_then(|d| lib.file(file).slots.get(&d.slot_table())), lib.global_file().and_then(|g| g.slots.values().next())];
                     for (t, table) in tables.iter().enumerate() {
@@ -2569,6 +2572,11 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                                     }
                                 }
                                 println!("   table {t} slot {n}: best {} of {} goals with the area round {:?} facing {}", best.0, pl.goals.len(), best.1, best.2);
+                                let at_target: Vec<usize> = (0..8).map(|f| {
+                                    let a = slot_area(sl, target.0, target.1, f);
+                                    pl.goals.iter().filter(|g| a.iter().any(|&(_, q)| q == (g[0] as i32, g[1] as i32))).count()
+                                }).collect();
+                                println!("   table {t} slot {n}: round the target {target:?}, goals in the area by facing 0..7: {at_target:?}");
                             }
                         }
                     }

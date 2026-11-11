@@ -1309,7 +1309,12 @@ a Sim, the planning one (282 'P' places; it is at (392, 344) when it plans), and
 197 itself: the Sim routing to its own slot. The request it makes is not that: global slot 8 round
 the counter tile's centre (360, 328), facing 0. So routing to oneself takes another target (the
 counter, or the object on it, likely the interaction's own object) and another slot; where the
-primitive finds them is next (its handling of a self target). Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+primitive finds them is next (its handling of a self target). The request's own target ('h') is
+197 itself at (392, 344), facing 4; no other Sim stands at (360, 328) (12 at (392, 312), 198 at
+(408, 344), 237 with 197). Slot 8's directions are all eight, so its area is the same whatever the
+facing: round (392, 344) it holds 26 of the goals, and some goals (x 320) lie 72 from there,
+past its reach of 64; round (360, 328) all 43. So the goals' area is centred on the counter tile
+while the request names the Sim: the centre comes from elsewhere in the primitive's self case. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
