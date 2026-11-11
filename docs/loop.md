@@ -1336,7 +1336,7 @@ Iteration 16 of 16 (the loop ended).
 
 ## The eighth loop's end
 
-Sixteen iterations (house-fire 3ce7c2f..; recomp bb3c467..b0a76ee), the Rust port between the
+Sixteen iterations (house-fire ecb1b73..4dda804; recomp ..b0a76ee), the Rust port between the
 second and the third. Chunks 1 and 3 are done, chunk 2 in large part, chunks 4 and 5 not begun.
 
 - **Rooms and doors (chunk 1, done).** The rooms are the regions the walls close (4 at Mom's
