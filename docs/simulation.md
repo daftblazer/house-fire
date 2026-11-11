@@ -1382,7 +1382,9 @@ The walkers 202 and 198 were such companions too. Every other count as before. T
 the meal 198 five times, the paper girl twice and once at 1503, 202 three times, 201 once, Sim 12
 once), a Sim or object snapped into place by an interaction, not walked; 5 are not on a centre
 (Sim 12 at 500 and 524, Sim 237 at 1909, 2038 and 4922), the first place of a walk, which the check
-leaves out (it takes the ticks after a walk's start). Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+leaves out (it takes the ticks after a walk's start). The host now takes a walking Sim's place from the native walk by default (study
+REPLAY_LOGGED_PLACES for the log's): every count as with the log's places, the club logs and
+lockstep unchanged. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth

@@ -1379,7 +1379,9 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
     let mut ids = stack_ids(log);
     place_quiet_stacks(log, &h.world, &mut ids, &mut h.counts, lib);
     let mut native_places: BTreeMap<(i16, u32), (i32, i32)> = BTreeMap::new();
-    let use_native_places = has("REPLAY_NATIVE_PLACES");
+    // a walking Sim's place from the native walk where there is one (study REPLAY_LOGGED_PLACES:
+    // every place the log's)
+    let use_native_places = !has("REPLAY_LOGGED_PLACES");
     // the routing runs' native returns, for the routing primitives' steps (its own counts dropped:
     // the full pass after the steps counts them)
     if !quiet && !log.places.is_empty() {
@@ -1412,7 +1414,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
         h.counts.note("log: no pass records (an older log): every step taken as a turn, no tick as paused");
     }
 
-    let mut place_at = 0; // the next 'P' record (places: routing is not native, so set to the log's)
+    let mut place_at = 0; // the next 'P' record (places: the native walk's where it has one, else the log's)
     let mut motive_at = 0; // the next 'N' record
     let mut shown_motives = 0;
     let ev_env = env("REPLAY_EVALUATION");
@@ -1420,8 +1422,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
         let mut tick_us = 0.0;
         while place_at < log.places.len() && log.places[place_at].tick < t {
             let p = log.places[place_at];
-            // study (REPLAY_NATIVE_PLACES): a walking Sim's place from the native walk where the
-            // routing pass has one
+            // a walking Sim's place from the native walk where the routing pass has one
             let (x, y) = if use_native_places { native_places.get(&(p.id, p.tick)).copied().unwrap_or((p.x, p.y)) } else { (p.x, p.y) };
             if use_native_places {
                 if !native_places.contains_key(&(p.id, p.tick)) {
