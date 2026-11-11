@@ -206,4 +206,7 @@ trees 0x191-0x193 (37 steps) it is the rule everywhere: all of the club's kind-4
 with each made object's file (from the first step that reads its own variables) and its
 definition's GUID, all 9,755 agree. The home log's made objects: a bag of chips (197, the paper
 girl's id free again, tick 693), a trash pile (201, 1220), a "go here and show" marker (197 again,
-1503) and a meal (202, 1766).
+1503) and a meal (202, 1766). Kind 6 compares data field 59, which a made object reads as 0 when it is made and its
+scripts write later: lockstep takes it from the log (reads through scopes 3 and 4, the address
+back to the object, and expressions' writes, after their step), and all 44 of the home log's
+kind-6 steps agree.

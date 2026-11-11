@@ -1078,6 +1078,25 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
     }
     // No object of the world's: SetToNext reads the frame alone (scope 10, the parameters).
     let nobody = ObjectKey(u32::MAX);
+    // Data field 59 of each object as the log reads it (scopes 3 and 4: the address back to the
+    // object, the field at +0x26 + 2 x 59), by step: what kind 6 compares, set at run time by an
+    // object's own scripts, so a made object's is taken from the log.
+    let mut field59: BTreeMap<u32, Vec<(usize, i16)>> = BTreeMap::new();
+    for (i, s) in log.steps.iter().enumerate() {
+        for v in s.lookups.iter().filter(|v| matches!(v.scope, 3 | 4) && v.data == 59 && v.flags & 1 != 0) {
+            let a = if v.ptr != 0 { v.ptr } else { v.fptr };
+            let owner = if a != 0 { a.wrapping_sub(0x26 + 2 * 59) } else if v.scope == 3 { v.object } else { continue };
+            field59.entry(owner).or_default().push((i, v.value));
+        }
+        // an expression writing it: the value after the step, the owner from the left side's
+        // lookup in the same step
+        if let Some(e) = s.expr.as_ref().filter(|e| matches!(e.lhs_scope, 3 | 4) && e.lhs_data == 59 && e.flags & 1 != 0)
+            && let Some(v) = s.lookups.iter().find(|v| v.scope == e.lhs_scope && v.data == 59 && v.ptr != 0)
+        {
+            field59.entry(v.ptr.wrapping_sub(0x26 + 2 * 59)).or_default().push((i, e.lhs_after));
+        }
+    }
+    let mut made_ptr: BTreeMap<i16, u32> = BTreeMap::new(); // a made object's id -> its pointer
     let mut li = 0;
     let mut shown = 0;
     for (i, s) in log.steps.iter().enumerate() {
@@ -1117,6 +1136,7 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
                 let mut o = Object::new();
                 let own = |s: &StepRec, ptr: u32| s.lookups.iter().any(|v| v.object == ptr && matches!(v.scope, 0 | 3 | 8));
                 if let Some(ptr) = l.ids.iter().position(|&x| x == id).map(|p| l.objects[p]) {
+                    made_ptr.insert(id, ptr);
                     o.file = log.steps.iter().enumerate().find(|(i, s)| s.tick >= l.tick && own(s, ptr) && step_object[*i].is_some()).and_then(|(i, _)| step_object[i]);
                     if let Some(d) = o.file.and_then(|f| lib.file(f).definitions.first()) {
                         o.guid = d.guid();
@@ -1139,6 +1159,18 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
             if order != l.ids && std::env::var_os("LOCKSTEP_SHOW_LISTS").is_some() {
                 let first = order.iter().zip(&l.ids).position(|(a, b)| a != b).unwrap_or(0);
                 println!("list at tick {}: native {:?} log {:?} (from {first}, of {} and {})", l.tick, &order[first..(first + 6).min(order.len())], &l.ids[first..(first + 6).min(l.ids.len())], order.len(), l.ids.len());
+            }
+        }
+        if node.operand[4] & 0x7F == 6 {
+            for (&id, ptr) in &made_ptr {
+                let Some(k) = lw.find(id) else { continue };
+                if let Some(&(_, v)) = field59.get(ptr).and_then(|r| r.iter().take_while(|e| e.0 < i).last()) {
+                    let d = &mut lw.get_mut(k).data;
+                    if d.len() <= 59 {
+                        d.resize(60, 0);
+                    }
+                    d[59] = v;
+                }
             }
         }
         let r = set_to_next(&node, &mut ScriptVariables::new(&mut lw, nobody, &mut f));
