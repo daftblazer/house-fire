@@ -1190,7 +1190,13 @@ the cells the perimeter walk meets changes nothing, and never re-parenting a fou
 (21). Natively now (engine/src/planner.rs, `coarse_way`): the cells, the grower with the
 request's settings, the round walk and the A* in f32; replay checks it on each plan's last
 search (the 'I', 'r' and settings the plan record keeps): 16 of 17 coarse ways point by point,
-the miss that same search (tick 521).
+the miss that same search (tick 521). The plan's points ('G') from the coarse way: every crossing slides along its opening (the
+overlap of the two grown cells, its inside lo + 1 ..= hi - 1 across the opening, the other axis
+fixed at the crossing's own) to where the line between its two neighbours meets it, rounded to
+the nearest and clamped to the opening; repeated over the way until nothing moves. Modelled on
+the native coarse ways' openings, it gives every plan's points exactly, 17 of 17 (rounding
+toward zero or down: 15). After the goal the plan adds one point more (the goal plus a step: 16
+on in 6 plans, 24, 15, 127 and (-8, -16) in others; none in 1): the approach's, still to fit.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
