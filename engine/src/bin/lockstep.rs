@@ -1157,7 +1157,7 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
             ": DIFFERENT"
         };
         notes.note_ex(&format!("{kind}{verdict}"), &ex);
-        if !same && s.tick >= 10 && shown < 12 {
+        if !same && s.tick >= 10 && shown < std::env::var("LOCKSTEP_SHOW_N").ok().and_then(|v| v.parse().ok()).unwrap_or(12) {
             shown += 1;
             let o = &node.operand;
             let guid = u32::from_le_bytes([o[0], o[1], o[2], o[3]]);

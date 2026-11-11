@@ -130,7 +130,7 @@ object after the target's in that order, or the first if the target is 0, of a k
 | 1 | a Sim (here: an object whose definition is not on the disc, a character) | 2,144 same |
 | 2 | not a Sim | not run in the session |
 | 3 | the next part of the target's multi-tile object, in list order, round from the last part to the first (false if the target is not a part); a part's object is its saved leader (`lots.md`, "The classes") | 141 same (`replay`) |
-| 4 | an object of the GUID in operand bytes 0-3 | 10,903 same |
+| 4 | the next object of the GUID in operand bytes 0-3 by id (the definition's list, in id order), not the list's order | 10,934, 1,941 and 9,753 of 9,755 same (`lockstep`, the club's two sessions and the home log) |
 | 5 | the next neighbour by id (Castaway's `Neighborhood::GetNextNeighborID`); after the last, the target 0 and false. The neighbours are NBRS's (below) | 468 same (`replay`) |
 | 6 | an object whose data field 59 is the frame's first parameter (Castaway's `TrySetToNext`, which shares the case with 0 and 2; in Bustin' Out's log field 59 is the parameter for 1,984 of 2,000 objects found). The operand's bytes 0-3 (the boombox's GUID in the club's use) are not read | 2,188 and 549 same (`replay`, two sessions) |
 
@@ -197,10 +197,9 @@ order, and SetToNext's kinds 0, 1, 4 and 6 are the same but for 3, 3, 39 and 4 s
 6,495 differing kind-4 steps before.) With them, SetToNext's
 kind 0 agrees on all 23,082 steps.
 
-While a lot loads (its first ticks) the original's list is still being built in another
-order: a global init tree (`0x190`) walks the objects of a GUID in ascending id order. The
-native world has the finished list, so 28 kind-4 steps there differ, counted apart.
-
-Three kind-4 steps differ later. All are the dance floor's "Choose dance orientation":
-from tile 135 it finds an earlier tile of another GUID. That is multi-tile, near kind 3:
-open.
+Kind 4 walks a GUID's objects by id, not the list's order. That was first seen while a lot
+loads (a global init tree, `0x190`, walking a GUID in ascending id order: 28 steps) and in the
+dance floor's "Choose dance orientation" (from tile 135 to 145, an earlier one in the list: 3
+steps), and taken for the list still being built and for multi-tile; with the home log's global
+trees 0x191-0x193 (37 steps) it is the rule everywhere: all of the club's kind-4 steps and all but
+2 of the home log's agree.

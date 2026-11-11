@@ -144,10 +144,19 @@ pub fn set_to_next(n: &Node, vars: &mut ScriptVariables) -> PrimResult {
         0 => true,
         1 => x.person,
         2 => !x.person,
-        4 => x.guid == guid,
         6 => x.data.get(59) == Some(&p0),
         _ => false,
     };
+    if kind == 4 {
+        // The next object of the GUID by id, not the list's order (the definition's own list,
+        // which the original keeps in id order): 9,753 of 9,755 of the home log's steps, all of
+        // the club's, the global init trees' walks (0x190-0x193) among them.
+        let next = w.objects().filter(|x| x.guid == guid && x.id() > cur).map(Object::id).min();
+        return match next {
+            Some(id) => set(vars, id),
+            None => PrimResult::False,
+        };
+    }
     let start = if cur != 0 { order.iter().position(|&k| w.get(k).id() == cur).map_or(0, |k| k + 1) } else { 0 };
     match order[start.min(order.len())..].iter().map(|&k| w.get(k)).find(|x| fits(x)).map(Object::id) {
         Some(id) => set(vars, id),

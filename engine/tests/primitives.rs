@@ -54,8 +54,12 @@ fn the_primitives_rules() {
     assert!(stn(any, &mut w, &mut f) == PrimResult::False && f.stack_object == 3);
     f.stack_object = 0;
     assert!(stn([0, 0, 0, 0, 1, 0, 0, 0], &mut w, &mut f) == PrimResult::True && f.stack_object == 9);
-    f.stack_object = 5;
+    // kind 4: the next of the GUID by id, not the list's order (5 and 3 are 0x111's: from 0, 3;
+    // from 3, 5; from 5, none)
+    f.stack_object = 0;
     assert!(stn([0x11, 0x01, 0, 0, 4, 0, 0, 0], &mut w, &mut f) == PrimResult::True && f.stack_object == 3);
+    assert!(stn([0x11, 0x01, 0, 0, 4, 0, 0, 0], &mut w, &mut f) == PrimResult::True && f.stack_object == 5);
+    assert!(stn([0x11, 0x01, 0, 0, 4, 0, 0, 0], &mut w, &mut f) == PrimResult::False);
     // kind 3: the next part of the target's multi-tile object in list order, round from the
     // last (the list is 5, 9, 3: 5 and 3 parts of one led by 3)
     set_leaders(&mut w, &|id| if id == 5 || id == 3 { 3 } else { 0 });
