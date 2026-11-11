@@ -726,6 +726,15 @@ tops the same 1,511 steps are exact. Which top a walker has is the original's te
 follower's +8 (`fn_80059194`, two virtual calls deep), not yet read: natively it is still told
 by the walker's largest logged step.
 
+**A walk's start and end.** A walk starts at the speed the follower's last walk stopped at: its
+speed (+144) is not reset (the "0.02 beyond the ramp" of the earlier figures was that). And it
+ends at the request's chosen goal (`H`): a plan's last leg past the goal, into what the Sim then
+faces in the same room (an object, the paper girl), is not walked; one through a door is (the
+door's crossings walk to their far side). With both: 1,653 of the 1,701 logged steps on a plan's
+line natively the original's to a thousandth (23 set aside, on no logged line). The rest: a walk
+begun just after one cut short at speed (tick 1909: it starts near its top), the brake of one walk
+(ticks 1639 to 1645), the walk up to the door at tick 4922, and the door's own states (4, 5).
+
 **Which objects block** (`routing::obstacle`). Read from the objects the loop asks about (`J`)
 against the object data the save gives: an object is left out when its flags (object data 8)
 have 0x4 (no extent: rugs, windows, wall lamps, paintings, the alarms, the phone) or it sits in

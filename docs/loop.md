@@ -1586,7 +1586,7 @@ iterations in a row end without a commit (record why here).
 
 ## Progress
 
-Iteration 5 of 24.
+Iteration 6 of 24.
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1632,3 +1632,9 @@ Iteration 5 of 24.
   differ for the paper girl (4, 29, 32, 34, 56, 57, 60, 67) are too many to choose from on one
   child. Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next:
   Sim 237's 0.02 and the door states, or chunk 2 (the planner's points between corners).
+
+- **Iteration 6, chunk 1 (a walk's start and end).** The 0.02 was the speed carried over from the
+  follower's last walk (+144 not reset); a walk ends at the request's chosen goal, the last leg
+  past it walked only through a door (another room). Checked: 1,653 of 1,701 logged steps
+  natively exact (from 1,511). Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4,
+  24); clippy clean. Next: the door's states (4, 5: the crossing), then chunk 2.

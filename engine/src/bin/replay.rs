@@ -2752,9 +2752,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             plan_at += 1;
         }
         let (b, a) = (f.before, f.after);
-        if b.state == 1 {
-            speed.insert(f.follower, 0.0);
-        }
+        // (a walk starts at the speed the follower's last one stopped at: its +144 is not reset)
         if (b.x, b.y) == (a.x, a.y) {
             continue;
         }
@@ -2766,7 +2764,13 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         // the line it is on
         let found = log.plans[..plan_at].iter().rev().take(6).find_map(|pl| {
             let pts: Vec<(f32, f32)> = pl.points.iter().map(|&(x, y)| (x as f32, y as f32)).collect();
-            let walk = if pts.len() >= 3 { &pts[..pts.len() - 1] } else { &pts[..] };
+            // the walk ends at the request's chosen goal: a plan's last leg past it, into what the
+            // Sim then faces in the same room, is not walked (one through a door is)
+            let goal = usize::try_from(pl.chosen).ok().and_then(|i| pl.goals.get(i)).map(|g| (g[0] as i32, g[1] as i32));
+            let room = |p: (i32, i32)| walls.room(p.0 >> 4, p.1 >> 4);
+            let last = *pl.points.last().unwrap_or(&(0, 0));
+            let faced = pl.points.len() >= 3 && goal.is_some_and(|g| pl.points[pl.points.len() - 2] == g && room(last) == room(g));
+            let walk = if pts.len() >= 3 && (faced || pl.obstacles.is_empty()) { &pts[..pts.len() - 1] } else { &pts[..] };
             let mut best: Option<(f32, usize, f32)> = None;
             for i in 0..walk.len().saturating_sub(1) {
                 let (p, q) = (walk[i], walk[i + 1]);
@@ -2790,6 +2794,12 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         speed.insert(f.follower, v);
         let at = along_line(&walk, i, t, s);
         let off = ((at.0 - a.x).powi(2) + (at.1 - a.y).powi(2)).sqrt();
+        if show_walks && off >= 0.003 {
+            println!(
+                "walk miss tick {} {:x} state {}->{} factor {} at ({:.3},{:.3}) to ({:.3},{:.3}): native ({:.3},{:.3}) step {s:.4} speed {v:.4} left {left:.3} leg {i}/{}",
+                f.tick, f.follower, b.state, a.state, b.factor, b.x, b.y, a.x, a.y, at.0, at.1, walk.len() - 1
+            );
+        }
         counts.note(if off < 0.003 {
             "routing: a walker's step natively the original's (to a thousandth of a sixteenth)"
         } else {
