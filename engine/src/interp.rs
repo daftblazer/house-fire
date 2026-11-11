@@ -86,6 +86,12 @@ pub trait Host: Trees {
     fn ad_range_mut(&mut self) -> Option<&mut Vec<i16>> {
         None
     }
+    /// The parameters a call that gives none passes, as they are now: the running object's temps
+    /// (the original's interpreter keeps a pointer to them, so a guard that writes a temp and then
+    /// calls passes the new value). `None`: the interpreter's own copy (`set_defaults`).
+    fn default_params(&mut self) -> Option<Vec<i16>> {
+        None
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -287,10 +293,14 @@ impl Interpreter {
         if op > 255 {
             let Some(t) = host.tree(op) else { return self.fail(Error::Missing) };
             let pushed = if n.operand.iter().all(|&b| b == 0xFF) {
-                let d = std::mem::take(&mut self.defaults);
-                let pushed = self.push(host, t, &d);
-                self.defaults = d;
-                pushed
+                if let Some(d) = host.default_params() {
+                    self.push(host, t, &d)
+                } else {
+                    let d = std::mem::take(&mut self.defaults);
+                    let pushed = self.push(host, t, &d);
+                    self.defaults = d;
+                    pushed
+                }
             } else {
                 let p: [i16; 4] = std::array::from_fn(|i| n.operand16(i) as i16);
                 self.push(host, t, &p)

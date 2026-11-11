@@ -355,6 +355,10 @@ impl Host for ReplayHost<'_, '_> {
         Some(&mut self.world.ad_range)
     }
 
+    fn default_params(&mut self) -> Option<Vec<i16>> {
+        Some(self.world.get(self.me).temps.to_vec())
+    }
+
     /// A check tree the engine runs, stepped natively through the log's steps of it.
     fn run_check(&mut self, t: TreeId, file: Option<FileId>, stack_object: i16, defaults: &[i16]) -> Option<bool> {
         let log = self.log;
