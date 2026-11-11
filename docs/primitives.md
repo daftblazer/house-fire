@@ -151,7 +151,11 @@ the node goes to its true target.
 Measured with `replay`: all 339 uses (269 and 70 in two sessions) true natively; of those
 whose destination the log shows (a parameter or a local), all 294 numbers within their
 range. The numbers themselves are the engine's own, a deliberate difference (`plan.md`); the
-replay takes the original's. A range of 0 or less gives 0 (not seen in the logs).
+replay takes the original's. For a temp or attribute destination, which the step records do not carry, replay takes
+the number from that variable's first read by the same stack after the step: 146, 28 and 17
+of the three logs, all within their range (the aquarium's "tweak dirt inc", Random into temp 0
+over a constant range, most of the home log's); temps differing home 291 → 158, tree 238 → 230,
+tree3 24 → 17, attributes 14 → 12, 13 → 3, 8 → 2. A range of 0 or less gives 0 (not seen in the logs).
 
 The engine has it as `random()` (`engine/src/primitives.rs`).
 

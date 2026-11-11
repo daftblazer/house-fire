@@ -282,8 +282,18 @@ fn sync_variables(world: &mut World, counts: &mut Counts, shown: &mut Shown, me:
         }
         if env("REPLAY_SHOW_SCOPE").is_some_and(|e| atoi(&e) == v.scope as i64) && shown.next("scope", env("REPLAY_SHOW_N").map_or(10, |n| atoi(&n) as i32)) {
             println!(
-                "scope {} datum {}: native {}, log {}; the step's stack object {} -> {}, tree {}:{}",
-                v.scope, v.data, got.value, v.value, s.stack_object, s.stack_object_after, s.tree, s.node
+                "scope {} datum {}: native {}, log {}; the step's stack object {} -> {}, tree {}:{} (me {} {:?}, tick {})",
+                v.scope,
+                v.data,
+                got.value,
+                v.value,
+                s.stack_object,
+                s.stack_object_after,
+                s.tree,
+                s.node,
+                vars.world.get(me).id(),
+                vars.world.get(me).file.map(|f| vars.world.library().file(f).path.rsplit('/').next().unwrap_or("").to_string()),
+                s.tick
             );
         }
         note!(counts, "variables: scope {}: different (set to the log's)", v.scope);
@@ -509,16 +519,26 @@ impl Host for ReplayHost<'_, '_> {
             let datum = n.operand[0] as i32 | (n.operand[1] as i32) << 8;
             let range = vars.get(n.operand[6], (n.operand[4] as u16 | (n.operand[5] as u16) << 8) as i16);
             let after = match dscope {
-                25 => Some(&s.locals_after),
-                9 => Some(&s.params_after),
+                25 => s.locals_after.get(datum as usize).copied(),
+                9 => s.params_after.get(datum as usize).copied(),
+                // a temp or an attribute of mine: its first read by this stack after the step
+                // (before anything else of this stack writes it)
+                8 | 0 => log.steps[self.step + 1..]
+                    .iter()
+                    .filter(|t| t.sim == s.sim)
+                    .take(64)
+                    .find_map(|t| t.lookups.iter().find(|v| v.scope as u8 == dscope && v.data as i32 == datum && v.flags & 1 != 0).map(|v| v.value)),
                 _ => None,
             };
             let note_range = match (after, range) {
-                (Some(after), Some(range)) if (datum as usize) < after.len() => {
-                    let v = after[datum as usize];
+                (Some(v), Some(range)) => {
                     let ok = v >= 0 && if range.value <= 0 { v == 0 } else { v < range.value };
                     vars.set(dscope, datum as i16, v);
-                    if ok { "primitives: Random: the original's number within the range" } else { "primitives: Random: the original's number OUT of the range" }
+                    match (ok, dscope) {
+                        (true, 8 | 0) => "primitives: Random: the original's number within the range (a temp or attribute, from its next read)",
+                        (true, _) => "primitives: Random: the original's number within the range",
+                        _ => "primitives: Random: the original's number OUT of the range",
+                    }
                 }
                 _ => "primitives: Random: the original's number not in the log (a temp or attribute)",
             };
