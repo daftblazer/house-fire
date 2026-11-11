@@ -639,7 +639,13 @@ stops when its classifier, fn_80248F4C, puts a place in category 3, setting its 
 yet read: the check takes the short direction's count from the draws' total). The pick (8024F504, `routing::slot_pick`): up to the request's cap (its +164,
 48), a draw `random % n` into the n open places in the builder's order; a place already taken
 passes to the next not taken (none past the last), and the place is copied out and its score
-zeroed to mark it. All 48 goals at tick 931 are the places the 48 draws take, in order. The planner's choice among the goals is the
+zeroed to mark it. All 48 goals at tick 931 are the places the 48 draws take, in order. Tick
+1579's request (GotoRoutingSlot on the paper girl, whose one routing slot is 16 to 16 with flags
+0x44) gives 43 goals that are not that slot's places: all with bit 1, in the builder's order of a
+single westward wedge round the girl (392, 344), forward 16 to 72 and sideways ascending, its +
+edge included (no neighbouring direction flagged), all kept (43, under the cap: no pick draws),
+scored with 165 draws. Its range and score rule (scores 116 to 139) and why the request widens
+are not yet read (the primitive's other operands, or the builder's fallback). The planner's choice among the goals is the
 nearest native one in the two requests that took one natively.
 
 **The planner's obstacles, logged.** (Read turned at first: see "The obstacles' objects" below.) The search (`fn_8024C5DC`) goes over the objects and, for
@@ -877,6 +883,12 @@ native step along its line, frame after frame, against the logged place after ea
 log: 1,270 of the 1,465 frames that move at the original's place to a hundredth of a sixteenth;
 the walks part from it at six frames only (the door's fast mode at ticks 488 and 512, a ramp at
 1275, the brakes at 1639 and 4915, and the walk begun at speed at 1909), and once parted stay off.
+The walk at 1909 starts from the speed of the follower's last frame of state 5 (the move on to
+its +116/+120 after a walk, at 1645: 0.557, so its first step 0.557 + 0.043): the speed carried
+into a walk is its last frame's, state 5's too. State 5 is not native yet (it does not brake as
+a walk toward its point: at 2036 it keeps its top 2.3 short of it), so its speed is taken from
+its logged step; with that, 1,677 of the 1,697 steps on a line natively the original's and
+1,431 of the 1,461 frames run free (the parts left: 488 and 512, 1275, 1639, 2035, 4915).
 
 **Where a walk ends, at a door.** The walk ends at the request's chosen goal, the plan's last leg
 past it (into what the Sim faces) not walked; but at a door the home log has both: the yard's walk

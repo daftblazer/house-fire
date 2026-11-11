@@ -2605,6 +2605,11 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 o.facing(),
                 pl.chosen
             );
+            if let Some(t) = world.definition(o).and_then(|d| lib.file(file).slots.get(&d.slot_table())) {
+                for (i, sl) in t.iter().enumerate() {
+                    println!("   table slot {i}: {sl:?}");
+                }
+            }
             println!("   slot fields {slot:?}; scores {:?}; last words {:x?}", pl.goals.iter().map(|g| g[2]).collect::<Vec<_>>(), pl.goals.iter().map(|g| g[3]).collect::<Vec<_>>());
         }
     }
@@ -3062,6 +3067,16 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         }
         // (a walk starts at the speed the follower's last one stopped at: its +144 is not reset)
         if (b.x, b.y) == (a.x, a.y) {
+            continue;
+        }
+        // a frame of state 5 (the move on to the follower's +116/+120 after a walk; not yet
+        // native): its speed, the one the next walk starts from, taken from its logged step
+        if b.state == 5 || a.state == 5 {
+            let step = ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt();
+            if b.factor > 0.0 {
+                speed.insert(f.follower, step / b.factor);
+            }
+            counts.note("routing: a walker's frame of state 5 (its speed carried from the log's step)");
             continue;
         }
         // the walker's top a second: the DOL's adult or child constant (which: the one nearest
