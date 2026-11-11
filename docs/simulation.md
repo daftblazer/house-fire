@@ -1218,9 +1218,14 @@ before it steps, so it is more than a facing step. Kind -2 (and -1), read (80223
 goal is the target point itself (r23's +200/+204, r23 an object the request's +80 object gives
 through a virtual, its +1340); otherwise it is one tile (16) on from the way's last point, in
 the eight-way direction to that target point: along an axis when one difference is more than
-twice the other, diagonal otherwise; kind -1 turns it round ((d + 4) & 7). The target is not the
-+80 object itself (its +200/+204 logged as junk in a trial log, reverted), so to check this the
-virtual's object must be found natively: the routing primitive's own target.
+twice the other, diagonal otherwise; kind -1 turns it round ((d + 4) & 7). The virtual (vtable +1340) is
+fn_801F65DC, a bare return: r23 is the +80 object moved by the vtable's +1336 (-356, 104 or
+112 in the home run), and its +200/+204 is the target point (x, y), now logged in 'h'. Against
+it: kind -2 steps one tile towards the target, 9 of 10 (the target is always the next tile, so
+the point is the target itself; the tenth's target is a diagonal tile and the plan adds no point).
+Kind -3 mirrors the target through the way's last point: 3 exact ((0, 24) -> (0, -24), (16, 8) ->
+(-16, -8)), 2 a unit short (16 -> 15), 1 with target and last point equal ((127, 0)). Kind 4,
+target equal to the last point twice, gives (0, +16).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
