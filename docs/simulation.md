@@ -862,6 +862,13 @@ and 304) go partly in the fast mode, which is not native (when it comes on: the 
 screen it may be); one (tick 1931) is cut short (its state 4 far later); two are off by a frame and
 by six (the speed they start with).
 
+**The fast mode is the game's speed.** The follower's factor (+124) changes for every walker at
+the same frame: 0 at tick 23 and back to 1 at 85, 5 at 426 and back to 1 at 567, 0 at 2048 and 1
+at 4912 (`Z`): the player's speed (paused, normal, the fastest), from the replay's input, not the
+walker's. With it as an input, each frame's: 8 of the 10 whole walks take the original's frames
+exactly (the yard's long walks too, and tick 1931's, paused midway rather than cut short); the
+two left start at a speed a little off (ticks 1380 and 1619).
+
 **Which objects block** (`routing::obstacle`). Read from the objects the loop asks about (`J`)
 against the object data the save gives: an object is left out when its flags (object data 8)
 have 0x4 (no extent: rugs, windows, wall lamps, paintings, the alarms, the phone) or it sits in

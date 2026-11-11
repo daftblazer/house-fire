@@ -1586,7 +1586,7 @@ iterations in a row end without a commit (record why here).
 
 ## Progress
 
-Iteration 19 of 24.
+Iteration 20 of 24.
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1735,3 +1735,10 @@ Iteration 19 of 24.
   long walks), a walk cut short (1), the start speed (2). Figures unchanged (561,398, 338,305,
   68,202, lockstep 7,902, 4, 24); clippy clean. Next: when the fast mode comes on (the follower's
   +124 set to 5: the observer at its write), or the frames to ticks (a primitive yields by ticks).
+
+- **Iteration 20, chunk 5 (the fast mode is the game's speed).** The follower's factor changes for
+  all walkers at once (0, 1, 5: paused, normal, fastest: the player's input). Taken as each frame's
+  input, 8 of 10 whole walks (walk and turn) the original's frames exactly (two start a little
+  off). Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next:
+  the frames to ticks (how many walker frames a simulation tick, by the game's speed), so a
+  routing primitive's yields can be checked.
