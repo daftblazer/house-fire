@@ -191,6 +191,12 @@ one of the three in each club session comes from a script's CreateObjectInstance
 found once lockstep took the opcode from the disc's node: the log has no tree record of the
 maker's tree).
 
+Lockstep's variables pass keeps its objects by the original's addresses: an object first met
+through another lookup (no id yet) is the stack object's when a stack-object lookup names that
+address, so an id reused at another address (the marker 197 after the chips; the club's effect
+179 made again) binds to its new object. With it lockstep's differences are 1 on the home log
+(a definition read of 197), 0 on `tree.log` and 2 on `tree3.log` (from 7, 1 and 21).
+
 A new object takes the lowest id not in use, so a removed one's id comes back, and goes in
 front of the list (`World::make_object`). (One more than the highest, the earlier rule, gave the
 club's three the same ids, but not the home log's: there the paper girl leaves as 197 and comes

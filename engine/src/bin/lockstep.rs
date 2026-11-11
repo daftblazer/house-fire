@@ -802,7 +802,21 @@ fn variables(lib: &Library, log: &housefire::tree_log::Log, step_object: &[Optio
             }
             // A stack object the native world does not have yet: made from the original's.
             if let Some(q) = owner_of(v) {
-                let so = match world.find(s.stack_object) {
+                // the object at this address, met before without its id (made from another
+                // lookup): it is this id's now (an id reused: the marker 197 after the chips, at
+                // another address)
+                if let Some(&b) = native.get(&q)
+                    && world.get(b).id() != s.stack_object
+                    && world.get(b).id() == 0
+                {
+                    let o = world.get_mut(b);
+                    if o.data.len() <= DATA_OBJECT_ID {
+                        o.data.resize(DATA_OBJECT_ID + 1, 0);
+                    }
+                    o.data[DATA_OBJECT_ID] = s.stack_object;
+                    world.reindex(b);
+                }
+                let so = match native.get(&q).copied().filter(|&b| world.get(b).id() == s.stack_object).or(world.find(s.stack_object)) {
                     Some(so) => so,
                     None => {
                         let n = object_at(&mut world, &mut native, q, None);
