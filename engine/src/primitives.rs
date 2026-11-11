@@ -105,6 +105,14 @@ pub fn test_object_type(n: &Node, vars: &mut ScriptVariables) -> PrimResult {
 /// object starts). Measured: the home log's three (`docs/primitives.md`, "CreateObjectInstance").
 pub fn create_object(n: &Node, w: &mut World, me: i16, stack_object: i16) -> Option<ObjectKey> {
     let guid = u32::from_le_bytes([n.operand[0], n.operand[1], n.operand[2], n.operand[3]]);
+    let k = make_of_guid(w, guid)?;
+    place_made(n, w, k, me, stack_object);
+    Some(k)
+}
+
+/// A new object of the GUID's definition (the first half of CreateObjectInstance): its file, 72
+/// data fields, its definition's field-56 attributes, the lowest id free, in front of the list.
+pub fn make_of_guid(w: &mut World, guid: u32) -> Option<ObjectKey> {
     let lib = w.library();
     let d = lib.definition(guid)?;
     let mut o = Object::new();
@@ -113,22 +121,24 @@ pub fn create_object(n: &Node, w: &mut World, me: i16, stack_object: i16) -> Opt
     o.file = Some(d.file);
     o.data = vec![0; 72];
     o.attributes = vec![0; lib.def(d).field(56) as usize];
-    match n.operand[4] {
-        2 => {
-            if let Some(m) = w.find_object(me) {
-                (o.x16, o.y16, o.level) = (m.x16, m.y16, m.level);
-                o.data[crate::world::DATA_CONTAINER] = me;
-            }
-        }
-        4 => {
-            if let Some(t) = w.find_object(stack_object) {
-                (o.x16, o.y16, o.level) = (((t.x16 >> 4) << 4) + 8, ((t.y16 >> 4) << 4) + 8, t.level);
-            }
-        }
-        6 => (o.x16, o.y16) = (-16, -16),
-        _ => {}
-    }
     Some(w.make_object(o))
+}
+
+/// Where CreateObjectInstance puts the object it made, by operand byte 4 (the second half).
+pub fn place_made(n: &Node, w: &mut World, k: ObjectKey, me: i16, stack_object: i16) {
+    let at = match n.operand[4] {
+        2 => w.find_object(me).map(|m| (m.x16, m.y16, m.level, Some(me))),
+        4 => w.find_object(stack_object).map(|t| (((t.x16 >> 4) << 4) + 8, ((t.y16 >> 4) << 4) + 8, t.level, None)),
+        6 => Some((-16, -16, w.get(k).level, None)),
+        _ => None,
+    };
+    if let Some((x, y, level, held)) = at {
+        let o = w.get_mut(k);
+        (o.x16, o.y16, o.level) = (x, y, level);
+        if let Some(h) = held {
+            o.data[crate::world::DATA_CONTAINER] = h;
+        }
+    }
 }
 
 /// DropOnto (opcode 43, operand byte 4 a flag): the object the actor holds (the first whose

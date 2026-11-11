@@ -44,7 +44,7 @@ use housefire::interp::{Error, Frame, Host, Interpreter, Mode, PrimResult, Trees
 use housefire::library::{Advert, Library};
 use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
-    call_named_tree, create_object, drop_onto, grab, remove_object, snap, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
+    call_named_tree, create_object, drop_onto, grab, make_of_guid, place_made, remove_object, snap, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
 use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, slot_pick, run_on_point, walk_frames, routing_return_tick, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
 use housefire::planner::{choose_goal, coarse_way, point_after_goal, refine, Growth, MapRect};
@@ -233,6 +233,9 @@ struct ReplayHost<'a, 'l> {
     now: u32,
     /// The routing runs' native returns (a pre-pass of `routing`).
     routing_returns: RoutingReturns,
+    /// Objects made before their maker's step (its CreateObjectInstance runs the new object's
+    /// init inside it, and the log has the init's steps first): the maker's step only places them.
+    pre_made: BTreeSet<i16>,
 }
 
 /// Brings the native world's variables to what the original's lookups found, counting those
@@ -564,9 +567,17 @@ impl Host for ReplayHost<'_, '_> {
             return self.logged(s, n);
         }
         if n.opcode == 42 && has("REPLAY_MAKE_NATIVE") {
-            // study: CreateObjectInstance natively (iteration 18's attempt)
+            // study: CreateObjectInstance natively (iteration 18's attempt); an object its init's
+            // steps made already is only placed
             let so = interp.stack().last().map_or(0, |f| f.stack_object);
-            let made = create_object(n, &mut self.world, me_id, so).map(|k| self.world.get(k).id());
+            let made = if self.pre_made.remove(&s.stack_object_after)
+                && let Some(k) = self.world.find(s.stack_object_after)
+            {
+                place_made(n, &mut self.world, k, me_id, so);
+                Some(s.stack_object_after)
+            } else {
+                create_object(n, &mut self.world, me_id, so).map(|k| self.world.get(k).id())
+            };
             println!("made {made:?} at tick {} (log {})", s.tick, s.stack_object_after);
             if let Some(id) = made {
                 self.present.insert(id);
@@ -1439,6 +1450,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
         shown: Shown::default(),
         now: 0,
         routing_returns: BTreeMap::new(),
+        pre_made: BTreeSet::new(),
     };
     for i in 0..native_plans.0 {
         h.counts.note(if i < native_plans.1 {
@@ -1855,7 +1867,38 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
                 }
             }
             first_seen.entry(s.sim).or_insert(t);
+            // study: a step of an object its maker's step (later in the log) makes: the object
+            // made now, of the file its step runs, if the original's list has it at the tick's end
+            if has("REPLAY_MAKE_NATIVE")
+                && let Some(&id) = ids.get(&s.sim)
+                && h.world.find(id).is_none()
+                && log.lists.iter().find(|l| l.tick >= s.tick).is_some_and(|l| l.ids.contains(&id))
+                && let Some(guid) = by_tick[t as usize].iter().map(|&j| &log.steps[j]).find_map(|m| {
+                    // the maker's step this tick: its stack object becomes the id, its node is
+                    // opcode 42; the GUID in its operand
+                    if m.stack_object_after != id || m.stack_object == id || m.look != b'X' {
+                        return None;
+                    }
+                    let (tree, _) = finder.find(log, m)?;
+                    let n = lib.tree_at(tree).nodes.get(m.node as usize).filter(|n| n.opcode == 42)?;
+                    Some(u32::from_le_bytes([n.operand[0], n.operand[1], n.operand[2], n.operand[3]]))
+                }).or_else(|| {
+                    // no maker this tick (the engine made it: the marker): the file its own
+                    // step runs
+                    let (_, file) = finder.find(log, s)?;
+                    lib.file(file).definitions.first().map(|d| d.guid())
+                })
+                && let Some(k) = make_of_guid(&mut h.world, guid)
+            {
+                let got = h.world.get(k).id();
+                h.counts.note(if got == id { "objects: made before its maker's step (its init's), the id the original's" } else { "objects: made before its maker's step, the id DIFFERENT" });
+                h.pre_made.insert(got);
+                h.present.insert(got);
+            }
             let Some(ok) = ids.get(&s.sim).and_then(|&id| h.world.find(id)) else {
+                if has("REPLAY_MAKE_NATIVE") {
+                    println!("not run: tick {} sim {:x} id {:?} tree {:#x}", s.tick, s.sim, ids.get(&s.sim), s.tree);
+                }
                 h.counts.note("steps: not a lot object's (not run)");
                 continue;
             };
