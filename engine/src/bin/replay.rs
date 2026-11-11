@@ -2544,6 +2544,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 if !same && has("REPLAY_SHOW_GOALS") {
                     let theirs: Vec<_> = pl.goals.iter().map(|g| ((g[3] & 0xFF).trailing_zeros(), g[0] as i32, g[1] as i32)).collect();
                     println!("slot goals tick {}: object {} at {target:?} facing {}: native places {places:?} (offered {offered:?}); the request's {theirs:?}", pl.tick, o.id(), o.facing());
+                    println!("   the step: sim {} tree {} number {number} scope {scope} stack object {} raw {raw:?}", s.sim, s.tree, s.stack_object);
                     // which slot's area holds the request's goals (the object's table and the global one)
                     let tables = [world.definition(o).and_then(|d| lib.file(file).slots.get(&d.slot_table())), lib.global_file().and_then(|g| g.slots.values().next())];
                     for (t, table) in tables.iter().enumerate() {

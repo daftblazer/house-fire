@@ -1303,8 +1303,13 @@ object), the routing step's slot failing over to it. Its centre (the study now s
 round the target): global slot 8's area round (360, 328), facing 0, holds all 43 goals. That is
 the centre of tile (22, 20), the green counter's, not object 197's native place (392, 344), which
 is the planning Sim's own: object 197 (likely the meal, carried and then set down) has moved
-since the save, and the native world does not follow it. So the request is that slot round the
-object where it then lay; the object's native place, not the slot rule, is what misses. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+since the save, and the native world does not follow it. (Wrong, iteration 113:) object 197 is
+a Sim, the planning one (282 'P' places; it is at (392, 344) when it plans), and the routing step
+(tree 4107, GotoRoutingSlot) asks for slot 0 of its stack object's own table with the stack object
+197 itself: the Sim routing to its own slot. The request it makes is not that: global slot 8 round
+the counter tile's centre (360, 328), facing 0. So routing to oneself takes another target (the
+counter, or the object on it, likely the interaction's own object) and another slot; where the
+primitive finds them is next (its handling of a self target). Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
