@@ -71,6 +71,15 @@ chunk, not the tick's.
 `Simulator::now` counts the passes run. Nothing in the tick is counted in ticks: Idle counts
 passes that reach the object.
 
+The game clock is the lot's globals (`objects.md`, scope 6: 0 the hour, 5 the minute), saved
+in its SIMI chunk. It goes by passes too: a pass stopped at a dialog does not count, and every
+30 that ran the minute goes up (at 60 back to 0, the hour up). Measured: on the home log the
+passes of ticks 22-83 stop at the opening dialog, so the minute first rises at tick 93 (after 31
+unstopped passes, the 30th at 92), then every 30 ticks until the dialog at 2046 stops 2,864
+passes, 95 minutes the clock does not advance; on the club logs every 30 ticks from 0.
+`World::clock_pass`, run after each tick's pass: globals read differently home 86 → 4, `tree.log`
+90 → 41, `tree3.log` 21 → 1. The day and midnight are not reached in the logs.
+
 ## Checked by replay
 
 `engine/tools/replay` runs the club natively over a log's ticks: the passes by the simulator,

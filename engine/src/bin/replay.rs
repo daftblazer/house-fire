@@ -1415,7 +1415,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
         &patched
     };
     if has("REPLAY_SHOW_SIMI") {
-        println!("lot globals: {:?}", &globals[..globals.len().min(20)]);
+        println!("lot globals: {:?}", &globals[..globals.len().min(40)]);
     }
     if has("REPLAY_SHOW_RELATIONSHIPS") {
         for o in world.objects().filter(|o| !o.relationships.is_empty()) {
@@ -2233,7 +2233,10 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                 "passes: DIFFERENT stop"
             });
         }
+        let stopped = have_passes && sim.stop_asked(&h.world);
         sim.end_pass(&mut h.world, if have_passes { pass.stopped_at as i16 } else { 0 });
+        // the clock: the minute every 30 passes that ran to their end
+        h.world.clock_pass(stopped);
         // The persons' motives after the tick against the log's ('N' records), then set to the
         // log's (what the scripts not native yet wrote).
         while motive_at < log.motives.len() && log.motives[motive_at].tick < t {
