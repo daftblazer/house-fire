@@ -703,6 +703,15 @@ fn variables(lib: &Library, log: &housefire::tree_log::Log, step_object: &[Optio
     let mut seen: HashMap<CellKey, bool> = HashMap::new();
     let mut last_writer: BTreeMap<u32, u32> = BTreeMap::new(); // address -> the caller that last had its pointer
     let mut addr_used: BTreeMap<u32, usize> = BTreeMap::new(); // address -> the last step that reached it
+    let mut bound_at: HashMap<CellKey, u32> = HashMap::new(); // a cell's binding -> the tick it was made
+    // the ticks each id was made again (it appears in the original's list after being absent):
+    // a cell of that id bound before is another object's memory now
+    let mut remade: BTreeMap<i16, Vec<u32>> = BTreeMap::new();
+    for w in log.lists.windows(2) {
+        for id in w[1].ids.iter().filter(|id| !w[0].ids.contains(id)) {
+            remade.entry(*id).or_default().push(w[1].tick);
+        }
+    }
     let mut why: BTreeMap<String, BTreeMap<String, i64>> = BTreeMap::new(); // a difference -> (tick band, caller) counts
     let mut loaded_at = u32::MAX; // the tick the current lot started loading
     let mut shown = 0;
@@ -878,9 +887,13 @@ fn variables(lib: &Library, log: &housefire::tree_log::Log, step_object: &[Optio
                     addr_cell.remove(&addr);
                     notes.note("variables: memory reused");
                 }
+                let owner_remade = cell.table.owner().flatten().and_then(|k| world.get_live(k)).is_some_and(|o| {
+                    let t0 = bound_at.get(&key).copied().unwrap_or(0);
+                    remade.get(&o.id()).is_some_and(|ts| ts.iter().any(|&t| t > t0 && t <= s.tick + 1))
+                });
                 if let Some(&a) = cell_addr.get(&key)
                     && a != addr
-                    && stale(&addr_used, a)
+                    && (stale(&addr_used, a) || owner_remade)
                 {
                     addr_cell.remove(&a);
                     seen.remove(&key);
@@ -893,6 +906,7 @@ fn variables(lib: &Library, log: &housefire::tree_log::Log, step_object: &[Optio
                 if ca.is_none() && ac.is_none() {
                     cell_addr.insert(key, addr);
                     addr_cell.insert(addr, key);
+                    bound_at.insert(key, s.tick);
                 } else if ca.is_some_and(|a| a != addr) || ac.is_some_and(|c| c != key) {
                     differ(notes, &mut why, loaded_at, &format!("variables: {sc}: where DIFFERENT"), s, v);
                 } else {

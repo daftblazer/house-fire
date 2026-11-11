@@ -232,3 +232,9 @@ differences (CallNamedTree's), a gap in the tool rather than the engine: lockste
 5 primitive transitions left were routing primitives (27, 45) staying on their node: they push a
 tree too (each stack's next step is another tree's node 0, in a new frame), so lockstep answers
 them Continue as well: every primitive transition of the home log the original's.
+
+With the variables pass's bindings following objects made again (an id reused at a new address,
+a cell's binding stale once its object's id is made again), and the lot-state check setting aside
+an id's reads after it left the lot, **lockstep finds no difference on any of the three logs**
+(the home log, `tree.log`, `tree3.log`; 2026-11-11). What it does not check yet is listed under
+"not modelled yet" (the scopes 16, 20, 21, 23, 24, 27, 35, 40, 41 in its own variables pass).
