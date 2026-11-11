@@ -45,6 +45,7 @@ where the measurements agree.
 | 22 | stack object's attribute by parameter | the stack object's attribute named by a parameter | |
 | 25 | local | the frame's, after its parameters | `Frame::locals` |
 | 26 | constant | the frame's file's BCON tables (`interpreter.md`, "Constants") | `Library::constant` |
+| 26 (more) | constant | a semi-global table (64-127) read in a semi-global tree's frame is the file's own (it is the semi-global file); an own table (0-63) not in the frame's file is the running object's, else the stack object's | `Library::constant`, `ScriptVariables::get` (the home log's 39 reads the lookup missed: 38 the same, 1 not; 7 differ in all, 6 of them already before, values the game sets at run time) |
 | 30 | my person data by temp | the person data field a temp names | |
 | 34 | neighbourhood data | one table for everyone | `World::neighbourhood` |
 

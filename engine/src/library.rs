@@ -659,7 +659,9 @@ impl Library {
         let entry = (data & 0x7F) as usize;
         let (f, id) = match table {
             0..64 => (object, 4096 + table),
-            64..128 => (object.and_then(|o| self.file(o).semi), 8192 + table - 64),
+            // the file's semi-global file, or the file itself when it is one (a semi-global
+            // tree's frame)
+            64..128 => (object.and_then(|o| self.file(o).semi.or(Some(o))), 8192 + table - 64),
             _ => (self.global, 256 + table - 128),
         };
         self.file(f?).constants.get(&(id as u16))?.get(entry).copied()

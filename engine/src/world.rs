@@ -671,8 +671,13 @@ impl Variables for ScriptVariables<'_, '_> {
             scope::CONSTANT => {
                 // From the frame's file: the tree's, not necessarily the object's own (a Sim
                 // running a fridge's interaction reads the fridge's constants).
-                let file = self.frame.file.or(self.world.get(self.me).file);
-                return int(self.world.library().constant(file, d)?);
+                // from the frame's file (the tree's: a Sim running a fridge's interaction
+                // reads the fridge's constants), else my own (a semi-global tree's frame reading
+                // an own table)
+                let lib = self.world.library();
+                let mine = self.world.get(self.me).file;
+                let theirs = self.stack_object().and_then(|k| self.world.get(k).file);
+                return int(lib.constant(self.frame.file.or(mine), d).or_else(|| lib.constant(mine, d)).or_else(|| lib.constant(theirs, d))?);
             }
             _ => {}
         }
