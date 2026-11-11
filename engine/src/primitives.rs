@@ -113,6 +113,17 @@ pub fn create_object(n: &Node, w: &mut World) -> Option<ObjectKey> {
     Some(w.make_object(o))
 }
 
+/// RemoveObjectInstance (opcode 18): the stack object (operand byte 0 1) or the object itself
+/// (0) leaves the world; its id is free again. None if there is no such object. Measured: the
+/// home log's three removals (the paper girl herself at 466, the chips by their own tree at
+/// 1382, the marker at 1767), each the object the original's next list lacks.
+pub fn remove_object(n: &Node, w: &mut World, me: i16, stack_object: i16) -> Option<i16> {
+    let id = if n.operand[0] == 1 { stack_object } else { me };
+    let k = w.find(id)?;
+    w.remove(k);
+    Some(id)
+}
+
 pub fn set_to_next(n: &Node, vars: &mut ScriptVariables) -> PrimResult {
     let o = &n.operand;
     let kind = o[4] & 0x7F;

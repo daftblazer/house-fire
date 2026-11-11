@@ -36,7 +36,7 @@ use housefire::disc::Disc;
 use housefire::expression::{ExprResult, ExpressionOperand, Variable, Variables, expression};
 use housefire::interp::{Frame, Host, Interpreter, Mode, PrimResult, Step, Trees};
 use housefire::library::Library;
-use housefire::primitives::{create_object, set_to_next};
+use housefire::primitives::{create_object, remove_object, set_to_next};
 use housefire::save::{memory_card_file, read_lots};
 use housefire::tree_log::{ExprRec, LookupRec, StepRec, read_log, same_shape};
 use housefire::world::{DATA_OBJECT_ID, Object, ObjectKey, ScriptVariables, Table, World, scope};
@@ -604,6 +604,22 @@ fn main() -> ExitCode {
             have = now;
         }
         for (i, s) in log.steps.iter().enumerate() {
+            let node = step_object[i].and_then(|o| lib.tree(Some(o), s.tree)).and_then(|t| lib.tree_at(t).nodes.get(s.node as usize)).copied();
+            if node.is_some_and(|n| n.opcode == 43 || n.opcode == 18) {
+                let n = node.unwrap();
+                println!(
+                    "opcode {} at tick {} by tree {:#x} node {} of {:?}: operand {:02x?}, stack object {} -> {}, {}",
+                    n.opcode,
+                    s.tick,
+                    s.tree,
+                    s.node,
+                    step_object[i].map(|f| &lib.file(f).path),
+                    n.operand,
+                    s.stack_object,
+                    s.stack_object_after,
+                    if s.after == n.true_target as u16 { "true" } else { "false" }
+                );
+            }
             let new = made.get(&s.tick).or(made.get(&(s.tick + 1)));
             if s.stack_object_after == s.stack_object || !new.is_some_and(|n| n.contains(&s.stack_object_after)) {
                 continue;
@@ -1127,6 +1143,18 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
         }
     }
     let mut made_ptr: BTreeMap<i16, u32> = BTreeMap::new(); // a made object's id -> its pointer
+    // Each stack's object (its sim -> the object whose own variables it reads most) and each
+    // object pointer's id in the lists.
+    let ptr_id: BTreeMap<u32, i16> = log.lists.iter().flat_map(|l| l.objects.iter().copied().zip(l.ids.iter().copied())).collect();
+    let sim_object: BTreeMap<u32, u32> = {
+        let mut own: BTreeMap<u32, BTreeMap<u32, usize>> = BTreeMap::new();
+        for s in &log.steps {
+            for v in s.lookups.iter().filter(|v| matches!(v.scope, 0 | 3 | 8)) {
+                *own.entry(s.sim).or_default().entry(v.object).or_default() += 1;
+            }
+        }
+        own.into_iter().filter_map(|(sim, c)| c.into_iter().max_by_key(|e| e.1).map(|e| (sim, e.0))).collect()
+    };
     let mut li = 0;
     let mut shown = 0;
     for (i, s) in log.steps.iter().enumerate() {
@@ -1135,7 +1163,7 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
         let disc_node = || step_object[i].and_then(|o| lib.tree(Some(o), s.tree)).and_then(|t| lib.tree_at(t).nodes.get(s.node as usize)).copied();
         let op = match raw_of(s) {
             Some(raw) if u16::from_be_bytes([raw[0], raw[1]]) & 0x7FFF == 31 && raw[2] != raw[3] => 31,
-            _ if s.look == b'X' && disc_node().is_some_and(|n| n.opcode == 42) => 42,
+            _ if s.look == b'X' && disc_node().is_some_and(|n| n.opcode == 42 || n.opcode == 18) => disc_node().unwrap().opcode,
             _ => continue,
         };
         let Some(node) = disc_node() else {
@@ -1192,6 +1220,23 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
                 let first = order.iter().zip(&l.ids).position(|(a, b)| a != b).unwrap_or(0);
                 println!("list at tick {}: native {:?} log {:?} (from {first}, of {} and {})", l.tick, &order[first..(first + 6).min(order.len())], &l.ids[first..(first + 6).min(l.ids.len())], order.len(), l.ids.len());
             }
+        }
+        if op == 18 {
+            // RemoveObjectInstance natively on this world: operand byte 0 1 the stack object, 0
+            // the step's own object (its sim's: the object whose own variables it reads most);
+            // the next list must then lack it
+            let me = sim_object.get(&s.sim).and_then(|p| ptr_id.get(p)).copied().unwrap_or(-1);
+            let Some(id) = remove_object(&node, &mut lw, me, s.stack_object) else {
+                notes.note("objects: RemoveObjectInstance: its object not found natively");
+                continue;
+            };
+            let next = log.lists.iter().find(|l| l.tick >= s.tick);
+            notes.note(if next.is_some_and(|l| !l.ids.contains(&id)) {
+                "objects: RemoveObjectInstance natively, the object the original removed"
+            } else {
+                "objects: RemoveObjectInstance natively, NOT an object the original removed"
+            });
+            continue;
         }
         if op == 42 {
             // CreateObjectInstance natively on this world: the new object's id against the

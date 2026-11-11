@@ -210,3 +210,19 @@ on its world of the original's lists: the home log's three and one in each club 
 with the original's id and a GUID the file of its own later steps has; the lists after them in
 the original's order. Not yet: where it goes (byte 4), its init run inside the step, and replay
 (whose maker steps do not reach the primitive yet).
+
+## RemoveObjectInstance (opcode 18)
+
+Operand byte 0: 1 the stack object, 0 the object itself. The home log's three removals are all
+it: the paper girl removing herself as she leaves (`portal_pedestrian.iff`'s 0x1004 node 3,
+operand `00 00 02 00`, tick 466), the bag of chips removed by its own tree 0x2022 node 23 (the
+stack object, 1382), and the marker (1767); the club's three (one and two a session) too.
+Natively `remove_object`, checked in lockstep's world: all six the objects the original's next
+lists lack, and with them no object is left for the lists to remove.
+
+## DropOnto (opcode 43): the snaps
+
+The places the tenth loop found set to a tile's centre outside any walk (the meal at 165, 877,
+1455; 202 at 5083) are opcode-43 steps: a counter's 0x200f node 11, the food processor's 0x2003
+node 13, the counter's 0x2018 node 15, the dining table's 0x2007 node 62, operand 0 (byte 4 1 at
+the table). Not native yet (chunk 2).
