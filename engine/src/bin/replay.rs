@@ -3267,6 +3267,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             "routing: a walker's step natively NOT the original's"
         });
     }
+    let mut native_frame_ticks: Vec<u32> = Vec::new();
     // Frames and ticks (`FrameClock`): the frames each tick holds natively against a walker's
     // frames in each tick of the log, from the first tick it has any; the clock's phase there is
     // not known (the log starts in play): the best of a thousandth's steps
@@ -3297,6 +3298,13 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 .unwrap_or_default();
             counts.add("routing: ticks a walker moves in", per.len());
             counts.add("routing: ticks whose walker frames are natively the original's (the frame clock)", best.0);
+            // the tick of each frame natively, from the first (the clock at its phase)
+            let mut clock = FrameClock { time: best.1 as f32 / 1000.0 };
+            for t in first..=last + 200 {
+                for _ in 0..clock.frames_to_tick() {
+                    native_frame_ticks.push(t);
+                }
+            }
         }
     }
     // The routing primitives' runs (opcode 27 or 45): a Sim's step at one tree and node that
@@ -3444,6 +3452,18 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                             } else {
                                 "routing: a routing primitive natively NOT returning on the original's tick"
                             });
+                            // with the frame clock native too: the walker's frames from its start's
+                            // (its tick and its place among that tick's frames as logged)
+                            let within = ticks.iter().take_while(|&&t| t == start_tick).count();
+                            let before = log.follows.iter().filter(|g| g.follower == f.follower && g.tick == start_tick).count() - within;
+                            if let Some(first_at) = native_frame_ticks.iter().position(|&t| t == start_tick) {
+                                let from = &native_frame_ticks[(first_at + before).min(native_frame_ticks.len())..];
+                                counts.note(if routing_return_tick(from, frames, turn_frames(angle)) == Some(run.4) {
+                                    "routing: a routing primitive natively returning on the original's tick (the frame clock native too)"
+                                } else {
+                                    "routing: a routing primitive natively NOT returning on the original's tick (the frame clock native)"
+                                });
+                            }
                             // each of the run's steps: natively a yield before its return tick, the
                             // return on it
                             for st in log.steps.iter().filter(|st| (st.sim, st.tree, st.node) == (run.0, run.1, run.2) && st.tick >= run.3 && st.tick <= run.4) {

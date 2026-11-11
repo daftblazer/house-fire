@@ -953,7 +953,9 @@ holds is not yet modelled (the replay matches a walk to the latest plan whose li
 walker's start: the whole walk frame after frame, the turn, one frame more, and the return on the
 tick after that frame's (the frame clock as logged); each step before it a yield. On the home log
 all 10 runs whose walk ends in a turn return on the original's tick, and all 1,430 of their steps
-(yields and returns) are the original's.
+(yields and returns) are the original's. With the frame clock native as well (`FrameClock` at
+its fitted phase giving each frame's tick; only the walk's start taken from the log), 7 of the 8
+runs it covers return on the original's tick (2 start before the ticks it is fitted over).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
