@@ -1143,7 +1143,11 @@ one, the switch goes back on and the search runs again from a fresh init, and th
 the plan's. With the cap on, a cell may not be longer than 128 on either side (the grower's step
 is then 128 / 4 = 32 as before). With the cap in the model for every second (or only) search,
 plan 0's second way comes out exactly too: 13 of 23. The misses left are the house's (plans 2,
-3, 4, 14, 16), plan 9 and plan 10.
+3, 4, 14, 16), plan 9 and plan 10. Plans 2, 3, 12, 14 and 16 log an empty D (the observer's "fn_80249BB8
+did not run"), so the model had no regions there and the planner presumably kept the last ones
+it built; every empty-D plan but 12 is a miss. A model run that let an empty D keep the previous
+plan's regions did not finish (stopped after 55 minutes: a runaway search or cut, so the model
+needs a step cap like the original's, min(1000, 50 + n·k)).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
