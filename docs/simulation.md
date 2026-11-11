@@ -877,6 +877,14 @@ fitted once (the log begins in play), over the 3,835 ticks the most moving walke
 3,736 hold its frames exactly (97%); the rest drift by a frame (the 0.042 measured, not yet found
 in the code).
 
+**A routing primitive's return.** GotoRoutingSlot and GotoRelativePosition yield (result 1) every
+tick from their plan until they return. Their walker done (state 4), the follower runs one frame
+more (4 again, or 5 at a door) and is let go; the primitive returns on the tick after that frame's
+tick: two ticks after the walker is done when the frame falls in the next tick, one when it falls
+in the same (its second frame). Checked on the home log: all 16 runs of the routing primitives
+return on that tick. With the walk's frames (the step, the turn) and the frame clock, a routing
+primitive's yields are native up to its walker's start.
+
 **Which objects block** (`routing::obstacle`). Read from the objects the loop asks about (`J`)
 against the object data the save gives: an object is left out when its flags (object data 8)
 have 0x4 (no extent: rugs, windows, wall lamps, paintings, the alarms, the phone) or it sits in

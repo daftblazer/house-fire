@@ -2992,6 +2992,52 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             counts.add("routing: ticks whose walker frames are natively the original's (the frame clock)", best.0);
         }
     }
+    // The routing primitives' runs (opcode 27 or 45): a Sim's step at one tree and node that
+    // yields (result 1) tick after tick, then returns: (sim, tree, node, first tick, return tick,
+    // its result)
+    let routing_runs: Vec<(u32, u16, u16, u32, u32, u8)> = {
+        let mut open: BTreeMap<(u32, u16, u16), u32> = BTreeMap::new();
+        let mut out = Vec::new();
+        for s in &log.steps {
+            let Some(t) = log.tree_of(s) else { continue };
+            let at = s.node as usize * 12;
+            if t.tree != s.tree || at + 12 > t.raw.len() || !matches!(u16::from_be_bytes([t.raw[at], t.raw[at + 1]]) & 0x7FFF, 27 | 45) {
+                continue;
+            }
+            let key = (s.sim, s.tree, s.node);
+            if s.result == 1 {
+                open.entry(key).or_insert(s.tick);
+            } else if let Some(first) = open.remove(&key) {
+                out.push((s.sim, s.tree, s.node, first, s.tick, s.result));
+            }
+        }
+        out
+    };
+    if show_walks {
+        for r in &routing_runs {
+            println!("routing run: sim {:x} tree {} node {} yields from tick {} to its return at {} (result {})", r.0, r.1, r.2, r.3, r.4, r.5);
+        }
+    }
+    // A routing primitive's return: after its walker is done (state 4) the follower runs one
+    // frame more, and the primitive returns on the tick after that frame's (the frames as logged:
+    // the frame clock's); against the routing runs' returns
+    for (k, f) in log.follows.iter().enumerate() {
+        if !(f.before.state == 3 && f.after.state == 4) {
+            continue;
+        }
+        let Some(next) = log.follows[k + 1..].iter().find(|g| g.follower == f.follower) else { continue };
+        let predicted = next.tick + 1;
+        let run = routing_runs.iter().filter(|r| r.3 <= f.tick && r.4 >= f.tick).min_by_key(|r| r.4.abs_diff(predicted));
+        let Some(run) = run else { continue };
+        counts.note(if run.4 == predicted {
+            "routing: a routing primitive's return natively the original's tick (a frame after its walker is done)"
+        } else {
+            "routing: a routing primitive's return natively NOT the original's tick"
+        });
+        if show_walks && run.4 != predicted {
+            println!("return: walker done at tick {}, its next frame at {}, predicted {predicted}, the run's return {}", f.tick, next.tick, run.4);
+        }
+    }
     // The turn at a walk's end (`turn_frames`): the frames a follower stays arrived (state 3)
     // against the angle from its last step's way to what it faces (the plan's last point past its
     // end), each walk's end that turns (a door's crossing walks on: set aside, its next plan at once)
@@ -3053,7 +3099,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                     "routing: a walk's end turning natively NOT the original's frames"
                 });
                 if show_walks {
-                    println!("turn at tick {t0}: {:.1} degrees, {n} frames, natively {}", angle.to_degrees(), turn_frames(angle));
+                    println!("turn at tick {t0}: {:.1} degrees, {n} frames, natively {}; done at tick {}", angle.to_degrees(), turn_frames(angle), f.tick);
                 }
                 // the whole walk natively: from its start (state 1) along its line at the native
                 // speed to its end, then the turn, against the original's frames from 1 to 4
