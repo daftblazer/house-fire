@@ -1287,8 +1287,12 @@ node 0, whose step to it costs the rect's cost, here the goal's), entered at g =
 - its score): 47 of the 48 in order (144 the best; the one goal skipped, (409, 311), lies in no
 cell), and h is the distance to the Sim's place (24 for the taken goal, (392, 304), at g 16:
 score 143). The way it finds, read back, starts at the goal it came from: the taken one. So a
-point of score costs 16, a tile's walk; the earlier fit (k = 1/16) is that. Next: the same on the
-other multi-goal plans (7, 9, 11, 12), then natively (seeds at the goals' cells, way reversed). Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+point of score costs 16, a tile's walk; the earlier fit (k = 1/16) is that. Natively (`choose_goal`: each goal its own
+start in its cell at g = 16 * (best - score), A* to the Sim's place, the way's goal returned):
+the home log's requests of several goals take the planner's goal 4 of 4 (tick 931's 48 goals,
+1220's seven of one score, where several share a cell and the nearest wins, and two more); the
+fifth (tick 1791) took none in the original, which tried again at once with the same goals and
+took the one the native search takes. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth

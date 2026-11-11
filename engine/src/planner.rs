@@ -349,3 +349,83 @@ pub fn point_after_goal(kind: i32, flags: i32, target: (i32, i32), facing: Optio
     }?;
     (point != last).then_some(point)
 }
+
+/// The backward search's nodes: each one's g, point, the goal it comes from, and whether expanded.
+#[derive(Default)]
+struct BackNodes {
+    g: Vec<Option<f32>>,
+    point: Vec<(i32, i32)>,
+    root: Vec<usize>,
+    closed: Vec<bool>,
+}
+
+impl BackNodes {
+    fn resize(&mut self, n: usize) {
+        self.g.resize(n, None);
+        self.point.resize(n, (0, 0));
+        self.root.resize(n, usize::MAX);
+        self.closed.resize(n, false);
+    }
+}
+
+/// Which of several goals (y, x, score) a request takes: the search runs backwards, from every
+/// goal at g = 16 * (the best score - its score) (a point of score is a tile's walk), each goal its
+/// own start in its cell, to the Sim's place `start`; the goal its way leads back to is the one
+/// taken. A goal in no cell is skipped; none when no way is found within the steps.
+pub fn choose_goal(rects: &[MapRect], growth: Growth, start: (i32, i32), goals: &[(i32, i32, i32)]) -> Option<usize> {
+    let mut map = Map { rects, growth, cells: Vec::new() };
+    let best = goals.iter().map(|g| g.2).max()?;
+    let h = |p: (i32, i32)| distance(p, start);
+    // nodes: the goals first (seed i is node i), then a node per cell (cell c is node seeds + c)
+    let seeds = goals.len();
+    let mut seed_cell: Vec<Option<usize>> = Vec::with_capacity(seeds);
+    for &(y, x, _) in goals {
+        seed_cell.push(map.cell_at(y, x));
+    }
+    let target = map.cell_at(start.0, start.1)?;
+    let mut nd = BackNodes::default();
+    nd.resize(seeds + map.cells.len());
+    let mut open = BinaryHeap::new();
+    for (i, &(y, x, score)) in goals.iter().enumerate() {
+        if seed_cell[i].is_some() {
+            let g0 = 16.0 * (best - score) as f32;
+            nd.g[i] = Some(g0);
+            nd.point[i] = (y, x);
+            nd.root[i] = i;
+            open.push(Open(g0 + h((y, x)), i));
+        }
+    }
+    for _ in 0..SEARCH_STEPS {
+        let Open(_, node) = open.pop()?;
+        // the cell this node stands in
+        let c = if node < seeds { seed_cell[node]? } else { node - seeds };
+        if c == target {
+            return Some(nd.root[node]);
+        }
+        if nd.closed[node] {
+            continue;
+        }
+        nd.closed[node] = true;
+        map.cut_round(c);
+        nd.resize(seeds + map.cells.len());
+        let gn = nd.g[node].unwrap_or(0.0);
+        let here = map.cells[c];
+        for b in 0..map.cells.len() {
+            if b == c || map.cells[b].cost == BLOCKED {
+                continue;
+            }
+            let Some((p, _)) = crossing(&here, &map.cells[b]) else { continue };
+            let ng = gn + (distance(nd.point[node], p) + 1.0) * step_weight(here.cost, map.cells[b].cost);
+            let bn = seeds + b;
+            if nd.g[bn].is_none_or(|old| ng < old) {
+                nd.g[bn] = Some(ng);
+                nd.point[bn] = p;
+                nd.root[bn] = nd.root[node];
+                if !nd.closed[bn] {
+                    open.push(Open(ng + h(p), bn));
+                }
+            }
+        }
+    }
+    None
+}

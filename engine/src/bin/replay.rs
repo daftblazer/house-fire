@@ -47,7 +47,7 @@ use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
 use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, slot_pick, run_on_point, walk_frames, routing_return_tick, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
-use housefire::planner::{coarse_way, point_after_goal, refine, Growth, MapRect};
+use housefire::planner::{choose_goal, coarse_way, point_after_goal, refine, Growth, MapRect};
 use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
@@ -2710,6 +2710,22 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
     // The obstacles the planner gathered for each plan (logs with 'X'): their shapes (a cost of
     // 0x7FFFFFFF grown by half the width, a cost of 10 not), and how they meet the native
     // objects (study: REPLAY_SHOW_OBSTACLES, each with the objects whose place lies in it).
+    // a request of several goals: the goal it takes natively (the backward search)
+    for pl in log.plans.iter().filter(|p| p.goals.len() > 1 && p.coarse.len() >= 2 && !p.lookup_regions[0].is_empty()) {
+        let rects: Vec<MapRect> = pl.lookup_regions.iter().flatten().map(MapRect::from_raw).collect();
+        let growth = Growth { cap: (pl.grower[2] != 0).then_some(pl.grower[3] as i32), open_cost: pl.grower[4] as i32 };
+        let goals: Vec<(i32, i32, i32)> = pl.goals.iter().map(|g| (g[1] as i32, g[0] as i32, g[2] as i32)).collect();
+        let (sx, sy) = pl.coarse[0];
+        let ours = choose_goal(&rects, growth, (sy, sx), &goals);
+        counts.note(if ours.map(|i| i as i32) == Some(pl.chosen) {
+            "planner: a request of several goals natively takes the planner's (the backward search)"
+        } else {
+            "planner: a request of several goals natively NOT the planner's"
+        });
+        if ours.map(|i| i as i32) != Some(pl.chosen) && !counts.quiet && has("REPLAY_SHOW_SEARCH") {
+            println!("goal choice tick {}: native {ours:?}, the planner's {} of {}", pl.tick, pl.chosen, goals.len());
+        }
+    }
     for pl in log.plans.iter().filter(|p| p.approach.is_some()) {
         if let Some(p) = native_plan_points(pl, world) {
             counts.note(if p == pl.points {
