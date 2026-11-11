@@ -732,6 +732,15 @@ of cost 0 to the search and the grass is not: the reason tick 260's line keeps t
 other plans' vectors are empty or the house's 27: a later plan in the same place reuses it.) How
 the search weighs a line by them is next.
 
+**The line weighed by the paved regions** (`routing::weighed_path`, study `HF_PAVED_WEIGHT`).
+The corner search with a line's length outside the paved regions counting w times its length in
+them, and the regions' corners (and those corners 3 in, the half-width) among its nodes; the
+regions as logged (`D`, the latest with paved ones). At w from 2.5 to 3.5, 15 of the 16 plans pass
+the planner's corners, tick 260 among them, now by (301, 125), the path's edge 3 in, and down the
+path; below (2.3) a plan in the house turns differently, above (4) one does. So grass weighs
+about three times a paved floor; the planner's own figure (a constant of the search, it may be)
+and the regions natively from the floor are next.
+
 **The walk keeps to its plan's line.** The planning Sim's logged places (`P`, at each tick's start,
 whole sixteenths, logged when they change) from its plan's tick to its next plan, against the
 plan's line: 852 of the home log's 854 within a sixteenth and a half of it (the 2 others the paper

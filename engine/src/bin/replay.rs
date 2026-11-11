@@ -46,7 +46,7 @@ use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
-use housefire::routing::{BLOCKS, Tile, WALK_FRAME, WALK_TOP_ADULT, WALK_TOP_CHILD, along_line, corner_path, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
+use housefire::routing::{BLOCKS, Tile, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, along_line, corner_path, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
 use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
@@ -2668,7 +2668,17 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 let room = |p: (i32, i32)| walls.room(p.0 >> 4, p.1 >> 4);
                 let same_room = room(start) == room(goal);
                 {
-                    let path = corner_path(start, goal, &obstacles_here, walls, half);
+                    // study (HF_PAVED_WEIGHT): weighed by the search's paved regions, the plan's
+                    // or the last logged before it
+                    let weight: f64 = env("HF_PAVED_WEIGHT").and_then(|v| v.parse().ok()).unwrap_or(0.0);
+                    let path = if weight > 0.0 {
+                        let k = log.plans.iter().position(|q| std::ptr::eq(q, pl)).unwrap_or(0);
+                        let regions = log.plans[..=k].iter().rev().find(|q| q.regions.iter().any(|r| r[4] == 0)).map(|q| q.regions.clone()).unwrap_or_default();
+                        let paved: Vec<[i32; 4]> = regions.iter().filter(|r| r[4] == 0).map(|r| [r[0], r[1], r[2], r[3]]).collect();
+                        weighed_path(start, goal, &obstacles_here, walls, half, &paved, weight)
+                    } else {
+                        corner_path(start, goal, &obstacles_here, walls, half)
+                    };
                     let is_corner = |p: &(i32, i32)| obstacles_here.iter().filter(|r| r[4] == BLOCKS).any(|r| [(r[0], r[1]), (r[2], r[1]), (r[0], r[3]), (r[2], r[3])].contains(p));
                     let theirs: Vec<(i32, i32)> = pl.points.iter().copied().filter(is_corner).collect();
                     let ours: Vec<(i32, i32)> = path.as_ref().map_or(Vec::new(), |p| p.iter().copied().filter(is_corner).collect());

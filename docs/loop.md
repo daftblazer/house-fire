@@ -1586,7 +1586,7 @@ iterations in a row end without a commit (record why here).
 
 ## Progress
 
-Iteration 12 of 24.
+Iteration 13 of 24.
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1682,3 +1682,11 @@ Iteration 12 of 24.
   grass outside). Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy
   clean. Next: how the search weighs a line by the regions (its cost outside them), then the
   regions natively from the floor in `corner_path`.
+
+- **Iteration 13, chunk 3 (the line weighed by the paved regions).** `routing::weighed_path`: the
+  corner search counting a line's length off the paved regions w times, their corners (and 3 in)
+  among its nodes; with the logged regions (`D`, now kept by the reader): at w 2.5 to 3.5, 15 of
+  the 16 plans by the planner's corners, tick 260 among them. A study (`HF_PAVED_WEIGHT`), not the
+  default: the weight is not yet the planner's own. Figures unchanged (561,398, 338,305, 68,202,
+  lockstep 7,902, 4, 24); clippy clean. Next: the weight from the search's code, and the paved
+  regions natively from the floor; then make it the default.

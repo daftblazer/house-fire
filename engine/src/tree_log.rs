@@ -157,6 +157,9 @@ pub struct PlanRec {
     /// The objects the search's loop asked about (the 'J' record, in newer logs), in order: the
     /// id and whether it was left out.
     pub tested: Vec<(i16, bool)>,
+    /// The search's own rectangles ('D', in newer logs): the lot's border, the house's blocks
+    /// and walls, and the paved regions at cost 0; {x0, y0, x1, y1, cost}.
+    pub regions: Vec<[i32; 5]>,
 }
 
 /// A walker's step ('Z', Route_Follow 800AE0A4): its follower and its state before and after.
@@ -257,6 +260,7 @@ pub fn read_log(path: &str) -> Option<Log> {
     let mut request: Option<(i32, Vec<[u32; 4]>)> = None;
     let mut obstacles: Option<(i32, Vec<[i32; 5]>)> = None;
     let mut tested: Option<Vec<(i16, bool)>> = None;
+    let mut regions: Option<Vec<[i32; 5]>> = None;
     let mut at: BTreeMap<u32, usize> = BTreeMap::new();
     let mut pending: Option<ExprRec> = None;
     let mut pending_lookups: Vec<LookupRec> = Vec::new();
@@ -345,7 +349,8 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let (chosen, goals) = request.take().unwrap_or((-1, Vec::new()));
                 let (obstacle_width, obstacles) = obstacles.take().unwrap_or_default();
                 let tested = tested.take().unwrap_or_default();
-                log.plans.push(PlanRec { tick: log.ticks, state, points, goals, chosen, obstacles, obstacle_width, tested });
+                let regions = regions.take().unwrap_or_default();
+                log.plans.push(PlanRec { tick: log.ticks, state, points, goals, chosen, obstacles, obstacle_width, tested, regions });
             }
             b'Z' => {
                 // a walker's step (Route_Follow)
@@ -403,7 +408,8 @@ pub fn read_log(path: &str) -> Option<Log> {
                 tested = Some(t);
             }
             b'D' => {
-                // the search's own rectangles of the plan that follows: read past for now
+                // the search's own rectangles of the plan that follows ({y0, x0, y1, x1, cost},
+                // turned like 'X')
                 if !r.has(2) {
                     break;
                 }
@@ -411,7 +417,13 @@ pub fn read_log(path: &str) -> Option<Log> {
                 if !r.has(20 * cnt) {
                     break;
                 }
-                r.p += 20 * cnt;
+                let rects = (0..cnt)
+                    .map(|_| {
+                        let (y0, x0, y1, x1) = (r.u32() as i32, r.u32() as i32, r.u32() as i32, r.u32() as i32);
+                        [x0, y0, x1, y1, r.u32() as i32]
+                    })
+                    .collect();
+                regions = Some(rects);
             }
             b'X' => {
                 // the obstacles of the plan that follows

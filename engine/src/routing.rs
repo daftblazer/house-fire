@@ -143,6 +143,33 @@ pub fn segment_enters(a: (i32, i32), b: (i32, i32), r: &[i32; 4]) -> bool {
 /// visibility graph, searched by Dijkstra): its points, the ends included; none if there is no
 /// such line. Obstacles that may be walked through are not in its way.
 pub fn corner_path(start: (i32, i32), goal: (i32, i32), obstacles: &[[i32; 5]], walls: &Walls, half: i32) -> Option<Vec<(i32, i32)>> {
+    weighed_path(start, goal, obstacles, walls, half, &[], 1.0)
+}
+
+/// How much of the segment from a to b lies inside rectangle r ({x0, y0, x1, y1}).
+pub fn inside_length(a: (i32, i32), b: (i32, i32), r: &[i32; 4]) -> f64 {
+    let (dx, dy) = ((b.0 - a.0) as f64, (b.1 - a.1) as f64);
+    let (mut t0, mut t1) = (0.0f64, 1.0f64);
+    for (p, q) in [(-dx, (a.0 - r[0]) as f64), (dx, (r[2] - a.0) as f64), (-dy, (a.1 - r[1]) as f64), (dy, (r[3] - a.1) as f64)] {
+        if p == 0.0 {
+            if q < 0.0 {
+                return 0.0;
+            }
+        } else {
+            let t = q / p;
+            if p < 0.0 {
+                t0 = t0.max(t)
+            } else {
+                t1 = t1.min(t)
+            }
+        }
+    }
+    (t1 - t0).max(0.0) * (dx * dx + dy * dy).sqrt()
+}
+
+/// `corner_path` weighing the line by the floor: a length outside the `paved` regions counts
+/// `weight` times one inside them (study: the weight is not yet the planner's own).
+pub fn weighed_path(start: (i32, i32), goal: (i32, i32), obstacles: &[[i32; 5]], walls: &Walls, half: i32, paved: &[[i32; 4]], weight: f64) -> Option<Vec<(i32, i32)>> {
     let mut blocking: Vec<[i32; 4]> = obstacles.iter().filter(|r| r[4] == BLOCKS).map(|r| [r[0], r[1], r[2], r[3]]).collect();
     if half > 0 {
         blocking.extend(walls.wall_rects(half));
@@ -156,7 +183,22 @@ pub fn corner_path(start: (i32, i32), goal: (i32, i32), obstacles: &[[i32; 5]], 
             }
         }
     }
+    for r in paved {
+        for c in [(r[0], r[1]), (r[2], r[1]), (r[0], r[3]), (r[2], r[3]), (r[0] + half, r[1] + half), (r[2] - half, r[1] + half), (r[0] + half, r[3] - half), (r[2] - half, r[3] - half)] {
+            if !inside(c) && !nodes.contains(&c) {
+                nodes.push(c);
+            }
+        }
+    }
     let clear = |a: (i32, i32), b: (i32, i32)| !blocking.iter().any(|r| segment_enters(a, b, r)) && walls.line_open(a, b);
+    let cost = |a: (i32, i32), b: (i32, i32)| {
+        let len = (((b.0 - a.0).pow(2) + (b.1 - a.1).pow(2)) as f64).sqrt();
+        if paved.is_empty() {
+            return len;
+        }
+        let on = paved.iter().map(|r| inside_length(a, b, r)).sum::<f64>().min(len);
+        on + (len - on) * weight
+    };
     let n = nodes.len();
     let mut dist = vec![f64::INFINITY; n];
     let mut prev = vec![usize::MAX; n];
@@ -171,7 +213,7 @@ pub fn corner_path(start: (i32, i32), goal: (i32, i32), obstacles: &[[i32; 5]], 
             if done[v] || v == u {
                 continue;
             }
-            let d = dist[u] + (((nodes[v].0 - nodes[u].0).pow(2) + (nodes[v].1 - nodes[u].1).pow(2)) as f64).sqrt();
+            let d = dist[u] + cost(nodes[u], nodes[v]);
             if d < dist[v] && clear(nodes[u], nodes[v]) {
                 dist[v] = d;
                 prev[v] = u;
