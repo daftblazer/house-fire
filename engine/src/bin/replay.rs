@@ -1459,7 +1459,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
     // the routing runs' native returns, for the routing primitives' steps (its own counts dropped:
     // the full pass after the steps counts them)
     if !quiet && !log.places.is_empty() {
-        let native = routing(log, lib, &h.world, &mut Counts { quiet: true, ..Default::default() }, &ids);
+        let native = routing(log, lib, &h.world, &h.world, &mut Counts { quiet: true, ..Default::default() }, &ids);
         h.routing_returns = native.returns;
         native_places = native.places;
     }
@@ -2372,7 +2372,11 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
     // Routing: each Sim's logged step from one tile to the next ('P'), against the lot's walls
     // and the doors' openings (Walls). Measured on the save's lot.
     if !bench_on && !log.places.is_empty() {
-        let _ = routing(log, lib, world, counts, &ids);
+        // the walkers' bodies from the lot as it loaded (a walker's id may be another object's,
+        // or none, by the run's end)
+        let mut loaded = World::new(lib);
+        loaded.load_lot(club).expect("the lot");
+        let _ = routing(log, lib, world, &loaded, counts, &ids);
     }
 
     // The motives' own update (update_motives), on each person's logged motives ('N' records):
@@ -2458,7 +2462,7 @@ struct NativeRouting {
     places: BTreeMap<(i16, u32), (i32, i32)>,
 }
 
-fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &BTreeMap<u32, i16>) -> NativeRouting {
+fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, counts: &mut Counts, ids: &BTreeMap<u32, i16>) -> NativeRouting {
     let mut returns: RoutingReturns = BTreeMap::new();
     let mut native_places: BTreeMap<(i16, u32), (i32, i32)> = BTreeMap::new();
     let walls = &world.walls;
@@ -3522,7 +3526,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
     let native_top: BTreeMap<u32, f32> = walker_of
         .iter()
         .filter_map(|(&fo, &id)| {
-            let o = world.objects().find(|o| o.id() == id)?;
+            let o = loaded.objects().find(|o| o.id() == id)?;
             let age = o.file.and_then(|fi| lib.file(fi).strings.get(&200)).and_then(|t| t.first()).map(String::as_str);
             Some((fo, walk_top(age)))
         })
