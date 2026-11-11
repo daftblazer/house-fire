@@ -149,12 +149,28 @@ impl Map<'_> {
     }
 }
 
-/// Where a step from one cell to another crosses: the centre of their overlap with each grown
-/// by 1, each axis rounded toward zero; none when they do not touch.
-fn crossing(a: &MapRect, b: &MapRect) -> Option<(i32, i32)> {
+/// The opening between two cells: their overlap with each grown by 1 (exclusive bounds).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Opening {
+    pub y0: i32,
+    pub x0: i32,
+    pub y1: i32,
+    pub x1: i32,
+}
+
+/// Where a step from one cell to another crosses: the centre of their opening, each axis
+/// rounded toward zero; none when they do not touch.
+fn crossing(a: &MapRect, b: &MapRect) -> Option<((i32, i32), Opening)> {
     let (ly, lx) = ((a.y0 - 1).max(b.y0 - 1), (a.x0 - 1).max(b.x0 - 1));
     let (hy, hx) = ((a.y1 + 1).min(b.y1 + 1), (a.x1 + 1).min(b.x1 + 1));
-    (ly < hy && lx < hx).then(|| ((ly + hy) / 2, (lx + hx) / 2))
+    (ly < hy && lx < hx).then(|| (((ly + hy) / 2, (lx + hx) / 2), Opening { y0: ly, x0: lx, y1: hy, x1: hx }))
+}
+
+/// A search's way: its points (start, crossings, goal) and each crossing's opening.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Way {
+    pub points: Vec<(i32, i32)>,
+    pub openings: Vec<Opening>,
 }
 
 fn distance(a: (i32, i32), b: (i32, i32)) -> f32 {
@@ -186,7 +202,7 @@ impl PartialOrd for Open {
 /// The search's coarse way from `start` to `goal` (both (y, x)): the crossings it goes through,
 /// start and goal included; none when it finds no way within its steps. `rects` are the lot's
 /// rects as the search sees them (the obstacles, then the regions, the blocked ones grown).
-pub fn coarse_way(rects: &[MapRect], growth: Growth, start: (i32, i32), goal: (i32, i32)) -> Option<Vec<(i32, i32)>> {
+pub fn coarse_way(rects: &[MapRect], growth: Growth, start: (i32, i32), goal: (i32, i32)) -> Option<Way> {
     let mut map = Map { rects, growth, cells: Vec::new() };
     let first = map.cell_at(start.0, start.1)?;
     map.cells[first].cost = 0;
@@ -196,6 +212,7 @@ pub fn coarse_way(rects: &[MapRect], growth: Growth, start: (i32, i32), goal: (i
     let h = |p: (i32, i32)| distance(p, goal);
     let mut g: Vec<Option<f32>> = vec![None; map.cells.len()];
     let mut point: Vec<(i32, i32)> = vec![(0, 0); map.cells.len()];
+    let mut opening: Vec<Option<Opening>> = vec![None; map.cells.len()];
     let mut parent: Vec<Option<usize>> = vec![None; map.cells.len()];
     let mut closed: Vec<bool> = vec![false; map.cells.len()];
     let (mut goal_g, mut goal_parent): (Option<f32>, Option<usize>) = (None, None);
@@ -205,14 +222,16 @@ pub fn coarse_way(rects: &[MapRect], growth: Growth, start: (i32, i32), goal: (i
     for _ in 0..SEARCH_STEPS {
         let Open(_, c) = open.pop()?;
         if c == goal_node {
-            let mut way = vec![goal];
+            let (mut points, mut openings) = (vec![goal], Vec::new());
             let mut n = goal_parent;
             while let Some(i) = n {
-                way.push(point[i]);
+                points.push(point[i]);
+                openings.extend(opening[i]);
                 n = parent[i];
             }
-            way.reverse();
-            return Some(way);
+            points.reverse();
+            openings.reverse();
+            return Some(Way { points, openings });
         }
         if closed[c] {
             continue;
@@ -222,6 +241,7 @@ pub fn coarse_way(rects: &[MapRect], growth: Growth, start: (i32, i32), goal: (i
         let n = map.cells.len();
         g.resize(n, None);
         point.resize(n, (0, 0));
+        opening.resize(n, None);
         parent.resize(n, None);
         closed.resize(n, false);
         let gc = g[c].unwrap_or(0.0);
@@ -230,11 +250,12 @@ pub fn coarse_way(rects: &[MapRect], growth: Growth, start: (i32, i32), goal: (i
             if b == c || closed[b] || map.cells[b].cost == BLOCKED {
                 continue;
             }
-            let Some(p) = crossing(&here, &map.cells[b]) else { continue };
+            let Some((p, o)) = crossing(&here, &map.cells[b]) else { continue };
             let ng = gc + (distance(point[c], p) + 1.0) * step_weight(here.cost, map.cells[b].cost);
             if g[b].is_none_or(|old| ng < old) {
                 g[b] = Some(ng);
                 point[b] = p;
+                opening[b] = Some(o);
                 parent[b] = Some(c);
                 open.push(Open(ng + h(p), b));
             }
@@ -249,4 +270,38 @@ pub fn coarse_way(rects: &[MapRect], growth: Growth, start: (i32, i32), goal: (i
         }
     }
     None
+}
+
+/// The plan's points from a search's way: each crossing slides along its opening (across a
+/// thin opening the other axis stays the crossing's own) to where the line between its two
+/// neighbours meets it, rounded to the nearest and kept inside the opening, over and over until
+/// nothing moves.
+pub fn refine(way: &Way) -> Vec<(i32, i32)> {
+    let mut pts = way.points.clone();
+    for _ in 0..50 {
+        let mut moved = false;
+        for i in 1..pts.len().saturating_sub(1) {
+            let Some(o) = way.openings.get(i - 1) else { break };
+            let (a, b) = (pts[i - 1], pts[i + 1]);
+            let along = |from: i32, to: i32, at: f32, wf: i32, wt: i32| -> i32 {
+                let t = if wt != wf { (at - wf as f32) / (wt - wf) as f32 } else { 0.5 };
+                (from as f32 + t * (to - from) as f32 + 0.5).floor() as i32
+            };
+            let q = if o.y1 - o.y0 <= 2 {
+                let y = pts[i].0;
+                (y, along(a.1, b.1, y as f32, a.0, b.0).clamp(o.x0 + 1, o.x1 - 1))
+            } else {
+                let x = pts[i].1;
+                (along(a.0, b.0, x as f32, a.1, b.1).clamp(o.y0 + 1, o.y1 - 1), x)
+            };
+            if q != pts[i] {
+                pts[i] = q;
+                moved = true;
+            }
+        }
+        if !moved {
+            break;
+        }
+    }
+    pts
 }

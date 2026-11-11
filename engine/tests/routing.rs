@@ -110,7 +110,7 @@ fn the_planners_steps_and_a_way_in_one_cell() {
         MapRect { y0: -7, x0: 601, y1: 631, x1: 631, cost: BLOCKED },
     ];
     let growth = Growth { cap: None, open_cost: 3 };
-    assert_eq!(coarse_way(&border, growth, (100, 100), (300, 120)), Some(vec![(100, 100), (300, 120)]));
+    assert_eq!(coarse_way(&border, growth, (100, 100), (300, 120)).map(|w| w.points), Some(vec![(100, 100), (300, 120)]));
     // a start inside a blocked rect has no cell, so no way
-    assert_eq!(coarse_way(&border, growth, (0, 0), (300, 120)), None);
+    assert!(coarse_way(&border, growth, (0, 0), (300, 120)).is_none());
 }

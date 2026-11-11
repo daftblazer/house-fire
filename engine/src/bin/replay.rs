@@ -47,7 +47,7 @@ use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
 use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, slot_pick, run_on_point, walk_frames, routing_return_tick, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
-use housefire::planner::{coarse_way, Growth, MapRect};
+use housefire::planner::{coarse_way, refine, Growth, MapRect};
 use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
@@ -2669,8 +2669,23 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         let growth = Growth { cap: (pl.grower[2] != 0).then_some(pl.grower[3] as i32), open_cost: pl.grower[4] as i32 };
         let turned = |&(x, y): &(i32, i32)| (y, x);
         let theirs: Vec<(i32, i32)> = pl.coarse.iter().map(turned).collect();
-        let ours = coarse_way(&rects, growth, theirs[0], theirs[theirs.len() - 1]);
+        let way = coarse_way(&rects, growth, theirs[0], theirs[theirs.len() - 1]);
+        let ours = way.as_ref().map(|w| w.points.clone());
         let same = ours.as_ref() == Some(&theirs);
+        // and the plan's points ('G', in (x, y)) from it: the refined way, then the one the
+        // plan adds after the goal
+        if let Some(w) = &way {
+            let refined: Vec<(i32, i32)> = refine(w).iter().map(|&(y, x)| (x, y)).collect();
+            let fits = pl.points.len() >= refined.len() && pl.points[..refined.len()] == refined[..];
+            counts.note(if fits {
+                "planner: a plan's points ('G') natively the refined way, point by point (but the one after the goal)"
+            } else {
+                "planner: a plan's points ('G') natively NOT the refined way"
+            });
+            if !fits && !counts.quiet && has("REPLAY_SHOW_SEARCH") {
+                println!("refine tick {}: theirs {:?}; native {refined:?}", pl.tick, pl.points);
+            }
+        }
         counts.note(if same {
             "planner: a plan's search ('I') natively its coarse way, point by point"
         } else {
