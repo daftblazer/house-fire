@@ -230,6 +230,8 @@ struct ReplayHost<'a, 'l> {
     shown: Shown,
     /// The simulator's ticks run (for a study).
     now: u32,
+    /// The routing runs' native returns (a pre-pass of `routing`).
+    routing_returns: RoutingReturns,
 }
 
 /// Brings the native world's variables to what the original's lookups found, counting those
@@ -442,6 +444,23 @@ impl Host for ReplayHost<'_, '_> {
         let s = &log.steps[self.step];
         let me = self.me;
         let me_id = self.me_id();
+        if n.opcode == 27 || n.opcode == 45 {
+            // GotoRelativePosition, GotoRoutingSlot: natively a yield until its run's return tick
+            // (its walker's walk, turn and frames: `routing_return_tick`), where the run is
+            // modelled; the log's result taken
+            let run = self.routing_returns.get(&(s.sim, s.tree, s.node)).and_then(|v| v.iter().filter(|r| r.0 <= s.tick).max_by_key(|r| r.0)).copied();
+            if let Some((_, ret)) = run.filter(|r| s.tick <= r.1) {
+                let native_yield = s.tick < ret;
+                self.counts.note(if native_yield == (s.result == 1) {
+                    "primitives: GotoRoutingSlot/GotoRelativePosition: yields or returns natively as the log's"
+                } else {
+                    "primitives: GotoRoutingSlot/GotoRelativePosition: DIFFERENT (the log's taken)"
+                });
+            } else {
+                self.counts.note("primitives: GotoRoutingSlot/GotoRelativePosition: its run not modelled (the log's taken)");
+            }
+            return self.logged(s, n);
+        }
         if n.opcode == 8 {
             // Random: the engine's own numbers; the result's range checked, the log's value taken
             self.sync(interp, s);
@@ -1281,12 +1300,18 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
         counts: Counts { quiet, ..Default::default() },
         shown: Shown::default(),
         now: 0,
+        routing_returns: BTreeMap::new(),
     };
     let mut consumed: BTreeSet<usize> = BTreeSet::new(); // log steps a native primitive's checks have stepped
     let mut sim = Simulator::new(lib);
     let mut finder = TreeFinder { lib, cache: HashMap::new(), shown: 0 };
     let mut ids = stack_ids(log);
     place_quiet_stacks(log, &h.world, &mut ids, &mut h.counts, lib);
+    // the routing runs' native returns, for the routing primitives' steps (its own counts dropped:
+    // the full pass after the steps counts them)
+    if !quiet && !log.places.is_empty() {
+        h.routing_returns = routing(log, lib, &h.world, &mut Counts { quiet: true, ..Default::default() }, &ids);
+    }
 
     // The log's steps by tick, in order.
     let mut by_tick: Vec<Vec<usize>> = vec![Vec::new(); log.ticks as usize + 1];
@@ -2107,7 +2132,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
     // Routing: each Sim's logged step from one tile to the next ('P'), against the lot's walls
     // and the doors' openings (Walls). Measured on the save's lot.
     if !bench_on && !log.places.is_empty() {
-        routing(log, lib, world, counts, &ids);
+        let _ = routing(log, lib, world, counts, &ids);
     }
 
     // The motives' own update (update_motives), on each person's logged motives ('N' records):
@@ -2181,7 +2206,12 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
 
 /// The routing checks: the Sims' steps, the original's plans, its routing steps' slots, and the
 /// walks against the native route.
-fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &BTreeMap<u32, i16>) {
+/// The routing runs' native returns: (sim, tree, node) of the routing step, its run's first tick,
+/// the tick it returns natively (its walk, turn and frames as `routing_return_tick` gives them).
+type RoutingReturns = BTreeMap<(u32, u16, u16), Vec<(u32, u32)>>;
+
+fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &BTreeMap<u32, i16>) -> RoutingReturns {
+    let mut returns: RoutingReturns = BTreeMap::new();
     let walls = &world.walls;
     let show = has("REPLAY_SHOW_ROUTING");
     counts.add("routing: the lot's wall edges (each seen from both tiles)", walls.wall_edges());
@@ -3454,6 +3484,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                             && let Some(ret) = routing_return_tick(ticks, frames, turn_frames(angle))
                             && let Some(run) = routing_runs.iter().filter(|r| r.3 <= start_tick && r.4 >= f.tick).min_by_key(|r| r.4 - r.3)
                         {
+                            returns.entry((run.0, run.1, run.2)).or_default().push((run.3, ret));
                             counts.note(if run.4 == ret {
                                 "routing: a routing primitive natively returning on the original's tick (its walk and turn native)"
                             } else {
@@ -3664,6 +3695,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             start = i;
         }
     }
+    returns
 }
 
 fn main() -> ExitCode {
