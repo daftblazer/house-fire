@@ -3046,16 +3046,21 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         let mut arrived: BTreeMap<u32, (u32, u32, (f32, f32))> = BTreeMap::new();
         // each follower's walk: its start's tick and place, its speed then, and its frames to arrive
         let mut walk_starts: BTreeMap<u32, (u32, (f32, f32), f32, u32)> = BTreeMap::new();
+        // the ticks of a follower's frames from its walk's start (the frame clock as it ran)
+        let mut frame_ticks: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+        let all_frames: Vec<(u32, u32)> = log.follows.iter().map(|g| (g.follower, g.tick)).collect();
         // the game's speed each frame of a follower's walk (the follower's +124: 0 paused, 1, or 5
         // fast; the player's, the same for every walker at once), an input to the walk
         let mut speeds: BTreeMap<u32, Vec<f32>> = BTreeMap::new();
         let mut speed_now: BTreeMap<u32, f32> = BTreeMap::new();
-        for f in &log.follows {
+        for (at, f) in log.follows.iter().enumerate() {
             let (b, a) = (f.before, f.after);
             if b.state == 1 {
                 let v = speed_now.get(&f.follower).copied().unwrap_or(0.0);
                 walk_starts.insert(f.follower, (f.tick, (b.x, b.y), v, 0));
                 speeds.insert(f.follower, Vec::new());
+                let me = f.follower;
+                frame_ticks.insert(me, std::iter::once(f.tick).chain(all_frames[at + 1..].iter().filter(|g| g.0 == me).map(|g| g.1)).collect());
             }
             if b.state <= 2
                 && let Some(w) = walk_starts.get_mut(&f.follower)
@@ -3128,6 +3133,19 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                         }
                         let native = frames + turn_frames(angle);
                         let original = walked + n;
+                        // the routing primitive natively: its return the tick after its walker's
+                        // frame after done (frame `native`, from the walk's start), against the run
+                        // that holds the walk
+                        if let Some(ticks) = frame_ticks.get(&f.follower)
+                            && let Some(&t) = ticks.get(native as usize)
+                            && let Some(run) = routing_runs.iter().filter(|r| r.3 <= start_tick && r.4 >= f.tick).min_by_key(|r| r.4 - r.3)
+                        {
+                            counts.note(if run.4 == t + 1 {
+                                "routing: a routing primitive natively returning on the original's tick (its walk and turn native)"
+                            } else {
+                                "routing: a routing primitive natively NOT returning on the original's tick"
+                            });
+                        }
                         counts.note(if native == original {
                             "routing: a whole walk natively the original's frames (walk and turn)"
                         } else {

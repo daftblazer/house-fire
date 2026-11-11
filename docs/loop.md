@@ -1586,7 +1586,7 @@ iterations in a row end without a commit (record why here).
 
 ## Progress
 
-Iteration 22 of 24.
+Iteration 23 of 24.
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1756,3 +1756,8 @@ Iteration 22 of 24.
   unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next (two iterations
   left): the loop's end write-up, and the first native routing primitive in the replay (its
   yields from its plan to its return, all native but the plan).
+
+- **Iteration 23, chunk 5 (a routing primitive natively).** Its return from its native walk and
+  turn (the game's speed and the frames' ticks as logged): 8 of 10 runs on the original's tick,
+  with all their yields (the 2 left the walks starting a little off). Figures unchanged (561,398,
+  338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next: the loop's end (iteration 24).

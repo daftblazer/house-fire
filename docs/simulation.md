@@ -885,6 +885,12 @@ in the same (its second frame). Checked on the home log: all 16 runs of the rout
 return on that tick. With the walk's frames (the step, the turn) and the frame clock, a routing
 primitive's yields are native up to its walker's start.
 
+**A routing primitive natively.** From its walker's start: the walk natively (the step, at the
+game's speed as logged), the turn, the frame after done, the frames through the walker's own
+ticks (the frame clock as it ran), and the return the tick after: of the home log's 10 runs whose
+walk ends in a turn, 8 return on the original's tick, every yield before it with them; the 2 left
+are the two walks whose start speed is a little off.
+
 **Which objects block** (`routing::obstacle`). Read from the objects the loop asks about (`J`)
 against the object data the save gives: an object is left out when its flags (object data 8)
 have 0x4 (no extent: rugs, windows, wall lamps, paintings, the alarms, the phone) or it sits in
