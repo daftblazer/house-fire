@@ -2518,7 +2518,26 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 !x.person && x.id() != o.id() && x.on_lot() && x.level == 1 && tile((x.x16, x.y16)) == tile(p)
             })
         };
-        let offered = slot_places(slot, target.0, target.1, o.facing());
+        // a person faces the way it last stepped (its last two logged places before the step,
+        // eighths of a turn: 0 to -x, 2 to +y, 4 to +x, 6 to -y), else as the save has it
+        let facing = {
+            let mut seen = log.places.iter().filter(|p| p.id == o.id() && p.tick <= s.tick).rev();
+            match (o.person, seen.next(), seen.next()) {
+                (true, Some(b), Some(a)) => match ((b.x - a.x).signum(), (b.y - a.y).signum()) {
+                    (-1, 0) => 0,
+                    (-1, 1) => 1,
+                    (0, 1) => 2,
+                    (1, 1) => 3,
+                    (1, 0) => 4,
+                    (1, -1) => 5,
+                    (0, -1) => 6,
+                    (-1, -1) => 7,
+                    _ => o.facing(),
+                },
+                _ => o.facing(),
+            }
+        };
+        let offered = slot_places(slot, target.0, target.1, facing);
         let mut places = offered.clone();
         // A place across a wall from its object (another room, though a door may lead there) is
         // not offered, nor one another object (not a person) stands on.
@@ -2718,7 +2737,16 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             }
         }
         let d2 = |p: &(i32, i32)| (p.0 - start.0).pow(2) + (p.1 - start.1).pow(2);
-        let got = places.iter().map(|x| x.1).min_by_key(d2);
+        // a slot of one proximity: the nearest open place; one of a range (its goals the request's,
+        // checked above): the one the backward search takes of them
+        let got = if slot.min_proximity != slot.max_proximity && pl.goals.len() > 1 && !pl.lookup_regions[0].is_empty() {
+            let rects: Vec<MapRect> = pl.lookup_regions.iter().flatten().map(MapRect::from_raw).collect();
+            let growth = Growth { cap: (pl.grower[2] != 0).then_some(pl.grower[3] as i32), open_cost: pl.grower[4] as i32 };
+            let goals: Vec<(i32, i32, i32)> = pl.goals.iter().map(|g| (g[1] as i32, g[0] as i32, g[2] as i32)).collect();
+            choose_goal(&rects, growth, (start.1, start.0), &goals).map(|i| (goals[i].1, goals[i].0))
+        } else {
+            places.iter().map(|x| x.1).min_by_key(d2)
+        };
         counts.note(if got == Some(want) {
             "routing: a routing step's goal natively the plan's (the nearest open place of its slot)"
         } else {

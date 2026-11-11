@@ -1324,7 +1324,11 @@ the pairing was right (replay now also pairs by the planner where the log names 
 moved). And object 60's (360, 328) is its tick-0 place, the record every object gets at the start.
 So Sim 237, routing to slot 0 of Sim 197 (which the request names, at (392, 344)), asks the
 planner for a range slot's area centred on the counter tile. What makes that centre is not in
-the log's records; it stays open, the one request of 4 whose goals are not its slot's. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+the log's records; it stays open, the one request of 4 whose goals are not its slot's. (The paper girl is that object 197: the
+range slot round her at tick 931 is global slot 8, and its goal is the backward search's; the
+routing step's goal check now takes that for a range slot, the planner's 3 of 4 with 1579 the
+open one. A person's facing taken from its last logged step, for its slot's places, changes no
+count: the save's facing serves the slots that are checked.) Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
