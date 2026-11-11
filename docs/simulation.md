@@ -670,6 +670,14 @@ planner goes west to an obstacle's corner (301, 125) and down along the wall (15
 counts lies on the diagonal. A cost for crossing the walk-through obstacles (the flower beds,
 the trees, the door's own tile) at any weight does not give its line (tried, not kept).
 
+**The walk keeps to its plan's line.** The planning Sim's logged places (`P`, at each tick's start,
+whole sixteenths, logged when they change) from its plan's tick to its next plan, against the
+plan's line: 852 of the home log's 854 within a sixteenth and a half of it (the 2 others the paper
+girl's, moved off the lot after her walk). Along the line the place moves a sixteenth every one or
+two ticks (about 0.7 a tick: so a fractional position underneath, the logged place its rounding),
+3 to 6 every four ticks through a door (the door's own animation), and its starts and stops are
+the speed's (`Route_WalkStep`, to read).
+
 **Which objects block** (`routing::obstacle`). Read from the objects the loop asks about (`J`)
 against the object data the save gives: an object is left out when its flags (object data 8)
 have 0x4 (no extent: rugs, windows, wall lamps, paintings, the alarms, the phone) or it sits in

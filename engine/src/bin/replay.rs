@@ -2661,6 +2661,60 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             }
         }
     }
+    // The walk (study: REPLAY_SHOW_WALKS): the planning Sim's logged places from its plan's tick
+    // to its next plan (or 600 ticks), each against the plan's line: its distance from it and
+    // how far along it (sixteenths).
+    let show_walks = has("REPLAY_SHOW_WALKS");
+    for (k, pl) in log.plans.iter().enumerate() {
+        let Some(&start) = pl.points.first() else { continue };
+        let Some(sim) = world
+            .objects()
+            .filter(|o| o.person)
+            .filter_map(|o| place_at(o.id(), pl.tick).map(|p| ((p.0 - start.0).pow(2) + (p.1 - start.1).pow(2), o.id())))
+            .filter(|&(d, _)| d <= 256)
+            .min()
+            .map(|(_, id)| id)
+        else {
+            continue;
+        };
+        let until = log.plans[k + 1..].iter().find(|q| q.points.first().is_some_and(|&a| place_at(sim, q.tick) == Some(a))).map_or(pl.tick + 600, |q| q.tick);
+        // the line's legs and their lengths
+        let legs: Vec<((f64, f64), (f64, f64))> = pl.points.windows(2).map(|w| ((w[0].0 as f64, w[0].1 as f64), (w[1].0 as f64, w[1].1 as f64))).collect();
+        let along = |p: (i32, i32)| -> (f64, f64) {
+            // (distance from the line, length along it to the nearest point)
+            let (mut best, mut at, mut before) = (f64::INFINITY, 0.0, 0.0);
+            for &(a, b) in &legs {
+                let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+                let len = (dx * dx + dy * dy).sqrt();
+                let t = if len == 0.0 { 0.0 } else { (((p.0 as f64 - a.0) * dx + (p.1 as f64 - a.1) * dy) / (len * len)).clamp(0.0, 1.0) };
+                let q = (a.0 + t * dx, a.1 + t * dy);
+                let d = ((p.0 as f64 - q.0).powi(2) + (p.1 as f64 - q.1).powi(2)).sqrt();
+                if d < best {
+                    best = d;
+                    at = before + t * len;
+                }
+                before += len;
+            }
+            (best, at)
+        };
+        let mut last: Option<f64> = None;
+        let mut line = String::new();
+        for r in log.places.iter().filter(|r| r.id == sim && r.tick > pl.tick && r.tick <= until) {
+            let (d, s) = along((r.x, r.y));
+            counts.note(if d <= 1.5 {
+                "routing: a walking Sim's place on its plan's line (within a sixteenth and a half)"
+            } else {
+                "routing: a walking Sim's place NOT on its plan's line"
+            });
+            if show_walks {
+                line += &format!(" {}:{:.1}{}", r.tick, last.map_or(s, |l| s - l), if d > 1.5 { format!("(off {d:.1})") } else { String::new() });
+            }
+            last = Some(s);
+        }
+        if show_walks {
+            println!("walk of {sim} on the plan of tick {} ({} points) to tick {until}:{line}", pl.tick, pl.points.len());
+        }
+    }
     // Each plan with the routing primitives its Sim ran in its tick (study: REPLAY_SHOW_PLANS):
     // opcode 27 or 45, the stack object and its place, the operand, the result.
     if has("REPLAY_SHOW_PLANS") {

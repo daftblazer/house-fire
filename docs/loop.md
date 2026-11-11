@@ -1586,4 +1586,11 @@ iterations in a row end without a commit (record why here).
 
 ## Progress
 
-Iteration 0 of 24.
+Iteration 1 of 24.
+
+- **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
+  plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
+  sixteenths (the 2 others the paper girl moved off the lot after her walk); about 0.7 sixteenths
+  a tick along straight legs, 3 to 6 every 4 ticks through doors. Figures unchanged (561,398,
+  338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next: the walk's speed and its start
+  (`Route_WalkStep`, 801F0410: the distance a tick), against the places tick by tick.
