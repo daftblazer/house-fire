@@ -362,9 +362,12 @@ impl<'lib> World<'lib> {
         self.version += 1;
     }
 
-    /// The next id: one more than the highest in use (a removed object's id comes back).
+    /// The next id: the lowest not in use (a removed object's id comes back first).
     pub fn next_id(&self) -> i16 {
-        self.objects().map(Object::id).max().unwrap_or(0).max(0).wrapping_add(1)
+        // the lowest id not in use: a removed object's id comes back first (the home log's paper
+        // girl, made again as 197, the newspaper as 201 below higher ids in use)
+        let used: std::collections::BTreeSet<i16> = self.objects().map(Object::id).collect();
+        (1..=i16::MAX).find(|i| !used.contains(i)).unwrap_or(i16::MAX)
     }
 
     /// An object made during play (CreateObject, the engine's effects): the next id, in front

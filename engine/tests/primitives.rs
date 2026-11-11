@@ -125,9 +125,17 @@ fn the_primitives_rules() {
     w.dialog_answer = Some(true);
     assert!(dialog(&dn, &mut w, me_id) == PrimResult::True && w.dialog_object == 0);
 
-    // a made object takes the next id and goes in front
+    // a made object takes the lowest id not in use and goes in front; a removed one's id
+    // comes back
     let made = w.make_object(Object::new());
-    assert!(w.get(made).id() == 10 && w.order()[0] == made);
+    assert!(w.get(made).id() == 1 && w.order()[0] == made);
+    let two = w.make_object(Object::new());
+    assert!(w.get(two).id() == 2);
+    w.remove(made);
+    let again = w.make_object(Object::new());
+    assert!(w.get(again).id() == 1 && w.order()[0] == again);
+    w.remove(again);
+    w.remove(two);
 
     // Idle: passed over by the next 29 passes that reach it, stepped on the 30th; then the
     // parameter is 0 and the result true

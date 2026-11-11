@@ -187,8 +187,10 @@ In a session of the new-game route the club's 178 objects are the list at tick 0
 They are effects (`efx_smokepuff.iff`), made during Animate steps (animation events). No
 script runs CreateObject in the session.
 
-A new object takes one more than the highest id in use, so a removed one's id comes back,
-and goes in front of the list (`World::make_object`). Replayed in the lockstep, all three
+A new object takes the lowest id not in use, so a removed one's id comes back, and goes in
+front of the list (`World::make_object`). (One more than the highest, the earlier rule, gave the
+club's three the same ids, but not the home log's: there the paper girl leaves as 197 and comes
+back as 197 below higher ids, and all 14 made objects take the lowest free id.) Replayed in the lockstep, all three
 ids and the list's order at all five changes are the original's. With them, SetToNext's
 kind 0 agrees on all 23,082 steps.
 

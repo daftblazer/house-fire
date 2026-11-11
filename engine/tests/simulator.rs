@@ -109,31 +109,31 @@ fn the_ticks_order() {
         o.stack.push(Frame { tree: Some(t), ..Default::default() });
         h.world.add(o, false);
     };
-    // The world's list order is not the tick's: 3, 1, 2 in the list, 5 asleep after its first
+    // The world's list order is not the tick's: 3, 1, 2 in the list, 4 asleep after its first
     // turn.
     add(3, MAIN);
     add(1, MAIN);
     add(2, MAIN);
-    add(5, SLOW);
+    add(4, SLOW);
     let tick = |h: &mut TestHost, sim: &mut Simulator| {
         h.turns.clear();
         sim.tick(h);
         h.turns.clone()
     };
-    // By id; object 2 makes object 6 (one more than the highest), which waits for the next
-    // tick. Object 5 sleeps two ticks from tick 0.
-    assert_eq!(tick(&mut h, &mut sim), [1, 2, 3, 5]);
-    assert!(h.world.find(6).is_some());
-    assert_eq!(tick(&mut h, &mut sim), [1, 2, 3, 6]); // tick 1: 5 asleep
-    assert_eq!(tick(&mut h, &mut sim), [1, 2, 3, 5, 6]); // tick 2: 5 wakes, goes round to node 0 and sleeps again
-    assert_eq!(tick(&mut h, &mut sim), [1, 2, 3, 6]); // tick 3: asleep
+    // By id; object 2 makes object 5 (the lowest id free, above the pass's
+    // highest), which waits for the next tick. Object 4 sleeps two ticks from tick 0.
+    assert_eq!(tick(&mut h, &mut sim), [1, 2, 3, 4]);
+    assert!(h.world.find(5).is_some());
+    assert_eq!(tick(&mut h, &mut sim), [1, 2, 3, 5]); // tick 1: 4 asleep
+    assert_eq!(tick(&mut h, &mut sim), [1, 2, 3, 4, 5]); // tick 2: 4 wakes, goes round to node 0 and sleeps again
+    assert_eq!(tick(&mut h, &mut sim), [1, 2, 3, 5]); // tick 3: asleep
     assert_eq!(sim.now(), 4);
     // A turn that stops the pass: the next pass goes on from that object, and the objects
-    // after it are not reached, so 5 (due again, its one pass waited in tick 3) waits.
+    // after it are not reached, so 4 (due again, its one pass waited in tick 3) waits.
     h.stop_at = 3;
     assert!(tick(&mut h, &mut sim) == [1, 2, 3] && sim.cursor() == 3); // tick 4: 3 stops the pass
     assert!(tick(&mut h, &mut sim) == [3] && sim.cursor() == 3); // from 3, which stops it again
     h.stop_at = 0;
-    assert!(tick(&mut h, &mut sim) == [3, 5, 6] && sim.cursor() == 0); // from 3 to the end: 5 runs and sleeps again, 6
-    assert_eq!(tick(&mut h, &mut sim), [1, 2, 3, 6]); // a new pass: 5 passed over
+    assert!(tick(&mut h, &mut sim) == [3, 4, 5] && sim.cursor() == 0); // from 3 to the end: 4 runs and sleeps again, 5
+    assert_eq!(tick(&mut h, &mut sim), [1, 2, 3, 5]); // a new pass: 4 passed over
 }
