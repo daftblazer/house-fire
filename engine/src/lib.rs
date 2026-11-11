@@ -9,6 +9,7 @@ pub mod expression;
 pub mod iff;
 pub mod library;
 pub mod motives;
+pub mod planner;
 pub mod primitives;
 pub mod routing;
 pub mod interp;

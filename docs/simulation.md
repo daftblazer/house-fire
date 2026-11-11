@@ -1187,7 +1187,10 @@ and cell 13 (313, 349, 317, 371) at (315, 349), costing 66.4 to (315, 371), wher
 A* takes cell 8 straight to 13 at (313, 359), 63.2. Both cells lie past cell 8's y1 side, so the
 original does not make that link, or does not take it, for a reason not yet found. Linking only
 the cells the perimeter walk meets changes nothing, and never re-parenting a found node is worse
-(21).
+(21). Natively now (engine/src/planner.rs, `coarse_way`): the cells, the grower with the
+request's settings, the round walk and the A* in f32; replay checks it on each plan's last
+search (the 'I', 'r' and settings the plan record keeps): 16 of 17 coarse ways point by point,
+the miss that same search (tick 521).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a

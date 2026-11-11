@@ -95,3 +95,22 @@ fn a_routing_primitive_returns_the_tick_after_its_walkers_frame_after_done() {
     assert_eq!(routing_return_tick(&ticks, 3, 1), Some(13));
     assert_eq!(routing_return_tick(&ticks, 9, 1), None);
 }
+
+#[test]
+fn the_planners_steps_and_a_way_in_one_cell() {
+    use housefire::planner::{coarse_way, step_weight, Growth, MapRect, BLOCKED};
+    // the dump's weights from a cost-0 cell: 1, 2 and 6 into costs 0, 3 and 10
+    assert_eq!([step_weight(0, 0), step_weight(0, 3), step_weight(0, 10)], [1.0, 2.0, 6.0]);
+    assert_eq!(step_weight(3, 3), 4.0);
+    // a lot walled round: start and goal share one cell, so the way is straight
+    let border = [
+        MapRect { y0: -7, x0: -7, y1: 23, x1: 631, cost: BLOCKED },
+        MapRect { y0: 601, x0: -7, y1: 631, x1: 631, cost: BLOCKED },
+        MapRect { y0: -7, x0: -7, y1: 631, x1: 23, cost: BLOCKED },
+        MapRect { y0: -7, x0: 601, y1: 631, x1: 631, cost: BLOCKED },
+    ];
+    let growth = Growth { cap: None, open_cost: 3 };
+    assert_eq!(coarse_way(&border, growth, (100, 100), (300, 120)), Some(vec![(100, 100), (300, 120)]));
+    // a start inside a blocked rect has no cell, so no way
+    assert_eq!(coarse_way(&border, growth, (0, 0), (300, 120)), None);
+}

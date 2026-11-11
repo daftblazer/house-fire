@@ -47,6 +47,7 @@ use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
 use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, slot_pick, run_on_point, walk_frames, routing_return_tick, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
+use housefire::planner::{coarse_way, Growth, MapRect};
 use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
@@ -2661,6 +2662,24 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
     // The obstacles the planner gathered for each plan (logs with 'X'): their shapes (a cost of
     // 0x7FFFFFFF grown by half the width, a cost of 10 not), and how they meet the native
     // objects (study: REPLAY_SHOW_OBSTACLES, each with the objects whose place lies in it).
+    // The planner's search natively (logs with 'r'): on the rects and settings the plan's last
+    // search had, from its coarse way's start to its end, the coarse way point by point.
+    for pl in log.plans.iter().filter(|p| p.coarse.len() >= 2 && !p.lookup_regions[0].is_empty()) {
+        let rects: Vec<MapRect> = pl.lookup_regions.iter().flatten().map(MapRect::from_raw).collect();
+        let growth = Growth { cap: (pl.grower[2] != 0).then_some(pl.grower[3] as i32), open_cost: pl.grower[4] as i32 };
+        let turned = |&(x, y): &(i32, i32)| (y, x);
+        let theirs: Vec<(i32, i32)> = pl.coarse.iter().map(turned).collect();
+        let ours = coarse_way(&rects, growth, theirs[0], theirs[theirs.len() - 1]);
+        let same = ours.as_ref() == Some(&theirs);
+        counts.note(if same {
+            "planner: a plan's search ('I') natively its coarse way, point by point"
+        } else {
+            "planner: a plan's search ('I') natively NOT its coarse way"
+        });
+        if !same && !counts.quiet && has("REPLAY_SHOW_SEARCH") {
+            println!("search tick {}: theirs {theirs:?}; native {ours:?}", pl.tick);
+        }
+    }
     let show_obstacles = has("REPLAY_SHOW_OBSTACLES");
     for pl in log.plans.iter().filter(|p| !p.obstacles.is_empty()) {
         if show_obstacles {
