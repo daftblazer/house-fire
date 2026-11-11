@@ -615,7 +615,14 @@ closed are taken out), by facing 0: the paper girl's facing then, not the save's
 places are those in the object's room, on or in no blocking obstacle of the plan and no wall's
 rectangle: 149 at tick 931, and all 48 goals among them. Which 48 is the game's random generator's:
 about 390 draws of `Sim_Random` at that tick before the plan (from 8024F030, on two generators in
-turn, and from 8024F504), none logged yet; the goals' order (shuffled) comes from the same. The planner's choice among the goals is the
+turn, and from 8024F504), none logged yet; the goals' order (shuffled) comes from the same.
+The goal's third word is its score (fn_8024E480, the builder): 100 less the distance times the
+slot's gradient, with bonuses (25, 20) by tests not yet read, and with the slot's flag 0x2000 a
+random part, `random % 20 - 10` (the draws from 8024F030). For the home log's slots (gradient 0)
+it is 135 (0x87), and 125 to 144 on the paper girl's flagged slot 8 (`routing::slot_goal_score`):
+50 of the 52 goals that are their slots' own places. The 2 others (tick 1790's second request,
+its goals carrying the table's id, 49, in their last word) score 225. The 48 kept are not the
+best: they are drawn (8024F504). The planner's choice among the goals is the
 nearest native one in the two requests that took one natively.
 
 **The planner's obstacles, logged.** (Read turned at first: see "The obstacles' objects" below.) The search (`fn_8024C5DC`) goes over the objects and, for

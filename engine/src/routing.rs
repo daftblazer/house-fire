@@ -63,6 +63,13 @@ pub fn slot_places(slot: &crate::library::Slot, x16: i32, y16: i32, facing: i16)
     out
 }
 
+/// A slot's goal's score (the goal's third word), as fn_8024E480 gives it: 135 for the routing
+/// slots of the home log (their gradient 0, so no fall with distance), and with the slot's flag
+/// 0x2000 a random part, `random % 20 - 10` (Sim_Random, from 8024F030). Returns its range.
+pub fn slot_goal_score(slot: &crate::library::Slot) -> std::ops::RangeInclusive<u32> {
+    if slot.flags & 0x2000 != 0 { 125..=144 } else { 135..=135 }
+}
+
 /// The places a routing slot of a range of proximities offers (an area): for each direction its
 /// flags name (bit k, `k` eighths of a turn from the object's front), the points of that
 /// direction's own grid (forward and sideways steps of the slot's resolution) within 45 degrees of

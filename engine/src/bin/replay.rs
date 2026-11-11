@@ -46,7 +46,7 @@ use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
-use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
+use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
 use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
@@ -2422,9 +2422,21 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         // The request's goals (logs with 'H'): a slot of one proximity offers exactly the open
         // places, in order, each with its direction's bit; one of a range offers an area (not yet).
         if !pl.goals.is_empty() {
+            // a goal's score (its third word), for the goals that are the slot's own places: the
+            // slot's, with its random part
+            let score = |counts: &mut Counts, g: &[u32; 4]| {
+                counts.note(if slot_goal_score(slot).contains(&g[2]) {
+                    "routing: a slot goal's score natively the original's (135, and the random part when flagged)"
+                } else {
+                    "routing: a slot goal's score natively NOT the original's"
+                });
+            };
             if slot.min_proximity == slot.max_proximity {
                 let same = places.len() == pl.goals.len()
                     && places.iter().zip(&pl.goals).all(|(&(k, p), g)| (g[0] as i32, g[1] as i32) == p && g[3] & 0xFF == 1 << k);
+                if same {
+                    pl.goals.iter().for_each(|g| score(counts, g));
+                }
                 counts.note(if same {
                     "routing: a request's goals natively the open places of its slot, in order, with their bits"
                 } else {
@@ -2460,6 +2472,9 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                     .collect();
                 for g in &pl.goals {
                     let goal = ((g[3] & 0xFF).trailing_zeros() as u8, (g[0] as i32, g[1] as i32));
+                    if open.contains(&goal) {
+                        score(counts, g);
+                    }
                     counts.note(if open.contains(&goal) {
                         "routing: a goal of a range slot among its area's open places (its room, clear of the obstacles and walls)"
                     } else {

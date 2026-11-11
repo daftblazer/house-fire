@@ -1589,7 +1589,7 @@ one another straight away (the user's: no more quarter-hour waits).
 
 ## Progress
 
-Iteration 28 (resumed after the end write-up at 24; no iteration limit).
+Iteration 29 (resumed after the end write-up at 24; no iteration limit).
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1802,6 +1802,14 @@ Iteration 28 (resumed after the end write-up at 24; no iteration limit).
   (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next: the draws logged
   (the observer's `R` for those sites) and the pick read from 8024F030's function, or the start
   speed after a walk cut short.
+
+- **Iteration 29, chunk 4 (the goals' scores).** The builder `fn_8024E480` read at its draws: a
+  goal's third word is its score, 100 less distance times gradient plus bonuses, and with the
+  slot's flag 0x2000 `random % 20 - 10`. `routing::slot_goal_score`: 135, or 125 to 144 when
+  flagged. Checked: 50 of the 52 goals that are their slots' own places (tick 1790's second
+  request scores 225: a bonus not read). The 48 at tick 931 are not the best-scored but drawn.
+  Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next: the
+  bonuses (tick 1790's 225, from the builder's tests), or the draws logged for the pick.
 
 ## The tenth loop's end
 
