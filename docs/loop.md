@@ -1581,7 +1581,7 @@ cannot be checked is not built, one-line commits, never pushed, no RK3566.
 
 ## Limits
 
-Stop after iteration 24, at 08:00 on 2026-11-11, when the chunks are done, or when two
+Stop after iteration 24, at 05:00 on 2026-11-11 (moved from 08:00 at the user's request), when the chunks are done, or when two
 iterations in a row end without a commit (record why here).
 
 ## Progress
