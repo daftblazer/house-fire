@@ -1586,7 +1586,7 @@ iterations in a row end without a commit (record why here).
 
 ## Progress
 
-Iteration 4 of 24.
+Iteration 5 of 24.
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1622,3 +1622,13 @@ Iteration 4 of 24.
   steps on a plan's line natively the original's to a thousandth of a sixteenth (24 set aside).
   Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next: the
   tops (0.6547 adults, 0.5702 the child) from the person's data, Sim 237's 0.02, the doors' states.
+
+- **Iteration 5, chunk 1 (the walker's speeds from the DOL).** The follower's step read further
+  (`fn_800AE6FC` the turn, `fn_800AEC38` the move): its budget is the frame (0.033 s) times the
+  factor, spent at a speed in sixteenths a second that grows by the top over 0.5 s to a top from
+  the DOL (19.84 adult, 17.28 child, 64.96 when +132 is 1). `routing::walk_rates` gives a frame's
+  top and growth from them (0.65472 and 0.04321 for an adult): the same 1,511 of 1,700 steps
+  exact. The adult or child test (`fn_80059194`, virtual) not read; the person data fields that
+  differ for the paper girl (4, 29, 32, 34, 56, 57, 60, 67) are too many to choose from on one
+  child. Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next:
+  Sim 237's 0.02 and the door states, or chunk 2 (the planner's points between corners).

@@ -191,6 +191,21 @@ pub fn corner_path(start: (i32, i32), goal: (i32, i32), obstacles: &[[i32; 5]], 
     Some(path)
 }
 
+/// A walker's top speeds (sixteenths a second, constants of Bustin' Out's DOL at 802A8DB8, 802A8DC0,
+/// 802A8DBC): an adult's, a child's, and the one its follower's +132 at 1 gives.
+pub const WALK_TOP_ADULT: f32 = 19.840_021;
+pub const WALK_TOP_CHILD: f32 = 17.280_02;
+pub const WALK_TOP_FAST: f32 = 64.960_07;
+/// The walker's frame: the global its step reads (r13 - 29720), 0.033 s.
+pub const WALK_FRAME: f32 = 0.033;
+/// The time a walker takes to reach its top from a stand (its speed grows by the top over it).
+pub const WALK_RAMP: f32 = 0.5;
+
+/// A walker's top and growth a frame, in sixteenths a frame, from its top a second.
+pub fn walk_rates(top_per_second: f32) -> (f32, f32) {
+    (top_per_second * WALK_FRAME, top_per_second / WALK_RAMP * WALK_FRAME * WALK_FRAME)
+}
+
 /// A walker's step a frame (`Route_Follow`, 800AE0A4; `docs/simulation.md`, "The walker's
 /// step"): from its speed the frame before (`speed`, 0 at its start) to this frame's, and the
 /// distance it moves along its line. Walking (factor 1) the speed grows by `growth` a frame to

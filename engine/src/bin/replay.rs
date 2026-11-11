@@ -46,7 +46,7 @@ use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
-use housefire::routing::{BLOCKS, Tile, along_line, corner_path, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
+use housefire::routing::{BLOCKS, Tile, WALK_FRAME, WALK_TOP_ADULT, WALK_TOP_CHILD, along_line, corner_path, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
 use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
@@ -2729,11 +2729,16 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             }
         }
     }
+    // study (REPLAY_SHOW_PERSONS): the persons' data, for the child's
+    if has("REPLAY_SHOW_PERSONS") {
+        for o in world.objects().filter(|o| o.person) {
+            println!("person {} {}: {:?}", o.id(), o.file.map_or("-".to_string(), |f| file_name(lib, f)), o.person_data);
+        }
+    }
     // The walker's steps natively (`walk_step`), each from its logged place along the line it
     // walks (the latest plan whose line it is on, less the last leg into a faced object when the
-    // plan has one), against the logged place after it. A walker's top is its first full step
-    // in the log (not yet native: 0.6547 for the adults, 0.5702 for the paper girl), its growth a
-    // frame the top over 15.15 frames.
+    // plan has one), against the logged place after it. Its top and growth from the DOL's
+    // constants (`walk_rates`); its largest logged step only tells an adult from a child.
     let mut speed: BTreeMap<u32, f32> = BTreeMap::new();
     let mut tops: BTreeMap<u32, f32> = BTreeMap::new();
     for f in log.follows.iter().filter(|f| f.before.factor == 1.0) {
@@ -2753,8 +2758,11 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         if (b.x, b.y) == (a.x, a.y) {
             continue;
         }
-        let Some(&top) = tops.get(&f.follower) else { continue };
-        let growth = top / 15.15;
+        // the walker's top a second: the DOL's adult or child constant (which: the one nearest
+        // its logged full step; the original's test, through the follower's +8, not yet read)
+        let Some(&seen) = tops.get(&f.follower) else { continue };
+        let per_second = [WALK_TOP_ADULT, WALK_TOP_CHILD].into_iter().min_by(|a, b| (a * WALK_FRAME - seen).abs().total_cmp(&(b * WALK_FRAME - seen).abs())).unwrap();
+        let (top, growth) = walk_rates(per_second);
         // the line it is on
         let found = log.plans[..plan_at].iter().rev().take(6).find_map(|pl| {
             let pts: Vec<(f32, f32)> = pl.points.iter().map(|&(x, y)| (x as f32, y as f32)).collect();

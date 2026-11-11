@@ -713,7 +713,18 @@ plan of three or more, whose last leg into the faced object is not walked. The f
 left. Checked on every logged step that moves (`Z`), each from its logged place: 1,511 of the
 1,700 on a logged plan's line natively the original's to a thousandth of a sixteenth (24 more not
 on one, set aside). The rest: one walk of Sim 237 whose steps each run 0.02 beyond the ramp, and
-the door's states (4 and 5). The top is each walker's first full step (not yet native).
+the door's states (4 and 5).
+
+**The walker's speeds, from the DOL** (`routing::walk_rates`). The follower's step works in time:
+its budget a frame is the frame (the global at r13 - 29720, 0.033 s, not 1/30) times its factor,
+spent at its speed in sixteenths a second (its +144). The top is a constant of the DOL: 19.84 at
+802A8DB8 (an adult), 17.28 at 802A8DC0 (a child: the paper girl), 64.96 at 802A8DBC when the
+follower's +132 is 1; the speed grows by the top over 0.5 s (802A8DC8), the brake its stopping
+distance at that rate. So a frame's top is top × 0.033 (0.65472, 0.57024) and its growth top ×
+0.033² / 0.5 (0.04321, 0.03764): the logged figures. With the constants in place of the logged
+tops the same 1,511 steps are exact. Which top a walker has is the original's test through the
+follower's +8 (`fn_80059194`, two virtual calls deep), not yet read: natively it is still told
+by the walker's largest logged step.
 
 **Which objects block** (`routing::obstacle`). Read from the objects the loop asks about (`J`)
 against the object data the save gives: an object is left out when its flags (object data 8)
