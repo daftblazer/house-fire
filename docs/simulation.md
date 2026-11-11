@@ -1198,7 +1198,12 @@ the native coarse ways' openings, it gives every plan's points exactly, 17 of 17
 toward zero or down: 15). Natively (`refine`, on the `Way` coarse_way returns
 with its openings): 16 of 17 plans' points exact in replay, the miss the same search (tick 521).
 After the goal the plan adds one point more (the goal plus a step: 16
-on in 6 plans, 24, 15, 127 and (-8, -16) in others; none in 1): the approach's, still to fit.
+on in 6 plans, 24, 15, 127 and (-8, -16) in others; none in 1): the approach's, still to fit. Against the chosen goal's 'H' entry (x, y, then two words: 100,
+135, 139 or 143, and a mask): mask 1 gives (+16, 0) five times, mask 4 (0, -16) twice, mask 16
+(0, +15) twice, mask 64 (0, +16) once and (0, -24) once, masks 0 and 9 (0, +16); (127, 0) with
+23708 and (-16, -8) fit no step. The 15s look like a length-16 facing truncated, so the point is
+likely where the Sim faces on arriving (a facing vector, or the target's own place for the odd
+ones): it is the request's, not the search's, and is to be read where the plan appends it.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
