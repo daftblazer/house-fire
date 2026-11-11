@@ -44,7 +44,7 @@ use housefire::interp::{Error, Frame, Host, Interpreter, Mode, PrimResult, Trees
 use housefire::library::{Advert, Library};
 use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
-    call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
+    call_named_tree, drop_onto, grab, snap, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
 use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, slot_pick, run_on_point, walk_frames, routing_return_tick, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
 use housefire::planner::{choose_goal, coarse_way, point_after_goal, refine, Growth, MapRect};
@@ -556,6 +556,25 @@ impl Host for ReplayHost<'_, '_> {
                 "primitives: Dialog: DIFFERENT"
             });
             return got;
+        }
+        if matches!(n.opcode, 4 | 43 | 46) {
+            // Grab, DropOnto, Snap natively on the world (who holds what, and where); the result
+            // the log's. A held object's or a person's place is routing's (the log's 'P' records
+            // set it each tick), so only who holds what is checked here, by the variables
+            // scripts read afterwards (scopes 16, 20, data 2)
+            let so = interp.stack().last().map_or(0, |f| f.stack_object);
+            let done = match n.opcode {
+                4 => grab(&mut self.world, me_id, so).is_some(),
+                43 => drop_onto(&mut self.world, me_id, so).is_some(),
+                _ => snap(n, &mut self.world, me_id, so).is_some(),
+            };
+            let name = match n.opcode {
+                4 => "Grab",
+                43 => "DropOnto",
+                _ => "Snap",
+            };
+            note!(self.counts, "objects: {name} natively{}", if done { "" } else { ": its objects not found (or not modelled)" });
+            return self.logged(s, n);
         }
         if n.opcode == 13 {
             // PushAction

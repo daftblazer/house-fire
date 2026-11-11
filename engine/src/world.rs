@@ -603,12 +603,16 @@ impl Variables for ScriptVariables<'_, '_> {
             }
             scope::STACK_SLOT => {
                 // The object in the stack object's slot d: the one whose container field (data 2)
-                // is the stack object and whose slot field (data 3) is d; 0 if none
+                // is that object and whose slot field (data 3) is d; 0 if none. (Scope 20, my
+                // slot, is the same of me: 19 of the home log's 62 reads while replay's world
+                // lacks the made objects Sims hold, so not used yet.)
                 let so = self.frame.stack_object;
+                // a person's slot 0 is its hand: whatever it holds, whichever slot field
+                let hand = d == 0 && self.world.find_object(so).is_some_and(|o| o.person);
                 let id = self
                     .world
                     .objects()
-                    .find(|o| so != 0 && o.data.get(DATA_CONTAINER) == Some(&so) && o.data.get(DATA_SLOT) == Some(&d))
+                    .find(|o| so != 0 && o.id() != so && o.data.get(DATA_CONTAINER) == Some(&so) && (hand || o.data.get(DATA_SLOT) == Some(&d)))
                     .map_or(0, Object::id);
                 return int(id);
             }
