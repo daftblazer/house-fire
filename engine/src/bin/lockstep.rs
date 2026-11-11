@@ -358,6 +358,10 @@ fn main() -> ExitCode {
                 h.answer = match s.result {
                     1 => PrimResult::Yield,
                     2 => PrimResult::Stop,
+                    // a primitive that runs a tree (RunFunctionalTree 20, CallNamedTree 28,
+                    // GosubFoundAction 30) and stayed on its node: it pushed the tree and goes
+                    // on into it (Continue), its node unchanged
+                    _ if matches!(n.opcode, 20 | 28 | 30) && s.after == s.node && n.true_target as u16 != s.node && n.false_target as u16 != s.node => PrimResult::Continue,
                     _ if s.after == n.true_target as u16 => PrimResult::True,
                     _ => PrimResult::False,
                 };
@@ -599,6 +603,9 @@ fn main() -> ExitCode {
                     !interp.stack().is_empty() && back_node(&interp) == s.after && (s.result != 1 || step == Step::Yield)
                 };
                 notes.note_ex(&format!("primitive {what}{}", if same { ": same" } else { ": DIFFERENT" }), &ex);
+                if !same && std::env::var_os("LOCKSTEP_BY_OPCODE").is_some() {
+                    notes.note_ex(&format!("  primitive {what} DIFFERENT, opcode {} result {}", n.opcode, s.result), &ex);
+                }
             } else {
                 notes.note_ex("node not in the tree", &s.node.to_string());
             }
