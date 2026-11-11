@@ -186,3 +186,20 @@ length (0xA6A for 16 ticks, 0x514 for 17). Castaway's ELF has `EAnimManager` (re
 Animate stays the log's. The primitive is a thin
 wrapper over that system, so it waits for it. Animate steps also make the effect objects
 (`objects.md`, "Objects made and removed").
+
+## CreateObjectInstance (opcode 42): what the home log shows
+
+Three of the home log's four made objects come from opcode 42 in a Sim's interaction (the step
+whose stack object becomes the new id, `lockstep` with `LOCKSTEP_SHOW_MAKERS`):
+
+| Tick | Made | By | Operand |
+|---|---|---|---|
+| 692 | 197, a bag of chips | the fridge's 0x2007 node 1 | `75 e3 01 f3 04 01 00 00` |
+| 1219 | 201, a trash pile | the chips' 0x2022 node 1 | `75 70 90 7f 06 00 00 00` |
+| 1765 | 202, a meal | the meal group's 0x200f node 6 | `53 f6 62 bf 04 00 00 00` |
+
+Bytes 0-3 are the new object's GUID (little-endian: f301e375, 7f907075, bf62f653), byte 4 where
+it goes (4, 6), byte 5 a flag. The new object is made inside the step: its own init runs at once
+(its first steps, 0x1004 / 0x200b / 0x1003 node 0, come before the maker's), the list's head is
+it ('C' during the step), and the maker's stack object is its id after. The fourth made object,
+the "go here and show" marker at 1503, has no opcode-42 step: the engine's own.

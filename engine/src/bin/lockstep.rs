@@ -591,6 +591,36 @@ fn main() -> ExitCode {
         }
     }
 
+    // study (LOCKSTEP_SHOW_MAKERS): the node a made object came from, the step whose stack
+    // object becomes an id the list gains that tick (or the one before)
+    if std::env::var_os("LOCKSTEP_SHOW_MAKERS").is_some() {
+        let mut have: BTreeSet<i16> = BTreeSet::new();
+        let mut made: BTreeMap<u32, Vec<i16>> = BTreeMap::new();
+        for l in &log.lists {
+            let now: BTreeSet<i16> = l.ids.iter().copied().collect();
+            if !have.is_empty() {
+                made.insert(l.tick, now.difference(&have).copied().collect());
+            }
+            have = now;
+        }
+        for (i, s) in log.steps.iter().enumerate() {
+            let new = made.get(&s.tick).or(made.get(&(s.tick + 1)));
+            if s.stack_object_after == s.stack_object || !new.is_some_and(|n| n.contains(&s.stack_object_after)) {
+                continue;
+            }
+            let node = step_object[i].and_then(|o| lib.tree(Some(o), s.tree)).and_then(|t| lib.tree_at(t).nodes.get(s.node as usize)).copied();
+            println!(
+                "made {} at tick {} by tree {:#x} node {} of {:?}: opcode {:?} operand {:02x?}",
+                s.stack_object_after,
+                s.tick,
+                s.tree,
+                s.node,
+                step_object[i].map(|f| &lib.file(f).path),
+                node.map(|n| n.opcode),
+                node.map(|n| n.operand)
+            );
+        }
+    }
     variables(&lib, &log, &step_object, &mut notes);
     set_to_next_check(&lib, &ngh, &log, &step_object, &mut notes);
 
