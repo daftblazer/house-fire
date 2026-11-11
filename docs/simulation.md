@@ -1147,7 +1147,12 @@ plan 0's second way comes out exactly too: 13 of 23. The misses left are the hou
 did not run"), so the model had no regions there and the planner presumably kept the last ones
 it built; every empty-D plan but 12 is a miss. A model run that let an empty D keep the previous
 plan's regions did not finish (stopped after 55 minutes: a runaway search or cut, so the model
-needs a step cap like the original's, min(1000, 50 + n·k)).
+needs a step cap like the original's, min(1000, 50 + n·k)). With a cap of 1000 expansions it
+finishes: still 13 of 23 (plan 14 comes closer, its way's second half exact; plan 2 hits the
+cap, plan 16 finds none). The union of the last yard D (43) and house D (27) for an empty D is
+worse (12; plan 12 lost). So which regions an empty-D search uses is not to be guessed: the
+region lookup reads two lists through the graph (*(8035D2F4 + 4), and *(8035D2F4 + 8) when not
+null); they are the thing to log.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
