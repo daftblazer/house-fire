@@ -1126,8 +1126,16 @@ expanded cell, take its sides in the order x0, y1, x1, y0; walk each along the l
 (x0 - 1, y1, x1, y0 - 1), in rising coordinate, and from every point there that is neither
 blocked nor in a cell yet, grow a cell from that point. Expanding the dumped cells in the
 search's order (0, 7, 9, 1) gives all 13 dumped cells exactly, in order (13 of 13); of the 24
-side orders only that one does (the next best, 9). Next: the cells and the search natively
-(routing.rs), checked on the home log's 16 coarse ways.
+side orders only that one does (the next best, 9). The whole search, simulated (a Python model: start cell
+cut round the start at cost 0, goal cell round the goal, then A* over cells, each expansion
+cutting its cell's neighbours, an edge to every existing cell its grown rect overlaps, crossing
+at the overlap's centre, cost (d + 1)·((ka + kb + 2) >> 1), h the distance to the goal, and from
+the goal's cell an edge to the goal itself): of the home log's 23 searches (a plan often runs
+two, 'I' before its J, D, X, H and G) it gives 12 coarse ways exactly. Every first search in the
+yard is among them. Not yet: the plans' second searches where they differ from the first (plan
+0's second runs to 461 and 473 along the strip, not 355: another setting, perhaps the map's cell
+cap), the searches through the house (plans 2, 4, 14, 16: their walls and doors), plan 9 (no
+start cell in the model), and plan 10's second point (313 for 317).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
