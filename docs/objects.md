@@ -191,7 +191,10 @@ A new object takes the lowest id not in use, so a removed one's id comes back, a
 front of the list (`World::make_object`). (One more than the highest, the earlier rule, gave the
 club's three the same ids, but not the home log's: there the paper girl leaves as 197 and comes
 back as 197 below higher ids, and all 14 made objects take the lowest free id.) Replayed in the lockstep, all three
-ids and the list's order at all five changes are the original's. With them, SetToNext's
+ids and the list's order at all five changes are the original's. (The home log's lockstep read the disc's lots until it
+took `--card`: with the save's Mom's house, all 8 of the home log's lists are the original's, in
+order, and SetToNext's kinds 0, 1, 4 and 6 are the same but for 3, 3, 39 and 4 steps, from
+6,495 differing kind-4 steps before.) With them, SetToNext's
 kind 0 agrees on all 23,082 steps.
 
 While a lot loads (its first ticks) the original's list is still being built in another

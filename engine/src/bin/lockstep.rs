@@ -1,7 +1,10 @@
 //! The native interpreter against the original's, step by step: a log of the recompiled Bustin'
 //! Out's interpreter (its `src/tree_log.cpp`, BUSTIN_TREE_LOG) and the disc it ran.
 //!
-//! Usage: lockstep LOG ISO
+//! Usage: lockstep LOG ISO [--card CARD]
+//!
+//! --card: the lots from a save on a memory card image (the log's run started from it), not the
+//! disc's.
 //!
 //! The log has every step each tree stack took. For each step the native interpreter is given
 //! the stack as the log has it (each frame's tree, found on the disc by the native lookup, its
@@ -34,7 +37,7 @@ use housefire::expression::{ExprResult, ExpressionOperand, Variable, Variables, 
 use housefire::interp::{Frame, Host, Interpreter, Mode, PrimResult, Step, Trees};
 use housefire::library::Library;
 use housefire::primitives::set_to_next;
-use housefire::save::read_lots;
+use housefire::save::{memory_card_file, read_lots};
 use housefire::tree_log::{ExprRec, LookupRec, StepRec, read_log, same_shape};
 use housefire::world::{DATA_OBJECT_ID, Object, ObjectKey, ScriptVariables, Table, World, scope};
 use housefire::{FileId, TreeId};
@@ -166,6 +169,20 @@ fn main() -> ExitCode {
             println!("{} is not Bustin' Out", args[2]);
             return ExitCode::from(1);
         }
+    };
+    // The neighbourhood: the card's save (--card) or the disc's.
+    let ngh = match args.iter().position(|a| a == "--card").and_then(|i| args.get(i + 1)) {
+        Some(p) => {
+            let mut card = std::fs::read(p).unwrap_or_default();
+            card.truncate(1 << 22);
+            let ngh = memory_card_file(&card, "G4ME69").unwrap_or_default();
+            if ngh.is_empty() {
+                println!("no Bustin' Out save on {p}");
+                return ExitCode::from(1);
+            }
+            ngh
+        }
+        None => d.read("Runtime/default.ngh").unwrap_or_default(),
     };
     let lib = Library::bustin_out(&d);
     let all: Vec<FileId> = (0..lib.files().len() as u32).map(FileId).collect();
@@ -575,7 +592,7 @@ fn main() -> ExitCode {
     }
 
     variables(&lib, &log, &step_object, &mut notes);
-    set_to_next_check(&lib, &d, &log, &step_object, &mut notes);
+    set_to_next_check(&lib, &ngh, &log, &step_object, &mut notes);
 
     for (k, v) in &notes.out {
         println!("  {k:<62} {v}");
@@ -877,8 +894,8 @@ fn variables(lib: &Library, log: &housefire::tree_log::Log, step_object: &[Optio
 /// natively; the objects that appear at the load and are not in the lot's table (two in the
 /// club) go in front, not Sims. Each SetToNext step the original took on the stack object is
 /// run natively on that world, from the step's frame.
-fn set_to_next_check(lib: &Library, d: &Disc, log: &housefire::tree_log::Log, step_object: &[Option<FileId>], notes: &mut Notes) {
-    let lots = read_lots(&d.read("Runtime/default.ngh").unwrap_or_default()).expect("the disc's lots");
+fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, step_object: &[Option<FileId>], notes: &mut Notes) {
+    let lots = read_lots(ngh).expect("the lots");
     let orders: Vec<Vec<i16>> = lots.iter().map(|l| World::new(lib).read_objects(l).unwrap().objects.iter().map(|o| o.id).collect()).collect();
     let lot_ids: Vec<BTreeSet<i16>> = orders.iter().map(|o| o.iter().copied().collect()).collect();
     // Which lot: the one whose table order the original's longest walk over every object
@@ -1102,6 +1119,10 @@ fn set_to_next_check(lib: &Library, d: &Disc, log: &housefire::tree_log::Log, st
             }
             let order: Vec<i16> = lw.objects().map(Object::id).collect();
             notes.note(if order == l.ids { "objects: the list's order the same" } else { "objects: the list's order DIFFERENT" });
+            if order != l.ids && std::env::var_os("LOCKSTEP_SHOW_LISTS").is_some() {
+                let first = order.iter().zip(&l.ids).position(|(a, b)| a != b).unwrap_or(0);
+                println!("list at tick {}: native {:?} log {:?} (from {first}, of {} and {})", l.tick, &order[first..(first + 6).min(order.len())], &l.ids[first..(first + 6).min(l.ids.len())], order.len(), l.ids.len());
+            }
         }
         let r = set_to_next(&node, &mut ScriptVariables::new(&mut lw, nobody, &mut f));
         let orig_true = s.after == raw[2] as u16;
