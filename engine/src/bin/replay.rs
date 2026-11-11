@@ -1424,6 +1424,33 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
             // routing pass has one
             let (x, y) = if use_native_places { native_places.get(&(p.id, p.tick)).copied().unwrap_or((p.x, p.y)) } else { (p.x, p.y) };
             if use_native_places {
+                if !native_places.contains_key(&(p.id, p.tick)) {
+                    let person = h.world.find(p.id).is_some_and(|k| h.world.get(k).person);
+                    if p.tick == 0 {
+                        let loaded = h.world.find(p.id).map(|k| { let o = h.world.get(k); (o.x16, o.y16, o.level) });
+                        h.counts.note(if loaded == Some((p.x, p.y, p.level)) {
+                            "places: a tick-0 placement natively where the lot loads it"
+                        } else if loaded.is_some_and(|(x, y, l)| (((x >> 4) << 4) + 8, ((y >> 4) << 4) + 8, l) == (p.x, p.y, p.level)) {
+                            "places: a tick-0 placement natively the centre of the tile the lot loads it on"
+                        } else if loaded.is_some_and(|(x, y, _)| (x < 0 || y < 0) && (p.x, p.y) == (-16, -16)) {
+                            "places: a tick-0 placement natively (-16, -16), the place of an object off the lot"
+                        } else if loaded.is_none() {
+                            "places: a tick-0 placement of an object not in the native lot"
+                        } else {
+                            "places: a tick-0 placement NOT where the lot loads it"
+                        });
+                        if has("REPLAY_SHOW_PLACES") && !loaded.is_some_and(|(x, y, l)| (((x >> 4) << 4) + 8, ((y >> 4) << 4) + 8, l) == (p.x, p.y, p.level)) {
+                            println!("tick-0 place of {}: logged {:?}, loaded {loaded:?}", p.id, (p.x, p.y, p.level));
+                        }
+                    }
+                    h.counts.note(&if p.tick == 0 {
+                        "places: the log's, no native walk: a tick-0 placement".to_string()
+                    } else if !person {
+                        "places: the log's, no native walk: not a person".to_string()
+                    } else {
+                        format!("places: the log's, no native walk: person {}", p.id)
+                    });
+                }
                 h.counts.note(if !native_places.contains_key(&(p.id, p.tick)) {
                     "places: the log's (no native walk there)"
                 } else if (x, y) == (p.x, p.y) {

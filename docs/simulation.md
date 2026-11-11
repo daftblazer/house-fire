@@ -1357,7 +1357,12 @@ off on both axes: its line near the end not quite the one it walked). Put in the
 place of the log's (study REPLAY_NATIVE_PLACES): 919 of the log's 1,410 place records come from
 the native walk (897 the same, 22 a sixteenth off), the other 491 stay the log's (places outside
 the whole walks: the tick-0 placements, walks the check sets aside, other moves), and every other
-count is as before. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+count is as before. Those 491: 206 are the tick-0 placements, 244 places of objects that are not
+persons (moved by their scripts), 41 persons' places outside the whole walks (35 the paper
+girl's). The tick-0 placements are native already: each is the centre of the tile the lot loads
+its object on ((x >> 4 << 4) + 8, its level the same; 184), or (-16, -16) for an object off the
+lot (22; the lot loads those at (-24, -24) or so): 206 of 206. So the object's place the scripts
+see is its tile's centre, not the corner + footprint offset the lot keeps (chairs +4, persons +3). Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
