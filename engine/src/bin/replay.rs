@@ -3777,6 +3777,35 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                         let game = speeds.get(&f.follower).cloned().unwrap_or_default();
                         let (frames, _) = walk_frames(total, v0, wtop, growth, runs_on, &game);
                         let native = frames + turn_frames(angle);
+                        // the Sim's place each tick natively: the walker's distance along the line
+                        // after the tick's last frame, its point rounded, against the logged places
+                        if let (Some(&id), Some(ticks)) = (walker_of.get(&f.follower), frame_ticks.get(&f.follower)) {
+                            let (mut v, mut gone) = (v0, 0.0f32);
+                            let mut gone_after: Vec<f32> = Vec::with_capacity(frames as usize);
+                            for k in 0..frames as usize {
+                                let factor = game.get(k).copied().unwrap_or(1.0);
+                                if factor > 0.0 {
+                                    let left = total - gone;
+                                    let (nv, st) = walk_step(v, wtop, growth, factor, if runs_on { f32::INFINITY } else { left });
+                                    v = nv;
+                                    gone += st.min(left);
+                                }
+                                gone_after.push(gone);
+                            }
+                            for r in log.places.iter().filter(|r| r.id == id && r.tick > start_tick && r.tick <= f.tick) {
+                                let Some(k) = ticks.iter().take(gone_after.len()).rposition(|&t| t <= r.tick) else { continue };
+                                let (x, y) = along_line(&line, 0, 0.0, gone_after[k]);
+                                let ours = ((x + 0.5).floor() as i32, (y + 0.5).floor() as i32);
+                                counts.note(if ours == (r.x, r.y) {
+                                    "routing: a walking Sim's place each tick natively the original's (the walker's, rounded)"
+                                } else {
+                                    "routing: a walking Sim's place each tick natively NOT the original's"
+                                });
+                                if ours != (r.x, r.y) && show_walks {
+                                    println!("   place of {id} at tick {}: native {ours:?}, the original's {:?}", r.tick, (r.x, r.y));
+                                }
+                            }
+                        }
                         let original = walked + n;
                         // the routing primitive natively: its return the tick after its walker's
                         // frame after done (frame `native`, from the walk's start), against the run
