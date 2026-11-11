@@ -911,7 +911,7 @@ impl ReplayHost<'_, '_> {
                 let vs: Vec<Valued> = values.iter().map(|&(value, candidate)| Valued { value, candidate }).collect();
                 let list = autonomy_list(lib, vs, false);
                 let logged_list = log.choice_lists.iter().rfind(|l| l.tick == s.tick);
-                let rnd = log.randoms.iter().rfind(|x| x.tick == s.tick);
+                let rnd = log.randoms.iter().rfind(|x| x.tick == s.tick && x.site <= 1);
                 // The list's interaction number is the interaction's string index.
                 let index_of = |c: &Candidate| c.interaction(lib).string_index;
                 if let Some(ll) = logged_list {

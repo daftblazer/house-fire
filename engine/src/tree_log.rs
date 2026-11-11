@@ -182,7 +182,8 @@ pub struct FollowState {
     pub factor: f32,
 }
 
-/// The random number autonomy's choice draws ('R').
+/// A random number the game drew (the 'R' record): site 0 and 1 autonomy's choice (80226DD4,
+/// 80226DE8), 2 a slot goal's score (8024F030), 3 the slot builder's pick (8024F504).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RandomRec {
     pub tick: u32,

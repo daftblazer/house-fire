@@ -98,7 +98,7 @@ def records(path):
             rq, ch, cnt = struct.unpack_from('<IiH', b, p); p += 10
             if p + 16 * cnt > n: break
             yield 'H', (rq, ch, [struct.unpack_from('<iiII', b, p + 16 * i) for i in range(cnt)]); p += 16 * cnt
-        elif k == b'R':  # the random number autonomy's choice draws: (site, result)
+        elif k == b'R':  # a random number drawn: (site, result); 0, 1 autonomy's choice, 2 a slot goal's score, 3 the slot builder's pick
             if p + 5 > n: break
             yield 'R', struct.unpack_from('<BI', b, p); p += 5
         elif k == b'W':

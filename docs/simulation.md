@@ -625,7 +625,12 @@ request, made just after the first on the same table with the same two places: i
 the table's id (49) in their last word's high half and score 225, 90 more. With that bonus for a
 request that names its object (measured, not yet read: the base is the builder's `[r1+144]` or
 `r14` by its tests at 8024EC3C), all 52. The 48 kept at tick 931 are not the best: they are
-drawn (8024F504). The planner's choice among the goals is the
+drawn (8024F504). The observer logs these draws too (`R`, sites 2 and 3: a new home log, its
+steps and figures the same): at tick 931, 339 for the scores (8024F030) and 48 for the pick
+(8024F504), one a goal; at tick 1579, 165 for scores (its 43 goals round the paper girl, not her
+slot's places, are scored with a random part too) and none for a pick. All 48 goals' scores at
+tick 931 are among the drawn ones, though not in the draws' order: which place each draw scores
+is the builder's loop, still to read. The planner's choice among the goals is the
 nearest native one in the two requests that took one natively.
 
 **The planner's obstacles, logged.** (Read turned at first: see "The obstacles' objects" below.) The search (`fn_8024C5DC`) goes over the objects and, for
