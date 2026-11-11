@@ -113,6 +113,24 @@ pub fn create_object(n: &Node, w: &mut World) -> Option<ObjectKey> {
     Some(w.make_object(o))
 }
 
+/// DropOnto (opcode 43, operand byte 4 a flag): the object the actor holds (the first whose
+/// container field, data 2, is the actor) goes to the centre of the stack object's tile, on its
+/// level. Returns the dropped object's id and new place. Measured: the home log's four (the meal
+/// onto the counter and the stove, 202 onto the dining table), each the place the log has next.
+pub fn drop_onto(w: &mut World, me: i16, stack_object: i16) -> Option<(i16, i32, i32, i32)> {
+    let to = w.find_object(stack_object)?;
+    let (x, y, level) = (((to.x16 >> 4) << 4) + 8, ((to.y16 >> 4) << 4) + 8, to.level);
+    let k = w.order().iter().copied().find(|&k| {
+        let o = w.get(k);
+        o.id() != me && o.data.get(crate::world::DATA_CONTAINER) == Some(&me)
+    })?;
+    let o = w.get_mut(k);
+    o.x16 = x;
+    o.y16 = y;
+    o.level = level;
+    Some((o.id(), x, y, level))
+}
+
 /// RemoveObjectInstance (opcode 18): the stack object (operand byte 0 1) or the object itself
 /// (0) leaves the world; its id is free again. None if there is no such object. Measured: the
 /// home log's three removals (the paper girl herself at 466, the chips by their own tree at

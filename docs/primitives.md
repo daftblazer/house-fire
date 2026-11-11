@@ -225,4 +225,9 @@ lists lack, and with them no object is left for the lists to remove.
 The places the tenth loop found set to a tile's centre outside any walk (the meal at 165, 877,
 1455; 202 at 5083) are opcode-43 steps: a counter's 0x200f node 11, the food processor's 0x2003
 node 13, the counter's 0x2018 node 15, the dining table's 0x2007 node 62, operand 0 (byte 4 1 at
-the table). Not native yet (chunk 2).
+the table). The dropped object is the one the actor holds (its container field, data 2, is the
+actor: the meal 198 for Sim 237, from the save; 202 for Sim 12, written at run time), and it goes
+to the centre of the stack object's tile on its level (the counter at (400, 336) → (408, 344),
+the stove at (400, 352) → (408, 360), the table at (384, 256) → (392, 264)). Natively
+`drop_onto`, checked in lockstep's world (a made object's fields 2 and 59 from the log): all 4
+the held object and the place the log has next. The club's sessions have none.

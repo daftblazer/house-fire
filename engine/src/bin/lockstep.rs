@@ -36,10 +36,10 @@ use housefire::disc::Disc;
 use housefire::expression::{ExprResult, ExpressionOperand, Variable, Variables, expression};
 use housefire::interp::{Frame, Host, Interpreter, Mode, PrimResult, Step, Trees};
 use housefire::library::Library;
-use housefire::primitives::{create_object, remove_object, set_to_next};
+use housefire::primitives::{create_object, drop_onto, remove_object, set_to_next};
 use housefire::save::{memory_card_file, read_lots};
 use housefire::tree_log::{ExprRec, LookupRec, StepRec, read_log, same_shape};
-use housefire::world::{DATA_OBJECT_ID, Object, ObjectKey, ScriptVariables, Table, World, scope};
+use housefire::world::{DATA_CONTAINER, DATA_OBJECT_ID, Object, ObjectKey, ScriptVariables, Table, World, scope};
 use housefire::{FileId, TreeId};
 
 /// The variables as the original's lookup found them: the right side is asked for first, then
@@ -1124,24 +1124,41 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
     }
     // No object of the world's: SetToNext reads the frame alone (scope 10, the parameters).
     let nobody = ObjectKey(u32::MAX);
-    // Data field 59 of each object as the log reads it (scopes 3 and 4: the address back to the
-    // object, the field at +0x26 + 2 x 59), by step: what kind 6 compares, set at run time by an
-    // object's own scripts, so a made object's is taken from the log.
-    let mut field59: BTreeMap<u32, Vec<(usize, i16)>> = BTreeMap::new();
+    // Data fields 2 (the container) and 59 of each object as the log reads them (scopes 3 and 4:
+    // the address back to the object, the field at +0x26 + 2 x field), by step: what DropOnto and
+    // SetToNext kind 6 read, set at run time by an object's own scripts, so a made object's are
+    // taken from the log.
+    const LOGGED_FIELDS: [i16; 2] = [DATA_CONTAINER as i16, 59];
+    let mut fields: BTreeMap<(u32, i16), Vec<(usize, i16)>> = BTreeMap::new();
     for (i, s) in log.steps.iter().enumerate() {
-        for v in s.lookups.iter().filter(|v| matches!(v.scope, 3 | 4) && v.data == 59 && v.flags & 1 != 0) {
+        for v in s.lookups.iter().filter(|v| matches!(v.scope, 3 | 4) && LOGGED_FIELDS.contains(&v.data) && v.flags & 1 != 0) {
             let a = if v.ptr != 0 { v.ptr } else { v.fptr };
-            let owner = if a != 0 { a.wrapping_sub(0x26 + 2 * 59) } else if v.scope == 3 { v.object } else { continue };
-            field59.entry(owner).or_default().push((i, v.value));
+            let owner = if a != 0 { a.wrapping_sub(0x26 + 2 * v.data as u32) } else if v.scope == 3 { v.object } else { continue };
+            fields.entry((owner, v.data)).or_default().push((i, v.value));
         }
-        // an expression writing it: the value after the step, the owner from the left side's
+        // an expression writing one: the value after the step, the owner from the left side's
         // lookup in the same step
-        if let Some(e) = s.expr.as_ref().filter(|e| matches!(e.lhs_scope, 3 | 4) && e.lhs_data == 59 && e.flags & 1 != 0)
-            && let Some(v) = s.lookups.iter().find(|v| v.scope == e.lhs_scope && v.data == 59 && v.ptr != 0)
+        if let Some(e) = s.expr.as_ref().filter(|e| matches!(e.lhs_scope, 3 | 4) && LOGGED_FIELDS.contains(&e.lhs_data) && e.flags & 1 != 0)
+            && let Some(v) = s.lookups.iter().find(|v| v.scope == e.lhs_scope && v.data == e.lhs_data && v.ptr != 0)
         {
-            field59.entry(v.ptr.wrapping_sub(0x26 + 2 * 59)).or_default().push((i, e.lhs_after));
+            fields.entry((v.ptr.wrapping_sub(0x26 + 2 * e.lhs_data as u32), e.lhs_data)).or_default().push((i, e.lhs_after));
         }
     }
+    // a made object's logged fields as they stood before step i
+    let set_made_fields = |lw: &mut World, made_ptr: &BTreeMap<i16, u32>, i: usize| {
+        for (&id, &ptr) in made_ptr {
+            let Some(k) = lw.find(id) else { continue };
+            for f in LOGGED_FIELDS {
+                if let Some(&(_, v)) = fields.get(&(ptr, f)).and_then(|r| r.iter().take_while(|e| e.0 < i).last()) {
+                    let d = &mut lw.get_mut(k).data;
+                    if d.len() <= f as usize {
+                        d.resize(f as usize + 1, 0);
+                    }
+                    d[f as usize] = v;
+                }
+            }
+        }
+    };
     let mut made_ptr: BTreeMap<i16, u32> = BTreeMap::new(); // a made object's id -> its pointer
     // Each stack's object (its sim -> the object whose own variables it reads most) and each
     // object pointer's id in the lists.
@@ -1163,7 +1180,8 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
         let disc_node = || step_object[i].and_then(|o| lib.tree(Some(o), s.tree)).and_then(|t| lib.tree_at(t).nodes.get(s.node as usize)).copied();
         let op = match raw_of(s) {
             Some(raw) if u16::from_be_bytes([raw[0], raw[1]]) & 0x7FFF == 31 && raw[2] != raw[3] => 31,
-            _ if s.look == b'X' && disc_node().is_some_and(|n| n.opcode == 42 || n.opcode == 18) => disc_node().unwrap().opcode,
+            _ if s.look == b'X' && disc_node().is_some_and(|n| matches!(n.opcode, 42 | 18)) => disc_node().unwrap().opcode,
+            _ if disc_node().is_some_and(|n| n.opcode == 43) => 43,
             _ => continue,
         };
         let Some(node) = disc_node() else {
@@ -1221,6 +1239,19 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
                 println!("list at tick {}: native {:?} log {:?} (from {first}, of {} and {})", l.tick, &order[first..(first + 6).min(order.len())], &l.ids[first..(first + 6).min(l.ids.len())], order.len(), l.ids.len());
             }
         }
+        if op == 43 {
+            // DropOnto natively on this world: the object the actor holds to the stack object's
+            // tile centre, against the place the log has for it next
+            set_made_fields(&mut lw, &made_ptr, i);
+            let me = sim_object.get(&s.sim).and_then(|p| ptr_id.get(p)).copied().unwrap_or(-1);
+            let Some((id, x, y, level)) = drop_onto(&mut lw, me, s.stack_object) else {
+                notes.note("objects: DropOnto: nothing held or no stack object natively");
+                continue;
+            };
+            let logged = log.places.iter().find(|p| p.id == id && p.tick >= s.tick).map(|p| (p.x, p.y, p.level));
+            notes.note(if logged == Some((x, y, level)) { "objects: DropOnto natively, the held object and its place the original's" } else { "objects: DropOnto natively, NOT the original's" });
+            continue;
+        }
         if op == 18 {
             // RemoveObjectInstance natively on this world: operand byte 0 1 the stack object, 0
             // the step's own object (its sim's: the object whose own variables it reads most);
@@ -1261,16 +1292,7 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
         }
         let mut f = Frame { params: s.params.clone(), locals: s.locals.clone(), stack_object: s.stack_object, ..Default::default() };
         if node.operand[4] & 0x7F == 6 {
-            for (&id, ptr) in &made_ptr {
-                let Some(k) = lw.find(id) else { continue };
-                if let Some(&(_, v)) = field59.get(ptr).and_then(|r| r.iter().take_while(|e| e.0 < i).last()) {
-                    let d = &mut lw.get_mut(k).data;
-                    if d.len() <= 59 {
-                        d.resize(60, 0);
-                    }
-                    d[59] = v;
-                }
-            }
+            set_made_fields(&mut lw, &made_ptr, i);
         }
         let r = set_to_next(&node, &mut ScriptVariables::new(&mut lw, nobody, &mut f));
         let Some(raw) = raw_of(s) else { continue };
