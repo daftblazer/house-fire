@@ -231,3 +231,15 @@ to the centre of the stack object's tile on its level (the counter at (400, 336)
 the stove at (400, 352) → (408, 360), the table at (384, 256) → (392, 264)). Natively
 `drop_onto`, checked in lockstep's world (a made object's fields 2 and 59 from the log): all 4
 the held object and the place the log has next. The club's sessions have none.
+
+The other snaps of the tenth loop's 13. Four are made objects' first places, set by
+CreateObjectInstance's byte 4 (with Sim 12 the maker each time):
+- 693, the chips, byte 4 = 4 and byte 5 = 1: (408, 328), the fridge's tile, the one in front of
+  Sim 12 (at (392, 328), facing it);
+- 1766, the meal, byte 4 = 4 and byte 5 = 0: (392, 344), Sim 12's own place (in its hand?);
+- 1220, the trash pile, byte 4 = 6: (392, 296), the tile north of Sim 12's (392, 304);
+- 1503, the marker: made by the engine.
+Three cases do not fix byte 4's meaning (in front of the maker by its facing, in its hand,
+next to it): open. The meal's move at 752 happens in the counter's Animate steps (opcode 44,
+the meal its stack object): an animation event, with the animation (stage 4). 823, 1330 and
+4996 are still to be looked at (`lockstep`, `LOCKSTEP_SHOW_TICKS`).

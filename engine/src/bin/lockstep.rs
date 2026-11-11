@@ -605,6 +605,13 @@ fn main() -> ExitCode {
         }
         for (i, s) in log.steps.iter().enumerate() {
             let node = step_object[i].and_then(|o| lib.tree(Some(o), s.tree)).and_then(|t| lib.tree_at(t).nodes.get(s.node as usize)).copied();
+            if let Some(ticks) = std::env::var("LOCKSTEP_SHOW_TICKS").ok()
+                && ticks.split(',').any(|t| t.parse::<u32>().ok().is_some_and(|t| t == s.tick || t == s.tick + 1))
+                && let Some(n) = node.filter(|n| n.opcode < 256 && !matches!(n.opcode, 0 | 2 | 8 | 31))
+                && s.look == b'X'
+            {
+                println!("tick {} sim {:x} tree {:#x} node {} of {:?}: opcode {} operand {:02x?}, stack object {} -> {}", s.tick, s.sim, s.tree, s.node, step_object[i].map(|f| &lib.file(f).path), n.opcode, n.operand, s.stack_object, s.stack_object_after);
+            }
             if node.is_some_and(|n| n.opcode == 43 || n.opcode == 18) {
                 let n = node.unwrap();
                 println!(
@@ -1278,6 +1285,12 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
                 continue;
             };
             let (id, guid) = (lw.get(k).id(), lw.get(k).guid);
+            if std::env::var_os("LOCKSTEP_SHOW_DROPS").is_some() {
+                let me = sim_object.get(&s.sim).and_then(|p| ptr_id.get(p)).copied().unwrap_or(-1);
+                let at = |id: i16| lw.find_object(id).map(|o| (o.id(), o.x16, o.y16, o.level, o.data.get(1).copied()));
+                let first = log.places.iter().find(|p| p.id == id && p.tick + 1 >= s.tick).map(|p| (p.tick, p.x, p.y, p.level));
+                println!("made {id} at tick {} operand {:02x?}: maker {:?} (me {:?}), stack object before {:?}; its first place {first:?}", s.tick, node.operand, at(me), me, at(s.stack_object));
+            }
             notes.note(if id == s.stack_object_after { "objects: CreateObjectInstance natively, the id the original's" } else { "objects: CreateObjectInstance natively, the id DIFFERENT" });
             // the object's pointer: the one the next list has at that id
             let ptr = log.lists.iter().find(|l| l.tick >= s.tick).and_then(|l| l.ids.iter().position(|&x| x == id).map(|p| l.objects[p]));
