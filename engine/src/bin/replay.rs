@@ -1222,6 +1222,22 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
             println!("{l}");
         }
     }
+    if has("REPLAY_SHOW_WALL_BYTES") {
+        // the second array's bytes (each tile's element) round the front yard, for study
+        if let Ok(arrays) = read_lot_arrays(club) {
+            for (n, a) in arrays.iter().enumerate() {
+                let es = a.element_size as usize;
+                println!("array {n}: {}x{}, {es} bytes a tile", a.width, a.height);
+                for y in 5..16 {
+                    let row: Vec<String> = (15..25).map(|x| {
+                        let i = (y * a.width + x) as usize * es;
+                        a.bytes[i..i + es].iter().map(|b| format!("{b:02x}")).collect::<String>()
+                    }).collect();
+                    println!("  y {y:2}: {}", row.join(" "));
+                }
+            }
+        }
+    }
     if let Some(dump) = env("REPLAY_DUMP_ARRAYS") {
         // the lot's three arrays, raw, for study
         let bytes: Vec<u8> = read_lot_arrays(club).unwrap_or_default().iter().flat_map(|a| a.bytes.iter().copied()).collect();

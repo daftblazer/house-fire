@@ -710,6 +710,15 @@ planner goes west to an obstacle's corner (301, 125) and down along the wall (15
 counts lies on the diagonal. A cost for crossing the walk-through obstacles (the flower beds,
 the trees, the door's own tile) at any weight does not give its line (tried, not kept).
 
+**The floor in the planner's choice** (tick 260). The lot's first array is each tile's floor
+(`REPLAY_SHOW_WALL_BYTES`): 0x00 grass, 0x0a the sidewalk (y 5), 0x1d the front path (x 18, y 6
+to 11, to the porch), 0x33 the porch, 0x19 the house's floor, 0x2d the kitchen's. The planner's
+line from the yard to the front door goes west onto the path and down it: 40.4 sixteenths on
+grass, 110.1 on the path and the porch (150.6 in all), where the native shortest line runs 83.5
+on grass and 46.6 on them (130.1). So the planner weighs the floor: grass at least 1.47 times the
+path. Tick 521's miss (in the house, from the front door to the fridge) is not the floor: its
+line has a little more of the kitchen's floor than the native one, the rest the same.
+
 **The walk keeps to its plan's line.** The planning Sim's logged places (`P`, at each tick's start,
 whole sixteenths, logged when they change) from its plan's tick to its next plan, against the
 plan's line: 852 of the home log's 854 within a sixteenth and a half of it (the 2 others the paper

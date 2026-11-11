@@ -1586,7 +1586,7 @@ iterations in a row end without a commit (record why here).
 
 ## Progress
 
-Iteration 10 of 24.
+Iteration 11 of 24.
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1666,3 +1666,11 @@ Iteration 10 of 24.
   home log's choice lists are the original's entire (the tie at tick 1443 too). Figures unchanged
   (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Chunk 6 done. Next: chunk 3,
   the two route misses (ticks 521 and 260), or chunk 2.
+
+- **Iteration 11, chunk 3 (tick 260: the floor).** The lot's first array is the floor by tile
+  (grass 0x00, the front path 0x1d, the porch 0x33, the house 0x19, the kitchen 0x2d); the
+  planner's line keeps to the path (40.4 grass, 110.1 path and porch) where the native shortest
+  runs over the grass (83.5, 46.6): grass weighs at least 1.47 times the path. Tick 521 is not
+  the floor. Study `REPLAY_SHOW_WALL_BYTES`. Figures unchanged (561,398, 338,305, 68,202,
+  lockstep 7,902, 4, 24); clippy clean. Next: the floor's weights (from the floors' data or the
+  planner's code) in `corner_path`, checked as all 16 plans by the planner's corners.
