@@ -1314,7 +1314,13 @@ primitive finds them is next (its handling of a self target). The request's own 
 (408, 344), 237 with 197). Slot 8's directions are all eight, so its area is the same whatever the
 facing: round (392, 344) it holds 26 of the goals, and some goals (x 320) lie 72 from there,
 past its reach of 64; round (360, 328) all 43. So the goals' area is centred on the counter tile
-while the request names the Sim: the centre comes from elsewhere in the primitive's self case. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+while the request names the Sim: the centre comes from elsewhere in the primitive's self case. (Iteration 115:) the counter, object 60, has a logged place of
+exactly (360, 328), its tile's centre: the request is global slot 8 round object 60. And the
+routing step paired with this plan is Sim 237's (opcode 45, stack object 197, slot 0 of its own
+table; it yields on through the next ticks), not 197's: the check pairs a step and a plan by tick
+and start, and 237 and 197 are both logged at (392, 344) then. So this is no self target: it is
+two Sims' routings mixed. The plan is most likely 197's own (to the counter's slot 8), and
+pairing needs the planning Sim's id in the log. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
