@@ -1081,7 +1081,15 @@ logged, a cost-0 D region's edge as logged, or a blocked D rect's (the lot borde
 edge pushed out by 7 (the border's 16 becomes 23, the house's 192 becomes 185). 7 is the only such
 value that fits; with 0, 3, 6 or 8 only 45 fit. The cutter is fn_8026B39C (5.6 KB, from the
 search's init fn_8026C9AC), with fn_8026901C (1.3 KB) its likely rect splitter; which rects it
-cuts, and in what order, is next.
+cuts, and in what order, is next. When (a study printing the
+graph's counts round each search step, the run's first three searches, reverted): the init
+cuts 2 cells, the start's and the goal's (cell 0, round the start, and cell 1, the paved strip
+holding the goal (88, 600)); then each step cuts the neighbours of the cell it expands, so the
+cells grow in A* order: expanding node 3 (cell 0) adds 6 (cells 2-7: three under it split at
+the cost-10 obstacle's x edges, two thin side strips, and one above), node 9 (cell 7) adds 3,
+node 11 (cell 9) adds none (its neighbour, cell 1, is already cut), node 2 (cell 1) adds 2. The
+second search goes 2, 8, 11, 14, 15, 17 and the third 1, 5, 5 (start and goal in one cell).
+So the native planner needs: a cell round a point, and a cell's neighbours across each side.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
