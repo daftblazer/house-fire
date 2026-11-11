@@ -1350,8 +1350,10 @@ logged one 1,142 of 1,203 times (floor or truncation 362, ceiling 430). So for t
 to walk a Sim it is the native walker's float place, rounded, that becomes the object's place. Natively, in each whole walk: the walker stepped frame by frame (`walk_step`, its
 speeds and the game's speed factor), each tick's last frame by the follower's logged frame ticks,
 its distance along the line made a point (`along_line`) and rounded: the Sim's logged place 897 of
-919 times while it walks; the 22 others are one sixteenth off on one axis (a half rounded the
-other way, or a frame on the next tick). Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+919 times while it walks; the 22 others are one sixteenth off on one axis. Of those, 14 are the place one frame later and
+4 one frame earlier (a frame on the tick's edge: when in the tick the object takes its walker's
+place is not fixed by the follower's logged frames), and 4 are one walk's (Sim 237 at 4923..4930,
+off on both axes: its line near the end not quite the one it walked). Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth

@@ -3802,7 +3802,11 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                                     "routing: a walking Sim's place each tick natively NOT the original's"
                                 });
                                 if ours != (r.x, r.y) && show_walks {
-                                    println!("   place of {id} at tick {}: native {ours:?}, the original's {:?}", r.tick, (r.x, r.y));
+                                    let at = |k: usize| {
+                                        let (x, y) = along_line(&line, 0, 0.0, gone_after[k.min(gone_after.len() - 1)]);
+                                        ((x, y), ((x + 0.5).floor() as i32, (y + 0.5).floor() as i32))
+                                    };
+                                    println!("   place of {id} at tick {}: native {ours:?} (exact {:?}), the original's {:?}; a frame before {:?}, after {:?}", r.tick, at(k).0, (r.x, r.y), at(k.saturating_sub(1)).1, at(k + 1).1);
                                 }
                             }
                         }
