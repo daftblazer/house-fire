@@ -126,6 +126,9 @@ pub struct ObjectFile {
     pub definitions: Vec<Definition>,
     /// SLOT by chunk id.
     pub slots: BTreeMap<u16, Vec<Slot>>,
+    /// Its function tables (OBJf by chunk id): each function's check tree and action tree (0
+    /// for none).
+    pub functions: BTreeMap<u16, Vec<(u16, u16)>>,
     /// The semi-global file it names.
     pub glob: String,
     /// That file, if there is one.
@@ -358,6 +361,19 @@ fn read_ttab(d: &[u8], o: Order, guard_of: &mut BTreeMap<u16, u16>, prefix_of: &
     t
 }
 
+/// An OBJf chunk: 0, the version, "OBJf", the count, then a check tree and an action tree each.
+fn read_functions(d: &[u8], o: Order) -> Option<Vec<(u16, u16)>> {
+    let mut r = Reader::new(d, o);
+    let mut read = || -> Result<Vec<(u16, u16)>, FormatError> {
+        r.u32()?;
+        r.u32()?;
+        r.u32()?;
+        let n = r.u32()?;
+        (0..n).map(|_| Ok((r.u16()?, r.u16()?))).collect()
+    };
+    read().ok()
+}
+
 /// A SLOT chunk: 0, the version, "SLOT", the count, then the slots; `None` unless version 10
 /// read to its end.
 fn read_slots(d: &[u8], o: Order) -> Option<Vec<Slot>> {
@@ -480,6 +496,11 @@ impl Library {
                     vals.push(r.s16().unwrap());
                 }
                 f.constants.insert(c.id as u16, vals);
+            }
+            for c in iff.of(b"OBJf") {
+                if let Some(t) = read_functions(iff.data(c), o) {
+                    f.functions.insert(c.id as u16, t);
+                }
             }
             for c in iff.of(b"SLOT") {
                 match read_slots(iff.data(c), o) {

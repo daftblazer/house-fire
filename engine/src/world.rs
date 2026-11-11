@@ -33,6 +33,7 @@ pub mod scope {
     pub const STACK_PERSON_DATA: u8 = 19;
     pub const STACK_SLOT: u8 = 16;
     pub const MY_SLOT: u8 = 20;
+    pub const STACK_FUNCTION: u8 = 35;
     pub const MY_RELATIONSHIP: u8 = 40;
     pub const STACK_RELATIONSHIP: u8 = 41;
     pub const STACK_DEFINITION: u8 = 21;
@@ -632,6 +633,14 @@ impl Variables for ScriptVariables<'_, '_> {
                     .find(|o| so != 0 && o.id() != so && o.data.get(DATA_CONTAINER) == Some(&so) && (hand || o.data.get(DATA_SLOT) == Some(&d)))
                     .map_or(0, Object::id);
                 return int(id);
+            }
+            scope::STACK_FUNCTION => {
+                // whether the stack object has function d: its file's function table (OBJf)
+                // holds an action tree for it
+                let so = self.world.get(self.stack_object()?);
+                let f = self.world.library().file(so.file?);
+                let has = f.functions.values().next().and_then(|t| t.get(usize::try_from(d).ok()?)).is_some_and(|&(_, a)| a != 0);
+                return int(i16::from(has));
             }
             scope::MY_RELATIONSHIP | scope::STACK_RELATIONSHIP => {
                 // A relationship's value d: mine with the stack object (40), or the stack
