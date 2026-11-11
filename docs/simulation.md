@@ -835,6 +835,17 @@ log: 1,270 of the 1,465 frames that move at the original's place to a hundredth 
 the walks part from it at six frames only (the door's fast mode at ticks 488 and 512, a ramp at
 1275, the brakes at 1639 and 4915, and the walk begun at speed at 1909), and once parted stay off.
 
+**Where a walk ends, at a door.** The walk ends at the request's chosen goal, the plan's last leg
+past it (into what the Sim faces) not walked; but at a door the home log has both: the yard's walk
+to the front door (tick 260, its end in the house) stops at the door's near side, arrived (state
+3), where the walk to the back door (tick 1901, its end through the door) walks on into the door
+at full speed and on through it (tick 2038's crossing starts at its top). A rule by the rooms of
+start, goal and end (a crossing walked, the rest stopped) gets those two and tick 2's paper girl
+right but misses the starts of the crossings that follow (1,257 of 1,465 frames run free, against
+1,270 with the rule kept, which walks a last leg whose end is in the goal's room); what tells the
+two door walks apart is the door's own state machine (the follower's states 4 and 5, its fast
+mode at the yard's door), still to read.
+
 **Which objects block** (`routing::obstacle`). Read from the objects the loop asks about (`J`)
 against the object data the save gives: an object is left out when its flags (object data 8)
 have 0x4 (no extent: rugs, windows, wall lamps, paintings, the alarms, the phone) or it sits in

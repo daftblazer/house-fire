@@ -1586,7 +1586,7 @@ iterations in a row end without a commit (record why here).
 
 ## Progress
 
-Iteration 16 of 24.
+Iteration 17 of 24.
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1713,3 +1713,11 @@ Iteration 16 of 24.
   brakes, one start at speed). Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24);
   clippy clean. Next: the six frames (the door's fast mode first), then the walk in the simulator
   (a routing primitive yielding until its native walk arrives).
+
+- **Iteration 17, chunk 5 (a walk's end at a door).** Tried: ending a walk at the goal but for a
+  door's crossing (by the rooms of its start, goal and end): ticks 260 and 2 then stop where the
+  original does, but the crossings after (2038, 4922) start wrong, 1,257 of 1,465 frames free
+  against 1,270: not kept (the code as it was). The two door walks differ by the door's own
+  states (4, 5; the fast mode), to read. Figures unchanged (561,398, 338,305, 68,202, lockstep
+  7,902, 4, 24). Next: the follower's door states (4, 5) from `Route_Follow`'s code, or the walk in
+  the simulator.
