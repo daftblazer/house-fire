@@ -1273,7 +1273,14 @@ object that is not in the native world (a placeholder natively) and the planner 
 it (the cost-10 rect (384, 288, 400, 304) it has from tick 1356 on, likely the newspaper while still
 in hand), so every rect after it was compared one place off. Aligned past such a placeholder (it
 is dropped when the next native rect is the planner's there): 701 of 701 obstacles rect by rect,
-the 17 plans' lists all the planner's but for the 8 rects of objects not native. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+the 17 plans' lists all the planner's but for the 8 rects of objects not native. Which goal a request takes: not the open place nearest the start (that gives the plan's 3 of
+5, the planner's 2 of 4), nor the best score alone (tick 931's takes score 143 at 24 over 144 at
+56.6). Over the home log's 16 plans with a goal taken, "score - k * distance from the start" picks
+the taken one for every k from about 0.04 to 0.25 (16 of 16; 0.02 and 0.5 give 15): the score and
+the distance trade, but the data do not pin k. In the code the choice is the search's own: the
+request's +88 is set (fn_8024969C, from fn_8024C5DC at 8024D684) to a list's entry (sp+152) at
+the search's goal node (sp+296), or cleared (fn_802496A4) when it reached none. So the search runs
+to all the goals at once, the score entering its costs; that multi-goal search is what to read. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
