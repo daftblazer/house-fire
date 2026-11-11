@@ -58,6 +58,14 @@ Measured on the recompiled game:
   exactly N − 1 passes, the late ones included: the passes in between stopped at a dialog and
   did not reach the object. 23 others ended early, woken by something else.
 
+A second form, seen only with a parameter of 1800 (the global tree 0x118's, five stacks on the
+home log: the made chips at 692 and meal at 1765, and three lot objects at 843): the node is
+stepped on every tick for a stretch, each step yielding with the parameter one less (1800, 1799,
+...), for 49, 26, 200, 25 and 49 ticks; then the stack is passed over like any sleep (the chips
+from 742 until something else wakes them at 1381, the parameter left at 1750). What ends the
+stepped stretch is not in the log. Natively the sleep is the passed-over one from the first step,
+so replay counts those stepped ticks as "the log ran a stack the native has asleep".
+
 The engine has it as `idle()` (`engine/src/primitives.rs`), the interpreter's `Sleep` and the
 simulator's pass. `engine/tests/primitives.rs` and `engine/tests/simulator.rs` test it.
 
