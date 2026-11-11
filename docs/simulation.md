@@ -932,7 +932,9 @@ otherwise it grows by top/ramp × the frame to its top. The frame's step is the 
 frame (0.033 s), the factor folded into the ramp. With the 1.001 and data 9's test: 1,693 of the
 1,697 steps on a line natively the original's, 1,457 of 1,461 frames run free, all 6 state-5
 frames (1646's is the brake, data 9 cleared that tick; 2036's keeps its speed, data 9 still
-set), 9 of 10 whole walks and 9 of 10 routing primitives' returns.
+set), and, with a whole walk run on when its walker's data 9 is set and started from the speed
+the walker carries natively (not its last logged step), all 10 whole walks and all 10 routing
+primitives' returns.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a

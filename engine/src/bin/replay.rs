@@ -3070,6 +3070,8 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
     // moved only by the native steps (with its own native speed), against the logged place after
     // each frame that moves
     let mut free: BTreeMap<u32, ((f32, f32), f32)> = BTreeMap::new();
+    // the native speed each walk starts from (by follower and tick), for the whole walks below
+    let mut start_speed: BTreeMap<(u32, u32), f32> = BTreeMap::new();
     // Natively, whether a walk runs on: the walker's object data 9 (Route_Follow's test, fn_801F5F4C)
     // as its scripts set it (an expression "my object data 9 := literal": scope 3, data 9, op 5,
     // its value from the node's operands) since its last routing primitive ended (GotoRoutingSlot
@@ -3149,6 +3151,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             // its speed the native one the follower's last walk left (step by step)
             let v = speed.get(&f.follower).copied().unwrap_or(0.0);
             free.insert(f.follower, ((b.x, b.y), v));
+            start_speed.insert((f.follower, f.tick), v);
         }
         // (a walk starts at the speed the follower's last one stopped at: its +144 is not reset)
         if (b.x, b.y) == (a.x, a.y) {
@@ -3357,7 +3360,8 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         for (at, f) in log.follows.iter().enumerate() {
             let (b, a) = (f.before, f.after);
             if b.state == 1 {
-                let v = speed_now.get(&f.follower).copied().unwrap_or(0.0);
+                // the native speed it starts from (that the walker check carried), else its last step
+                let v = start_speed.get(&(f.follower, f.tick)).copied().unwrap_or_else(|| speed_now.get(&f.follower).copied().unwrap_or(0.0));
                 walk_starts.insert(f.follower, (f.tick, (b.x, b.y), v, 0));
                 speeds.insert(f.follower, Vec::new());
                 let me = f.follower;
@@ -3420,14 +3424,17 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                         let total: f32 = line.windows(2).map(|w| ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt()).sum();
                         let per_second = native_top.get(&f.follower).copied().unwrap_or(WALK_TOP_ADULT);
                         let (wtop, growth) = walk_rates(per_second);
+                        let runs_on = walker_of.get(&f.follower).is_some_and(|&w| data9_at(w, f.tick));
                         let (mut v, mut gone, mut frames) = (v0, 0.0f32, 0u32);
                         let game = speeds.get(&f.follower).cloned().unwrap_or_default();
                         while total - gone > 1e-4 && frames < 10000 {
                             let factor = game.get(frames as usize).copied().unwrap_or(1.0);
                             if factor > 0.0 {
-                                let (nv, s) = walk_step(v, wtop, growth, factor, total - gone);
+                                // a walk that runs on (its walker's data 9 set) does not brake
+                                let brake = if runs_on { f32::INFINITY } else { total - gone };
+                                let (nv, s) = walk_step(v, wtop, growth, factor, brake);
                                 v = nv;
-                                gone += s;
+                                gone += s.min(total - gone);
                             }
                             frames += 1;
                         }
