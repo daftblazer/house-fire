@@ -1055,7 +1055,14 @@ the ground's own cost, not yet found in any record), 6 enters the obstacle (10).
 from a node to where its ray crosses a cost edge, and is weighted by the cost it crosses into,
 not the one it walked over (3 to 9 crosses 8 of yard at weight 1). Not yet explained: the
 off-edge nodes 4, 5, 7, 8 (the fan round the obstacle, kind 3, at 13 to 13.6 from the start),
-10, 11 and 2 (inside the strip, kind 0), and how many rays a node casts.
+10, 11 and 2 (inside the strip, kind 0), and how many rays a node casts. The edge's cost is read in the
+code (fn_8026875C(graph, a, b, out)): w = (kind(a) + kind(b) + 2) >> 1, the two kinds' mean
+plus one rounded down, and cost = (|a's point - p| + 1.0) · w (1.0 at 802D1938), where p is
+b's own point when a and b share their +4 id, else the crossing point fn_80268344 finds between
+them, stored to out. A missing node costs 0.0 (802D1928), and from node index 0 (the start
+marker) the cost is the plain cost of the rect that b's +0 indexes. Every parent in the dump is
+kind 0, so the weights 1, 2 and 6 for kinds 0, 3 and 10 are (0+k+2)>>1. A step between two
+kind-3 nodes weighs 4, not 2: still to see in a dump.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
