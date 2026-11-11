@@ -1125,7 +1125,8 @@ gives (96, 323, 117, 333) and from the goal (88, 600) it gives (80, 355, 96, 601
 cells 0 and 1 exactly, a point seed or a 1x1 one alike. The start cell's cost is logged as 0
 where the yard's is 3: the start's is set apart. The neighbours, simulated the same way: for an
 expanded cell, take its sides in the order x0, y1, x1, y0; walk each along the line just past it
-(x0 - 1, y1, x1, y0 - 1), in rising coordinate, and from every point there that is neither
+(x0 - 1, y1, x1, y0 - 1), going round the cell one way (x0 and y1 in rising coordinate, x1 and
+y0 in falling; see below), and from every point there that is neither
 blocked nor in a cell yet, grow a cell from that point. Expanding the dumped cells in the
 search's order (0, 7, 9, 1) gives all 13 dumped cells exactly, in order (13 of 13); of the 24
 side orders only that one does (the next best, 9). The whole search, simulated (a Python model: start cell
@@ -1174,7 +1175,13 @@ request's +48 (fn_80269514 at 80269684: a cell in a region takes the region's co
 (the house plans' single searches run uncapped; +44 is then stale); the aspect trim's +32 is
 off in every search of the home run. On the logged settings: still 21 of 23 ways, but 8 searches'
 cells equal in full, and the first differences now come right after the start cell: the order
-in which neighbours are cut in the house (searches 9-20).
+in which neighbours are cut in the house (searches 9-20). It is the walk's direction: the cutter goes round the
+expanded cell one way, the x0 side in rising y, the y1 side in rising x, the x1 side in falling
+y and the y0 side in falling x (the yard's first search, where each side gave one cell or rose,
+could not tell). With that: 22 of 23 coarse ways exact, and the cells of 15 searches equal the
+original's in full. Left: search 7, whose cells are all equal but whose way is not (so the A*
+itself: its ties or its edges), and searches 9, 10, 13, 14, 16 and 17, whose cells part from the
+second on although their ways come out right.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
