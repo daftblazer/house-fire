@@ -365,7 +365,9 @@ impl Host for ReplayHost<'_, '_> {
         let lib = self.lib;
         let mut chk = Interpreter::new(Mode::Check, 10000);
         chk.set_defaults(defaults.to_vec());
-        chk.start(lib, Some(t), &[], file);
+        // a check tree starts with parameter 0 = 1 (every logged check reads it so: 103 reads of
+        // the home log that were 0 with none)
+        chk.start(lib, Some(t), &[1], file);
         if chk.done() {
             return None;
         }

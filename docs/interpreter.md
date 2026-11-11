@@ -69,7 +69,9 @@ tree id, node 0, +4 from the caller, +8 zero, +12 the file, the counts from the 
   tree with no parameters (the home log's 285, 357, 459 at tick 185: parameter 0 the value the
   guard just set, 57, 36, 27 ...), so the interpreter asks its host for the temps at the call
   (`Host::default_params`; replay gives the running object's): parameter reads differing home
-  275 → 103.
+  275 → 103. A check tree (a guard, the queue's checks) starts with parameter 0 = 1: every logged
+  check reads it so (the other 103 of the home log, 0 with none given); with it every parameter
+  read of the three logs is the original's.
 - **A tree of type 4** starts at the node its first parameter names, the last node if that
   is past the end; a negative one fails the call.
 - **Locals are not cleared.** A new frame's locals are whatever the stack's memory held

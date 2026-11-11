@@ -71,7 +71,8 @@ pub trait Host: Trees {
     /// The primitive at `node`, for the interpreter's top frame.
     fn primitive(&mut self, interp: &mut Interpreter, node: &Node) -> PrimResult;
     /// Runs a check tree to its return on its own stack ([`Mode::Check`]), with this stack
-    /// object and file and the interpreter's own parameters (`defaults`): its result, or `None`
+    /// object and file, parameter 0 set to 1, and the interpreter's own parameters (`defaults`)
+    /// for its calls: its result, or `None`
     /// if the host cannot (the engine's own checks: the interaction queue's prefix check, "hide
     /// menu").
     fn run_check(&mut self, _t: TreeId, _file: Option<FileId>, _stack_object: i16, _defaults: &[i16]) -> Option<bool> {
