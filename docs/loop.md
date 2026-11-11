@@ -1586,7 +1586,7 @@ iterations in a row end without a commit (record why here).
 
 ## Progress
 
-Iteration 11 of 24.
+Iteration 12 of 24.
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1674,3 +1674,11 @@ Iteration 11 of 24.
   the floor. Study `REPLAY_SHOW_WALL_BYTES`. Figures unchanged (561,398, 338,305, 68,202,
   lockstep 7,902, 4, 24); clippy clean. Next: the floor's weights (from the floors' data or the
   planner's code) in `corner_path`, checked as all 16 plans by the planner's corners.
+
+- **Iteration 12, chunk 3 (the search's paved regions, logged).** The search's own rectangles
+  (`D`, at `Route_ObstacleAdded` from inside `fn_80249BB8`; the new home log has the same 581,110
+  steps): on the yard plan the lot's border and the house blocking, and 7 regions of cost 0, the
+  paved floors (checked against the floor array: street, sidewalk, paths, porch inside them,
+  grass outside). Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy
+  clean. Next: how the search weighs a line by the regions (its cost outside them), then the
+  regions natively from the floor in `corner_path`.

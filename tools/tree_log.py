@@ -83,6 +83,11 @@ def records(path):
             cnt, = struct.unpack_from('<H', b, p); p += 2
             if p + 107 * cnt > n: break
             yield 'J', [struct.unpack_from('<IhiB24I', b, p + 107 * i) for i in range(cnt)]; p += 107 * cnt
+        elif k == b'D':  # the search's own rectangles: [(y0, x0, y1, x1, cost)]
+            if p + 2 > n: break
+            cnt, = struct.unpack_from('<H', b, p); p += 2
+            if p + 20 * cnt > n: break
+            yield 'D', [struct.unpack_from('<iiiii', b, p + 20 * i) for i in range(cnt)]; p += 20 * cnt
         elif k == b'X':  # the planner's obstacles: (width, [(x0, y0, x1, y1, cost)])
             if p + 6 > n: break
             w, cnt = struct.unpack_from('<iH', b, p); p += 6

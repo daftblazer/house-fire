@@ -402,6 +402,17 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
                 tested = Some(t);
             }
+            b'D' => {
+                // the search's own rectangles of the plan that follows: read past for now
+                if !r.has(2) {
+                    break;
+                }
+                let cnt = r.u16() as usize;
+                if !r.has(20 * cnt) {
+                    break;
+                }
+                r.p += 20 * cnt;
+            }
             b'X' => {
                 // the obstacles of the plan that follows
                 if !r.has(6) {

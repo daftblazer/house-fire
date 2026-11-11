@@ -719,6 +719,19 @@ on grass and 46.6 on them (130.1). So the planner weighs the floor: grass at lea
 path. Tick 521's miss (in the house, from the front door to the fridge) is not the floor: its
 line has a little more of the kitchen's floor than the native one, the rest the same.
 
+**The search's own regions, logged** (`D`). The search (`fn_80249BB8`, when the planner runs it)
+fills a second vector of the same 20-byte rectangles, calling `Route_ObstacleAdded` after each
+(from 8024A068 to 8024C358); the observer logs it as last left (`D`, before each `X`; a new home
+log, the same 581,110 steps). On the yard plan at tick 2: 36 blocking ones, the lot's border and
+the house (its rooms, closed to a plan outside, and its walls as zero-width lines), and 7 at cost
+0: the street, the sidewalk, the front path, the porch and its steps, the back path. Checked
+against the floor array: the tiles in the cost-0 rectangles are the outdoor floors other than
+grass (the street 0x27 to 0x29, the sidewalk 0x0a, the paths 0x1d and 0x1b, the porch 0x33; a few
+at their edges), and outside them the grass (0x00) and the house. So the paved floors are regions
+of cost 0 to the search and the grass is not: the reason tick 260's line keeps to the path. (The
+other plans' vectors are empty or the house's 27: a later plan in the same place reuses it.) How
+the search weighs a line by them is next.
+
 **The walk keeps to its plan's line.** The planning Sim's logged places (`P`, at each tick's start,
 whole sixteenths, logged when they change) from its plan's tick to its next plan, against the
 plan's line: 852 of the home log's 854 within a sixteenth and a half of it (the 2 others the paper
