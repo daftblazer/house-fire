@@ -941,7 +941,13 @@ in the fast mode, and 4919) end past their walk's end by exactly the frame's bud
 point; tick 2035's does not (its point then a stale one, elsewhere): not yet read. The plans'
 lines end where the walks do (512 at 248, 4919 at 392), so the overshoot goes beyond the plan,
 towards what the follower's +116/+120 holds before its state 5 sets it ((296, 263) and (344,
-407)); what sets those is not yet found.
+407)). Route_Follow sets it (800AE4CC): in state 2, when the waypoint index (+24) reaches the
+last leg (count − 1), the walker's data 9 is set and the follower's +888 is clear, its point
+becomes the last waypoint (from the follower's list, +12), and the frame's walk goes on towards
+it. So a run-on walk heads for its list's last waypoint: (344, 407) at 4919 and (296, 263) at
+512 lie past the logged plans those walks are matched to, so the follower's list there is not the
+plan the replay finds (an older or longer one); 2035's stays at its corner. Which list a follower
+holds is not yet modelled (the replay matches a walk to the latest plan whose line it is on).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
