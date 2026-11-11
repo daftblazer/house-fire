@@ -2890,6 +2890,19 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                         } else {
                             "routing: a plan's coarse way (the search's, 'I') NOT the native corner path"
                         });
+                        // study: each coarse point moved to the nearest corner of a logged
+                        // obstacle (any cost) within 12, against the plan's points
+                        if has("REPLAY_SHOW_COARSE") && !counts.quiet {
+                            let corners: Vec<(i32, i32)> = pl.obstacles.iter().flat_map(|r| [(r[0], r[1]), (r[2], r[1]), (r[0], r[3]), (r[2], r[3])]).collect();
+                            let snapped: Vec<String> = pl.coarse.iter().map(|&p| {
+                                let near = corners.iter().min_by_key(|c| (c.0 - p.0).pow(2) + (c.1 - p.1).pow(2)).copied();
+                                match near {
+                                    Some(c) if (c.0 - p.0).pow(2) + (c.1 - p.1).pow(2) <= 144 => format!("{p:?}->{c:?}{}", if pl.points.contains(&c) { "+" } else { "" }),
+                                    _ => format!("{p:?}{}", if pl.points.contains(&p) { "+" } else { "" }),
+                                }
+                            }).collect();
+                            println!("snap tick {}: {}", pl.tick, snapped.join(" "));
+                        }
                         if has("REPLAY_SHOW_COARSE") && !counts.quiet {
                             println!("coarse tick {}: the search's {:?}; native {path:?}; the plan {:?}", pl.tick, pl.coarse, pl.points);
                         }

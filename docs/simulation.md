@@ -1011,7 +1011,14 @@ a new home log with the same steps and figures): it equals the native corner pat
 the 16 plans. Its points are not the obstacles' corners (tick 2's (328, 96) and (461, 86) where
 the plan has (332, 96) and (461, 88)); the plan's nudged sixteenths are already in it (497's
 (296, 233), 2038's (344, 377)). So the search's nodes, and the refinement that moves its points
-onto the plan's, are what chunk 2 needs; both now checkable against `I`.
+onto the plan's, are what chunk 2 needs; both now checkable against `I`. A first look
+(`REPLAY_SHOW_COARSE`): moving each coarse point to the nearest logged obstacle corner within 12
+lands it on one of the plan's points for many interior points (tick 1901's (338, 317) to the
+counter's (349, 317), (331, 368) to the door's (336, 368); 521's, 260's, 1905's), not for the
+ends or for points in the open (tick 2's (461, 86) where the plan has (461, 88), on the paved
+region's edge). So the refinement looks like a string pulled taut through the openings between
+the map's cells, its points their ends (obstacles' corners, cells' edges): the map's cells are
+the next thing to read.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
