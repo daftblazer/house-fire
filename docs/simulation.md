@@ -1028,7 +1028,11 @@ between them: +8's structure is next. It holds, at its +0, the search's own rect
 counts. The coarse points are not their corners (the nearest at least 8 away; `REPLAY_SHOW_COARSE`
 prints them), so the nodes are cells cut from these rectangles and the obstacles, the coarse
 points likely the midpoints of the openings between them: the cutting (in fn_8024C5DC before
-fn_8026C9AC, or fn_8026B39C) is next.
+fn_8026C9AC, or fn_8026B39C) is next. The search's nodes: fn_802685DC gives node i of an object
+as its 44-byte entry in a vector at that object's +76 (to +80), none past the end; every step
+of the search and its helpers ask for nodes so. The way at +36 is written by fn_80268950 (425
+lines; from fn_8026A038, the search's first step, and fn_80268ED4), from the nodes the search
+reached: the 44-byte nodes' layout (their cell, their link) is next, by a study dump.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
