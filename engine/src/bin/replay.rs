@@ -2306,6 +2306,21 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         let raw: [u8; 12] = t.raw[at..at + 12].try_into().unwrap();
         ((u16::from_be_bytes([raw[0], raw[1]]) & 0x7FFF) == 45).then_some(raw)
     };
+    // study (REPLAY_SHOW_ROUTE_OPS): each routing step that walks (opcode 27 or 45, result 1), its
+    // operand bytes
+    if has("REPLAY_SHOW_ROUTE_OPS") {
+        for s in log.steps.iter().filter(|s| s.result == 1) {
+            if let Some(t) = log.tree_of(s) {
+                let at = s.node as usize * 12;
+                if at + 12 <= t.raw.len() {
+                    let op = u16::from_be_bytes([t.raw[at], t.raw[at + 1]]) & 0x7FFF;
+                    if matches!(op, 27 | 45) {
+                        println!("route op tick {} sim {} opcode {op} operands {:02x?} stack {}", s.tick, ids.get(&s.sim).copied().unwrap_or(-1), &t.raw[at + 4..at + 12], s.stack_object);
+                    }
+                }
+            }
+        }
+    }
     for s in &log.steps {
         let Some(raw) = raw45(s) else { continue };
         let number = u16::from_be_bytes([raw[4], raw[5]]);

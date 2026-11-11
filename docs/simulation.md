@@ -898,12 +898,19 @@ and two runs on that end mid-line (2035) or past the line's end (4919: a step th
 not stopped at the end).
 
 **State 5, the run on** (`routing::run_on_point`). Route_Follow, entering state 4 at a walk's end,
-asks the walker's object a test (a virtual at +708 of its class, with 9; not yet read); if it
-holds, the follower goes to state 5 with its point (+116/+120) set from the plan's last waypoint
+asks the walker's object a test (a virtual at +708 of its class, with 9: fn_801F5F4C, which
+returns the object's data 9, the 16-bit word at its +142 + 2 × 9, data 11 there being its id); if
+it holds (a stderr study of the home run: data 9 is 1 at all 5 walk ends that go on to state 5
+and 0 at the 17 others), the follower goes to state 5 with its point (+116/+120) set from the plan's last waypoint
 but one (where the walk ends) towards the last, at most 3 on each axis (the DOL's 3.0 at
 802A8D40; 9.0 at 802A8D3C when the follower's +132 is 1). Checked: the 3 entries into state 5
 with a logged plan ending there (ticks 496, 1645, 2037) natively the original's point; the 2
-others (the fast mode's at 519, the overshoot at 4920) have no plan ending where they start.
+others (the fast mode's at 519, the overshoot at 4920) have no plan ending where they start. Who
+sets a person's data 9 is not yet found: the scripts' expressions write it only three times (ticks
+0, 84 and 1790, none of them the walkers'), both routing primitives clear it (Route_Run at
+80220918 and fn_8021F15C at 8021F780, through the object's setter at its class's +588), and the
+routing steps' operands do not tell the run-on walks apart (`REPLAY_SHOW_ROUTE_OPS`). The replay
+still takes "runs on" from the log's next state.
 
 **Where a walk ends, at a door.** The walk ends at the request's chosen goal, the plan's last leg
 past it (into what the Sim faces) not walked; but at a door the home log has both: the yard's walk
