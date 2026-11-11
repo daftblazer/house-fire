@@ -1041,9 +1041,11 @@ nodes at the home run's first search (a study dump, reverted). A node is an A* n
 turned y then x), +28 its parent, then f, g and h as floats (f = g + h). The step's cost is
 (distance + 1) times the kind's weight, 1 for kind 0, 2 for 3, 6 for 10; it holds for every node
 with a parent (9 of 9; e.g. node 13, (96, 423) from node 2 at (86, 355), g 44.18: 44.18 +
-2·(68.73 + 1) = 183.64, logged 183.64). The h is not the plain distance to the goal node (272.47
-from (104, 328), the goal node at (80, 478) is 151.9 away) and is the next fit; nodes 0 and 1
-(state -1) are the start and the goal.
+2·(68.73 + 1) = 183.64, logged 183.64). The h is the plain distance to the request's chosen goal (the
+'H' record's, (600, 88) here; 13 of 13 nodes to three places), weight 1, so the search is a
+plain A*; nodes 0 and 1 (state -1) are its own start and end markers. The coarse way ('I') is the
+best node's parent chain, start to goal: here 3, 9, 11, 2 and then the goal itself, and every
+coarse way in the home log ends at its request's chosen goal (16 of 16).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
