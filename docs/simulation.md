@@ -989,6 +989,15 @@ The club's logs (`tree.log`, `tree3.log`) are older than the places, walkers and
 their results from the log (new club logs would need a club replay, which the loop's game runs
 do not have).
 
+**The planner's search, its shape** (for chunk 2). fn_8024C5DC gathers the obstacles, then
+(8024D344) builds a graph with fn_8026C9AC and runs the search fn_8026A210 on it (at 8024D384,
+and again at 8024D5F0). The search's state (its r3): a node vector from +4 (and another from
++20), the node it is at (+100) and the goal's (+96); it returns when they meet, pushing nodes as
+it goes. Its helpers: fn_802685DC (six calls), fn_8026861C, fn_8026875C, fn_80268950,
+fn_80268ED4, fn_8026CA50, fn_8026CB00. The point test fn_8024C408 sits on a branch before
+(8024D26C) the home run never takes. To make the planner's own points checkable the observer
+will log the graph fn_8026C9AC builds and the nodes the search visits, one record at a time.
+
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
 walk ran on into state 5, from its end. What makes the planner add it is not yet read (the
