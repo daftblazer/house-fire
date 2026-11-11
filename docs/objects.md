@@ -97,6 +97,15 @@ Left over:
   session), and a new object can take a deleted one's pointer or id. That is the object
   primitives' work (create, remove), not yet modelled.
 
+Replay makes and removes objects natively by default (study `REPLAY_LOGGED_OBJECTS`: not):
+CreateObjectInstance, RemoveObjectInstance, the object made at its init's first step (the log
+has the init's steps before the maker's, which runs it inside its own; the GUID from the maker's
+operand, an engine-made object's from the file its own step runs) and only placed by the maker.
+On the home log all 4 made and 3 removed objects are the original's, the native stack as the
+log's 561,418 → 561,600 steps; the club's 338,305 → 338,394 and 68,202 → 68,255. Counts that
+move the other way, each small: the stacks the native has asleep (Idle's stepped form,
+`primitives.md`), one plan's end, a few trees not found, an Idle in `tree3.log`.
+
 ## Sizes, and a lot's saved state
 
 What fixes the table sizes, read from Bustin' Out's object stream (`fn_801F1F20`; traced):

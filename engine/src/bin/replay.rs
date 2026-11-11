@@ -560,15 +560,22 @@ impl Host for ReplayHost<'_, '_> {
             });
             return got;
         }
-        if n.opcode == 18 && has("REPLAY_MAKE_NATIVE") {
+        if n.opcode == 18 && !has("REPLAY_LOGGED_OBJECTS") {
+            // RemoveObjectInstance natively (the object the log's next list lacks); the result
+            // the log's
             let so = interp.stack().last().map_or(0, |f| f.stack_object);
             let gone = remove_object(n, &mut self.world, me_id, so);
-            println!("removed {gone:?} at tick {}", s.tick);
+            let next = self.log.lists.iter().find(|l| l.tick >= s.tick);
+            self.counts.note(match gone {
+                Some(id) if next.is_some_and(|l| !l.ids.contains(&id)) => "objects: RemoveObjectInstance natively, the object the original removed",
+                Some(_) => "objects: RemoveObjectInstance natively, NOT an object the original removed",
+                None => "objects: RemoveObjectInstance: its object not found natively",
+            });
             return self.logged(s, n);
         }
-        if n.opcode == 42 && has("REPLAY_MAKE_NATIVE") {
-            // study: CreateObjectInstance natively (iteration 18's attempt); an object its init's
-            // steps made already is only placed
+        if n.opcode == 42 && !has("REPLAY_LOGGED_OBJECTS") {
+            // CreateObjectInstance natively (study REPLAY_LOGGED_OBJECTS: not made); an object
+            // its init's steps made already (they come first in the log) is only placed
             let so = interp.stack().last().map_or(0, |f| f.stack_object);
             let made = if self.pre_made.remove(&s.stack_object_after)
                 && let Some(k) = self.world.find(s.stack_object_after)
@@ -578,7 +585,11 @@ impl Host for ReplayHost<'_, '_> {
             } else {
                 create_object(n, &mut self.world, me_id, so).map(|k| self.world.get(k).id())
             };
-            println!("made {made:?} at tick {} (log {})", s.tick, s.stack_object_after);
+            self.counts.note(if made == Some(s.stack_object_after) {
+                "objects: CreateObjectInstance natively, the id the original's"
+            } else {
+                "objects: CreateObjectInstance natively, the id DIFFERENT"
+            });
             if let Some(id) = made {
                 self.present.insert(id);
             }
@@ -1674,9 +1685,9 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
             }
         }
 
-        // study: objects the original's engine made (in its list, made by no script): from the
-        // list at the end of the tick before, placed by the log's places
-        if has("REPLAY_MAKE_NATIVE") {
+        // objects the original's engine made that no step of theirs made first: from the list
+        // at the end of the tick before, placed by the log's places
+        if !has("REPLAY_LOGGED_OBJECTS") {
             while engine_list_at < log.lists.len() && log.lists[engine_list_at].tick < t {
                 let l = &log.lists[engine_list_at];
                 engine_list_at += 1;
@@ -1687,15 +1698,8 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
                         o.data[DATA_OBJECT_ID] = id;
                         (o.x16, o.y16) = log.places.iter().rfind(|p| p.id == id && p.tick < t).map_or((-16, -16), |p| (p.x, p.y));
                         h.world.add(o, true);
-                        println!("engine-made {id} at tick {t}");
+                        h.counts.note("objects: made by the engine, from the log's list");
                     }
-                }
-            }
-        }
-        if has("REPLAY_MAKE_NATIVE") && matches!(t, 694 | 1221 | 1767 | 700 | 1230 | 1780) {
-            for id in [197, 201, 202] {
-                if let Some(o) = h.world.find_object(id) {
-                    println!("tick {t}: object {id} flags {} container {} place {:?} file {:?}", o.data.get(8).copied().unwrap_or(-1), o.data.get(2).copied().unwrap_or(-1), (o.x16, o.y16), o.file.map(|f| lib.file(f).path.clone()));
                 }
             }
         }
@@ -1867,9 +1871,9 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
                 }
             }
             first_seen.entry(s.sim).or_insert(t);
-            // study: a step of an object its maker's step (later in the log) makes: the object
-            // made now, of the file its step runs, if the original's list has it at the tick's end
-            if has("REPLAY_MAKE_NATIVE")
+            // a step of an object its maker's step (later in the log) makes: the object made now
+            // (its GUID the maker's), if the original's list has it at the tick's end
+            if !has("REPLAY_LOGGED_OBJECTS")
                 && let Some(&id) = ids.get(&s.sim)
                 && h.world.find(id).is_none()
                 && log.lists.iter().find(|l| l.tick >= s.tick).is_some_and(|l| l.ids.contains(&id))
@@ -1896,7 +1900,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
                 h.present.insert(got);
             }
             let Some(ok) = ids.get(&s.sim).and_then(|&id| h.world.find(id)) else {
-                if has("REPLAY_MAKE_NATIVE") {
+                if has("REPLAY_SHOW_MADE") {
                     println!("not run: tick {} sim {:x} id {:?} tree {:#x}", s.tick, s.sim, ids.get(&s.sim), s.tree);
                 }
                 h.counts.note("steps: not a lot object's (not run)");
@@ -2174,7 +2178,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
                 f.stack_object = s.stack_object;
             }
             if interp.asleep() {
-                if has("REPLAY_MAKE_NATIVE") {
+                if has("REPLAY_SHOW_MADE") {
                     println!("asleep: tick {} id {} tree {:#x} node {}", s.tick, o_id, s.tree, s.node);
                 }
                 h.counts.note("steps: the log ran a stack the native has asleep");
