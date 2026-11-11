@@ -1367,7 +1367,13 @@ is not in the native world at all (made during the run), 198 (51) is a group mea
 (food_meal_regular_group) but walks in the original (down y from (392, 328), across to (408, 360)
 and back, a sixteenth a tick or two: a walker, likely a character made during the run that took
 id 198), and 201 once. Both walk like Sims, but no native person holds those ids, so the native
-walk's places never reach them. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+walk's places never reach them. The 41 persons' places outside the whole walks: 35 of the paper girl's are two of her walks
+(ticks 957..989, from y 328 to 304, the 48-goal plan of 931; and 1270..1282 back), whose whole
+walks are checked frame for frame (48 + 1 and 24 + 61 frames, the original's) but whose follower
+the place check gives to Sim 12; the rest are single places at walks' ends. Choosing the walking
+Sim per walk instead (the one whose places the walk gives most often, or whose place is at the
+walk's start) did not take those two up either (still 897), so it is not only the pairing; left
+for later. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth

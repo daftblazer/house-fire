@@ -1452,6 +1452,9 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
                         }
                         "places: the log's, no native walk: not a person".to_string()
                     } else {
+                        if has("REPLAY_SHOW_PLACES") {
+                            println!("person place without a native walk: {} at tick {} {:?}", p.id, p.tick, (p.x, p.y));
+                        }
                         format!("places: the log's, no native walk: person {}", p.id)
                     });
                 }
