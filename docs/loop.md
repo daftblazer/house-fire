@@ -1584,11 +1584,12 @@ cannot be checked is not built, one-line commits, never pushed, no RK3566.
 Stop after iteration 24, at 05:00 on 2026-11-11 (moved from 08:00 at the user's request), when the chunks are done, or when two
 iterations in a row end without a commit (record why here). Resumed at 04:25 on 2026-11-11 at the
 user's request with no iteration or time limit: it stops when the chunks are done or when two
-iterations in a row end without a commit.
+iterations in a row end without a commit. From iteration 26 the iterations follow
+one another straight away (the user's: no more quarter-hour waits).
 
 ## Progress
 
-Iteration 25 (resumed after the end write-up at 24; no iteration limit).
+Iteration 26 (resumed after the end write-up at 24; no iteration limit).
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1774,6 +1775,16 @@ Iteration 25 (resumed after the end write-up at 24; no iteration limit).
   frames, 8 of 10 whole walks, 8 of 10 primitives). Figures unchanged (561,398, 338,305, 68,202,
   lockstep 7,902, 4, 24); clippy clean. Next: the paper girl's state test (`fn_801FD05C`), or
   the start speed after a walk cut short.
+
+- **Iteration 26, chunk 4 (the paper girl's state test).** `Route_SkipObstacle`'s order read and
+  its inputs printed from the observer (a stderr study, not kept): the request's +152 is 0 in all
+  16 searches, and the state test returns a person's own object (never 0), so it decides
+  nothing here. The 3 misses were another object of the paper girl's (another class, 356 bytes
+  past hers) that the observer files under her by nearness. The replay now counts only a
+  person's own part (`PERSON_PART_OFFSET`, the 'J' offset now parsed): 14 of 14 answers about
+  persons the loop's. Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24);
+  clippy clean. Next: the range slot's area (the 48 goals at tick 931), or the start speed
+  after a walk cut short.
 
 ## The tenth loop's end
 

@@ -71,6 +71,10 @@ fn atoi(s: &str) -> i64 {
     let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
     sign * digits.parse::<i64>().unwrap_or(0)
 }
+/// A person's own part among the planner's tested objects ('J'): its offset from the listed
+/// object the observer files it under.
+const PERSON_PART_OFFSET: i32 = -104;
+
 fn file_name(lib: &Library, f: FileId) -> String {
     let p = &lib.file(f).path;
     p[p.rfind('/').map_or(0, |s| s + 1)..].to_string()
@@ -2582,7 +2586,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             let native: Vec<[i32; 5]> = pl
                 .tested
                 .iter()
-                .filter_map(|&(id, out)| {
+                .filter_map(|&(id, out, _)| {
                     // an object not in the native world holds its place (as the log keeps it)
                     let Some(o) = world.find_object(id) else { return (!out).then_some([0; 5]) };
                     if o.person {
@@ -2620,7 +2624,10 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 .collect();
             if let Some(sr) = sim_rect {
                 let c = (sr[0] + 3, sr[1] + 3);
-                for &(id, out) in &pl.tested {
+                // only a person's own part (104 bytes before its listed object, in the log): an
+                // entry the observer files under a person by nearness alone (the paper girl's
+                // other object, 356 past hers, another class) is no person
+                for &(id, out, _) in pl.tested.iter().filter(|t| t.2 == PERSON_PART_OFFSET) {
                     let Some(p) = world.find_object(id).filter(|o| o.person).and_then(|_| place_at(id, pl.tick)) else { continue };
                     let d2 = (p.0 - c.0).pow(2) + (p.1 - c.1).pow(2);
                     let native_out = targets.contains(&id) || d2 >= 48 * 48;
@@ -2637,7 +2644,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             // study: each person the loop asked about, its distance from the planning Sim and
             // whether it was kept
             if show_obstacles {
-                for &(id, out) in &pl.tested {
+                for &(id, out, _) in pl.tested.iter().filter(|t| t.2 == PERSON_PART_OFFSET) {
                     if let Some(o) = world.find_object(id).filter(|o| o.person)
                         && let (Some(p), Some(s)) = (place_at(id, pl.tick), sim_rect)
                     {
@@ -2746,7 +2753,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         if has("REPLAY_DUMP_TESTED") && !kept.is_empty() && kept.len() == pl.obstacles.len() {
             let mut costs = std::collections::BTreeMap::new();
             let mut k = 0;
-            for &(id, out) in &pl.tested {
+            for &(id, out, _) in &pl.tested {
                 if out {
                     continue;
                 }
@@ -2755,7 +2762,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 }
                 k += 1;
             }
-            for &(id, out) in &pl.tested {
+            for &(id, out, _) in &pl.tested {
                 let Some(o) = world.find_object(id) else { continue };
                 let label = if out { "out".to_string() } else { costs.get(&id).map_or("kept?".to_string(), |c| format!("cost{c}")) };
                 let fields = world.definition(o).map(|d| d.fields.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(",")).unwrap_or_default();

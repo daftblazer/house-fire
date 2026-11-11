@@ -156,7 +156,8 @@ pub struct PlanRec {
     pub obstacle_width: i32,
     /// The objects the search's loop asked about (the 'J' record, in newer logs), in order: the
     /// id and whether it was left out.
-    pub tested: Vec<(i16, bool)>,
+    /// (the listed object's id, left out, the part's offset from it)
+    pub tested: Vec<(i16, bool, i32)>,
     /// The search's own rectangles ('D', in newer logs): the lot's border, the house's blocks
     /// and walls, and the paved regions at cost 0; {x0, y0, x1, y1, cost}.
     pub regions: Vec<[i32; 5]>,
@@ -259,7 +260,7 @@ pub fn read_log(path: &str) -> Option<Log> {
     let mut log = Log::default();
     let mut request: Option<(i32, Vec<[u32; 4]>)> = None;
     let mut obstacles: Option<(i32, Vec<[i32; 5]>)> = None;
-    let mut tested: Option<Vec<(i16, bool)>> = None;
+    let mut tested: Option<Vec<(i16, bool, i32)>> = None;
     let mut regions: Option<Vec<[i32; 5]>> = None;
     let mut at: BTreeMap<u32, usize> = BTreeMap::new();
     let mut pending: Option<ExprRec> = None;
@@ -398,12 +399,12 @@ pub fn read_log(path: &str) -> Option<Log> {
                 for _ in 0..cnt {
                     r.u32();
                     let id = r.i16();
-                    r.u32();
+                    let offset = r.u32() as i32;
                     let out = r.u8() != 0;
                     for _ in 0..24 {
                         r.u32();
                     }
-                    t.push((id, out));
+                    t.push((id, out, offset));
                 }
                 tested = Some(t);
             }

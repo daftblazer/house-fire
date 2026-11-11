@@ -697,8 +697,14 @@ distance from the planning Sim (a virtual, +128) is more than a float constant, 
 +152 decide whether to ask at all. Natively (the places as logged, the walk not native; the
 target the stack object of the tick's walking routing step): 17 of the loop's 20 answers about
 persons; at exactly 3 tiles the log has them left out (the distance measured mid-tick, the
-logged places being the tick's start). The 3 others are the paper girl, left out 22.6 and 32
-sixteenths off and when she is not the target: the state test, not yet read.
+logged places being the tick's start). The loop's order (802499DC): three virtual tests of the
+object first (any may leave it out); then, for a person, the request's +152 set leaves it out;
+the state test (`fn_801FD05C` on its +32 with 2) returns the word at its slot 2's +4, for a
+person its own object's (never 0), so it always goes on to the target and the distance. The 3
+answers once put down to the paper girl were not hers: an object of another class 356 bytes past
+her own, which the observer files under her by nearness, left out by the other branch (all 6 of
+its entries). Counting only a person's own part (104 bytes before its listed object), all 14
+answers about persons are the loop's.
 
 **Plans through a door.** A plan breaks at a door (`The rooms`), so the pieces that change
 rooms are short: up to a door, through it, from it. The same search (`corner_path`; the door's
