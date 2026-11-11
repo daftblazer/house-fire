@@ -46,7 +46,7 @@ use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
-use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
+use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, slot_pick, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
 use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
@@ -2459,17 +2459,18 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                         _ => "routing: a goal of a range slot NOT one of its area's places",
                     });
                 }
-                // the open places among them, which the original draws its goals from at random
-                // (Sim_Random from 8024F030 and 8024F504, about 390 draws at tick 931; not yet):
-                // those in the object's room, on or in no blocking obstacle of the plan (as logged)
-                // and no wall's rectangle
-                let within = |p: (i32, i32), r: &[i32]| p.0 >= r[0] && p.0 <= r[2] && p.1 >= r[1] && p.1 <= r[3];
+                // the open places among them, which the original draws its goals from at random:
+                // those in the object's room, strictly inside no blocking obstacle of the plan (as
+                // logged; an obstacle's edge is open) and on or in no wall's rectangle
+                let on_or_in = |p: (i32, i32), r: &[i32]| p.0 >= r[0] && p.0 <= r[2] && p.1 >= r[1] && p.1 <= r[3];
+                let strictly_in = |p: (i32, i32), r: &[i32]| p.0 > r[0] && p.0 < r[2] && p.1 > r[1] && p.1 < r[3];
                 let wall_rects = walls.wall_rects(3);
                 let open: Vec<(u8, (i32, i32))> = slot_area(slot, target.0, target.1, facing)
                     .into_iter()
                     .filter(|&(_, p)| room(p) == room(target))
-                    .filter(|&(_, p)| !pl.obstacles.iter().any(|r| r[4] == BLOCKS && within(p, &r[..4])) && !wall_rects.iter().any(|r| within(p, r)))
+                    .filter(|&(_, p)| !pl.obstacles.iter().any(|r| r[4] == BLOCKS && strictly_in(p, &r[..4])) && !wall_rects.iter().any(|r| on_or_in(p, r)))
                     .collect();
+
                 for g in &pl.goals {
                     let goal = ((g[3] & 0xFF).trailing_zeros() as u8, (g[0] as i32, g[1] as i32));
                     if open.contains(&goal) {
@@ -2513,8 +2514,48 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                         .map(|k| (score_with(k, (per[k] as i64 + short) as usize), k))
                         .max();
                     if let Some((hits, sk)) = best {
+                        // the pick (logs with 'R' site 3): the goals, in order, the places the draws
+                        // take (`slot_pick`, the cap the goals' count) among the open ones the
+                        // builder reached
+                        let picks: Vec<u32> = log.randoms.iter().filter(|r| r.tick == pl.tick && r.site == 3).map(|r| r.value).collect();
+                        let reached: Vec<(u8, (i32, i32))> = (0..8usize)
+                            .flat_map(|k| {
+                                let n = if k == sk { (per[k] as i64 + short) as usize } else { per[k] };
+                                area.iter().filter(move |x| x.0 as usize == k).take(n).copied()
+                            })
+                            .filter(|x| open.contains(x))
+                            .collect();
+                        if !picks.is_empty() {
+                            let taken = slot_pick(reached.len(), &picks, pl.goals.len());
+                            for (i, g) in pl.goals.iter().enumerate() {
+                                let goal = ((g[3] & 0xFF).trailing_zeros() as u8, (g[0] as i32, g[1] as i32));
+                                counts.note(if taken.get(i).map(|&j| reached[j]) == Some(goal) {
+                                    "routing: a range slot's goal natively the place the pick's draw takes, in order"
+                                } else {
+                                    "routing: a range slot's goal NOT the place the pick's draw takes"
+                                });
+                            }
+                        }
                         if has("REPLAY_SHOW_GOALS") {
                             println!("area draws at tick {}: {} draws, direction {sk} short by {}", pl.tick, draws.len(), -short);
+                        }
+                        // study (REPLAY_DUMP_AREA): the scored places in order, open or not
+                        if has("REPLAY_DUMP_AREA") {
+                            let mut it = draws.iter();
+                            for (k, &count) in per.iter().enumerate() {
+                                let n = if k == sk { (count as i64 + short) as usize } else { count };
+                                for &(d, p) in area.iter().filter(|x| x.0 as usize == k).take(n) {
+                                    if let Some(&r) = it.next() {
+                                        println!("scored\t{d}\t{}\t{}\t{}\t{}", p.0, p.1, 135 + r % 20 - 10, open.contains(&(d, p)) as u8);
+                                    }
+                                }
+                            }
+                            for r in log.randoms.iter().filter(|r| r.tick == pl.tick && r.site == 3) {
+                                println!("pick\t{}", r.value);
+                            }
+                            for g in &pl.goals {
+                                println!("goal\t{}\t{}\t{}\t{}", (g[3] & 0xFF).trailing_zeros(), g[0], g[1], g[2]);
+                            }
                         }
                         for i in 0..pl.goals.len() {
                             counts.note(if i < hits {

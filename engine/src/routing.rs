@@ -73,6 +73,30 @@ pub fn slot_goal_score(slot: &crate::library::Slot, names_object: bool) -> std::
     if slot.flags & 0x2000 != 0 { base - 10..=base + 9 } else { base..=base }
 }
 
+/// The builder's pick of a request's goals from its open places (fn_8024E480 at 8024F504): up
+/// to `cap` times (the request's +164, 48 for the home log's), a draw `random % n` into the open
+/// places (n of them, in the builder's order); a place already taken passes to the next one not
+/// taken, none past the last (that draw then takes nothing). The goals are the places so taken, in
+/// the order taken. Returns their indices.
+pub fn slot_pick(n: usize, draws: &[u32], cap: usize) -> Vec<usize> {
+    let mut taken = vec![false; n];
+    let mut out = Vec::new();
+    if n == 0 {
+        return out;
+    }
+    for &r in draws.iter().take(cap) {
+        let mut i = r as usize % n;
+        while i < n && taken[i] {
+            i += 1;
+        }
+        if i < n {
+            taken[i] = true;
+            out.push(i);
+        }
+    }
+    out
+}
+
 /// The places a routing slot of a range of proximities offers (an area): for each direction its
 /// flags name (bit k, `k` eighths of a turn from the object's front), the points of that
 /// direction's own grid (forward and sideways steps of the slot's resolution) within its eighth of

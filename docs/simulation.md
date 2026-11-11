@@ -612,8 +612,9 @@ name, the points of that direction's own grid (steps of the resolution forward a
 within 45 degrees of it and between the least and greatest proximity, a diagonal's grid turned
 with it and its places rounded. All 48 goals lie in their bits' areas (408 places before the
 closed are taken out), by facing 0: the paper girl's facing then, not the save's 5. The open
-places are those in the object's room, on or in no blocking obstacle of the plan and no wall's
-rectangle: 149 at tick 931, and all 48 goals among them. Which 48 is the game's random generator's:
+places are those in the object's room, strictly inside no blocking obstacle of the plan (an
+obstacle's edge is open) and on or in no wall's rectangle: 135 of the places the builder reaches
+at tick 931. Which 48 is the game's random generator's:
 about 390 draws of `Sim_Random` at that tick before the plan (from 8024F030, on two generators in
 turn, and from 8024F504), none logged yet; the goals' order (shuffled) comes from the same.
 The goal's third word is its score (fn_8024E480, the builder): 100 less the distance times the
@@ -635,7 +636,10 @@ including it, so the eight wedges tile the area (47 places a direction at 16 to 
 place takes the next draw for its score: with that, all 48 goals' scores at tick 931 are their
 places' draws. One direction stops short, the paper girl's northeast after 10 places (the builder
 stops when its classifier, fn_80248F4C, puts a place in category 3, setting its +176 flag; not
-yet read: the check takes the short direction's count from the draws' total). The planner's choice among the goals is the
+yet read: the check takes the short direction's count from the draws' total). The pick (8024F504, `routing::slot_pick`): up to the request's cap (its +164,
+48), a draw `random % n` into the n open places in the builder's order; a place already taken
+passes to the next not taken (none past the last), and the place is copied out and its score
+zeroed to mark it. All 48 goals at tick 931 are the places the 48 draws take, in order. The planner's choice among the goals is the
 nearest native one in the two requests that took one natively.
 
 **The planner's obstacles, logged.** (Read turned at first: see "The obstacles' objects" below.) The search (`fn_8024C5DC`) goes over the objects and, for
