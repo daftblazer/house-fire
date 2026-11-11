@@ -469,6 +469,10 @@ impl Host for ReplayHost<'_, '_> {
             } else {
                 self.counts.note("primitives: GotoRoutingSlot/GotoRelativePosition: its run not modelled (the log's taken)");
                 if has("REPLAY_SHOW_ROUTE_RUNS") {
+                    let plans: Vec<_> = log.plans.iter().filter(|p| p.tick + 5 >= s.tick && p.tick <= s.tick + 5).map(|p| (p.tick, p.approach.map(|a| a[7]), p.chosen, p.points.len())).collect::<Vec<_>>();
+                    println!("   plans within 5 ticks of {}: {plans:?}; log ends at tick {}", s.tick, log.ticks);
+                    let next: Vec<_> = log.steps[self.step + 1..].iter().filter(|x| x.sim == s.sim && x.tree == s.tree).take(4).map(|x| (x.tick, x.node, x.result, x.after)).collect();
+                    println!("   the stack's next steps on the tree (tick, node, result, after): {next:?}");
                     let plans: Vec<_> = log.plans.iter().filter(|p| p.tick == s.tick).map(|p| (p.approach.map(|a| a[7]), p.chosen, p.points.len(), p.points.first().copied())).collect();
                     println!("route run not modelled: tick {} sim {me_id:?} tree {} node {} opcode {} result {} after {}; plans then (planner, chosen, points, start): {plans:?}", s.tick, s.tree, s.node, n.opcode, s.result, s.after);
                 }

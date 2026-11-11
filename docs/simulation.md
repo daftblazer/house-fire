@@ -1335,7 +1335,12 @@ as the log's), the step that plans is its own case: the Sim's plan is made that 
 way the step comes back to its own node (result 0, after = its node) to walk from the next; with
 none (a request of no goals, tick 1503) it goes on at once. 4 of 4 such steps natively as the
 log's; 2 more steps (1618, 5066) return at once with no plan logged at all (the planner not
-called: likely the Sim already there), not modelled. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+called: likely the Sim already there), not modelled. The study shows no plan within 5 ticks of
+either. At 1618 the step comes back to its node and the stack's next step on that tree is 52
+ticks later (1670, when Sim 12's logged plan starts its yields): the primitive gave up or handed
+over without planning. At 5066 it goes to node 254, the tree's return, and returns there: the Sim
+already at its goal. Which check of the primitive's sends each there is not in the log; both stay
+open. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
