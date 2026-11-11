@@ -797,6 +797,19 @@ impl ReplayHost<'_, '_> {
                         scores_same += 1;
                     } else {
                         scores_diff += 1;
+                        // with motive 14's advertisement as the original scored it (its logged
+                        // entry read as personality, min, delta): made at run time, not native
+                        {
+                            let mut adv = cand.interaction(lib).adverts.to_vec();
+                            adv.resize(16, Default::default());
+                            let lg = log.scores[self.score_at].adverts[14];
+                            adv[14] = housefire::library::Advert { min: lg[1], delta: lg[2], personality: lg[0] as u16 };
+                            self.counts.note(if interaction_score(&curves, Some(&adv), person, &person.motives) == log.scores[self.score_at].score {
+                                "autonomy: a differing score the log's with motive 14's advertisement as the original made it"
+                            } else {
+                                "autonomy: a differing score NOT the log's with motive 14's advertisement as the original made it"
+                            });
+                        }
                         if has("REPLAY_SHOW_SCORES") {
                             let a = &cand.interaction(lib).adverts;
                             let mut l = format!("score DIFFERENT tick {} by {} on {} (interaction {}): native {native_score:e}, log {:e}; adverts (motive: native min/delta/personality | log)", s.tick, person.id(), cand.id, cand.interaction(lib).string_index, log.scores[self.score_at].score);
@@ -810,6 +823,26 @@ impl ReplayHost<'_, '_> {
                             let logged: Vec<housefire::library::Advert> = log.scores[self.score_at].adverts.iter().map(|a| housefire::library::Advert { min: a[0], delta: a[1], personality: a[2] as u16 }).collect();
                             let with_logged = interaction_score(&curves, Some(&logged), person, &person.motives);
                             l += &format!("; with the log's adverts natively {with_logged:e} ({})", if with_logged == log.scores[self.score_at].score { "the log's" } else { "not the log's" });
+                            // motive 14's advertisement that gives the log's score natively
+                            let mut found = Vec::new();
+                            let mut tryv = a.to_vec();
+                            tryv.resize(16, Default::default());
+                            for delta in -100i16..=100 {
+                                for min in [0i16, tryv[14].min] {
+                                    for pers in [0u16, tryv[14].personality] {
+                                        tryv[14] = housefire::library::Advert { min, delta, personality: pers };
+                                        if interaction_score(&curves, Some(&tryv), person, &person.motives) == log.scores[self.score_at].score {
+                                            found.push((min, delta, pers));
+                                        }
+                                    }
+                                }
+                            }
+                            l += &format!("; motive 14 that gives it: {found:?}; the person's motive 14 {}", person.motives.get(14).copied().unwrap_or(0.0));
+                            // the log's motive-14 entry read as (personality, min, delta)
+                            let lg = log.scores[self.score_at].adverts[14];
+                            tryv[14] = housefire::library::Advert { min: lg[1], delta: lg[2], personality: lg[0] as u16 };
+                            let turned = interaction_score(&curves, Some(&tryv), person, &person.motives);
+                            l += &format!("; with its entry as (personality, min, delta): {}", if turned == log.scores[self.score_at].score { "the log's" } else { "not" });
                             println!("{l}");
                         }
                     }

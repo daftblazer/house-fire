@@ -442,6 +442,15 @@ out the log's from them natively. The score's real input for motive 14 is to be 
 score function itself. (The chooser's and a person candidate's places are now taken as logged
 at the tick for the distance, as the walk is not native; no value changed with it.)
 
+**Motive 14's advertisement, as the original scored it.** The logged entry for motive 14 is the
+original's, in another order: read as (personality, min, delta) it gives all 7 differing scores
+exactly (the count `autonomy: a differing score the log's with motive 14's advertisement as the
+original made it`). Against the table's: interaction 24's delta 47 is 54 at tick 186 and 0 at
+1443; 16's 7 is 9 (its personality 9, then 0); 13's 10 is 15 (then 9, with personality 9); 14's
+0 is 3. So all three of motive 14's numbers are written at run time, per Sim and per tick, before
+the score reads them (a script's write, it may be: a social interaction's appeal by relationship).
+Who writes them is next (a watch on the advertisement's memory).
+
 Earlier: the pick and its result (the stack object, Find Best Action's push) native of those that pass (the
 adverts, the motives, the distance, the tuning table), checked as each choice among the native
 best four.

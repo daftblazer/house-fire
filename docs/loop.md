@@ -1586,7 +1586,7 @@ iterations in a row end without a commit (record why here).
 
 ## Progress
 
-Iteration 7 of 24.
+Iteration 8 of 24.
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1646,3 +1646,9 @@ Iteration 7 of 24.
   logged for the values' distance (no change). Figures unchanged (561,398, 338,305, 68,202,
   lockstep 7,902, 4, 24); clippy clean. Next: log motive 14's advertisement as the score reads it
   (Autonomy_Score's input), or chunk 2.
+
+- **Iteration 8, chunk 6 (motive 14's advertisement, as scored).** The logged entry is the
+  original's, ordered (personality, min, delta): with it all 7 differing scores are the log's
+  exactly (a count in the replay). All three numbers change by Sim and tick (24's delta 47 is 54,
+  then 0), written at run time. Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4,
+  24); clippy clean. Next: who writes motive 14's advertisement (a watch build on its address).
