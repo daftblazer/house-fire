@@ -403,10 +403,17 @@ pub struct FrameClock {
 
 impl FrameClock {
     pub fn frames_to_tick(&mut self) -> u32 {
+        self.frames_to_tick_at(1.0)
+    }
+    /// The same at the game's speed (`speed`: 1 normal, 5 fastest; the simulation's ticks run
+    /// that much faster against the frames, so a tick takes `TICK_TIME / speed` of the clock;
+    /// paused, 0, taken as 1).
+    pub fn frames_to_tick_at(&mut self, speed: f32) -> u32 {
+        let tick = TICK_TIME / if speed > 0.0 { speed } else { 1.0 };
         let mut frames = 0;
         loop {
-            if self.time >= TICK_TIME {
-                self.time -= TICK_TIME;
+            if self.time >= tick {
+                self.time -= tick;
                 return frames;
             }
             self.time += WALK_FRAME;

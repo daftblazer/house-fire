@@ -3282,14 +3282,21 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         for f in log.follows.iter().filter(|f| Some(f.follower) == first_follower) {
             *per.entry(f.tick).or_default() += 1;
         }
+        // the game's speed each tick (the walkers' factor as logged, an input): the clock's ticks
+        // run that much faster
+        let mut speed_at: BTreeMap<u32, f32> = BTreeMap::new();
+        for f in &log.follows {
+            speed_at.insert(f.tick, f.before.factor);
+        }
+        let speed_from = |t: u32| speed_at.range(..=t).next_back().map_or(1.0, |e| *e.1);
         if let (Some((&first, _)), Some((&last, _))) = (per.first_key_value(), per.last_key_value()) {
             let best = (0..42)
                 .map(|ph| {
                     let mut clock = FrameClock { time: ph as f32 / 1000.0 };
                     let n = (first..=last)
-                        .filter(|t| {
-                            let frames = clock.frames_to_tick();
-                            per.get(t) == Some(&frames)
+                        .filter(|&t| {
+                            let frames = clock.frames_to_tick_at(speed_from(t));
+                            per.get(&t) == Some(&frames)
                         })
                         .count();
                     (n, ph)
@@ -3301,7 +3308,7 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             // the tick of each frame natively, from the first (the clock at its phase)
             let mut clock = FrameClock { time: best.1 as f32 / 1000.0 };
             for t in first..=last + 200 {
-                for _ in 0..clock.frames_to_tick() {
+                for _ in 0..clock.frames_to_tick_at(speed_from(t)) {
                     native_frame_ticks.push(t);
                 }
             }
@@ -3458,7 +3465,14 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                             let before = log.follows.iter().filter(|g| g.follower == f.follower && g.tick == start_tick).count() - within;
                             if let Some(first_at) = native_frame_ticks.iter().position(|&t| t == start_tick) {
                                 let from = &native_frame_ticks[(first_at + before).min(native_frame_ticks.len())..];
-                                counts.note(if routing_return_tick(from, frames, turn_frames(angle)) == Some(run.4) {
+                                let nat = routing_return_tick(from, frames, turn_frames(angle));
+                                if show_walks && nat != Some(run.4) {
+                                    let logged = &ticks[..ticks.len().min((frames + turn_frames(angle) + 2) as usize)];
+                                    let native = &from[..from.len().min(logged.len())];
+                                    let diff: Vec<(usize, u32, u32)> = logged.iter().zip(native).enumerate().filter(|(_, (a, b))| a != b).map(|(i, (a, b))| (i, *a, *b)).take(6).collect();
+                                    println!("clock run from tick {start_tick}: native return {nat:?}, the original's {}; frames (index, logged tick, native tick) differing {diff:?}", run.4);
+                                }
+                                counts.note(if nat == Some(run.4) {
                                     "routing: a routing primitive natively returning on the original's tick (the frame clock native too)"
                                 } else {
                                     "routing: a routing primitive natively NOT returning on the original's tick (the frame clock native)"
