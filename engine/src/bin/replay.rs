@@ -3851,7 +3851,35 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                                 }
                                 gone_after.push(gone);
                             }
-                            for r in log.places.iter().filter(|r| r.id == id && r.tick > start_tick && r.tick <= f.tick) {
+                            if show_walks {
+                                // study: each Sim with places during the walk, and how many the walk gives
+                                let mut by: BTreeMap<i16, (usize, usize)> = BTreeMap::new();
+                                for r in log.places.iter().filter(|r| r.tick > start_tick && r.tick <= f.tick) {
+                                    let e = by.entry(r.id).or_default();
+                                    e.1 += 1;
+                                    if let Some(k) = ticks.iter().take(gone_after.len()).rposition(|&t| t <= r.tick) {
+                                        let (x, y) = along_line(&line, 0, 0.0, gone_after[k]);
+                                        e.0 += usize::from(((x + 0.5).floor() as i32, (y + 0.5).floor() as i32) == (r.x, r.y));
+                                    }
+                                }
+                                println!("   walk from {start_tick} (follower {:x}, mapped to {id}): places by Sim (fit, of) {by:?}; frames {} ticks {:?}..", f.follower, gone_after.len(), &ticks[..ticks.len().min(3)]);
+                            }
+                            // the Sims it walks: the follower's, and any other whose places during the
+                            // walk the walk gives at least half the time (two Sims logged moving as one)
+                            let walked: BTreeSet<i16> = {
+                                let mut by: BTreeMap<i16, (usize, usize)> = BTreeMap::new();
+                                for r in log.places.iter().filter(|r| r.tick > start_tick && r.tick <= f.tick) {
+                                    let e = by.entry(r.id).or_default();
+                                    e.1 += 1;
+                                    if let Some(k) = ticks.iter().take(gone_after.len()).rposition(|&t| t <= r.tick) {
+                                        let (x, y) = along_line(&line, 0, 0.0, gone_after[k]);
+                                        e.0 += usize::from(((x + 0.5).floor() as i32, (y + 0.5).floor() as i32) == (r.x, r.y));
+                                    }
+                                }
+                                by.into_iter().filter(|&(sim, (fit, of))| sim == id || 2 * fit >= of).map(|(sim, _)| sim).collect()
+                            };
+                            for r in log.places.iter().filter(|r| walked.contains(&r.id) && r.tick > start_tick && r.tick <= f.tick) {
+                                let id = r.id;
                                 let Some(k) = ticks.iter().take(gone_after.len()).rposition(|&t| t <= r.tick) else { continue };
                                 let (x, y) = along_line(&line, 0, 0.0, gone_after[k]);
                                 let ours = ((x + 0.5).floor() as i32, (y + 0.5).floor() as i32);

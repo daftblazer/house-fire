@@ -1372,8 +1372,13 @@ walk's places never reach them. The 41 persons' places outside the whole walks: 
 walks are checked frame for frame (48 + 1 and 24 + 61 frames, the original's) but whose follower
 the place check gives to Sim 12; the rest are single places at walks' ends. Choosing the walking
 Sim per walk instead (the one whose places the walk gives most often, or whose place is at the
-walk's start) did not take those two up either (still 897), so it is not only the pairing; left
-for later. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+walk's start) did not take those two up either (still 897), so it is not only the pairing.
+(Iteration 127:) during those walks both Sim 12 and the paper girl have places, the same ones,
+and the walk gives all of them (24 of 24 each, 8 of 8): two Sims logged moving as one. The place
+check now takes every Sim whose places the walk gives at least half the time: native 1,161 (25
+a sixteenth off), and the places no native walk gives fall to 224: the 206 tick-0 placements
+(native too), 9 of objects that are not persons, and 3 each of Sims 12, 197 and 237 (walks' ends).
+The walkers 202 and 198 were such companions too. Every other count as before. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
