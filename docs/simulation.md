@@ -998,6 +998,17 @@ fn_80268ED4, fn_8026CA50, fn_8026CB00. The point test fn_8024C408 sits on a bran
 (8024D26C) the home run never takes. To make the planner's own points checkable the observer
 will log the graph fn_8026C9AC builds and the nodes the search visits, one record at a time.
 
+fn_8026C9AC only starts a search: the state's +0 its map (a fixed node graph: two in the home
+run, at 80C26600 and 80C26638), its vectors cleared (+4 and +20 of node indices, +36 of 8-byte
+points), +104 −1, and the first step run (fn_8026A038). The search then runs a step at a call
+(fn_8026A210): +56 counts the steps, +100 is the node it expands (of the map's, numbered from 1),
+and when it reaches the goal node (+96, 1) it returns 1 with the way's points at +36, stored
+turned (y, x). A stderr study of the home run: at tick 2 the way (328, 104), (328, 96), (333, 86),
+(355, 86), (600, 88) after six steps, where the logged plan has (328, 104), (332, 96), (333, 93),
+... So the planner's points are a coarse way through the map's nodes, refined after (the
+in-between points of chunk 2 are that refinement). Next: the map's nodes (their places and
+links), then the refinement.
+
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
 walk ran on into state 5, from its end. What makes the planner add it is not yet read (the
