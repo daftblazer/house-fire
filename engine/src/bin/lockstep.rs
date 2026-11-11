@@ -1094,8 +1094,10 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
         }
         let mut f = Frame { params: s.params.clone(), locals: s.locals.clone(), stack_object: s.stack_object, ..Default::default() };
         // The objects made and removed, as the original's list shows them, replayed up to this
-        // step's tick (each new id checked against the world's rule).
-        while li < log.lists.len() && log.lists[li].tick <= s.tick {
+        // step's tick (each new id checked against the world's rule). An 'L' record is written
+        // at the start of the next tick under the tick it ends, so a step sees the lists of the
+        // ticks before its own.
+        while li < log.lists.len() && log.lists[li].tick < s.tick {
             let l = &log.lists[li];
             li += 1;
             let now: BTreeSet<i16> = l.ids.iter().copied().collect();
