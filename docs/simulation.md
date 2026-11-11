@@ -1293,7 +1293,13 @@ the home log's requests of several goals take the planner's goal 4 of 4 (tick 93
 1220's seven of one score, where several share a cell and the nearest wins, and two more); the
 fifth (tick 1791) took none in the original, which tried again at once with the same goals and
 took the one the native search takes. `native_plan_points` now takes its goal from the request (its only goal, or the
-backward search's of several) rather than from the end of the logged search: still 18 of 18. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+backward search's of several) rather than from the end of the logged search: still 18 of 18. The one request whose goals are not its slot's open places (tick 1579, the routing step's slot
+the object 197's single-proximity one, two places offered, one open natively) holds 43 goals on
+a half-tile grid (x 320..376, y 288..376), all direction bit 0, scores 116..139: a range slot's
+scored area, not this slot. Of the slots at hand (study REPLAY_SHOW_GOALS), the global table's
+slot 8 (proximity 16..64, flags 0xA0FF: the random part on) holds 26 of the 43 in its area round
+object 197, the others 1: so the request is a range slot like that one round another point (or
+object), the routing step's slot failing over to it; which, and why, is next. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth

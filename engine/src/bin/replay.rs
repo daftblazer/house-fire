@@ -2541,6 +2541,21 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 } else {
                     "routing: a request's goals natively NOT the open places of its slot"
                 });
+                if !same && has("REPLAY_SHOW_GOALS") {
+                    let theirs: Vec<_> = pl.goals.iter().map(|g| ((g[3] & 0xFF).trailing_zeros(), g[0] as i32, g[1] as i32)).collect();
+                    println!("slot goals tick {}: object {} at {target:?} facing {}: native places {places:?} (offered {offered:?}); the request's {theirs:?}", pl.tick, o.id(), o.facing());
+                    // which slot's area holds the request's goals (the object's table and the global one)
+                    let tables = [world.definition(o).and_then(|d| lib.file(file).slots.get(&d.slot_table())), lib.global_file().and_then(|g| g.slots.values().next())];
+                    for (t, table) in tables.iter().enumerate() {
+                        for (n, sl) in table.iter().flat_map(|t| t.iter()).filter(|s| s.kind == 3).enumerate() {
+                            let area = slot_area(sl, target.0, target.1, o.facing());
+                            let inside = pl.goals.iter().filter(|g| area.iter().any(|&(_, q)| q == (g[0] as i32, g[1] as i32))).count();
+                            if inside > 0 {
+                                println!("   table {t} slot {n}: {inside} of {} goals in its area of {} ({sl:?})", pl.goals.len(), area.len());
+                            }
+                        }
+                    }
+                }
             } else {
                 // a slot of a range: each goal one of its area's places, with its direction's bit
                 // (by the object's native facing, else by the facing the goals' bits give: the
