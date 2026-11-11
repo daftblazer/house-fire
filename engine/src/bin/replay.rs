@@ -2553,6 +2553,22 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                             if inside > 0 {
                                 println!("   table {t} slot {n}: {inside} of {} goals in its area of {} ({sl:?})", pl.goals.len(), area.len());
                             }
+                            // a range slot: the centre and facing whose area holds the most goals
+                            if inside > 1 && sl.min_proximity != sl.max_proximity {
+                                let mut best = (0, (0, 0), 0);
+                                for dx in (-64..=64).step_by(8) {
+                                    for dy in (-64..=64).step_by(8) {
+                                        for f in 0..8 {
+                                            let a = slot_area(sl, target.0 + dx, target.1 + dy, f);
+                                            let k = pl.goals.iter().filter(|g| a.iter().any(|&(_, q)| q == (g[0] as i32, g[1] as i32))).count();
+                                            if k > best.0 {
+                                                best = (k, (target.0 + dx, target.1 + dy), f);
+                                            }
+                                        }
+                                    }
+                                }
+                                println!("   table {t} slot {n}: best {} of {} goals with the area round {:?} facing {}", best.0, pl.goals.len(), best.1, best.2);
+                            }
                         }
                     }
                 }

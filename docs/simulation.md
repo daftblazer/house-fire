@@ -1299,7 +1299,12 @@ a half-tile grid (x 320..376, y 288..376), all direction bit 0, scores 116..139:
 scored area, not this slot. Of the slots at hand (study REPLAY_SHOW_GOALS), the global table's
 slot 8 (proximity 16..64, flags 0xA0FF: the random part on) holds 26 of the 43 in its area round
 object 197, the others 1: so the request is a range slot like that one round another point (or
-object), the routing step's slot failing over to it; which, and why, is next. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+object), the routing step's slot failing over to it. Its centre (the study now slides a range slot's area
+round the target): global slot 8's area round (360, 328), facing 0, holds all 43 goals. That is
+the centre of tile (22, 20), the green counter's, not object 197's native place (392, 344), which
+is the planning Sim's own: object 197 (likely the meal, carried and then set down) has moved
+since the save, and the native world does not follow it. So the request is that slot round the
+object where it then lay; the object's native place, not the slot rule, is what misses. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
