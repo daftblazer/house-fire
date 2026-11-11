@@ -1062,7 +1062,13 @@ b's own point when a and b share their +4 id, else the crossing point fn_8026834
 them, stored to out. A missing node costs 0.0 (802D1928), and from node index 0 (the start
 marker) the cost is the plain cost of the rect that b's +0 indexes. Every parent in the dump is
 kind 0, so the weights 1, 2 and 6 for kinds 0, 3 and 10 are (0+k+2)>>1. A step between two
-kind-3 nodes weighs 4, not 2: still to see in a dump.
+kind-3 nodes weighs 4, not 2: still to see in a dump. The crossing point (fn_80268344 via fn_80268284): each node's +4 is
+the index of its cell, a 20-byte rect {y0, x0, y1, x1, cost} in a vector at the graph's +12;
+both cells are grown by 1 on every side (fn_80248D20(r, 1, 1): y0-1, x0-1, y1+1, x1+1),
+intersected (fn_80248DD8: the overlap, all zero unless they overlap strictly on both axes), and
+the point is the overlap's centre, each axis (lo + hi) / 2 rounded toward zero. So the graph's
+nodes are its free cells, the search runs cell to cell, and the coarse way's points are the
+midpoints of the shared edges: the "string through cell openings" before refining.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
