@@ -94,6 +94,25 @@ pub fn test_object_type(n: &Node, vars: &mut ScriptVariables) -> PrimResult {
 /// stack object, or with flag 0x80 in byte 4 the variable of scope byte 5, datum byte 7. True
 /// and the target set if there is one; false if not. Other kinds are not modelled yet: Stop.
 /// Measured on the recompiled game (`docs/objects.md`, "SetToNext").
+/// CreateObjectInstance (opcode 42), the object itself: one of the GUID in operand bytes 0-3
+/// (little-endian), with its definition and file, 72 data fields, as many attributes as its
+/// definition's field 56, taking the lowest id free and going in front of the list
+/// (`World::make_object`). None if the GUID has no definition. Where it goes (byte 4), its init
+/// tree (run inside the maker's step) and the maker's stack object are the caller's.
+/// Measured: the home log's three (`docs/primitives.md`, "CreateObjectInstance").
+pub fn create_object(n: &Node, w: &mut World) -> Option<ObjectKey> {
+    let guid = u32::from_le_bytes([n.operand[0], n.operand[1], n.operand[2], n.operand[3]]);
+    let lib = w.library();
+    let d = lib.definition(guid)?;
+    let mut o = Object::new();
+    o.guid = guid;
+    o.definition = Some(d);
+    o.file = Some(d.file);
+    o.data = vec![0; 72];
+    o.attributes = vec![0; lib.def(d).field(56) as usize];
+    Some(w.make_object(o))
+}
+
 pub fn set_to_next(n: &Node, vars: &mut ScriptVariables) -> PrimResult {
     let o = &n.operand;
     let kind = o[4] & 0x7F;

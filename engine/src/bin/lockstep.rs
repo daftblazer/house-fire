@@ -36,7 +36,7 @@ use housefire::disc::Disc;
 use housefire::expression::{ExprResult, ExpressionOperand, Variable, Variables, expression};
 use housefire::interp::{Frame, Host, Interpreter, Mode, PrimResult, Step, Trees};
 use housefire::library::Library;
-use housefire::primitives::set_to_next;
+use housefire::primitives::{create_object, set_to_next};
 use housefire::save::{memory_card_file, read_lots};
 use housefire::tree_log::{ExprRec, LookupRec, StepRec, read_log, same_shape};
 use housefire::world::{DATA_OBJECT_ID, Object, ObjectKey, ScriptVariables, Table, World, scope};
@@ -1130,18 +1130,20 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
     let mut li = 0;
     let mut shown = 0;
     for (i, s) in log.steps.iter().enumerate() {
-        let Some(raw) = raw_of(s) else { continue };
-        if (u16::from_be_bytes([raw[0], raw[1]]) & 0x7FFF) != 31 || raw[2] == raw[3] {
-            continue;
-        }
-        // The disc's node (its operand in the file's order).
-        let Some(node) = step_object[i].and_then(|o| lib.tree(Some(o), s.tree)).and_then(|t| lib.tree_at(t).nodes.get(s.node as usize)).copied() else {
+        // The disc's node (its operand in the file's order); SetToNext as the log's tree has it,
+        // CreateObjectInstance by the disc's (its maker's tree has no record in the log).
+        let disc_node = || step_object[i].and_then(|o| lib.tree(Some(o), s.tree)).and_then(|t| lib.tree_at(t).nodes.get(s.node as usize)).copied();
+        let op = match raw_of(s) {
+            Some(raw) if u16::from_be_bytes([raw[0], raw[1]]) & 0x7FFF == 31 && raw[2] != raw[3] => 31,
+            _ if s.look == b'X' && disc_node().is_some_and(|n| n.opcode == 42) => 42,
+            _ => continue,
+        };
+        let Some(node) = disc_node() else {
             continue;
         };
-        if node.operand[4] & 0x80 != 0 && node.operand[5] != scope::STACK_OBJECT {
+        if op == 31 && node.operand[4] & 0x80 != 0 && node.operand[5] != scope::STACK_OBJECT {
             continue;
         }
-        let mut f = Frame { params: s.params.clone(), locals: s.locals.clone(), stack_object: s.stack_object, ..Default::default() };
         // The objects made and removed, as the original's list shows them, replayed up to this
         // step's tick (each new id checked against the world's rule). An 'L' record is written
         // at the start of the next tick under the tick it ends, so a step sees the lists of the
@@ -1191,6 +1193,28 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
                 println!("list at tick {}: native {:?} log {:?} (from {first}, of {} and {})", l.tick, &order[first..(first + 6).min(order.len())], &l.ids[first..(first + 6).min(l.ids.len())], order.len(), l.ids.len());
             }
         }
+        if op == 42 {
+            // CreateObjectInstance natively on this world: the new object's id against the
+            // maker's stack object after, its GUID against the file its own steps run (the next
+            // list then finds it made)
+            let Some(k) = create_object(&node, &mut lw) else {
+                notes.note("objects: CreateObjectInstance: no definition of the GUID");
+                continue;
+            };
+            let (id, guid) = (lw.get(k).id(), lw.get(k).guid);
+            notes.note(if id == s.stack_object_after { "objects: CreateObjectInstance natively, the id the original's" } else { "objects: CreateObjectInstance natively, the id DIFFERENT" });
+            // the object's pointer: the one the next list has at that id
+            let ptr = log.lists.iter().find(|l| l.tick >= s.tick).and_then(|l| l.ids.iter().position(|&x| x == id).map(|p| l.objects[p]));
+            let own = |t: &StepRec, ptr: u32| t.lookups.iter().any(|v| v.object == ptr && matches!(v.scope, 0 | 3 | 8));
+            let file = ptr.and_then(|p| log.steps.iter().enumerate().skip(i.saturating_sub(400)).find(|(j, t)| own(t, p) && step_object[*j].is_some()).and_then(|(j, _)| step_object[j]));
+            let file_guid = file.and_then(|f| lib.file(f).definitions.first()).map(|d| d.guid());
+            notes.note(if file_guid == Some(guid) { "objects: CreateObjectInstance natively, the GUID its own steps' file's" } else { "objects: CreateObjectInstance natively, the GUID NOT its steps' file's" });
+            if let Some(p) = ptr {
+                made_ptr.insert(id, p);
+            }
+            continue;
+        }
+        let mut f = Frame { params: s.params.clone(), locals: s.locals.clone(), stack_object: s.stack_object, ..Default::default() };
         if node.operand[4] & 0x7F == 6 {
             for (&id, ptr) in &made_ptr {
                 let Some(k) = lw.find(id) else { continue };
@@ -1204,6 +1228,7 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
             }
         }
         let r = set_to_next(&node, &mut ScriptVariables::new(&mut lw, nobody, &mut f));
+        let Some(raw) = raw_of(s) else { continue };
         let orig_true = s.after == raw[2] as u16;
         let kind = format!("SetToNext kind {}", node.operand[4] & 0x7F);
         if r == PrimResult::Stop {

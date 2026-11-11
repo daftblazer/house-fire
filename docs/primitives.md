@@ -203,3 +203,10 @@ it goes (4, 6), byte 5 a flag. The new object is made inside the step: its own i
 (its first steps, 0x1004 / 0x200b / 0x1003 node 0, come before the maker's), the list's head is
 it ('C' during the step), and the maker's stack object is its id after. The fourth made object,
 the "go here and show" marker at 1503, has no opcode-42 step: the engine's own.
+
+Natively (`create_object`): an object of the GUID's definition and file, 72 data fields, its
+definition's field 56 attributes, the lowest id free, in front of the list. Checked in lockstep
+on its world of the original's lists: the home log's three and one in each club session, all
+with the original's id and a GUID the file of its own later steps has; the lists after them in
+the original's order. Not yet: where it goes (byte 4), its init run inside the step, and replay
+(whose maker steps do not reach the primitive yet).
