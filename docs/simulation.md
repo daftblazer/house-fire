@@ -914,7 +914,19 @@ move: the speed the walker carries, kept (no ramp, no brake), times the game's s
 point (the first frame with the point just set). 5 of the home log's 6 moving state-5 frames
 natively the original's; the sixth (tick 1646, a diagonal move: 0.557 where the carried 0.655 is
 expected, 3.59 from its point) is not yet understood, and it is the speed the walk at 1909 starts
-from, so the replay still carries a state-5 frame's speed from its logged step.
+from, so the replay still carries a state-5 frame's speed from its logged step. Route_Follow's
+frame: the budget (the frame times the game's speed, +124), then fn_800AE6FC for every state (the
+walker's facing, +56, turned towards where it goes: in state 5 its point, +116/+120, less its
+place, +40/+44; the angle constants at 802A8D64 to 802A8D90), then in state 5 fn_800AEBFC, which
+moves the walker towards its point through the general mover fn_800AEC38 with that budget. Tick
+1646's slower frame is the one where the walk's heading (from (380, 338) to (376, 336)) turns to
+the diagonal: the turn may cost speed there (not yet read in the mover); tick 2036's state 5,
+straight on, keeps its speed.
+
+**A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
+from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
+walk ran on into state 5, from its end. What makes the planner add it is not yet read (the
+walker's data 9 alone does not: the plan at 520 has it set and no such point).
 
 **Where a walk ends, at a door.** The walk ends at the request's chosen goal, the plan's last leg
 past it (into what the Sim faces) not walked; but at a door the home log has both: the yard's walk
