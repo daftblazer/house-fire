@@ -280,7 +280,7 @@ fn sync_variables(world: &mut World, counts: &mut Counts, shown: &mut Shown, me:
             note!(counts, "variables: scope {}: the same natively", v.scope);
             continue;
         }
-        if env("REPLAY_SHOW_SCOPE").is_some_and(|e| atoi(&e) == v.scope as i64) && shown.next("scope", 10) {
+        if env("REPLAY_SHOW_SCOPE").is_some_and(|e| atoi(&e) == v.scope as i64) && shown.next("scope", env("REPLAY_SHOW_N").map_or(10, |n| atoi(&n) as i32)) {
             println!(
                 "scope {} datum {}: native {}, log {}; the step's stack object {} -> {}, tree {}:{}",
                 v.scope, v.data, got.value, v.value, s.stack_object, s.stack_object_after, s.tree, s.node

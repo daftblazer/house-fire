@@ -49,7 +49,7 @@ Deliberate differences:
 
 | | The original | Here | Why it does not change play |
 |---|---|---|---|
-| A new frame's locals | what the stack's memory held | zero | the scripts that read one first read zero in practice (`interpreter.md`, "The call"); reads are reported |
+| A new frame's locals | what the stack's memory held | zero | the scripts that read one first read zero in practice (`interpreter.md`, "The call"); reads are reported. Not so on the home log: tree 459 reads left-over locals (1, 2, ... -32569) 138 times; to be decided |
 | `++`/`--` then compare, on a float variable | compares a word read through a null pointer | compares the new value | a crash-class bug; no script in the logged session does it |
 | Random's numbers | the console's generator, shared with animation, sound and the rest | the engine's own (xorshift64*, `World::rng`), unbiased over the range | the numbers are as random and in the same ranges; a sequence the same as the original's would mean copying every other user of its generator. Lockstep and replay take the original's numbers (autonomy's choice included: its `R` records) |
 | Autonomy's list, values equal within 1e-7 | the order its sort (`Util_Sort`, not stable) leaves them | the candidates' order (a stable sort) | such a tie is between interactions of the same worth; which of two equal ones a Sim prefers is chance in the original too (the home log has one, of the 41 entries, below the pick) |

@@ -74,7 +74,13 @@ tree id, node 0, +4 from the caller, +8 zero, +12 the file, the counts from the 
   3,506 trees with locals (for example "Start Jealousy" tests local 1 at its first node),
   and 324 more past primitives it does not decode yet. In the logged session the original
   ran 442 such reads and every one read zero, so zero is also what the game does in
-  practice.
+  practice. The home log (2026-11-11) does not bear that out: the global tree 459 (0x1CB) reads
+  locals 0 and 1 before writing them 138 times, and the original's values there are left
+  over (1, 2, 5 to 9, and -32569 at local 1), not zero; and tree 4110 (0x100E) node 0 reads
+  local 0 as 0 where the native frame still holds an earlier run's 260 or 347 (135 times).
+  Locals differ natively 398 times in all, these the most. Whether to model the stack's
+  memory (a frame's locals from what the frames before it left at its place) instead of
+  zero is the user's decision (`plan.md`); until then replay sets them to the log's.
 
 ## Semi-global files
 
