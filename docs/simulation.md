@@ -1035,7 +1035,15 @@ lines; from fn_8026A038, the search's first step, and fn_80268ED4), from the nod
 reached: the 44-byte nodes' layout (their cell, their link) is next, by a study dump. (The
 search state's own +76 is not that node table but a vector of node indices, the order it took
 them in: 0, 3, 9, 11, 2, ... at tick 2, the nodes it expanded; the 44-byte table is the object the
-lookup is called on, still to find.)
+lookup is called on, still to find.) That table is a global (8035D2F4, its vector at +76), 15
+nodes at the home run's first search (a study dump, reverted). A node is an A* node: +4 its id,
++8/+12 two links (-1 for none), +16 a kind (0, 3 or 10), +20/+24 its point (as the coarse way's,
+turned y then x), +28 its parent, then f, g and h as floats (f = g + h). The step's cost is
+(distance + 1) times the kind's weight, 1 for kind 0, 2 for 3, 6 for 10; it holds for every node
+with a parent (9 of 9; e.g. node 13, (96, 423) from node 2 at (86, 355), g 44.18: 44.18 +
+2·(68.73 + 1) = 183.64, logged 183.64). The h is not the plain distance to the goal node (272.47
+from (104, 328), the goal node at (80, 478) is 151.9 away) and is the next fit; nodes 0 and 1
+(state -1) are the start and the goal.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
