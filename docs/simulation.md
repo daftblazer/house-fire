@@ -1362,7 +1362,12 @@ persons (moved by their scripts), 41 persons' places outside the whole walks (35
 girl's). The tick-0 placements are native already: each is the centre of the tile the lot loads
 its object on ((x >> 4 << 4) + 8, its level the same; 184), or (-16, -16) for an object off the
 lot (22; the lot loads those at (-24, -24) or so): 206 of 206. So the object's place the scripts
-see is its tile's centre, not the corner + footprint offset the lot keeps (chairs +4, persons +3). Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+see is its tile's centre, not the corner + footprint offset the lot keeps (chairs +4, persons +3). The 244 places of objects that are not persons are three objects': 202 (192 places)
+is not in the native world at all (made during the run), 198 (51) is a group meal natively
+(food_meal_regular_group) but walks in the original (down y from (392, 328), across to (408, 360)
+and back, a sixteenth a tick or two: a walker, likely a character made during the run that took
+id 198), and 201 once. Both walk like Sims, but no native person holds those ids, so the native
+walk's places never reach them. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth

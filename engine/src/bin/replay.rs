@@ -1446,6 +1446,10 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
                     h.counts.note(&if p.tick == 0 {
                         "places: the log's, no native walk: a tick-0 placement".to_string()
                     } else if !person {
+                        if has("REPLAY_SHOW_PLACES") {
+                            let file = h.world.find(p.id).and_then(|k| h.world.get(k).file).map_or("-".to_string(), |f| file_name(lib, f));
+                            println!("moved object {} {file} at tick {} to {:?}", p.id, p.tick, (p.x, p.y, p.level));
+                        }
                         "places: the log's, no native walk: not a person".to_string()
                     } else {
                         format!("places: the log's, no native walk: person {}", p.id)
