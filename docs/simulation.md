@@ -1181,7 +1181,13 @@ y and the y0 side in falling x (the yard's first search, where each side gave on
 could not tell). With that: 22 of 23 coarse ways exact, and the cells of 15 searches equal the
 original's in full. Left: search 7, whose cells are all equal but whose way is not (so the A*
 itself: its ties or its edges), and searches 9, 10, 13, 14, 16 and 17, whose cells part from the
-second on although their ways come out right.
+second on although their ways come out right. Search 7 (plan 4), with every cell equal: from (296, 313) in cell
+8 (279, 313, 313, 369) the original goes on through cell 12 (313, 327, 368, 349) at (313, 338)
+and cell 13 (313, 349, 317, 371) at (315, 349), costing 66.4 to (315, 371), where the model's
+A* takes cell 8 straight to 13 at (313, 359), 63.2. Both cells lie past cell 8's y1 side, so the
+original does not make that link, or does not take it, for a reason not yet found. Linking only
+the cells the perimeter walk meets changes nothing, and never re-parenting a found node is worse
+(21).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
