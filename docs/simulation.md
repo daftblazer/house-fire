@@ -943,7 +943,11 @@ point; tick 2035's does not (its point then a stale one, elsewhere): not yet rea
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
 walk ran on into state 5, from its end. What makes the planner add it is not yet read (the
-walker's data 9 alone does not: the plan at 520 has it set and no such point).
+walker's data 9 alone does not: the plan at 520 has it set and no such point). Ruled out too: the
+walker off the plan's start (520 and 1900 are, without the point), the walker in state 5 (520 is,
+without it), the walker still moving in state 5 (1900 is, without it; 496 is not, with it), and
+the walker's place or state-5 point rounded (4921's x is the third point's way, not the walker's).
+The point is start + the sign of (third − start) on each axis in all 3.
 
 **Where a walk ends, at a door.** The walk ends at the request's chosen goal, the plan's last leg
 past it (into what the Sim faces) not walked; but at a door the home log has both: the yard's walk
