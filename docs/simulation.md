@@ -957,7 +957,12 @@ all 10 runs whose walk ends in a turn return on the original's tick, and all 1,4
 of them as it reaches them, none different). A walk that runs on ends the same way with a turn of
 no angle (one frame arrived, state 3 to 4, then the frame into state 5): with it 12 runs modelled
 (5 run-on ends right), all 12 return on the original's tick, and the host decides 1,586 routing
-steps natively, none different (409 left in runs not modelled). With the frame clock native as well (`FrameClock` at
+steps natively, none different (409 left in runs not modelled). A walk begun where a run on left
+its walker (past its plan's start) goes from there through the plan's points after its start,
+less the sixteenth the planner nudged off it; and a walk end is a door's crossing only when its
+routing run goes on more than 5 ticks past the plan that follows. With both, all 16 whole walks
+and 15 routing runs native and right, 10 of 12 with the frame clock native, and the host decides
+1,898 routing steps natively, none different (97 left, in one run). With the frame clock native as well (`FrameClock` at
 its fitted phase giving each frame's tick; only the walk's start taken from the log), 7 of the 8
 runs it covers return on the original's tick (2 start before the ticks it is fitted over). The
 clock runs at the game's speed (`FrameClock::frames_to_tick_at`): a tick takes 0.042 s over the

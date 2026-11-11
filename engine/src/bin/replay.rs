@@ -3449,13 +3449,22 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 let angle = if runs_on_end {
                     0.0
                 } else {
-                    let (Some(faced), Some(w)) = (faced, last_way.get(&f.follower).copied()) else { continue };
+                    let (Some(faced), Some(w)) = (faced, last_way.get(&f.follower).copied()) else {
+                        if show_walks {
+                            println!("walk end at tick {t0} {:x} set aside: no plan with its end as its last point but one (end {end:?})", f.follower);
+                        }
+                        continue;
+                    };
                     let a1 = w.1.atan2(w.0);
                     let a2 = (faced.1 as f32 - end.1).atan2(faced.0 as f32 - end.0);
                     let pi = std::f32::consts::PI;
                     let angle = ((a2 - a1 + pi).rem_euclid(2.0 * pi) - pi).abs();
-                    let crossing = log.plans.iter().any(|p| p.tick > t0 && p.tick <= t0 + 5);
+                    // a door's crossing: a plan within 5 ticks while the same routing run goes on
+                    let crossing = log.plans.iter().any(|p| p.tick > t0 && p.tick <= t0 + 5 && routing_runs.iter().any(|r| r.3 <= t0 && r.4 > p.tick + 5));
                     if crossing {
+                        if show_walks {
+                            println!("walk end at tick {t0} {:x} set aside: a plan follows within 5 ticks (end {end:?})", f.follower);
+                        }
                         continue;
                     }
                     angle
@@ -3474,10 +3483,23 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 if let Some(&(start_tick, start, v0, walked)) = walk_starts.get(&f.follower) {
                     let line = log.plans.iter().rev().filter(|p| p.tick <= start_tick).find_map(|p| {
                         let pts: Vec<(f32, f32)> = p.points.iter().map(|&(x, y)| (x as f32, y as f32)).collect();
-                        let i = pts.iter().position(|q| (q.0 - start.0).abs() < 0.5 && (q.1 - start.1).abs() < 0.5)?;
                         let j = pts.iter().position(|q| (q.0 - end.0).abs() < 0.5 && (q.1 - end.1).abs() < 0.5)?;
-                        (j > i).then(|| pts[i..=j].to_vec())
+                        if let Some(i) = pts.iter().position(|q| (q.0 - start.0).abs() < 0.5 && (q.1 - start.1).abs() < 0.5) {
+                            return (j > i).then(|| pts[i..=j].to_vec());
+                        }
+                        // a walk begun where a run on left its walker, past the plan's start: from
+                        // there through the plan's points after its start, less the sixteenth the
+                        // planner nudged off the start (start + the sign of the third's way)
+                        let s0 = *pts.first()?;
+                        let here = ((start.0 - s0.0).powi(2) + (start.1 - s0.1).powi(2)).sqrt();
+                        let sign = |v: f32| if v > 0.0 { 1.0 } else if v < 0.0 { -1.0 } else { 0.0 };
+                        let nudged = pts.len() >= 3 && pts[1] == (s0.0 + sign(pts[2].0 - s0.0), s0.1 + sign(pts[2].1 - s0.1));
+                        let k = if nudged { 2 } else { 1 };
+                        (here < 5.0 && j >= k).then(|| std::iter::once(start).chain(pts[k..=j].iter().copied()).collect())
                     });
+                    if line.is_none() && show_walks {
+                        println!("walk end at tick {t0} {:x}: no plan line from its start {start:?} (tick {start_tick}) to its end {end:?}", f.follower);
+                    }
                     if let Some(line) = line {
                         let total: f32 = line.windows(2).map(|w| ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt()).sum();
                         let per_second = native_top.get(&f.follower).copied().unwrap_or(WALK_TOP_ADULT);
