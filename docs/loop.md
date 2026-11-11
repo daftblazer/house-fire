@@ -1586,7 +1586,7 @@ iterations in a row end without a commit (record why here).
 
 ## Progress
 
-Iteration 23 of 24.
+Iteration 24 of 24 (the loop ended).
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1761,3 +1761,38 @@ Iteration 23 of 24.
   turn (the game's speed and the frames' ticks as logged): 8 of 10 runs on the original's tick,
   with all their yields (the 2 left the walks starting a little off). Figures unchanged (561,398,
   338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next: the loop's end (iteration 24).
+
+- **Iteration 24 (the loop's end).** This write-up; figures as at iteration 23.
+
+## The tenth loop's end
+
+Twenty-four iterations through the night (house-fire f7a08e9..4eddd30 and this; recomp e100848, 135d264), a
+quarter of an hour apart. Chunk 6 is done, chunks 1, 3 and 5 for the most part; chunk 2 (the
+planner's own points) and chunk 4's paper girl are open.
+
+- **The walk (chunk 1).** Found the walker (`Route_Follow`, 800AE0A4; the observer's `F` and `Z`).
+  Natively (`routing::walk_step`, `walk_rates`, `along_line`): a speed in sixteenths a second
+  from the DOL (19.84 adult, 17.28 child) reached in 0.5 s, the frame 0.033 s, a brake to stop at
+  the end, carried from walk to walk; the walk ends at the request's goal. 1,653 of 1,701 logged
+  steps exact; run free from each start, 1,270 of 1,465 frames. Which top (adult or child) is
+  still told from the log.
+- **The route (chunk 3).** The paved regions (`D`, the search's own; `Walls::paved_regions`
+  natively from the floor array) and the corner search weighed by them (`weighed_path`, a fitted
+  weight of 3): 15 of 16 plans by the planner's corners. Tick 521's is the planner's own search's
+  (a grid pulled straight, it seems: chunk 2).
+- **The routing primitive (chunk 5).** The turn at a walk's end (3 degrees a frame), the game's
+  speed (the follower's factor: 0, 1, 5, the player's), the frame clock (a tick each 0.042 s,
+  `FrameClock`), and the return a frame after done: all 16 routing runs return on the rule's
+  tick, and 8 of 10 with the walk and turn native. Not yet wired into the simulator (the replay
+  checks it; the plans still come from the log).
+- **Sim 237's values (chunk 6, done).** The check tree ad range (scope 12): a candidate's guard
+  adjusts its advertisement before it is scored (`Host::ad_range_mut`); and the list holds the
+  candidates last first before its sort. All 109 scores and all three choice lists the original's.
+- **Open.** The planner's points between corners and tick 521 (the search's code, `fn_8026A210`'s
+  callees); the paper girl's state test and a range slot's area (chunk 4); the adult/child test
+  (`fn_80059194`); the walk's start speed after one cut short; the door's states (4, 5) and where
+  a walk at a door ends; the frame clock's phase and tick time from the code; the routing
+  primitives in the simulator itself.
+- **Figures** through the loop unchanged: replay 561,398 / 338,305 / 68,202 steps the same;
+  lockstep 7,902 / 4 / 24 differences (the native routing is checked beside the log, not yet in
+  the stepped simulation).
