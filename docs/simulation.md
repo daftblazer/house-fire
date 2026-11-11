@@ -1256,8 +1256,17 @@ list[18..23) = 7, 14, 15, 16, 17; node 15, cell 13: 14, 2, 16, 10), so 8 and 13 
 ways. The search pops by least f (its order's f rise: 124.96, 127.14, 129.2, 134.1, 139.2, 141.26,
 141.89), and the model's step cost gives node 10's other children exactly (14: 85.22, 16: 111.13,
 17: 93.89). But to come after node 14 (f 141.26), node 15 must have entered at f >= 141.26, and
-no crossing on the 8-13 opening gives that with the same cost (at most 141.0, at (313, 369)): the
-original costs that one step otherwise, or relaxes it otherwise. Still open. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+no crossing on the 8-13 opening gives that with the same cost (at most 141.0, at (313, 369)).
+Found by hooking the step cost (fn_8026875C) for that search (a study, reverted): node 15 was
+expanded before 14 (the +76 order is not every expansion), giving the goal cell its g 117.19; then
+node 14's expansion found 15 cheaper (97.40 for 104.02) and the original took it even though 15
+was already expanded: g, point and parent change, the node is not opened again. The way, read
+back through the parents, then runs through 14. So a closed node still takes a better way. (The
+hook also shows a step back to a node's own parent costs 1, and the step into the goal 0; neither
+matters to the ways.) With that in the planner: every stage 17 of 17 (the search's coarse ways,
+the refined points, the point after the goal), and replay now runs its walk checks on the native
+plans (the log's taken only where the log lacks 'r' and 'h'; study REPLAY_LOGGED_PLANS), with
+every count as before. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth

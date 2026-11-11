@@ -1256,24 +1256,23 @@ fn native_plan_points(pl: &PlanRec, world: &World) -> Option<Vec<(i32, i32)>> {
 fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], bench: Option<Bench>, card_lot: bool) -> Option<(Counts, Option<Bench>)> {
     let mut world = World::new(lib);
     world.load_lot(club).expect("the lot");
-    // study: the plans' points natively in place of the log's (REPLAY_NATIVE_PLANS), so that the
-    // walk checks run on the native planner's ways
+    // The plans' points natively wherever the log carries the planner's inputs ('r', 'h'), so the
+    // walk checks run on the native planner's ways (study REPLAY_LOGGED_PLANS: the log's instead)
     let patched;
-    let log = if has("REPLAY_NATIVE_PLANS") {
+    let mut native_plans = (0, 0);
+    let log = if has("REPLAY_LOGGED_PLANS") {
+        log
+    } else {
         let mut l = log.clone();
-        let (mut replaced, mut same) = (0, 0);
         for pl in &mut l.plans {
             if let Some(p) = native_plan_points(pl, &world) {
-                same += usize::from(p == pl.points);
-                replaced += 1;
+                native_plans.1 += usize::from(p == pl.points);
+                native_plans.0 += 1;
                 pl.points = p;
             }
         }
-        println!("native plans: {replaced} plans' points replaced, {same} of them unchanged");
         patched = l;
         &patched
-    } else {
-        log
     };
     if has("REPLAY_SHOW_OBJECTS") {
         for o in world.objects() {
@@ -1341,6 +1340,13 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
         now: 0,
         routing_returns: BTreeMap::new(),
     };
+    for i in 0..native_plans.0 {
+        h.counts.note(if i < native_plans.1 {
+            "planner: a plan's points natively, in the log's place, the same as the log's"
+        } else {
+            "planner: a plan's points natively, in the log's place, NOT the log's"
+        });
+    }
     let mut consumed: BTreeSet<usize> = BTreeSet::new(); // log steps a native primitive's checks have stepped
     let mut sim = Simulator::new(lib);
     let mut finder = TreeFinder { lib, cache: HashMap::new(), shown: 0 };

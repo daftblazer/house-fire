@@ -224,7 +224,7 @@ pub fn coarse_way(rects: &[MapRect], growth: Growth, start: (i32, i32), goal: (i
         if c == goal_node {
             let (mut points, mut openings) = (vec![goal], Vec::new());
             let mut n = goal_parent;
-            while let Some(i) = n {
+            while let Some(i) = n.filter(|_| points.len() <= point.len()) {
                 points.push(point[i]);
                 openings.extend(opening[i]);
                 n = parent[i];
@@ -247,7 +247,7 @@ pub fn coarse_way(rects: &[MapRect], growth: Growth, start: (i32, i32), goal: (i
         let gc = g[c].unwrap_or(0.0);
         let here = map.cells[c];
         for b in 0..n {
-            if b == c || closed[b] || map.cells[b].cost == BLOCKED {
+            if b == c || map.cells[b].cost == BLOCKED {
                 continue;
             }
             let Some((p, o)) = crossing(&here, &map.cells[b]) else { continue };
@@ -257,7 +257,10 @@ pub fn coarse_way(rects: &[MapRect], growth: Growth, start: (i32, i32), goal: (i
                 point[b] = p;
                 opening[b] = Some(o);
                 parent[b] = Some(c);
-                open.push(Open(ng + h(p), b));
+                // a node already expanded takes the better way too, but is not opened again
+                if !closed[b] {
+                    open.push(Open(ng + h(p), b));
+                }
             }
         }
         if Some(c) == last {
