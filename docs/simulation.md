@@ -1268,7 +1268,12 @@ the refined points, the point after the goal), and replay now runs its walk chec
 plans (the log's taken only where the log lacks 'r' and 'h'; study REPLAY_LOGGED_PLANS), with
 every count as before. The home log's 18th plan has no search ('I'): its request has no goals
 (chosen -1, an empty 'G'), and natively too a request with no goals plans nothing: 18 of 18
-plans' points natively, in the log's place. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+plans' points natively, in the log's place. The obstacles' 34 misses were the check's, not the engine's: at tick 1220 the loop kept an
+object that is not in the native world (a placeholder natively) and the planner made no rect for
+it (the cost-10 rect (384, 288, 400, 304) it has from tick 1356 on, likely the newspaper while still
+in hand), so every rect after it was compared one place off. Aligned past such a placeholder (it
+is dropped when the next native rect is the planner's there): 701 of 701 obstacles rect by rect,
+the 17 plans' lists all the planner's but for the 8 rects of objects not native. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth

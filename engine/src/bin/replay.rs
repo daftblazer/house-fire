@@ -2892,6 +2892,19 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 // one whose footprint (before it is grown) overlaps the Sim's is dropped
                 .filter(|r| *r == [0; 5] || !sim_rect.is_some_and(|s| overlaps(&ungrown(r, half), &s)))
                 .collect();
+            // an object not in the native world ([0; 5]) holds its place, unless the planner made
+            // no rectangle for it (the next native one is the planner's here): then it is dropped
+            let native: Vec<[i32; 5]> = {
+                let (mut kept_rects, mut j) = (Vec::new(), 0);
+                for (i, r) in native.iter().enumerate() {
+                    if *r == [0; 5] && native.len() > pl.obstacles.len() && native.get(i + 1).is_some_and(|n| pl.obstacles.get(j) == Some(n)) {
+                        continue;
+                    }
+                    kept_rects.push(*r);
+                    j += 1;
+                }
+                kept_rects
+            };
             let hit = native.iter().zip(&pl.obstacles).filter(|(a, b)| a == b).count();
             let unknown = native.iter().filter(|a| **a == [0; 5]).count();
             let miss = native.len().min(pl.obstacles.len()) - hit - unknown;
@@ -2950,6 +2963,11 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
             }
             if show_obstacles {
                 println!("   native list tick {}: {} rects, the planner's {}, kept {}, the Sim's {sim_rect:?}, {hit} the same", pl.tick, native.len(), pl.obstacles.len(), kept.len());
+                let only_native: Vec<_> = native.iter().filter(|r| !pl.obstacles.contains(r)).collect();
+                let only_theirs: Vec<_> = pl.obstacles.iter().filter(|r| !native.contains(r)).collect();
+                if !only_native.is_empty() || !only_theirs.is_empty() {
+                    println!("   tick {}: only natively {only_native:?}; only the planner's {only_theirs:?}", pl.tick);
+                }
             }
             counts.add("routing: obstacles of objects not in the native world (the log's kept)", unknown);
             // The plan's waypoints between its ends, by what they are: a corner of one of the
