@@ -1214,7 +1214,13 @@ twice. Kind 4 gives (0, +16) both times. Kind -2 gives one-tile steps, (+16, 0) 
 not set by the routing object's facing (facing 0 and 4 both give (+16, 0)), so they point
 towards the target object. Kind -3 has the irregular ones, (127, 0), (0, 15) twice, (0, -24)
 and (-16, -8): its branch works from the way's last two points and a test (802232A4..80223428)
-before it steps, so it is more than a facing step.
+before it steps, so it is more than a facing step. Kind -2 (and -1), read (8022367C..80223850): with the flags' bit 0x100 the point after the
+goal is the target point itself (r23's +200/+204, r23 an object the request's +80 object gives
+through a virtual, its +1340); otherwise it is one tile (16) on from the way's last point, in
+the eight-way direction to that target point: along an axis when one difference is more than
+twice the other, diagonal otherwise; kind -1 turns it round ((d + 4) & 7). The target is not the
++80 object itself (its +200/+204 logged as junk in a trial log, reverted), so to check this the
+virtual's object must be found natively: the routing primitive's own target.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
