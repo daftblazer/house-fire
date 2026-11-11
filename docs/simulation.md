@@ -1318,9 +1318,13 @@ while the request names the Sim: the centre comes from elsewhere in the primitiv
 exactly (360, 328), its tile's centre: the request is global slot 8 round object 60. And the
 routing step paired with this plan is Sim 237's (opcode 45, stack object 197, slot 0 of its own
 table; it yields on through the next ticks), not 197's: the check pairs a step and a plan by tick
-and start, and 237 and 197 are both logged at (392, 344) then. So this is no self target: it is
-two Sims' routings mixed. The plan is most likely 197's own (to the counter's slot 8), and
-pairing needs the planning Sim's id in the log. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+and start, and 237 and 197 are both logged at (392, 344) then. (Wrong, iteration 116:) 'h' now
+names the planning object (*state's +0x3C), and the plan at 1579 is 237's, the step's own Sim:
+the pairing was right (replay now also pairs by the planner where the log names it; nothing
+moved). And object 60's (360, 328) is its tick-0 place, the record every object gets at the start.
+So Sim 237, routing to slot 0 of Sim 197 (which the request names, at (392, 344)), asks the
+planner for a range slot's area centred on the counter tile. What makes that centre is not in
+the log's records; it stays open, the one request of 4 whose goals are not its slot's. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth

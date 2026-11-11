@@ -108,9 +108,9 @@ def records(path):
             if len(lists) < 2 or p + 20 > n: break
             settings = struct.unpack_from('<5I', b, p); p += 20  # +32 aspect on, +36 ratio, +40 cap on, +44 cap, +48 no-region cost
             yield 'r', (lists[0], lists[1], settings)
-        elif k == b'h':  # the plan's point after the goal: (kind, flags, facing, target x, y, facer id, facer data 1)
-            if p + 28 > n: break
-            yield 'h', struct.unpack_from('<iiiiiii', b, p); p += 28
+        elif k == b'h':  # the plan's point after the goal: (kind, flags, facing, target x, y, facer id, facer +144, planner id)
+            if p + 32 > n: break
+            yield 'h', struct.unpack_from('<iiiiiiii', b, p); p += 32
         elif k == b'H':  # the planner's request: (request, chosen, [(x, y, word, word)])
             if p + 10 > n: break
             rq, ch, cnt = struct.unpack_from('<IiH', b, p); p += 10

@@ -2479,7 +2479,13 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         let (number, scope) = (u16::from_be_bytes([raw[4], raw[5]]), u16::from_be_bytes([raw[6], raw[7]]));
         let Some(sim) = ids.get(&s.sim).copied() else { continue };
         let Some(start) = place_at(sim, s.tick) else { continue };
-        let Some(pl) = log.plans.iter().find(|p| p.tick == s.tick && p.points.first() == Some(&start) && p.points.len() >= 2) else { continue };
+        // the plan this step's Sim made (by its id where the log names the planner, 'h')
+        let sim_id = ids.get(&s.sim).copied();
+        let Some(pl) = log.plans.iter().find(|p| {
+            p.tick == s.tick && p.points.first() == Some(&start) && p.points.len() >= 2 && p.approach.is_none_or(|a| Some(a[7] as i16) == sim_id)
+        }) else {
+            continue;
+        };
         let Some(o) = world.find_object(s.stack_object) else {
             // An object not on the lot natively: its goals (logs with 'H') checked by their shape
             // alone, round the plan's end (its object) as some facing and proximity give them.
@@ -2544,7 +2550,8 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 if !same && has("REPLAY_SHOW_GOALS") {
                     let theirs: Vec<_> = pl.goals.iter().map(|g| ((g[3] & 0xFF).trailing_zeros(), g[0] as i32, g[1] as i32)).collect();
                     println!("slot goals tick {}: object {} at {target:?} facing {}: native places {places:?} (offered {offered:?}); the request's {theirs:?}", pl.tick, o.id(), o.facing());
-                    println!("   the step: sim {} tree {} number {number} scope {scope} stack object {} raw {raw:?}", s.sim, s.tree, s.stack_object);
+                    println!("   the step: sim {} tree {} number {number} scope {scope} stack object {} raw {raw:?}; the plan's planner {:?}", ids.get(&s.sim).copied().unwrap_or(-1), s.tree, s.stack_object, pl.approach.map(|a| a[7]));
+                    println!("   object 60's places: {:?}", log.places.iter().filter(|p| p.id == 60).map(|p| (p.tick, p.x, p.y)).collect::<Vec<_>>());
                     for id in [12i16, 197, 198, 202, 237] {
                         println!("   person {id} at tick {}: {:?}", pl.tick, log.places.iter().rfind(|p| p.id == id && p.tick <= pl.tick).map(|p| (p.x, p.y, p.tick)));
                     }
