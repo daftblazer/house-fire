@@ -180,6 +180,9 @@ pub struct FollowState {
     pub x: f32,
     pub y: f32,
     pub factor: f32,
+    /// The point state 5 moves to (+116/+120, stored turned) and +132 (1: its reach 9, else 3).
+    pub point: (f32, f32),
+    pub mode: u32,
 }
 
 /// A random number the game drew (the 'R' record): site 0 and 1 autonomy's choice (80226DD4,
@@ -373,6 +376,8 @@ pub fn read_log(path: &str) -> Option<Log> {
                     x: f32::from_bits(h[2]),
                     y: f32::from_bits(h[1]),
                     factor: f32::from_bits(h[5]),
+                    point: (f32::from_bits(h[4]), f32::from_bits(h[3])),
+                    mode: h[6],
                 };
                 log.follows.push(FollowRec { tick: log.ticks, follower, before: side(&w[0]), after: side(&w[1]) });
             }

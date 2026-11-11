@@ -897,6 +897,14 @@ is the walk's end), taken for now from the log's next state. With it, 1,691 of 1
 and two runs on that end mid-line (2035) or past the line's end (4919: a step that runs on is
 not stopped at the end).
 
+**State 5, the run on** (`routing::run_on_point`). Route_Follow, entering state 4 at a walk's end,
+asks the walker's object a test (a virtual at +708 of its class, with 9; not yet read); if it
+holds, the follower goes to state 5 with its point (+116/+120) set from the plan's last waypoint
+but one (where the walk ends) towards the last, at most 3 on each axis (the DOL's 3.0 at
+802A8D40; 9.0 at 802A8D3C when the follower's +132 is 1). Checked: the 3 entries into state 5
+with a logged plan ending there (ticks 496, 1645, 2037) natively the original's point; the 2
+others (the fast mode's at 519, the overshoot at 4920) have no plan ending where they start.
+
 **Where a walk ends, at a door.** The walk ends at the request's chosen goal, the plan's last leg
 past it (into what the Sim faces) not walked; but at a door the home log has both: the yard's walk
 to the front door (tick 260, its end in the house) stops at the door's near side, arrived (state

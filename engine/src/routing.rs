@@ -344,6 +344,15 @@ pub fn walk_step(speed: f32, top: f32, growth: f32, factor: f32, left: f32) -> (
     (v, (v * factor).min(left))
 }
 
+/// Where state 5 moves a walker after its walk (Route_Follow, 800AE0A4, on entering state 4 when
+/// its object's test 9 holds): from the plan's last waypoint but one, towards the last, at most
+/// `reach` on each axis (the DOL's 3.0 at 802A8D40, or 9.0 at 802A8D3C when the follower's +132
+/// is 1). Places in sixteenths.
+pub fn run_on_point(prev: (f32, f32), last: (f32, f32), wide: bool) -> (f32, f32) {
+    let reach = if wide { 9.0 } else { 3.0 };
+    (prev.0 + (last.0 - prev.0).clamp(-reach, reach), prev.1 + (last.1 - prev.1).clamp(-reach, reach))
+}
+
 /// The simulation's tick against the walker's frame (`WALK_FRAME`): 0.042 s, measured (the home
 /// log's ticks hold 1 or 2 frames, 14 in 11 ticks; `docs/simulation.md`, "Frames and ticks").
 pub const TICK_TIME: f32 = 0.042;

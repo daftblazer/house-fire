@@ -46,7 +46,7 @@ use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
-use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, slot_pick, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
+use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, slot_pick, run_on_point, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
 use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
@@ -3065,6 +3065,30 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 next4.insert(f.follower, f.after.state);
             }
             runs_on[i] = next4.get(&f.follower) == Some(&5);
+        }
+    }
+    // state 5's point natively (`run_on_point`), from the latest plan whose last waypoint but
+    // one is where the walker enters it, against the follower's +116/+120 after
+    for f in log.follows.iter().filter(|f| f.before.state == 4 && f.after.state == 5) {
+        let at = (f.before.x, f.before.y);
+        let plan = log.plans.iter().rev().filter(|p| p.tick <= f.tick && p.points.len() >= 2).find(|p| {
+            let q = p.points[p.points.len() - 2];
+            (q.0 as f32 - at.0).abs() < 0.5 && (q.1 as f32 - at.1).abs() < 0.5
+        });
+        let Some(p) = plan else {
+            counts.note("routing: a walker's state 5 with no plan ending there (not checked)");
+            continue;
+        };
+        let (q, l) = (p.points[p.points.len() - 2], p.points[p.points.len() - 1]);
+        let nat = run_on_point((q.0 as f32, q.1 as f32), (l.0 as f32, l.1 as f32), f.before.mode == 1);
+        let got = f.after.point;
+        counts.note(if (nat.0 - got.0).abs() < 0.01 && (nat.1 - got.1).abs() < 0.01 {
+            "routing: a walker's state-5 point natively the original's (towards the plan's last waypoint, 3 or 9 at most)"
+        } else {
+            "routing: a walker's state-5 point natively NOT the original's"
+        });
+        if show_walks {
+            println!("state 5 at tick {} {:x}: at {at:?}, plan {:?}, native {nat:?}, the original's {got:?}, +132 {}", f.tick, f.follower, p.points, f.before.mode);
         }
     }
     for (fi, f) in log.follows.iter().enumerate() {
