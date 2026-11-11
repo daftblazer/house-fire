@@ -1237,7 +1237,12 @@ that object (its id; the +144 word logged beside it is 0 throughout, data 1 is n
 and the native world's data 1 for it gives both kind-4 points. The diagonal -2 that adds none
 (tick 1791) is the one plan that took no goal (the request's +88 left at -1; it is tried again
 at once from the same start and then adds its point): a plan without a goal adds no point.
-With that, every plan's point after its goal (or its lack of one) natively, 16 of 16. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+With that, every plan's point after its goal (or its lack of one) natively, 16 of 16. Whole plans natively (`native_plan_points`, replay): 16 of 17 plans' points all the
+original's, from the search to the point after the goal; the one off is tick 521's (search 7).
+Run in place of the log's plans (study REPLAY_NATIVE_PLANS), the walk checks lose only that one
+walk: whole walks 15 of 16 (16), routing returns 15 (16), walker steps 1,545 (1,695, 146 more set
+aside as off the plan's line), routing primitive steps 1,989 of 1,992; nothing else moves. The
+log's plans stay the default until tick 521's link is found. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth

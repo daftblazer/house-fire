@@ -51,7 +51,7 @@ use housefire::planner::{coarse_way, point_after_goal, refine, Growth, MapRect};
 use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
-use housefire::tree_log::{Log, PassRec, StepRec, read_log, same_shape};
+use housefire::tree_log::{Log, PassRec, PlanRec, StepRec, read_log, same_shape};
 use housefire::world::{ObjectKey, ScriptVariables, World};
 use housefire::{FileId, TreeId};
 
@@ -1234,9 +1234,47 @@ fn top_node(lib: &Library, i: &Interpreter) -> Option<Node> {
 
 /// One run of the club over the log: with bench, timed and not counted. The counts, or `None`
 /// if the log does not start with the lot loaded.
+/// A plan's points natively (logs with 'r' and 'h'): the planner's search on the rects and
+/// settings the plan's last search had, from its coarse way's start to its end, refined, and the
+/// point after the goal (none if the plan took no goal); (x, y) like the plan's points.
+fn native_plan_points(pl: &PlanRec, world: &World) -> Option<Vec<(i32, i32)>> {
+    if pl.coarse.len() < 2 || pl.lookup_regions[0].is_empty() {
+        return None;
+    }
+    let rects: Vec<MapRect> = pl.lookup_regions.iter().flatten().map(MapRect::from_raw).collect();
+    let growth = Growth { cap: (pl.grower[2] != 0).then_some(pl.grower[3] as i32), open_cost: pl.grower[4] as i32 };
+    let (&(sx, sy), &(gx, gy)) = (pl.coarse.first()?, pl.coarse.last()?);
+    let way = coarse_way(&rects, growth, (sy, sx), (gy, gx))?;
+    let mut points: Vec<(i32, i32)> = refine(&way).iter().map(|&(y, x)| (x, y)).collect();
+    if let (Some(a), true) = (pl.approach, pl.chosen >= 0) {
+        let facing = world.find_object(a[5] as i16).and_then(|o| o.data.get(1)).map(|&d| d as i32);
+        points.extend(point_after_goal(a[0], a[1], (a[3], a[4]), facing, &points));
+    }
+    Some(points)
+}
+
 fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], bench: Option<Bench>, card_lot: bool) -> Option<(Counts, Option<Bench>)> {
     let mut world = World::new(lib);
     world.load_lot(club).expect("the lot");
+    // study: the plans' points natively in place of the log's (REPLAY_NATIVE_PLANS), so that the
+    // walk checks run on the native planner's ways
+    let patched;
+    let log = if has("REPLAY_NATIVE_PLANS") {
+        let mut l = log.clone();
+        let (mut replaced, mut same) = (0, 0);
+        for pl in &mut l.plans {
+            if let Some(p) = native_plan_points(pl, &world) {
+                same += usize::from(p == pl.points);
+                replaced += 1;
+                pl.points = p;
+            }
+        }
+        println!("native plans: {replaced} plans' points replaced, {same} of them unchanged");
+        patched = l;
+        &patched
+    } else {
+        log
+    };
     if has("REPLAY_SHOW_OBJECTS") {
         for o in world.objects() {
             let mut l = format!("object {}: guid {:08x}, {}; data", o.id(), o.guid, o.file.map_or("-".to_string(), |f| lib.file(f).path.clone()));
@@ -2662,6 +2700,15 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
     // The obstacles the planner gathered for each plan (logs with 'X'): their shapes (a cost of
     // 0x7FFFFFFF grown by half the width, a cost of 10 not), and how they meet the native
     // objects (study: REPLAY_SHOW_OBSTACLES, each with the objects whose place lies in it).
+    for pl in log.plans.iter().filter(|p| p.approach.is_some()) {
+        if let Some(p) = native_plan_points(pl, world) {
+            counts.note(if p == pl.points {
+                "planner: a plan natively, search to its point after the goal, all its points the original's"
+            } else {
+                "planner: a plan natively NOT all its points the original's"
+            });
+        }
+    }
     // The planner's search natively (logs with 'r'): on the rects and settings the plan's last
     // search had, from its coarse way's start to its end, the coarse way point by point.
     for pl in log.plans.iter().filter(|p| p.coarse.len() >= 2 && !p.lookup_regions[0].is_empty()) {
