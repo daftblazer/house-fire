@@ -611,8 +611,11 @@ offers an area of places, 48 at tick 931 (`routing::slot_area`): for each direct
 name, the points of that direction's own grid (steps of the resolution forward and sideways)
 within 45 degrees of it and between the least and greatest proximity, a diagonal's grid turned
 with it and its places rounded. All 48 goals lie in their bits' areas (408 places before the
-closed are taken out), by facing 0: the paper girl's facing then, not the save's 5. Which places
-stay (the room, the objects, the order of the 48) is still open. The planner's choice among the goals is the
+closed are taken out), by facing 0: the paper girl's facing then, not the save's 5. The open
+places are those in the object's room, on or in no blocking obstacle of the plan and no wall's
+rectangle: 149 at tick 931, and all 48 goals among them. Which 48 is the game's random generator's:
+about 390 draws of `Sim_Random` at that tick before the plan (from 8024F030, on two generators in
+turn, and from 8024F504), none logged yet; the goals' order (shuffled) comes from the same. The planner's choice among the goals is the
 nearest native one in the two requests that took one natively.
 
 **The planner's obstacles, logged.** (Read turned at first: see "The obstacles' objects" below.) The search (`fn_8024C5DC`) goes over the objects and, for

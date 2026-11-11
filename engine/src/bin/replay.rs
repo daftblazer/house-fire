@@ -2447,8 +2447,27 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                         _ => "routing: a goal of a range slot NOT one of its area's places",
                     });
                 }
+                // the open places among them, which the original draws its goals from at random
+                // (Sim_Random from 8024F030 and 8024F504, about 390 draws at tick 931; not yet):
+                // those in the object's room, on or in no blocking obstacle of the plan (as logged)
+                // and no wall's rectangle
+                let within = |p: (i32, i32), r: &[i32]| p.0 >= r[0] && p.0 <= r[2] && p.1 >= r[1] && p.1 <= r[3];
+                let wall_rects = walls.wall_rects(3);
+                let open: Vec<(u8, (i32, i32))> = slot_area(slot, target.0, target.1, facing)
+                    .into_iter()
+                    .filter(|&(_, p)| room(p) == room(target))
+                    .filter(|&(_, p)| !pl.obstacles.iter().any(|r| r[4] == BLOCKS && within(p, &r[..4])) && !wall_rects.iter().any(|r| within(p, r)))
+                    .collect();
+                for g in &pl.goals {
+                    let goal = ((g[3] & 0xFF).trailing_zeros() as u8, (g[0] as i32, g[1] as i32));
+                    counts.note(if open.contains(&goal) {
+                        "routing: a goal of a range slot among its area's open places (its room, clear of the obstacles and walls)"
+                    } else {
+                        "routing: a goal of a range slot NOT among its area's open places"
+                    });
+                }
                 if has("REPLAY_SHOW_GOALS") {
-                    println!("area at tick {}: facing {facing} (native {}), {n} of {} goals among {} places", pl.tick, o.facing(), pl.goals.len(), slot_area(slot, target.0, target.1, facing).len());
+                    println!("area at tick {}: facing {facing} (native {}), {n} of {} goals among {} places, {} open; slot {slot:?}", pl.tick, o.facing(), pl.goals.len(), slot_area(slot, target.0, target.1, facing).len(), open.len());
                 }
             }
         }

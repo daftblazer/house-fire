@@ -1589,7 +1589,7 @@ one another straight away (the user's: no more quarter-hour waits).
 
 ## Progress
 
-Iteration 27 (resumed after the end write-up at 24; no iteration limit).
+Iteration 28 (resumed after the end write-up at 24; no iteration limit).
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1793,6 +1793,15 @@ Iteration 27 (resumed after the end write-up at 24; no iteration limit).
   facing the save's stale 5). Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4,
   24); clippy clean. Next: which of the area's places the request keeps and in what order
   (the room, the objects, perhaps the gradient), or the girl's facing at the time.
+
+- **Iteration 28, chunk 4 (the area's open places).** The area's places a request may take: in
+  the object's room, clear of the plan's blocking obstacles and the walls' rectangles (edges
+  included); 149 of 408 at tick 931. Checked: all 48 goals among them. Which 48, and their
+  order, the game draws at random: a stderr study (not kept) counted about 390 `Sim_Random`
+  calls before that plan (8024F030 on two generators in turn, 8024F504). Figures unchanged
+  (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next: the draws logged
+  (the observer's `R` for those sites) and the pick read from 8024F030's function, or the start
+  speed after a walk cut short.
 
 ## The tenth loop's end
 
