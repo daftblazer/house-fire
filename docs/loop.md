@@ -1586,7 +1586,7 @@ iterations in a row end without a commit (record why here).
 
 ## Progress
 
-Iteration 9 of 24.
+Iteration 10 of 24.
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1660,3 +1660,9 @@ Iteration 9 of 24.
   bit (3 out of the log's order), every list value; lists 2 of 3 entire, the third but a tie's
   order (object 124). Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy
   clean. Chunk 6 done but that tie. Next: the tie, or chunk 2/3 (the planner's points, the misses).
+
+- **Iteration 10, chunk 6 (the list's order).** The original's list is the candidates the other
+  way round (last first) before its sort: with `autonomy_list` reversing them, all three of the
+  home log's choice lists are the original's entire (the tie at tick 1443 too). Figures unchanged
+  (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Chunk 6 done. Next: chunk 3,
+  the two route misses (ticks 521 and 260), or chunk 2.

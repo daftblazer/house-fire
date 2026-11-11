@@ -464,6 +464,13 @@ candidates: compared as one of the tick's), and every value of the three choice 
 the same entire, the third (tick 1443) but for object 124's two equal entries, in the other order.
 (The motive-14 entry the `A` record carries is the ad range's, which explains its other order.)
 
+**The list's order.** The original's list holds the passing candidates the other way round from
+the order they are checked and scored in (the last first), and its sort (the stable sort with the
+1e-7 comparator, `autonomy_list`) starts from that: equal values end in that order. Measured on the
+home log's one tie (object 124's two interactions at tick 1443, the same value): with the list
+reversed before the sort all three choice lists are the original's entire, objects, interactions
+and values bit for bit; the three choices, made with the original's random numbers, the log's.
+
 Earlier: the pick and its result (the stack object, Find Best Action's push) native of those that pass (the
 adverts, the motives, the distance, the tuning table), checked as each choice among the native
 best four.

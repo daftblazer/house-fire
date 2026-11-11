@@ -314,10 +314,13 @@ pub struct Valued {
 }
 
 /// The list a choice is made from (fn_802266BC): the passing candidates whose value reaches the
-/// tuning's minimum (FCNS 2, "min autonomy score for family" or "... for visitors"), best first
-/// (values within 1e-7 kept in the candidates' order).
+/// tuning's minimum (FCNS 2, "min autonomy score for family" or "... for visitors"), best first.
+/// `values` come in the candidates' order; the original's list holds them the other way round
+/// (last candidate first), which is the order its sort starts from: values within 1e-7 end in
+/// that order (measured: object 124's two equal entries at the home log's tick 1443).
 pub fn autonomy_list(lib: &Library, mut values: Vec<Valued>, visitor: bool) -> Vec<Valued> {
     let least = lib.tuning(if visitor { "min autonomy score for visitors" } else { "min autonomy score for family" }).unwrap_or(0.0);
+    values.reverse();
     values.retain(|v| v.value >= least);
     // A stable sort with the original's comparator (8022667C): ahead when better by more than
     // 1e-7. It is not an order (ties do not chain), so the sort is the C++'s, an insertion of

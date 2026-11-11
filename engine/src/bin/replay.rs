@@ -784,6 +784,7 @@ impl ReplayHost<'_, '_> {
             let base = interaction_score(&curves, None, person, &person.motives);
             let mut values: Vec<(f32, usize)> = Vec::new();
             let (mut scores_same, mut scores_diff) = (0, 0);
+            let mut values_scores: Vec<f32> = Vec::new();
             for c in &checks {
                 let Some(ci) = c.candidate else { continue };
                 if c.passed != Some(true) {
@@ -800,6 +801,7 @@ impl ReplayHost<'_, '_> {
                     }
                 }
                 let native_score = interaction_score(&curves, Some(&adverts), person, &person.motives);
+                values_scores.push(native_score);
                 while self.score_at < log.scores.len() && log.scores[self.score_at].tick < s.tick {
                     self.score_at += 1;
                 }
@@ -878,6 +880,22 @@ impl ReplayHost<'_, '_> {
                 };
                 let (chooser, object) = (placed(person), placed(self.world.get(cand.object)));
                 values.push((candidate_value(lib, &curves, &chooser, &object, cand, &adverts, base), ci));
+            }
+            if has("REPLAY_SHOW_SCORES") {
+                // the tick's logged scores that no native candidate's matches
+                let natives: Vec<f32> = values_scores.clone();
+                let logged: Vec<f32> = log.scores.iter().filter(|x| x.tick == s.tick).map(|x| x.score).collect();
+                let order: Vec<String> = natives.iter().enumerate().map(|(i, v)| {
+                    let at = logged.iter().position(|x| x == v).map_or("-".to_string(), |p| p.to_string());
+                    let c = &cands[values[i].1];
+                    format!("{}/{}:{at}", c.id, c.interaction(lib).string_index)
+                }).collect();
+                println!("score order tick {}: native candidate:logged position {}", s.tick, order.join(" "));
+                for (i, x) in log.scores.iter().filter(|x| x.tick == s.tick).enumerate() {
+                    if !natives.contains(&x.score) {
+                        println!("logged score {i} of tick {} with no native candidate's: {:e} (motive 14's entry {:?})", s.tick, x.score, x.adverts[14]);
+                    }
+                }
             }
             self.counts.add("autonomy: a candidate's score the same natively (its own adverts, the native motives)", scores_same);
             if scores_diff != 0 {
