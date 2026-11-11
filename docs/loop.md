@@ -1586,7 +1586,7 @@ iterations in a row end without a commit (record why here).
 
 ## Progress
 
-Iteration 6 of 24.
+Iteration 7 of 24.
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1638,3 +1638,11 @@ Iteration 6 of 24.
   past it walked only through a door (another room). Checked: 1,653 of 1,701 logged steps
   natively exact (from 1,511). Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4,
   24); clippy clean. Next: the door's states (4, 5: the crossing), then chunk 2.
+
+- **Iteration 7, chunk 6 (Sim 237's values, narrowed).** The difference is the score, not the
+  distance: all 7 differing scores are Sim 12's of Sim 237's interactions, and only motive 14's
+  advertisement differs, one the original makes at run time (its logged entries change between
+  ticks, and reproduce only 1 of the 7 scores). Study `REPLAY_SHOW_SCORES`; persons' places as
+  logged for the values' distance (no change). Figures unchanged (561,398, 338,305, 68,202,
+  lockstep 7,902, 4, 24); clippy clean. Next: log motive 14's advertisement as the score reads it
+  (Autonomy_Score's input), or chunk 2.

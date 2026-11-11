@@ -431,6 +431,17 @@ the distance to a moving Sim, or a person's adverts), one of them (its interacti
 from the native list, and one tie (object 124's two entries) in the other order. The visitor,
 flag and sitting branches are not built: the log has none.
 
+**Sim 237's own interactions, narrowed.** Their values differ by their score, not the distance:
+each implies a different distance from one place, and two (13 and 24) score the same natively and
+not in the log. Of the home log's 7 scores that differ (`REPLAY_SHOW_SCORES`), all are Sim 12's of
+Sim 237's interactions, and natively only motive 14's advertisement differs from the log's (`A`);
+the logged ones change between ticks (interaction 24: 0/0/54 at tick 186, 0/0/0 at 1443), so the
+original makes that advertisement as it scores (a person's, by their relationship it may be). But
+the logged motive-14 entries are not what it scores with either: only one of the 7 scores comes
+out the log's from them natively. The score's real input for motive 14 is to be logged from the
+score function itself. (The chooser's and a person candidate's places are now taken as logged
+at the tick for the distance, as the walk is not native; no value changed with it.)
+
 Earlier: the pick and its result (the stack object, Find Best Action's push) native of those that pass (the
 adverts, the motives, the distance, the tuning table), checked as each choice among the native
 best four.

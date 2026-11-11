@@ -797,10 +797,38 @@ impl ReplayHost<'_, '_> {
                         scores_same += 1;
                     } else {
                         scores_diff += 1;
+                        if has("REPLAY_SHOW_SCORES") {
+                            let a = &cand.interaction(lib).adverts;
+                            let mut l = format!("score DIFFERENT tick {} by {} on {} (interaction {}): native {native_score:e}, log {:e}; adverts (motive: native min/delta/personality | log)", s.tick, person.id(), cand.id, cand.interaction(lib).string_index, log.scores[self.score_at].score);
+                            for (m, lg) in log.scores[self.score_at].adverts.iter().enumerate() {
+                                let n = a.get(m).copied().unwrap_or_default();
+                                if (n.min, n.delta, n.personality as i16) != (lg[0], lg[1], lg[2]) {
+                                    l += &format!(" {m}: {}/{}/{} | {}/{}/{}", n.min, n.delta, n.personality, lg[0], lg[1], lg[2]);
+                                }
+                            }
+                            // the native score with the log's adverts: are they the original's input?
+                            let logged: Vec<housefire::library::Advert> = log.scores[self.score_at].adverts.iter().map(|a| housefire::library::Advert { min: a[0], delta: a[1], personality: a[2] as u16 }).collect();
+                            let with_logged = interaction_score(&curves, Some(&logged), person, &person.motives);
+                            l += &format!("; with the log's adverts natively {with_logged:e} ({})", if with_logged == log.scores[self.score_at].score { "the log's" } else { "not the log's" });
+                            println!("{l}");
+                        }
                     }
                     self.score_at += 1;
                 }
-                values.push((candidate_value(lib, &curves, person, self.world.get(cand.object), cand, base), ci));
+                // a person's place as logged at the tick (the walk is not native yet; the save's
+                // place is where it stood before it walked): the chooser's and a person
+                // candidate's, for the distance in the value
+                let placed = |o: &housefire::world::Object| {
+                    let mut o = o.clone();
+                    if o.person
+                        && let Some(p) = log.places.iter().rfind(|r| r.id == o.id() && r.tick <= s.tick)
+                    {
+                        (o.x16, o.y16) = (p.x, p.y);
+                    }
+                    o
+                };
+                let (chooser, object) = (placed(person), placed(self.world.get(cand.object)));
+                values.push((candidate_value(lib, &curves, &chooser, &object, cand, base), ci));
             }
             self.counts.add("autonomy: a candidate's score the same natively (its own adverts, the native motives)", scores_same);
             if scores_diff != 0 {
