@@ -1378,7 +1378,11 @@ and the walk gives all of them (24 of 24 each, 8 of 8): two Sims logged moving a
 check now takes every Sim whose places the walk gives at least half the time: native 1,161 (25
 a sixteenth off), and the places no native walk gives fall to 224: the 206 tick-0 placements
 (native too), 9 of objects that are not persons, and 3 each of Sims 12, 197 and 237 (walks' ends).
-The walkers 202 and 198 were such companions too. Every other count as before. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+The walkers 202 and 198 were such companions too. Every other count as before. The 18 left: 13 are jumps to a tile's centre (both coordinates 8 past a tile:
+the meal 198 five times, the paper girl twice and once at 1503, 202 three times, 201 once, Sim 12
+once), a Sim or object snapped into place by an interaction, not walked; 5 are not on a centre
+(Sim 12 at 500 and 524, Sim 237 at 1909, 2038 and 4922), the first place of a walk, which the check
+leaves out (it takes the ticks after a walk's start). Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
