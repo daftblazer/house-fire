@@ -202,4 +202,8 @@ loads (a global init tree, `0x190`, walking a GUID in ascending id order: 28 ste
 dance floor's "Choose dance orientation" (from tile 135 to 145, an earlier one in the list: 3
 steps), and taken for the list still being built and for multi-tile; with the home log's global
 trees 0x191-0x193 (37 steps) it is the rule everywhere: all of the club's kind-4 steps and all but
-2 of the home log's agree.
+2 of the home log's agree. Those 2 found objects made during play, which lockstep made bare:
+with each made object's file (from the first step that reads its own variables) and its
+definition's GUID, all 9,755 agree. The home log's made objects: a bag of chips (197, the paper
+girl's id free again, tick 693), a trash pile (201, 1220), a "go here and show" marker (197 again,
+1503) and a meal (202, 1766).

@@ -1111,7 +1111,22 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
                     continue;
                 }
                 let want = lw.next_id();
-                lw.make_object(Object::new());
+                // its file: that of the first step after it appears that reads its own variables
+                // (scopes 0, 3, 8 on its pointer, which the list has), and the GUID of the file's
+                // definition
+                let mut o = Object::new();
+                let own = |s: &StepRec, ptr: u32| s.lookups.iter().any(|v| v.object == ptr && matches!(v.scope, 0 | 3 | 8));
+                if let Some(ptr) = l.ids.iter().position(|&x| x == id).map(|p| l.objects[p]) {
+                    o.file = log.steps.iter().enumerate().find(|(i, s)| s.tick >= l.tick && own(s, ptr) && step_object[*i].is_some()).and_then(|(i, _)| step_object[i]);
+                    if let Some(d) = o.file.and_then(|f| lib.file(f).definitions.first()) {
+                        o.guid = d.guid();
+                        o.definition = lib.definition(o.guid);
+                    }
+                }
+                if std::env::var_os("LOCKSTEP_SHOW_LISTS").is_some() {
+                    println!("made {id} at tick {}: file {:?}, guid {:08x}", l.tick, o.file.map(|f| &lib.file(f).path), o.guid);
+                }
+                lw.make_object(o);
                 notes.note(if want == id { "objects: made, the id the same" } else { "objects: made, the id DIFFERENT" });
                 if want != id {
                     let k = lw.find(want).unwrap();
