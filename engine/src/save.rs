@@ -222,6 +222,27 @@ fn chunk_table(b: &NeighbourhoodBlock) -> Result<LotChunks> {
     Ok(lot)
 }
 
+/// Each lot's globals (its SIMI chunk, in section 0's chunk tables beside its HOUS, in lot
+/// order): 16-bit values, little-endian as on the disc, after the chunk's header (0, a version,
+/// 80) and its "IMIS" mark: the hour
+/// (global 0), the day (1), the minute (5), the year (8), ...
+pub fn read_lot_globals(file: &[u8]) -> Result<Vec<Vec<i16>>> {
+    let mut out = Vec::new();
+    for b in read_neighbourhood(file)?.iter().filter(|b| b.section == 0) {
+        let t = chunk_table(b)?;
+        for (tag, d) in &t.chunks {
+            if tag != "SIMI" {
+                continue;
+            }
+            // a header (0, a version: 80), the mark, then the values
+            let Some(at) = d.windows(4).position(|w| w == b"IMIS") else { continue };
+            let d = &d[at + 4..];
+            out.push(d.as_chunks::<2>().0.iter().map(|c| i16::from_le_bytes(*c)).collect());
+        }
+    }
+    Ok(out)
+}
+
 /// The neighbourhood's lots (section 3), each by its chunk table.
 pub fn read_lots(file: &[u8]) -> Result<Vec<LotChunks>> {
     read_neighbourhood(file)?.iter().filter(|b| b.section == 3).map(chunk_table).collect()

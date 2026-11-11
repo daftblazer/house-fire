@@ -25,7 +25,7 @@ where the measurements agree.
 | 1 | stack object's attribute | the stack object's table | the same, of the stack object |
 | 3 | my object data | object + 0x26, 2 bytes a field; field 11 is the object's id | `Object::data` |
 | 4 | stack object's data | the stack object's | the same |
-| 6 | global | one table for everyone | `World::globals` |
+| 6 | global | one table for everyone, the lot's as saved: its SIMI chunk (section 0 of the neighbourhood file, beside its HOUS; a header of 0 and version 80, "IMIS", then 16-bit little-endian values): 0 the hour, 1 the day, 5 the minute, 8 the year (Mom's house: 7:04, the 22nd, 1997). The minute goes up every 30 ticks (the first at 93 on the home log), the hour at 60 (1743) | `World::globals`, `save::read_lot_globals` |
 | 7 | literal | the datum itself | |
 | 8 | temp | object + 0x16, eight of them | `Object::temps` |
 | 9 | parameter | the frame's (+16 on) | `Frame::params` |

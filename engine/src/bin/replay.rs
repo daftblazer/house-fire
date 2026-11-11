@@ -49,7 +49,7 @@ use housefire::primitives::{
 use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, slot_pick, run_on_point, walk_frames, routing_return_tick, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
 use housefire::planner::{choose_goal, coarse_way, point_after_goal, refine, Growth, MapRect};
 use housefire::library::Slot;
-use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
+use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lot_globals, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
 use housefire::tree_log::{Log, PassRec, PlanRec, StepRec, read_log, same_shape};
 use housefire::world::{DATA_OBJECT_ID, Object, ObjectKey, ScriptVariables, World};
@@ -1354,9 +1354,11 @@ fn native_plan_points(pl: &PlanRec, world: &World) -> Option<Vec<(i32, i32)>> {
     Some(points)
 }
 
-fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], bench: Option<Bench>, card_lot: bool) -> Option<(Counts, Option<Bench>)> {
+fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: &[Neighbour], bench: Option<Bench>, card_lot: bool) -> Option<(Counts, Option<Bench>)> {
     let mut world = World::new(lib);
     world.load_lot(club).expect("the lot");
+    // the lot's globals as saved (its SIMI): the clock among them
+    world.globals = globals.to_vec();
     // The plans' points natively wherever the log carries the planner's inputs ('r', 'h'), so the
     // walk checks run on the native planner's ways (study REPLAY_LOGGED_PLANS: the log's instead)
     let patched;
@@ -1412,6 +1414,9 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
         patched = l;
         &patched
     };
+    if has("REPLAY_SHOW_SIMI") {
+        println!("lot globals: {:?}", &globals[..globals.len().min(20)]);
+    }
     if has("REPLAY_SHOW_RELATIONSHIPS") {
         for o in world.objects().filter(|o| !o.relationships.is_empty()) {
             for r in &o.relationships {
@@ -4383,9 +4388,11 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     }
     let the_lot = if lot_index < 0 || lot_index as usize >= lots.len() { lots.last().unwrap() } else { &lots[lot_index as usize] };
+    let lot_globals = read_lot_globals(&ngh).expect("the lots' globals");
+    let the_globals: &[i16] = if lot_index < 0 || lot_index as usize >= lot_globals.len() { lot_globals.last().map_or(&[], |g| g) } else { &lot_globals[lot_index as usize] };
     let card_lot = card_path.is_some();
     if !bench {
-        let Some((counts, _)) = run(&log, &lib, the_lot, &neighbours, None, card_lot) else { return ExitCode::from(1) };
+        let Some((counts, _)) = run(&log, &lib, the_lot, the_globals, &neighbours, None, card_lot) else { return ExitCode::from(1) };
         for (k, n) in &counts.map {
             println!("  {k:<66} {n}");
         }
@@ -4394,7 +4401,7 @@ fn main() -> ExitCode {
     // The benchmark: five runs, each figure the median of the runs (the PC is shared).
     let mut runs: Vec<Bench> = Vec::new();
     for _ in 0..5 {
-        let Some((_, Some(b))) = run(&log, &lib, the_lot, &neighbours, Some(Bench::default()), card_lot) else { return ExitCode::from(1) };
+        let Some((_, Some(b))) = run(&log, &lib, the_lot, the_globals, &neighbours, Some(Bench::default()), card_lot) else { return ExitCode::from(1) };
         runs.push(b);
     }
     let median = |f: &dyn Fn(&Bench) -> f64| {
