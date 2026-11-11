@@ -381,6 +381,15 @@ pub fn walk_frames(length: f32, start: f32, top: f32, growth: f32, runs_on: bool
     (frames, v)
 }
 
+/// When a routing primitive (GotoRoutingSlot, GotoRelativePosition) returns: its walker walks
+/// `walk` frames and turns `turn` (`walk_frames`, `turn_frames`), its follower runs one frame
+/// more, and the primitive returns on the tick after that frame's; until then each of its steps
+/// yields. `frame_ticks`: the tick of each of the walker's frames from its walk's start (the frame
+/// clock, `FrameClock`).
+pub fn routing_return_tick(frame_ticks: &[u32], walk: u32, turn: u32) -> Option<u32> {
+    frame_ticks.get((walk + turn) as usize).map(|t| t + 1)
+}
+
 /// The simulation's tick against the walker's frame (`WALK_FRAME`): 0.042 s, measured (the home
 /// log's ticks hold 1 or 2 frames, 14 in 11 ticks; `docs/simulation.md`, "Frames and ticks").
 pub const TICK_TIME: f32 = 0.042;

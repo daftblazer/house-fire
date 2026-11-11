@@ -949,6 +949,12 @@ it. So a run-on walk heads for its list's last waypoint: (344, 407) at 4919 and 
 plan the replay finds (an older or longer one); 2035's stays at its corner. Which list a follower
 holds is not yet modelled (the replay matches a walk to the latest plan whose line it is on).
 
+**A routing primitive, natively** (`routing::walk_frames`, `routing_return_tick`). From its
+walker's start: the whole walk frame after frame, the turn, one frame more, and the return on the
+tick after that frame's (the frame clock as logged); each step before it a yield. On the home log
+all 10 runs whose walk ends in a turn return on the original's tick, and all 1,430 of their steps
+(yields and returns) are the original's.
+
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
 walk ran on into state 5, from its end. What makes the planner add it is not yet read (the

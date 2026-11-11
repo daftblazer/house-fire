@@ -46,7 +46,7 @@ use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
-use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, slot_pick, run_on_point, walk_frames, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
+use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, slot_pick, run_on_point, walk_frames, routing_return_tick, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
 use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
@@ -3436,14 +3436,24 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                         // frame after done (frame `native`, from the walk's start), against the run
                         // that holds the walk
                         if let Some(ticks) = frame_ticks.get(&f.follower)
-                            && let Some(&t) = ticks.get(native as usize)
+                            && let Some(ret) = routing_return_tick(ticks, frames, turn_frames(angle))
                             && let Some(run) = routing_runs.iter().filter(|r| r.3 <= start_tick && r.4 >= f.tick).min_by_key(|r| r.4 - r.3)
                         {
-                            counts.note(if run.4 == t + 1 {
+                            counts.note(if run.4 == ret {
                                 "routing: a routing primitive natively returning on the original's tick (its walk and turn native)"
                             } else {
                                 "routing: a routing primitive natively NOT returning on the original's tick"
                             });
+                            // each of the run's steps: natively a yield before its return tick, the
+                            // return on it
+                            for st in log.steps.iter().filter(|st| (st.sim, st.tree, st.node) == (run.0, run.1, run.2) && st.tick >= run.3 && st.tick <= run.4) {
+                                let native_yield = st.tick < ret;
+                                counts.note(if native_yield == (st.result == 1) {
+                                    "routing: a routing primitive's step natively as the original's (a yield, or its return)"
+                                } else {
+                                    "routing: a routing primitive's step natively NOT as the original's"
+                                });
+                            }
                         }
                         counts.note(if native == original {
                             "routing: a whole walk natively the original's frames (walk and turn)"
