@@ -41,7 +41,7 @@ where the measurements agree.
 | 18 | my person data | 2 bytes a field, before the object part (object - 0x638) | `Object::person_data` |
 | 19 | stack object's person data | the stack object's | the same |
 | 12 | (PC: check tree ad range) | one shared 16-bit value (8035ADC8; datum 15 is the only one used), set by scripts and by the engine | `World::ad_range` |
-| 21 | stack object's definition | its definition row: a 32-bit version, then the OBJD's fields, so the datum is field + 2 | `Definition` |
+| 21 | stack object's definition | its definition row: a 32-bit version, then the OBJD's fields, so the datum is field + 2; a character (no definition on the disc, the engine makes one) reads its file's, the template person's (type 2) | `Definition` (all 25 of the home log's reads) |
 | 22 | stack object's attribute by parameter | the stack object's attribute named by a parameter | |
 | 25 | local | the frame's, after its parameters | `Frame::locals` |
 | 26 | constant | the frame's file's BCON tables (`interpreter.md`, "Constants") | `Library::constant` |

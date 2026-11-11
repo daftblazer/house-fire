@@ -660,7 +660,10 @@ impl Variables for ScriptVariables<'_, '_> {
                 // the OBJD's fields, the datum counting 16-bit words from the start (so field
                 // datum - 2).
                 let so = self.world.get(self.stack_object()?);
-                let def = self.world.definition(so)?;
+                // a character has no definition on the disc (the engine makes one): its file's
+                // (the template person's) stands in for it
+                let lib = self.world.library();
+                let def = self.world.definition(so).or_else(|| so.file.and_then(|f| lib.file(f).definitions.first()))?;
                 return match d {
                     ..0 => None,
                     0 => int((def.version >> 16) as i16),
