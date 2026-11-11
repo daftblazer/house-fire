@@ -99,7 +99,7 @@ the pass 5.2 µs. On the 719-tick one: 14.7 µs on average, 136 µs at worst. Th
 
 **Measured again in Rust (the PC, 2026-11-10).** The engine moved from C++ to Rust with its
 behaviour unchanged: the replay's and lockstep's outputs on the three logs line for line the
-C++ tools' (`docs/loop.md`, the ninth loop). On the home log (6,869 ticks, 82 steps a tick),
+C++ tools'. On the home log (6,869 ticks, 82 steps a tick),
 interleaved with the C++ build: 9.9 µs a tick on average against 10.6, the expression 1.8
 against 2.2 µs a tick, SetToNext 0.54 against 0.41, the pass 0.87 against 0.80.
 

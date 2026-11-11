@@ -30,7 +30,7 @@ A log comes from the recompiled Bustin' Out run with `BUSTIN_TREE_LOG=<file>`
 (`docs/interpreter.md`, "Checked against the original").
 
  `docs/survey.md` is what the discs hold, `docs/objects.md` what the scripts' variables are, `docs/lots.md` where the world comes from, `docs/plan.md` how the engine
-is to be built, `docs/primitives.md` the script primitives found so far, `docs/loop.md` the work under way.
+is to be built, `docs/primitives.md` the script primitives found so far.
 
 The reference for what the engine must do is the recompiled game
 (`../bustin-out-recomp`), which runs the original code exactly and replays exactly: each
