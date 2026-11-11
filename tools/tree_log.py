@@ -71,6 +71,11 @@ def records(path):
             st, res, cnt = struct.unpack_from('<IIH', b, p); p += 10
             if p + 8 * cnt > n: break
             yield 'G', (st, res, [struct.unpack_from('<II', b, p + 8 * i) for i in range(cnt)]); p += 8 * cnt
+        elif k == b'I':  # the planner's search's coarse way: [(x, y)] (stored turned)
+            if p + 2 > n: break
+            cnt, = struct.unpack_from('<H', b, p); p += 2
+            if p + 8 * cnt > n: break
+            yield 'I', [struct.unpack_from('<ii', b, p + 8 * i)[::-1] for i in range(cnt)]; p += 8 * cnt
         elif k == b'Z':  # a walker's step: (follower, id, 8 words before, 8 words after)
             if p + 70 > n: break
             v = struct.unpack_from('<Ih16I', b, p); p += 70

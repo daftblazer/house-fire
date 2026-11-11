@@ -161,6 +161,9 @@ pub struct PlanRec {
     /// The search's own rectangles ('D', in newer logs): the lot's border, the house's blocks
     /// and walls, and the paved regions at cost 0; {x0, y0, x1, y1, cost}.
     pub regions: Vec<[i32; 5]>,
+    /// The planner's search's coarse way through its map's nodes ('I', in newer logs), the last
+    /// before the plan: (x, y) in sixteenths.
+    pub coarse: Vec<(i32, i32)>,
 }
 
 /// A walker's step ('Z', Route_Follow 800AE0A4): its follower and its state before and after.
@@ -266,6 +269,7 @@ pub fn read_log(path: &str) -> Option<Log> {
     let mut obstacles: Option<(i32, Vec<[i32; 5]>)> = None;
     let mut tested: Option<Vec<(i16, bool, i32)>> = None;
     let mut regions: Option<Vec<[i32; 5]>> = None;
+    let mut coarse: Option<Vec<(i32, i32)>> = None;
     let mut at: BTreeMap<u32, usize> = BTreeMap::new();
     let mut pending: Option<ExprRec> = None;
     let mut pending_lookups: Vec<LookupRec> = Vec::new();
@@ -355,7 +359,22 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let (obstacle_width, obstacles) = obstacles.take().unwrap_or_default();
                 let tested = tested.take().unwrap_or_default();
                 let regions = regions.take().unwrap_or_default();
-                log.plans.push(PlanRec { tick: log.ticks, state, points, goals, chosen, obstacles, obstacle_width, tested, regions });
+                let coarse = coarse.take().unwrap_or_default();
+                log.plans.push(PlanRec { tick: log.ticks, state, points, goals, chosen, obstacles, obstacle_width, tested, regions, coarse });
+            }
+            b'I' => {
+                // the planner's search's coarse way (stored turned: y, x)
+                if !r.has(2) {
+                    break;
+                }
+                let cnt = r.u16() as usize;
+                if !r.has(8 * cnt) {
+                    break;
+                }
+                coarse = Some((0..cnt).map(|_| {
+                    let y = r.u32() as i32;
+                    (r.u32() as i32, y)
+                }).collect());
             }
             b'Z' => {
                 // a walker's step (Route_Follow)

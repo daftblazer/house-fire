@@ -1006,8 +1006,12 @@ and when it reaches the goal node (+96, 1) it returns 1 with the way's points at
 turned (y, x). A stderr study of the home run: at tick 2 the way (328, 104), (328, 96), (333, 86),
 (355, 86), (600, 88) after six steps, where the logged plan has (328, 104), (332, 96), (333, 93),
 ... So the planner's points are a coarse way through the map's nodes, refined after (the
-in-between points of chunk 2 are that refinement). Next: the map's nodes (their places and
-links), then the refinement.
+in-between points of chunk 2 are that refinement). The observer now logs the coarse way (`I`,
+a new home log with the same steps and figures): it equals the native corner path in only 4 of
+the 16 plans. Its points are not the obstacles' corners (tick 2's (328, 96) and (461, 86) where
+the plan has (332, 96) and (461, 88)); the plan's nudged sixteenths are already in it (497's
+(296, 233), 2038's (344, 377)). So the search's nodes, and the refinement that moves its points
+onto the plan's, are what chunk 2 needs; both now checkable against `I`.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a

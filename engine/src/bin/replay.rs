@@ -2882,6 +2882,18 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                     if show_obstacles {
                         println!("   corner path tick {}: native {path:?}; the planner's corners {theirs:?}, points {:?}", pl.tick, pl.points);
                     }
+                    // against the planner's own coarse way through its map (logs with 'I')
+                    if !pl.coarse.is_empty() {
+                        let same = path.as_ref().is_some_and(|p| *p == pl.coarse);
+                        counts.note(if same {
+                            "routing: a plan's coarse way (the search's, 'I') natively the corner path, point by point"
+                        } else {
+                            "routing: a plan's coarse way (the search's, 'I') NOT the native corner path"
+                        });
+                        if has("REPLAY_SHOW_COARSE") && !counts.quiet {
+                            println!("coarse tick {}: the search's {:?}; native {path:?}; the plan {:?}", pl.tick, pl.coarse, pl.points);
+                        }
+                    }
                 }
             }
             // Each leg of the plan keeps out of the blocking obstacles' insides (natively)
