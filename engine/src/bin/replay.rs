@@ -1553,7 +1553,15 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
         // Their updates, at the end of their turns: before the first step of an object with a
         // higher id (the pass goes up by id), or at the pass's end.
         let motives_before = |id: i16, sim: &Simulator, world: &mut World, done: &mut usize| {
-            while *done < motives_due.len() && world.get(motives_due[*done].0).id() < id {
+            while *done < motives_due.len() {
+                // an object removed during its turn has no update to finish
+                let Some(o) = world.get_live(motives_due[*done].0) else {
+                    *done += 1;
+                    continue;
+                };
+                if o.id() >= id {
+                    break;
+                }
                 sim.end_turn(world, motives_due[*done].0, motives_due[*done].1);
                 *done += 1;
             }

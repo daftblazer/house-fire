@@ -260,6 +260,10 @@ impl<'lib> World<'lib> {
     pub fn get(&self, k: ObjectKey) -> &Object {
         self.slots[k.0 as usize].as_ref().expect("a live object")
     }
+    /// The object, if it has not been removed.
+    pub fn get_live(&self, k: ObjectKey) -> Option<&Object> {
+        self.slots.get(k.0 as usize)?.as_ref()
+    }
     pub fn get_mut(&mut self, k: ObjectKey) -> &mut Object {
         self.slots[k.0 as usize].as_mut().expect("a live object")
     }
