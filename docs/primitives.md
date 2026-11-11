@@ -242,4 +242,17 @@ CreateObjectInstance's byte 4 (with Sim 12 the maker each time):
 Three cases do not fix byte 4's meaning (in front of the maker by its facing, in its hand,
 next to it): open. The meal's move at 752 happens in the counter's Animate steps (opcode 44,
 the meal its stack object): an animation event, with the animation (stage 4). 823, 1330 and
-4996 are still to be looked at (`lockstep`, `LOCKSTEP_SHOW_TICKS`).
+4996 are Grab and Snap:
+
+- **Grab (opcode 4):** the stack object goes to the actor's place and is held by it (its
+  container field the actor): the chips taken by Sim 12 at 823 (to (392, 328)), the meal by Sim
+  237 at 1330 (to (392, 360)). Natively `grab`, checked in lockstep (the actor's place the log's
+  last before the step): all 4 of the home log's grabs, the object's next logged place.
+- **Snap (opcode 46), kind 0 (operand byte 0):** the actor goes to the centre of the stack
+  object's tile and what it holds with it: Sim 12 onto the dining chair at 4996, with the meal
+  202, both to (408, 264). Natively `snap`, the home log's one of kind 0. Kinds 5 (931, Sim 12
+  onto itself), 6 (5066) and 1 (one in each club session) are not modelled.
+
+So of the tenth loop's 13 snaps, 4 are DropOnto, 2 Grab, 1 Snap (and 202's with it), 3 made
+objects' first places (CreateObjectInstance's byte 4, open), 1 an animation event and 1 the
+engine's marker.

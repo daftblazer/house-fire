@@ -131,6 +131,56 @@ pub fn drop_onto(w: &mut World, me: i16, stack_object: i16) -> Option<(i16, i32,
     Some((o.id(), x, y, level))
 }
 
+/// Grab (opcode 4): the stack object goes to the actor's place and is held by it (its
+/// container field, data 2, the actor). Returns the object's id and place. Measured: the home
+/// log's two (the chips at 823, the meal at 1330), each the place the log has next.
+pub fn grab(w: &mut World, me: i16, stack_object: i16) -> Option<(i16, i32, i32, i32)> {
+    let at = w.find_object(me)?;
+    let (x, y, level) = (at.x16, at.y16, at.level);
+    let k = w.find(stack_object).filter(|_| stack_object != me)?;
+    let o = w.get_mut(k);
+    o.x16 = x;
+    o.y16 = y;
+    o.level = level;
+    if o.data.len() <= crate::world::DATA_CONTAINER {
+        o.data.resize(crate::world::DATA_CONTAINER + 1, 0);
+    }
+    o.data[crate::world::DATA_CONTAINER] = me;
+    Some((stack_object, x, y, level))
+}
+
+/// Snap (opcode 46), operand byte 0 kind 0: the actor goes to the centre of the stack object's
+/// tile, on its level, and what it holds (container field the actor) with it. Returns the
+/// actor's place; None for the other kinds (5, 6 on the home log: not modelled) or no objects.
+/// Measured: the home log's one of kind 0 (Sim 12 onto the dining chair at 4996, the meal it
+/// holds with it).
+pub fn snap(n: &Node, w: &mut World, me: i16, stack_object: i16) -> Option<(i32, i32, i32)> {
+    if n.operand[0] != 0 {
+        return None;
+    }
+    let to = w.find_object(stack_object)?;
+    let (x, y, level) = (((to.x16 >> 4) << 4) + 8, ((to.y16 >> 4) << 4) + 8, to.level);
+    let moved: Vec<ObjectKey> = w
+        .order()
+        .iter()
+        .copied()
+        .filter(|&k| {
+            let o = w.get(k);
+            o.id() == me || o.data.get(crate::world::DATA_CONTAINER) == Some(&me)
+        })
+        .collect();
+    if moved.is_empty() {
+        return None;
+    }
+    for k in moved {
+        let o = w.get_mut(k);
+        o.x16 = x;
+        o.y16 = y;
+        o.level = level;
+    }
+    Some((x, y, level))
+}
+
 /// RemoveObjectInstance (opcode 18): the stack object (operand byte 0 1) or the object itself
 /// (0) leaves the world; its id is free again. None if there is no such object. Measured: the
 /// home log's three removals (the paper girl herself at 466, the chips by their own tree at

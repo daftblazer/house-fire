@@ -36,7 +36,7 @@ use housefire::disc::Disc;
 use housefire::expression::{ExprResult, ExpressionOperand, Variable, Variables, expression};
 use housefire::interp::{Frame, Host, Interpreter, Mode, PrimResult, Step, Trees};
 use housefire::library::Library;
-use housefire::primitives::{create_object, drop_onto, remove_object, set_to_next};
+use housefire::primitives::{create_object, drop_onto, grab, remove_object, set_to_next, snap};
 use housefire::save::{memory_card_file, read_lots};
 use housefire::tree_log::{ExprRec, LookupRec, StepRec, read_log, same_shape};
 use housefire::world::{DATA_CONTAINER, DATA_OBJECT_ID, Object, ObjectKey, ScriptVariables, Table, World, scope};
@@ -1188,7 +1188,7 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
         let op = match raw_of(s) {
             Some(raw) if u16::from_be_bytes([raw[0], raw[1]]) & 0x7FFF == 31 && raw[2] != raw[3] => 31,
             _ if s.look == b'X' && disc_node().is_some_and(|n| matches!(n.opcode, 42 | 18)) => disc_node().unwrap().opcode,
-            _ if disc_node().is_some_and(|n| n.opcode == 43) => 43,
+            _ if disc_node().is_some_and(|n| matches!(n.opcode, 43 | 4 | 46)) => disc_node().unwrap().opcode,
             _ => continue,
         };
         let Some(node) = disc_node() else {
@@ -1245,6 +1245,45 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
                 let first = order.iter().zip(&l.ids).position(|(a, b)| a != b).unwrap_or(0);
                 println!("list at tick {}: native {:?} log {:?} (from {first}, of {} and {})", l.tick, &order[first..(first + 6).min(order.len())], &l.ids[first..(first + 6).min(l.ids.len())], order.len(), l.ids.len());
             }
+        }
+        if op == 4 || op == 46 {
+            // Grab and Snap natively on this world: the actor's place as the log has it last
+            // before the step (persons' places are routing's, not this world's), then the moved
+            // objects against the places the log has next
+            set_made_fields(&mut lw, &made_ptr, i);
+            let me = sim_object.get(&s.sim).and_then(|p| ptr_id.get(p)).copied().unwrap_or(-1);
+            if let Some(p) = log.places.iter().rfind(|p| p.id == me && p.tick < s.tick)
+                && let Some(k) = lw.find(me)
+            {
+                let o = lw.get_mut(k);
+                (o.x16, o.y16, o.level) = (p.x, p.y, p.level);
+            }
+            let next = |id: i16| log.places.iter().find(|p| p.id == id && p.tick >= s.tick).map(|p| (p.x, p.y, p.level));
+            let name = if op == 4 { "Grab" } else { "Snap" };
+            if op == 46 && node.operand[0] != 0 {
+                notes.note(&format!("objects: Snap kind {}: not modelled", node.operand[0]));
+                continue;
+            }
+            if next(me).is_none() && op == 46 {
+                notes.note("objects: Snap: no place logged after it");
+                continue;
+            }
+            let same = if op == 4 {
+                grab(&mut lw, me, s.stack_object).map(|(id, x, y, l)| next(id) == Some((x, y, l)))
+            } else {
+                let held: Vec<i16> = lw.objects().filter(|o| o.id() != me && o.data.get(DATA_CONTAINER) == Some(&me)).map(Object::id).collect();
+                snap(&node, &mut lw, me, s.stack_object).map(|(x, y, l)| next(me) == Some((x, y, l)) && held.iter().all(|&h| next(h) == Some((x, y, l))))
+            };
+            if same != Some(true) && std::env::var_os("LOCKSTEP_SHOW_DROPS").is_some() {
+                let so = lw.find_object(s.stack_object).map(|o| (o.x16, o.y16, o.level, o.file.map(|f| lib.file(f).path.clone())));
+                println!("{name} at tick {} by {me} operand {:02x?}: stack object {} {so:?}; me next {:?}; me now {:?}", s.tick, node.operand, s.stack_object, next(me), lw.find_object(me).map(|o| (o.x16, o.y16)));
+            }
+            notes.note(&match same {
+                Some(true) => format!("objects: {name} natively, the moved objects' places the original's"),
+                Some(false) => format!("objects: {name} natively, NOT the original's"),
+                None => format!("objects: {name}: its objects not found natively"),
+            });
+            continue;
         }
         if op == 43 {
             // DropOnto natively on this world: the object the actor holds to the stack object's
