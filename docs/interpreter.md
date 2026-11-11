@@ -228,5 +228,5 @@ reused: the file pointer can name different objects over a session.
 A primitive that runs a tree (RunFunctionalTree 20, CallNamedTree 28, GosubFoundAction 30) and
 stays on its node has pushed that tree and goes on into it: lockstep now answers it Continue
 (the node unchanged) where it answered false before. On the home log that was 426 of its 446
-differences (CallNamedTree's), a gap in the tool rather than the engine: lockstep 446 → 18. The
+differences (CallNamedTree's), a gap in the tool rather than the engine: lockstep 446 → 13. The
 5 primitive transitions left are routing primitives (27, 45) staying on their node.

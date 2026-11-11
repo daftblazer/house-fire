@@ -1218,7 +1218,9 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
             let Some(o) = lw.find_object(p.id).filter(|o| !o.person && !lw.find_object(p.id).is_some_and(|o| o.file.is_some_and(|f| lib.file(f).path.contains("template_person")))) else { continue };
             // a held object (container field an object) is at its holder's place: the holder's
             // as the log has it that tick (a person's place is routing's)
-            let holder = o.data.get(DATA_CONTAINER).copied().filter(|&h| h > 0 && h != p.id && lw.find(h).is_some());
+            let holder = o.data.get(DATA_CONTAINER).copied().filter(|&h| {
+                h > 0 && h != p.id && lw.find_object(h).is_some_and(|c| c.person || c.file.is_some_and(|f| lib.file(f).path.contains("template_person")))
+            });
             if let Some(h) = holder {
                 let at = log.places.iter().rfind(|q| q.id == h && q.tick <= p.tick).map(|q| (q.x, q.y, q.level));
                 notes.note(if at == Some((p.x, p.y, p.level)) {

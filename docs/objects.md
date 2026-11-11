@@ -32,6 +32,7 @@ where the measurements agree.
 | 10 | stack object | the frame's header, +4; a call's is its caller's | `Frame::stack_object` |
 | 14 | my motive | a float, 4 bytes, before the object part of a Sim (object - 0x598) | `Object::motives` |
 | 15 | stack object's motive | the stack object's | the same |
+| 16 | stack object's slot | the object in the stack object's slot (datum): the one whose container field (data 2) is the stack object and slot field (data 3) the datum; 0 if none | `ScriptVariables::get` (158 of the home log's 175 reads, the club's 1 and 1) |
 | 18 | my person data | 2 bytes a field, before the object part (object - 0x638) | `Object::person_data` |
 | 19 | stack object's person data | the stack object's | the same |
 | 12 | (PC: check tree ad range) | one shared 16-bit value (8035ADC8; datum 15 is the only one used), set by scripts and by the engine | `World::ad_range` |

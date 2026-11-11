@@ -133,7 +133,8 @@ pub fn create_object(n: &Node, w: &mut World, me: i16, stack_object: i16) -> Opt
 
 /// DropOnto (opcode 43, operand byte 4 a flag): the object the actor holds (the first whose
 /// container field, data 2, is the actor) goes to the centre of the stack object's tile, on its
-/// level, and is no longer held (container 0). Returns the dropped object's id and new place.
+/// level, into its slot 0 (container the stack object, slot 0). Returns the dropped object's id
+/// and new place.
 /// Measured: the home log's four (the meal onto the counter and the stove, 202 onto the dining
 /// table), each the place the log has next.
 pub fn drop_onto(w: &mut World, me: i16, stack_object: i16) -> Option<(i16, i32, i32, i32)> {
@@ -147,7 +148,11 @@ pub fn drop_onto(w: &mut World, me: i16, stack_object: i16) -> Option<(i16, i32,
     o.x16 = x;
     o.y16 = y;
     o.level = level;
-    o.data[crate::world::DATA_CONTAINER] = 0; // no longer held
+    // now in the stack object's slot 0 (scope 16 reads it there)
+    o.data[crate::world::DATA_CONTAINER] = stack_object;
+    if o.data.len() > crate::world::DATA_SLOT {
+        o.data[crate::world::DATA_SLOT] = 0;
+    }
     Some((o.id(), x, y, level))
 }
 

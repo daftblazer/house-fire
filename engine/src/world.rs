@@ -31,6 +31,7 @@ pub mod scope {
     pub const STACK_MOTIVE: u8 = 15;
     pub const MY_PERSON_DATA: u8 = 18;
     pub const STACK_PERSON_DATA: u8 = 19;
+    pub const STACK_SLOT: u8 = 16;
     pub const STACK_DEFINITION: u8 = 21;
     pub const STACK_ATTRIBUTE_BY_PARAMETER: u8 = 22;
     pub const NEIGHBOUR_IN_STACK_OBJECT: u8 = 24;
@@ -47,6 +48,8 @@ pub const DATA_FACING: usize = 1;
 /// The object data field naming the object it sits in or on (0 none): a lamp on a table, the
 /// sink in its counter.
 pub const DATA_CONTAINER: usize = 2;
+/// The slot of its container it is in.
+pub const DATA_SLOT: usize = 3;
 /// The object data field of its flags (0x4: no extent, not an obstacle; 0x10: may be walked
 /// through, an obstacle at a small cost; `docs/simulation.md`, "Which objects block").
 pub const DATA_FLAGS: usize = 8;
@@ -595,6 +598,17 @@ impl Variables for ScriptVariables<'_, '_> {
                     .world
                     .objects()
                     .find(|o| o.person && so != 0 && o.person_data.get(PERSON_NEIGHBOUR_ID) == Some(&so))
+                    .map_or(0, Object::id);
+                return int(id);
+            }
+            scope::STACK_SLOT => {
+                // The object in the stack object's slot d: the one whose container field (data 2)
+                // is the stack object and whose slot field (data 3) is d; 0 if none
+                let so = self.frame.stack_object;
+                let id = self
+                    .world
+                    .objects()
+                    .find(|o| so != 0 && o.data.get(DATA_CONTAINER) == Some(&so) && o.data.get(DATA_SLOT) == Some(&d))
                     .map_or(0, Object::id);
                 return int(id);
             }
