@@ -44,7 +44,7 @@ use housefire::interp::{Error, Frame, Host, Interpreter, Mode, PrimResult, Trees
 use housefire::library::{Advert, Library};
 use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
-    call_named_tree, drop_onto, grab, snap, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
+    call_named_tree, create_object, drop_onto, grab, remove_object, snap, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
 use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, slot_pick, run_on_point, walk_frames, routing_return_tick, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
 use housefire::planner::{choose_goal, coarse_way, point_after_goal, refine, Growth, MapRect};
@@ -52,7 +52,7 @@ use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
 use housefire::tree_log::{Log, PassRec, PlanRec, StepRec, read_log, same_shape};
-use housefire::world::{ObjectKey, ScriptVariables, World};
+use housefire::world::{DATA_OBJECT_ID, Object, ObjectKey, ScriptVariables, World};
 use housefire::{FileId, TreeId};
 
 fn env(name: &str) -> Option<String> {
@@ -556,6 +556,24 @@ impl Host for ReplayHost<'_, '_> {
                 "primitives: Dialog: DIFFERENT"
             });
             return got;
+        }
+        if n.opcode == 18 && has("REPLAY_MAKE_NATIVE") {
+            let so = interp.stack().last().map_or(0, |f| f.stack_object);
+            let gone = remove_object(n, &mut self.world, me_id, so);
+            println!("removed {gone:?} at tick {}", s.tick);
+            return self.logged(s, n);
+        }
+        if n.opcode == 42 && has("REPLAY_MAKE_NATIVE") {
+            // study: CreateObjectInstance natively (iteration 18's attempt)
+            let so = interp.stack().last().map_or(0, |f| f.stack_object);
+            let made = create_object(n, &mut self.world, me_id, so).map(|k| self.world.get(k).id());
+            println!("made {made:?} at tick {} (log {})", s.tick, s.stack_object_after);
+            if let Some(id) = made {
+                self.present.insert(id);
+            }
+            let f = interp.top();
+            f.stack_object = made.unwrap_or(s.stack_object_after);
+            return self.logged(s, n);
         }
         if matches!(n.opcode, 4 | 43 | 46) {
             // Grab, DropOnto, Snap natively on the world (who holds what, and where); the result
@@ -1474,6 +1492,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
     let mut motive_at = 0; // the next 'N' record
     let mut shown_motives = 0;
     let ev_env = env("REPLAY_EVALUATION");
+    let mut engine_list_at = 1;
     for t in 1..=log.ticks {
         let mut tick_us = 0.0;
         while place_at < log.places.len() && log.places[place_at].tick < t {
@@ -1643,6 +1662,31 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
             }
         }
 
+        // study: objects the original's engine made (in its list, made by no script): from the
+        // list at the end of the tick before, placed by the log's places
+        if has("REPLAY_MAKE_NATIVE") {
+            while engine_list_at < log.lists.len() && log.lists[engine_list_at].tick < t {
+                let l = &log.lists[engine_list_at];
+                engine_list_at += 1;
+                for &id in l.ids.iter().rev() {
+                    if h.world.find(id).is_none() {
+                        let mut o = Object::new();
+                        o.data = vec![0; 72];
+                        o.data[DATA_OBJECT_ID] = id;
+                        (o.x16, o.y16) = log.places.iter().rfind(|p| p.id == id && p.tick < t).map_or((-16, -16), |p| (p.x, p.y));
+                        h.world.add(o, true);
+                        println!("engine-made {id} at tick {t}");
+                    }
+                }
+            }
+        }
+        if has("REPLAY_MAKE_NATIVE") && matches!(t, 694 | 1221 | 1767 | 700 | 1230 | 1780) {
+            for id in [197, 201, 202] {
+                if let Some(o) = h.world.find_object(id) {
+                    println!("tick {t}: object {id} flags {} container {} place {:?} file {:?}", o.data.get(8).copied().unwrap_or(-1), o.data.get(2).copied().unwrap_or(-1), (o.x16, o.y16), o.file.map(|f| lib.file(f).path.clone()));
+                }
+            }
+        }
         // The steps, in the log's order.
         for &i in &by_tick[t as usize] {
             let s = &log.steps[i];
