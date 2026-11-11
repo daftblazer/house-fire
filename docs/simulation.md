@@ -1121,8 +1121,13 @@ region: a yard seed, in no region, must stay clear of every rect. Simulated (a s
 first plan's D and X, the blocked D grown by 7, no cap): from a seed at the start (104, 328) it
 gives (96, 323, 117, 333) and from the goal (88, 600) it gives (80, 355, 96, 601), the dump's
 cells 0 and 1 exactly, a point seed or a 1x1 one alike. The start cell's cost is logged as 0
-where the yard's is 3: the start's is set apart. Next: the neighbour seeds (in the step's cutter),
-then the grower natively.
+where the yard's is 3: the start's is set apart. The neighbours, simulated the same way: for an
+expanded cell, take its sides in the order x0, y1, x1, y0; walk each along the line just past it
+(x0 - 1, y1, x1, y0 - 1), in rising coordinate, and from every point there that is neither
+blocked nor in a cell yet, grow a cell from that point. Expanding the dumped cells in the
+search's order (0, 7, 9, 1) gives all 13 dumped cells exactly, in order (13 of 13); of the 24
+side orders only that one does (the next best, 9). Next: the cells and the search natively
+(routing.rs), checked on the home log's 16 coarse ways.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
