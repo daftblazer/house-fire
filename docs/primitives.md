@@ -64,7 +64,11 @@ stepped on every tick for a stretch, each step yielding with the parameter one l
 ...), for 49, 26, 200, 25 and 49 ticks; then the stack is passed over like any sleep (the chips
 from 742 until something else wakes them at 1381, the parameter left at 1750). What ends the
 stepped stretch is not in the log. Natively the sleep is the passed-over one from the first step,
-so replay counts those stepped ticks as "the log ran a stack the native has asleep".
+so replay counts those stepped ticks as "the log ran a stack the native has asleep". The pass
+(`Simulator_RunObjects`, 80238150) reaches each object's sleep through virtual calls (its vtable's
++0x90, +0xA8, +0x228, +0x238; a decrement at 80238368 before the +0x218 call, the pass-over
+count): which of those checks lets a sleeping stack be stepped is the place to observe next (a
+read-only record of the +0x238 call's result per object per tick).
 
 The engine has it as `idle()` (`engine/src/primitives.rs`), the interpreter's `Sleep` and the
 simulator's pass. `engine/tests/primitives.rs` and `engine/tests/simulator.rs` test it.
