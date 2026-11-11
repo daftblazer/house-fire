@@ -212,6 +212,11 @@ pub fn snap(n: &Node, w: &mut World, me: i16, stack_object: i16) -> Option<(i32,
         o.x16 = x;
         o.y16 = y;
         o.level = level;
+        // the actor is now in the stack object's slot 0 (its slot-0 reads, scope 20, find it)
+        if o.id() == me && o.data.len() > crate::world::DATA_SLOT {
+            o.data[crate::world::DATA_CONTAINER] = stack_object;
+            o.data[crate::world::DATA_SLOT] = 0;
+        }
     }
     Some((x, y, level))
 }

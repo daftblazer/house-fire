@@ -32,6 +32,7 @@ pub mod scope {
     pub const MY_PERSON_DATA: u8 = 18;
     pub const STACK_PERSON_DATA: u8 = 19;
     pub const STACK_SLOT: u8 = 16;
+    pub const MY_SLOT: u8 = 20;
     pub const STACK_DEFINITION: u8 = 21;
     pub const STACK_ATTRIBUTE_BY_PARAMETER: u8 = 22;
     pub const NEIGHBOUR_IN_STACK_OBJECT: u8 = 24;
@@ -605,12 +606,10 @@ impl Variables for ScriptVariables<'_, '_> {
                     .map_or(0, Object::id);
                 return int(id);
             }
-            scope::STACK_SLOT => {
-                // The object in the stack object's slot d: the one whose container field (data 2)
-                // is that object and whose slot field (data 3) is d; 0 if none. (Scope 20, my
-                // slot, is the same of me: 19 of the home log's 62 reads while replay's world
-                // lacks the made objects Sims hold, so not used yet.)
-                let so = self.frame.stack_object;
+            scope::STACK_SLOT | scope::MY_SLOT => {
+                // The object in the stack object's (16) or my (20) slot d: the one whose container
+                // field (data 2) is that object and whose slot field (data 3) is d; 0 if none
+                let so = if scope == scope::MY_SLOT { self.world.get(self.me).id() } else { self.frame.stack_object };
                 // a person's slot 0 is its hand: whatever it holds, whichever slot field
                 let hand = d == 0 && self.world.find_object(so).is_some_and(|o| o.person);
                 let id = self

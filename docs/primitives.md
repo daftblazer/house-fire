@@ -261,7 +261,8 @@ the meal its stack object): an animation event, with the animation (stage 4). 82
   237 at 1330 (to (392, 360)). Natively `grab`, checked in lockstep (the actor's place the log's
   last before the step): all 4 of the home log's grabs, the object's next logged place.
 - **Snap (opcode 46), kind 0 (operand byte 0):** the actor goes to the centre of the stack
-  object's tile and what it holds with it: Sim 12 onto the dining chair at 4996, with the meal
+  object's tile and what it holds with it, and is then in the stack object's slot 0 (its
+  container the stack object: a chair's slot 0 holds the Sim seated in it, scope 20's reads): Sim 12 onto the dining chair at 4996, with the meal
   202, both to (408, 264). Natively `snap`, the home log's one of kind 0. Kinds 5 (931, Sim 12
   onto itself), 6 (5066) and 1 (one in each club session) are not modelled.
 
