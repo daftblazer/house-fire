@@ -1032,7 +1032,10 @@ fn_8026C9AC, or fn_8026B39C) is next. The search's nodes: fn_802685DC gives node
 as its 44-byte entry in a vector at that object's +76 (to +80), none past the end; every step
 of the search and its helpers ask for nodes so. The way at +36 is written by fn_80268950 (425
 lines; from fn_8026A038, the search's first step, and fn_80268ED4), from the nodes the search
-reached: the 44-byte nodes' layout (their cell, their link) is next, by a study dump.
+reached: the 44-byte nodes' layout (their cell, their link) is next, by a study dump. (The
+search state's own +76 is not that node table but a vector of node indices, the order it took
+them in: 0, 3, 9, 11, 2, ... at tick 2, the nodes it expanded; the 44-byte table is the object the
+lookup is called on, still to find.)
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
