@@ -1280,7 +1280,15 @@ the taken one for every k from about 0.04 to 0.25 (16 of 16; 0.02 and 0.5 give 1
 the distance trade, but the data do not pin k. In the code the choice is the search's own: the
 request's +88 is set (fn_8024969C, from fn_8024C5DC at 8024D684) to a list's entry (sp+152) at
 the search's goal node (sp+296), or cleared (fn_802496A4) when it reached none. So the search runs
-to all the goals at once, the score entering its costs; that multi-goal search is what to read. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+to all the goals at once, the score entering its costs. Seen in a study (the step cost hooked, and
+the node table at the goal, for the paper girl's 48-goal search; reverted): the search runs
+backwards, from the goals to the Sim. Every goal's cell is a start (a node off the start marker,
+node 0, whose step to it costs the rect's cost, here the goal's), entered at g = 16 * (best score
+- its score): 47 of the 48 in order (144 the best; the one goal skipped, (409, 311), lies in no
+cell), and h is the distance to the Sim's place (24 for the taken goal, (392, 304), at g 16:
+score 143). The way it finds, read back, starts at the goal it came from: the taken one. So a
+point of score costs 16, a tile's walk; the earlier fit (k = 1/16) is that. Next: the same on the
+other multi-goal plans (7, 9, 11, 12), then natively (seeds at the goals' cells, way reversed). Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
