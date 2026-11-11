@@ -865,7 +865,14 @@ fn variables(lib: &Library, log: &housefire::tree_log::Log, step_object: &[Optio
                 }
             }
             let Some(cell) = ScriptVariables::new(&mut world, me, &mut frame).cell(v.scope as u8, v.data) else {
-                notes.note(&format!("variables: {sc}: not modelled yet"));
+                // a scope with no cell of its own (a value the engine works out): its value
+                // natively, where the native variables give one (study first: counted apart)
+                let got = ScriptVariables::new(&mut world, me, &mut frame).get(v.scope as u8, v.data);
+                notes.note(&match got {
+                    Some(g) if v.flags & 1 != 0 && g.value == v.value => format!("variables: {sc}: no cell, the value the same natively"),
+                    Some(_) if v.flags & 1 != 0 => format!("variables: {sc}: no cell, the value other natively (study)"),
+                    _ => format!("variables: {sc}: not modelled yet"),
+                });
                 continue;
             };
             // The cell as the C++ tool keyed it: its table and index, every table of an object
