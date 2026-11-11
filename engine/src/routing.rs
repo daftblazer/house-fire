@@ -167,8 +167,13 @@ pub fn inside_length(a: (i32, i32), b: (i32, i32), r: &[i32; 4]) -> f64 {
     (t1 - t0).max(0.0) * (dx * dx + dy * dy).sqrt()
 }
 
+/// How many times a length off the paved regions counts against one on them. Fitted, not the
+/// planner's own figure (not yet found in its code): any from 2.5 to 3.5 gives 15 of the home
+/// log's 16 checked plans by the planner's corners (`docs/simulation.md`).
+pub const OFF_PAVED_WEIGHT: f64 = 3.0;
+
 /// `corner_path` weighing the line by the floor: a length outside the `paved` regions counts
-/// `weight` times one inside them (study: the weight is not yet the planner's own).
+/// `weight` times one inside them (`OFF_PAVED_WEIGHT`, fitted).
 pub fn weighed_path(start: (i32, i32), goal: (i32, i32), obstacles: &[[i32; 5]], walls: &Walls, half: i32, paved: &[[i32; 4]], weight: f64) -> Option<Vec<(i32, i32)>> {
     let mut blocking: Vec<[i32; 4]> = obstacles.iter().filter(|r| r[4] == BLOCKS).map(|r| [r[0], r[1], r[2], r[3]]).collect();
     if half > 0 {
@@ -306,6 +311,10 @@ pub struct Walls {
     room: Vec<u16>,
     rooms: usize,
     doors: Vec<Door>,
+    /// Each tile's floor (the first array's byte: 0x00 grass, 0x0a the sidewalk, 0x1d a path, ...)
+    /// and whether it is inside (the third array's 1).
+    floors: Vec<u8>,
+    inside: Vec<bool>,
 }
 
 impl Walls {
@@ -317,6 +326,9 @@ impl Walls {
         let es = a.element_size as usize;
         // The array is row after row of y, x across a row.
         w.edges = (0..(a.width * a.height) as usize).map(|i| a.bytes.get(i * es).copied().unwrap_or(0)).collect();
+        let n = (a.width * a.height) as usize;
+        w.floors = arrays.first().map_or(vec![0; n], |f| (0..n).map(|i| f.bytes.get(i * f.element_size as usize).copied().unwrap_or(0)).collect());
+        w.inside = arrays.get(2).map_or(vec![false; n], |f| (0..n).map(|i| f.bytes.get(i * f.element_size as usize) == Some(&1)).collect());
         w.wall_edges = w.edges.iter().map(|e| (e & 0x0F).count_ones() as usize).sum();
         // The doors: each pair of a door's parts on two neighbouring tiles opens the edge between.
         let doors: Vec<_> = world.objects().filter(|o| o.door && o.on_lot()).collect();
@@ -453,6 +465,39 @@ impl Walls {
             }
         }
         out
+    }
+
+    /// The paved regions outdoors, {x0, y0, x1, y1} in sixteenths: the outdoor tiles whose floor
+    /// is not grass (0x00) nor none (0xff), as rectangles (each row's runs, then the rows below with
+    /// the same run joined). The planner's search keeps them at cost 0 and its line prefers them
+    /// (`docs/simulation.md`, "The search's own regions").
+    pub fn paved_regions(&self) -> Vec<[i32; 4]> {
+        let (w, h) = (self.width as usize, self.height as usize);
+        let paved = |x: usize, y: usize| {
+            let i = y * w + x;
+            !self.inside[i] && self.floors[i] != 0x00 && self.floors[i] != 0xFF
+        };
+        let mut runs: Vec<(usize, usize, usize, usize)> = Vec::new(); // x0, x1 (exclusive), y0, y1
+        for y in 0..h {
+            let mut x = 0;
+            while x < w {
+                if !paved(x, y) {
+                    x += 1;
+                    continue;
+                }
+                let x0 = x;
+                while x < w && paved(x, y) {
+                    x += 1;
+                }
+                // joins the run above it with the same span, if one ends on the row above
+                if let Some(r) = runs.iter_mut().find(|r| r.0 == x0 && r.1 == x && r.3 == y) {
+                    r.3 = y + 1;
+                } else {
+                    runs.push((x0, x, y, y + 1));
+                }
+            }
+        }
+        runs.into_iter().map(|(x0, x1, y0, y1)| [x0 as i32 * 16, y0 as i32 * 16, x1 as i32 * 16, y1 as i32 * 16]).collect()
     }
 
     pub fn wall_edges(&self) -> usize {

@@ -46,7 +46,7 @@ use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
-use housefire::routing::{BLOCKS, Tile, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, along_line, corner_path, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
+use housefire::routing::{BLOCKS, OFF_PAVED_WEIGHT, Tile, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
 use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
@@ -1221,6 +1221,9 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, neighbours: &[Neighbour], ben
             }
             println!("{l}");
         }
+    }
+    if has("REPLAY_SHOW_PAVED") {
+        println!("paved regions natively: {:?}", world.walls.paved_regions());
     }
     if has("REPLAY_SHOW_WALL_BYTES") {
         // the second array's bytes (each tile's element) round the front yard, for study
@@ -2668,17 +2671,10 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
                 let room = |p: (i32, i32)| walls.room(p.0 >> 4, p.1 >> 4);
                 let same_room = room(start) == room(goal);
                 {
-                    // study (HF_PAVED_WEIGHT): weighed by the search's paved regions, the plan's
-                    // or the last logged before it
-                    let weight: f64 = env("HF_PAVED_WEIGHT").and_then(|v| v.parse().ok()).unwrap_or(0.0);
-                    let path = if weight > 0.0 {
-                        let k = log.plans.iter().position(|q| std::ptr::eq(q, pl)).unwrap_or(0);
-                        let regions = log.plans[..=k].iter().rev().find(|q| q.regions.iter().any(|r| r[4] == 0)).map(|q| q.regions.clone()).unwrap_or_default();
-                        let paved: Vec<[i32; 4]> = regions.iter().filter(|r| r[4] == 0).map(|r| [r[0], r[1], r[2], r[3]]).collect();
-                        weighed_path(start, goal, &obstacles_here, walls, half, &paved, weight)
-                    } else {
-                        corner_path(start, goal, &obstacles_here, walls, half)
-                    };
+                    // weighed by the paved regions natively from the floor (`OFF_PAVED_WEIGHT`, a
+                    // fitted weight; study HF_PAVED_WEIGHT to try another)
+                    let weight: f64 = env("HF_PAVED_WEIGHT").and_then(|v| v.parse().ok()).unwrap_or(OFF_PAVED_WEIGHT);
+                    let path = weighed_path(start, goal, &obstacles_here, walls, half, &walls.paved_regions(), weight);
                     let is_corner = |p: &(i32, i32)| obstacles_here.iter().filter(|r| r[4] == BLOCKS).any(|r| [(r[0], r[1]), (r[2], r[1]), (r[0], r[3]), (r[2], r[3])].contains(p));
                     let theirs: Vec<(i32, i32)> = pl.points.iter().copied().filter(is_corner).collect();
                     let ours: Vec<(i32, i32)> = path.as_ref().map_or(Vec::new(), |p| p.iter().copied().filter(is_corner).collect());

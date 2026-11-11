@@ -741,6 +741,17 @@ path; below (2.3) a plan in the house turns differently, above (4) one does. So 
 about three times a paved floor; the planner's own figure (a constant of the search, it may be)
 and the regions natively from the floor are next.
 
+**The paved regions natively** (`Walls::paved_regions`, `routing::OFF_PAVED_WEIGHT`). An outdoor
+tile (the third array not 1) whose floor is not grass (0x00) nor none (0xff) is paved; each row's
+runs of them are joined with the same runs below into rectangles. Against the search's logged ones
+(tick 2): the street, the sidewalk and the porch exactly; the front path to the porch (the planner's
+runs on through it), the porch steps a tile narrower, the back path one rectangle where the
+planner's are two, and some beyond the lot's border (outside it, harmless). With them and a
+weight of 3 (any from 2.5 to 3.5: fitted, the planner's own figure not yet found in its code) the
+replay's corner search is now weighed by the floor by default: 15 of the 16 checked plans by the
+planner's corners (4 of 4 through a door, 11 of 12 within a room; the one left, tick 521 in the
+house, not the floor's).
+
 **The walk keeps to its plan's line.** The planning Sim's logged places (`P`, at each tick's start,
 whole sixteenths, logged when they change) from its plan's tick to its next plan, against the
 plan's line: 852 of the home log's 854 within a sixteenth and a half of it (the 2 others the paper

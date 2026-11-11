@@ -1586,7 +1586,7 @@ iterations in a row end without a commit (record why here).
 
 ## Progress
 
-Iteration 13 of 24.
+Iteration 14 of 24.
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1690,3 +1690,11 @@ Iteration 13 of 24.
   default: the weight is not yet the planner's own. Figures unchanged (561,398, 338,305, 68,202,
   lockstep 7,902, 4, 24); clippy clean. Next: the weight from the search's code, and the paved
   regions natively from the floor; then make it the default.
+
+- **Iteration 14, chunk 3 (the paved regions natively).** `Walls::paved_regions`: the outdoor tiles
+  of a floor not grass, as rectangles (row runs joined down): the street, the sidewalk and the
+  porch the logged ones exactly, the paths and steps near them. The corner search weighed by them
+  at `OFF_PAVED_WEIGHT` 3 (fitted, 2.5 to 3.5) is now the replay's default: 15 of 16 plans by the
+  planner's corners (tick 260 fixed). The planner's weight in its code not found (its costs are read
+  deeper, in `fn_8026A210`'s callees). Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902,
+  4, 24); clippy clean. Next: tick 521 (in the house), or chunk 5 (native routes in the simulator).
