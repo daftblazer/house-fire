@@ -1242,7 +1242,16 @@ original's, from the search to the point after the goal; the one off is tick 521
 Run in place of the log's plans (study REPLAY_NATIVE_PLANS), the walk checks lose only that one
 walk: whole walks 15 of 16 (16), routing returns 15 (16), walker steps 1,545 (1,695, 146 more set
 aside as off the plan's line), routing primitive steps 1,989 of 1,992; nothing else moves. The
-log's plans stay the default until tick 521's link is found. Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
+log's plans stay the default until tick 521's link is found. A one-off dump of that search's A* nodes
+(reverted): the expansion order is nodes 0, 3, 8, 7, 4, 10, 14, 2 (cell 8's node 10 before cell
+12's node 14), and a node's index is its cell's + 2 (nodes are made as cells are cut, not as the
+search reaches them). Cell 13 (node 15) is cut in cell 8's walk (between cells 12 and 14), yet it
+ends parented on cell 12 at g 97.40, f 142.32. A link 8 -> 13 would have given it f 140.3 (about
+the same wherever on the opening it crossed), below cell 12's 141.26, and the search would have
+taken it first, as the model does. So the original makes no 8 -> 13 link though their grown
+rects overlap (y 312..314, x 348..370) and no blocked rect lies at the crossing (the nearest,
+(317, 349, 339, 371), is below cell 13). Its link test drops some overlap the model keeps; the
+rule is to be read in the step (fn_8026A038 round its fn_8026875C calls). Natively (`point_after_goal`): 13 of the 14 plans of kinds -3, -2,
 -1 in replay; the miss is the diagonal -2 that adds no point (tick 1791).
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
