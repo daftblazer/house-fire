@@ -3158,6 +3158,19 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         // native): its speed, the one the next walk starts from, taken from its logged step
         if b.state == 5 || a.state == 5 {
             let step = ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt();
+            // its step natively: the speed it carries (no ramp, no brake) times the game's speed,
+            // up to its point
+            let carried = speed.get(&f.follower).copied().unwrap_or(0.0);
+            let left = ((a.point.0 - b.x).powi(2) + (a.point.1 - b.y).powi(2)).sqrt();
+            let native = (carried * b.factor).min(left);
+            counts.note(if (native - step).abs() < 0.001 {
+                "routing: a walker's state-5 step natively the original's (its carried speed, up to its point)"
+            } else {
+                "routing: a walker's state-5 step natively NOT the original's"
+            });
+            if show_walks && (native - step).abs() >= 0.001 {
+                println!("state 5 step tick {} {:x}: native {native:.4} (carried {carried:.4}, left {left:.3}), the original's {step:.4}", f.tick, f.follower);
+            }
             if b.factor > 0.0 {
                 speed.insert(f.follower, step / b.factor);
             }

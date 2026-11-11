@@ -909,7 +909,12 @@ person's data 9 is set by its own scripts: an expression "my object data 9 := 1"
 op 5) in the routing trees run before a walk (trees 8215 and 4107 of the home log), and cleared
 when the routing primitive ends (Route_Run, 80220918, through the object's setter). Natively the
 replay keeps that per person from the steps it runs (the expression's literal; a GotoRoutingSlot
-or GotoRelativePosition returning clears it): all 16 walk ends' run on as the original's.
+or GotoRelativePosition returning clears it): all 16 walk ends' run on as the original's. Its
+move: the speed the walker carries, kept (no ramp, no brake), times the game's speed, up to its
+point (the first frame with the point just set). 5 of the home log's 6 moving state-5 frames
+natively the original's; the sixth (tick 1646, a diagonal move: 0.557 where the carried 0.655 is
+expected, 3.59 from its point) is not yet understood, and it is the speed the walk at 1909 starts
+from, so the replay still carries a state-5 frame's speed from its logged step.
 
 **Where a walk ends, at a door.** The walk ends at the request's chosen goal, the plan's last leg
 past it (into what the Sim faces) not walked; but at a door the home log has both: the yard's walk
