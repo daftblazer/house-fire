@@ -1552,3 +1552,38 @@ replay 9.9 µs a tick against the C++'s 10.6.
 The eighth loop resumes from its chunk 2 (the plan's goal from the slot), its checks now with
 `engine/target/release/replay` and `lockstep`, built with `cargo build --release` through
 `tools/capped.sh`.
+
+# The tenth loop
+
+Planned 2026-11-10 at the user's request, to go on from the eighth through the night: a quarter
+of an hour between iterations, as before. The rules are the same: one well-defined part an
+iteration, checked by replay on the home log (the club's logs kept as they are), a piece that
+cannot be checked is not built, one-line commits, never pushed, no RK3566.
+
+## Chunks, in order
+
+1. **The walk.** A Sim following its plan (`Route_WalkStep`, 801F0410): the distance a tick, its
+   start and stop, the turns at waypoints; checked against the logged places (`P`) tick by tick
+   along the logged plans.
+2. **The planner's points between corners.** The sixteenth off the start, the points along its
+   lines and near corners (`fn_8024C5DC`'s stages, `fn_80249BB8`); checked waypoint by waypoint
+   against the 18 logged plans (`G`).
+3. **The two route misses.** Tick 521 (by the counter) and tick 260 (yard to the front door): the
+   walls' corners as the planner has them; checked as all 16 plans by the planner's corners.
+4. **The rest of the request.** A slot of a range of proximities (the paper girl's area of 48
+   goals at tick 931), the paper girl's state test (`fn_801FD05C`) and a person's facing as it
+   walks; checked against `H` and `J`.
+5. **The native routes in the simulator.** The routing primitives (GotoRoutingSlot,
+   GotoRelativePosition) planning and walking natively instead of taking the log's places;
+   checked by the lockstep's and replay's figures, which must not get worse.
+6. **Sim 237's own interactions' values**, which score lower natively than in the original;
+   checked against the logged choice list (`Y`).
+
+## Limits
+
+Stop after iteration 24, at 08:00 on 2026-11-11, when the chunks are done, or when two
+iterations in a row end without a commit (record why here).
+
+## Progress
+
+Iteration 0 of 24.
