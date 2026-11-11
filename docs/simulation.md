@@ -1075,7 +1075,13 @@ every node's kind is its cell's cost (13 of 13). The cells are not a whole-lot g
 all round the start and along the way to the goal (y 67..185, x 23..601), e.g. cell 0 (96, 323,
 117, 333), the start's, cost 0; cell 4 the cost-10 obstacle itself (117, 325, 123, 331); cells 3,
 5 its sides to y 185; cell 1 the paved strip from 355 to the goal (80, 355, 96, 601). So the
-cells are cut as the search needs them, from the D and X rects; how is next.
+cells are cut as the search needs them, from the D and X rects. Their edges, checked on that dump
+against the same plan's D and X: every cell edge (52 of 52) lies on an X obstacle's edge as
+logged, a cost-0 D region's edge as logged, or a blocked D rect's (the lot border's, the house's)
+edge pushed out by 7 (the border's 16 becomes 23, the house's 192 becomes 185). 7 is the only such
+value that fits; with 0, 3, 6 or 8 only 45 fit. The cutter is fn_8026B39C (5.6 KB, from the
+search's init fn_8026C9AC), with fn_8026901C (1.3 KB) its likely rect splitter; which rects it
+cuts, and in what order, is next.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
