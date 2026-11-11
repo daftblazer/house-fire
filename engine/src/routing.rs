@@ -336,11 +336,19 @@ pub fn walk_rates(top_per_second: f32) -> (f32, f32) {
 /// A walker's step a frame (`Route_Follow`, 800AE0A4; `docs/simulation.md`, "The walker's
 /// step"): from its speed the frame before (`speed`, 0 at its start) to this frame's, and the
 /// distance it moves along its line. Walking (factor 1) the speed grows by `growth` a frame to
-/// `top`, and near the end is no more than will let it stop there (sqrt(2 growth left));
-/// the fast mode (factor 5) goes at its top times the factor from the first frame to the
-/// last. Never past the end (`left`, sixteenths along the line).
+/// `top`; within its stopping distance of the end (top² / 2 growth: half its top a second times
+/// its ramp's time) it is set to what lets it stop there, sqrt(2 growth left), times 1.001 (the
+/// DOL's constant at 802A8DD0; the mover fn_800AEC38); the fast mode (factor 5) goes at its top
+/// times the factor from the first frame to the last. Never past the end (`left`, sixteenths
+/// along the line; infinite when the walk runs on).
 pub fn walk_step(speed: f32, top: f32, growth: f32, factor: f32, left: f32) -> (f32, f32) {
-    let v = if factor != 1.0 { top } else { top.min(speed + growth).min((2.0 * growth * left).sqrt()) };
+    let v = if factor != 1.0 {
+        top
+    } else if left < top * top / (2.0 * growth) {
+        1.001 * (2.0 * growth * left).sqrt()
+    } else {
+        top.min(speed + growth)
+    };
     (v, (v * factor).min(left))
 }
 

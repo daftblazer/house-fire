@@ -914,7 +914,7 @@ move: the speed the walker carries, kept (no ramp, no brake), times the game's s
 point (the first frame with the point just set). 5 of the home log's 6 moving state-5 frames
 natively the original's; the sixth (tick 1646, a diagonal move: 0.557 where the carried 0.655 is
 expected, 3.59 from its point) is not yet understood, and it is the speed the walk at 1909 starts
-from, so the replay still carries a state-5 frame's speed from its logged step. Route_Follow's
+from. (Read since: see "The mover" below; all 6 natively now.) Route_Follow's
 frame: the budget (the frame times the game's speed, +124), then fn_800AE6FC for every state (the
 walker's facing, +56, turned towards where it goes: in state 5 its point, +116/+120, less its
 place, +40/+44; the angle constants at 802A8D64 to 802A8D90), then in state 5 fn_800AEBFC, which
@@ -922,6 +922,17 @@ moves the walker towards its point through the general mover fn_800AEC38 with th
 1646's slower frame is the one where the walk's heading (from (380, 338) to (376, 336)) turns to
 the diagonal: the turn may cost speed there (not yet read in the mover); tick 2036's state 5,
 straight on, keeps its speed.
+
+**The mover** (fn_800AEC38, `routing::walk_step`). The walker's speed (+144, sixteenths a
+second) and step, in state 2 and state 5 alike: its stopping distance D is half its top times its
+ramp's time (0.5 s over the game's speed, +124; 1e12 when paused); when the distance left (to the
+waypoints' end, or state 5's point) is under D, the walker is on its last leg and its object data
+9 is clear, the speed is set to 1.001 × sqrt(2 × top/ramp × left) (1.001 the DOL's at 802A8DD0);
+otherwise it grows by top/ramp × the frame to its top. The frame's step is the speed times the
+frame (0.033 s), the factor folded into the ramp. With the 1.001 and data 9's test: 1,693 of the
+1,697 steps on a line natively the original's, 1,457 of 1,461 frames run free, all 6 state-5
+frames (1646's is the brake, data 9 cleared that tick; 2036's keeps its speed, data 9 still
+set), 9 of 10 whole walks and 9 of 10 routing primitives' returns.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
