@@ -1185,7 +1185,7 @@ without a commit (record why here).
 
 ## Progress
 
-Iteration 15 of 16.
+Iteration 16 of 16 (the loop ended).
 
 - **Iteration 1, chunk 1 (the rooms and their doors).** The third array is not the rooms (1
   inside, 7 outside); the rooms are the regions the walls close (`Walls::room`, a door left
@@ -1330,6 +1330,41 @@ Iteration 15 of 16.
   tried at several weights and not kept (it does not give the planner's line). Figures
   unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next: the loop's
   end (iteration 16): the write-up of what is native and what is open.
+
+- **Iteration 16 (the loop's end).** This write-up; no new piece (chunks 4 and 5 did not fit).
+  Figures as at iteration 15 (561,398, 338,305, 68,202, lockstep 7,902, 4, 24).
+
+## The eighth loop's end
+
+Sixteen iterations (house-fire 3ce7c2f..; recomp bb3c467..b0a76ee), the Rust port between the
+second and the third. Chunks 1 and 3 are done, chunk 2 in large part, chunks 4 and 5 not begun.
+
+- **Rooms and doors (chunk 1, done).** The rooms are the regions the walls close (4 at Mom's
+  house, 5 doors); a plan breaks at each door.
+- **What blocks (chunk 3, done but a person's state test).** Logged at the planner's object loop
+  (`X` the rectangles, `J` the objects asked about). Natively (`routing::obstacle`,
+  `footprint`): an object is left out when its flags (data 8) have 0x4 or it is in another
+  (data 2); it may be walked through at cost 10, not grown, when they have 0x10; else it blocks,
+  its footprint (the tile less OBJD field 75's per-side insets, turned with the facing, and
+  narrowed by field 65's width) grown by half the width, 3. The one overlapping the Sim is
+  dropped. A person is left out when it is the target or over 3.0 tiles off. Checked: all 858
+  answers about objects, all 98 costs, all 694 footprints, 16 of 17 whole lists (the 17th the
+  paper girl, not native); 17 of 20 answers about persons (the paper girl's state test unread).
+- **The planner's goals and route (chunk 2, in part).** Logged: the request's goals (`H`).
+  Natively: a slot's places (diagonals at proximity × √½), only those in the object's room with
+  no other object; 3 of 4 single-proximity requests exact (the paper girl's facing stale).
+  `routing::corner_path`, the shortest line over the corners of the grown obstacles and walls:
+  14 of the 16 plans by the planner's corners in order (11 of 12 within a room, 3 of 4 through
+  a door); every walked leg clear of the native obstacles.
+- **Open.** The planner's points between corners (a sixteenth off the start, along its lines,
+  near corners), ticks 521 and 260 (wall corners), a slot of a range of proximities (an area of
+  goals), the paper girl's facing and state test; the walk (chunk 4: speed and turns against the
+  `P` places); Sim 237's own interactions' values (chunk 5). The routing is checked, not yet
+  used by the simulator (the plans still come from the log), so the lockstep's figures do not
+  move.
+- **Figures** at the end: replay 561,398 / 338,305 / 68,202 steps the same; lockstep 7,902 / 4 /
+  24 differences (all unchanged through the loop, as nothing native replaced a logged value);
+  the home log now 581,110 steps with `H`, `X`, `J`.
 
 
 ## The eighth loop paused
