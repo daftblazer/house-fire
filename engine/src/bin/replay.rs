@@ -46,7 +46,7 @@ use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
     call_named_tree, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
 };
-use housefire::routing::{BLOCKS, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
+use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
 use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
@@ -2959,6 +2959,38 @@ fn routing(log: &Log, lib: &Library, world: &World, counts: &mut Counts, ids: &B
         } else {
             "routing: a walker's step natively NOT the original's"
         });
+    }
+    // Frames and ticks (`FrameClock`): the frames each tick holds natively against a walker's
+    // frames in each tick of the log, from the first tick it has any; the clock's phase there is
+    // not known (the log starts in play): the best of a thousandth's steps
+    {
+        let mut per: BTreeMap<u32, u32> = BTreeMap::new();
+        // the walker with the most frames
+        let mut by: BTreeMap<u32, usize> = BTreeMap::new();
+        for f in &log.follows {
+            *by.entry(f.follower).or_default() += 1;
+        }
+        let first_follower = by.iter().max_by_key(|e| e.1).map(|e| *e.0);
+        for f in log.follows.iter().filter(|f| Some(f.follower) == first_follower) {
+            *per.entry(f.tick).or_default() += 1;
+        }
+        if let (Some((&first, _)), Some((&last, _))) = (per.first_key_value(), per.last_key_value()) {
+            let best = (0..42)
+                .map(|ph| {
+                    let mut clock = FrameClock { time: ph as f32 / 1000.0 };
+                    let n = (first..=last)
+                        .filter(|t| {
+                            let frames = clock.frames_to_tick();
+                            per.get(t) == Some(&frames)
+                        })
+                        .count();
+                    (n, ph)
+                })
+                .max()
+                .unwrap_or_default();
+            counts.add("routing: ticks a walker moves in", per.len());
+            counts.add("routing: ticks whose walker frames are natively the original's (the frame clock)", best.0);
+        }
     }
     // The turn at a walk's end (`turn_frames`): the frames a follower stays arrived (state 3)
     // against the angle from its last step's way to what it faces (the plan's last point past its

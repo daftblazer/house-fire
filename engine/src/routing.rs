@@ -264,6 +264,31 @@ pub fn walk_step(speed: f32, top: f32, growth: f32, factor: f32, left: f32) -> (
     (v, (v * factor).min(left))
 }
 
+/// The simulation's tick against the walker's frame (`WALK_FRAME`): 0.042 s, measured (the home
+/// log's ticks hold 1 or 2 frames, 14 in 11 ticks; `docs/simulation.md`, "Frames and ticks").
+pub const TICK_TIME: f32 = 0.042;
+
+/// The frames between ticks: the frame clock adds a frame's time each frame and a tick runs each
+/// time it has gone a tick's further. `frames_to_tick` gives the frames before the next tick.
+#[derive(Clone, Copy, Debug)]
+pub struct FrameClock {
+    pub time: f32,
+}
+
+impl FrameClock {
+    pub fn frames_to_tick(&mut self) -> u32 {
+        let mut frames = 0;
+        loop {
+            if self.time >= TICK_TIME {
+                self.time -= TICK_TIME;
+                return frames;
+            }
+            self.time += WALK_FRAME;
+            frames += 1;
+        }
+    }
+}
+
 /// A walker's turn a frame once it has arrived, to face what it walks to (the follower's state 3):
 /// 3 degrees (measured on the home log's walks: 90 degrees in 31 frames, 180 in 61).
 pub const TURN_PER_FRAME: f32 = std::f32::consts::PI / 60.0;

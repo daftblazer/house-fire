@@ -1586,7 +1586,7 @@ iterations in a row end without a commit (record why here).
 
 ## Progress
 
-Iteration 20 of 24.
+Iteration 21 of 24.
 
 - **Iteration 1, chunk 1 (the walk keeps to its line).** The planning Sim's logged places from its
   plan to its next, against the plan's line (study `REPLAY_SHOW_WALKS`): 852 of 854 within 1.5
@@ -1742,3 +1742,10 @@ Iteration 20 of 24.
   off). Figures unchanged (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next:
   the frames to ticks (how many walker frames a simulation tick, by the game's speed), so a
   routing primitive's yields can be checked.
+
+- **Iteration 21, chunk 5 (frames and ticks).** A tick holds 1 or 2 walker frames, 14 in 11: a
+  frame clock of 0.033 s with a tick each 0.042 s (`routing::FrameClock`, its phase fitted once).
+  Checked: 3,736 of the 3,835 ticks a walker moves in hold the original's frames. Figures unchanged
+  (561,398, 338,305, 68,202, lockstep 7,902, 4, 24); clippy clean. Next: the routing primitive's
+  yields by tick (a walk's ticks: its frames through the clock) against the logged steps of
+  GotoRoutingSlot and GotoRelativePosition.

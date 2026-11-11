@@ -869,6 +869,14 @@ walker's. With it as an input, each frame's: 8 of the 10 whole walks take the or
 exactly (the yard's long walks too, and tick 1931's, paused midway rather than cut short); the
 two left start at a speed a little off (ticks 1380 and 1619).
 
+**Frames and ticks** (`routing::FrameClock`, `TICK_TIME`). A simulation tick holds one walker
+frame or two, in a steady pattern (three ticks of two in every eleven: 14 frames in 11 ticks,
+0.042 / 0.033), paused or not: the frames run on a clock of 0.033 s a frame and a tick each time
+it has passed another 0.042 s. Natively from the first tick a walker moves in, its start phase
+fitted once (the log begins in play), over the 3,835 ticks the most moving walker moves in:
+3,736 hold its frames exactly (97%); the rest drift by a frame (the 0.042 measured, not yet found
+in the code).
+
 **Which objects block** (`routing::obstacle`). Read from the objects the loop asks about (`J`)
 against the object data the save gives: an object is left out when its flags (object data 8)
 have 0x4 (no extent: rugs, windows, wall lamps, paintings, the alarms, the phone) or it sits in
