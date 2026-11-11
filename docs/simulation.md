@@ -1045,7 +1045,17 @@ with a parent (9 of 9; e.g. node 13, (96, 423) from node 2 at (86, 355), g 44.18
 'H' record's, (600, 88) here; 13 of 13 nodes to three places), weight 1, so the search is a
 plain A*; nodes 0 and 1 (state -1) are its own start and end markers. The coarse way ('I') is the
 best node's parent chain, start to goal: here 3, 9, 11, 2 and then the goal itself, and every
-coarse way in the home log ends at its request's chosen goal (16 of 16).
+coarse way in the home log ends at its request's chosen goal (16 of 16). Where the nodes come from, at
+that first search (its D and X records, raw order as the nodes'): the paved strip D (80..96,
+16..608, cost 0) and the cost-10 obstacle X (117..123, 325..331) lie round the start (104, 328).
+Five nodes sit on those rects' edges: 9 at 96 and 12 at 80 (the strip's two edges), 6 at 117 (the
+obstacle's), 13 and 14 at 96 again. Each one's kind is the cost of the area past that edge in
+the step's direction: 9 enters the strip (0), 12 and 13/14 leave it into the yard (3, taken as
+the ground's own cost, not yet found in any record), 6 enters the obstacle (10). So a step goes
+from a node to where its ray crosses a cost edge, and is weighted by the cost it crosses into,
+not the one it walked over (3 to 9 crosses 8 of yard at weight 1). Not yet explained: the
+off-edge nodes 4, 5, 7, 8 (the fan round the obstacle, kind 3, at 13 to 13.6 from the start),
+10, 11 and 2 (inside the strip, kind 0), and how many rays a node casts.
 
 **A sixteenth off the start.** Of the home log's 17 plans, 3 have a second point one sixteenth
 from the start towards the third (ticks 496, 2037 and 4921): exactly the plans made just after a
