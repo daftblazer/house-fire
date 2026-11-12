@@ -2097,6 +2097,9 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
     let mut consumed: BTreeSet<usize> = BTreeSet::new(); // log steps a native primitive's checks have stepped
     let mut sim = Simulator::new(lib);
     let mut finder = TreeFinder { lib, cache: HashMap::new(), shown: 0 };
+    // stand-ins given a file before their first own step (the target of a player's command):
+    // their first step still starts them as a stand-in's does
+    let mut unstarted: BTreeSet<ObjectKey> = BTreeSet::new();
     let mut ids = stack_ids(log);
     place_quiet_stacks(log, &h.world, &mut ids, &mut h.counts, lib);
     let mut native_places: BTreeMap<(i16, u32), (i32, i32)> = BTreeMap::new();
@@ -2533,6 +2536,31 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                     let at_idle = !win.done() && top_node(lib, win).is_some_and(|n| n.opcode == 17);
                     let idle = by_tick[t as usize].iter().copied().find(|&j| j > i && log.steps[j].sim == s.sim && log.steps[j].tree == 281 && log.steps[j].node == 4);
                     let action = idle.and_then(|k| log.steps[k + 1..].iter().find(|x| x.sim == s.sim)).filter(|x| idle.is_some_and(|k| x.node == 0 && x.frame > log.steps[k].frame));
+                    if has("REPLAY_SHOW_PLAYER_COMMAND") {
+                        println!("player command? tick {t} sim {} at_idle {at_idle} idle {idle:?} action {:?} so {}", h.world.get(w).id(), action.map(|a| (a.tree, a.stack_object)), s.stack_object);
+                        if let Some(o) = h.world.find_object(s.stack_object) {
+                            let tab = lib.table_of(o.file, o.person, h.world.definition(o));
+                            println!("  target file {:?} def {:?} table {:?} {:?} first {}", o.file.map(|f| lib.file(f).path.clone()), h.world.definition(o).map(|d| d.interaction_table()), tab.file.map(|f| lib.file(f).path.clone()), tab.table, tab.first);
+                        }
+                    }
+                    // a target the player's click just made (the "go here" marker, a stand-in with
+                    // no file yet): the file of the check run on it (a file of one definition)
+                    if at_idle
+                        && action.is_some_and(|a| a.stack_object == s.stack_object)
+                        && let Some(tk) = h.world.find(s.stack_object)
+                        && h.world.get(tk).file.is_none()
+                        && let Some((_, cfile)) = finder.find(log, s)
+                        && let [d] = &lib.file(cfile).definitions[..]
+                        && let Some(def) = lib.definition(d.guid())
+                    {
+                        let o = h.world.get_mut(tk);
+                        o.guid = d.guid();
+                        o.definition = Some(def);
+                        o.file = Some(cfile);
+                        o.attributes = vec![0; lib.def(def).field(56) as usize];
+                        unstarted.insert(tk);
+                        h.counts.note("objects: a stand-in the player's command targets given its check's file");
+                    }
                     if at_idle && let Some(a) = action && a.stack_object == s.stack_object && h.world.queue_player_command(w, a.stack_object, a.tree) {
                         h.counts.note("queue: the player's command (from the log) queued for IdleForInput");
                     }
@@ -2715,6 +2743,9 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
             // above their 4097): its file is that of its first own step below, and its stack the
             // calling frame (the node calling this tree whose return goes on to that step's node)
             // with this tree above
+            if unstarted.remove(&ok) {
+                h.world.get_mut(ok).file = None; // its first own step: started as a stand-in is
+            }
             if h.world.get(ok).file.is_none() && !has("REPLAY_NO_STANDIN_FILE") && tree_kind(s.tree) == TreeKind::Global {
                 let below = log.steps[i + 1..].iter().find(|x| x.sim == s.sim && x.frame < s.frame && tree_kind(x.tree) == TreeKind::Own);
                 if let Some(b) = below
