@@ -41,6 +41,16 @@ pub struct TlutRec {
     pub entries: Vec<u16>,
 }
 
+/// A strip of short arrays the device played (the command list's opcode 56, 'w'): the tick, the
+/// command's first 16 words (the opcode, the count, its arguments) and 32 bytes at each word that
+/// points into memory (zeros otherwise).
+#[derive(Clone, Debug)]
+pub struct StripRec {
+    pub tick: u32,
+    pub words: [u32; 16],
+    pub at: Vec<[u8; 32]>,
+}
+
 /// A tree as the original had it loaded: its nodes' address, id, file, and its nodes' raw bytes.
 #[derive(Clone, Debug, Default)]
 pub struct TreeRec {
@@ -264,6 +274,8 @@ pub struct Log {
     pub textures: Vec<TexObjRec>,
     /// The palettes the original set up ('u', in newer logs).
     pub tluts: Vec<TlutRec>,
+    /// The strips of short arrays the device played ('w', in newer logs, at most 4,000).
+    pub strips: Vec<StripRec>,
     pub trees: Vec<TreeRec>,
     pub lists: Vec<ListRec>,
     /// Tick -> its pass over the objects (logs with 'Q' records).
@@ -343,6 +355,22 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
                 r.u32();
                 log.ticks += 1;
+            }
+            b'w' => {
+                if !r.has(4 + 16 * 36) {
+                    break;
+                }
+                let tick = r.u32();
+                let mut words = [0u32; 16];
+                let mut at = Vec::with_capacity(16);
+                for w in &mut words {
+                    *w = r.u32();
+                    let mut b = [0u8; 32];
+                    b.copy_from_slice(&r.b[r.p..r.p + 32]);
+                    r.p += 32;
+                    at.push(b);
+                }
+                log.strips.push(StripRec { tick, words, at });
             }
             b'u' => {
                 if !r.has(4 + 4 + 1 + 2) {

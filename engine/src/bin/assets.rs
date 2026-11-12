@@ -11,6 +11,8 @@
 //!                                    tools/texdecode_check.sh
 //!        assets ISO tlutcheck LOG    the palettes the original set up (the log's 'u') against
 //!                                    the textures' palettes (study for now)
+//!        assets ISO stripcheck LOG   the strips of short arrays the original played (the log's
+//!                                    'w') against models.arc: where each array's bytes are
 //!        assets ISO texcheck LOG     the textures the original set up (the log's 'x' records)
 //!                                    against textures.arc's: each by its first level's hash
 
@@ -208,6 +210,46 @@ fn main() -> ExitCode {
                     shown += 1;
                     println!("  {} ({:?}, {n} colours): first {:02x?}", t.name, t.kind, &b[p..p + 24.min(n * 4)]);
                 }
+            }
+        }
+        "stripcheck" => {
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO stripcheck LOG");
+                return ExitCode::from(2);
+            };
+            let data = d.read("models.arc").unwrap_or_default();
+            let entries = arc::entries(&data).unwrap_or_default();
+            // every 4-aligned 8-byte window of every entry -> (entry, offset)
+            let mut index: std::collections::HashMap<[u8; 8], Vec<(u32, u32)>> = std::collections::HashMap::new();
+            for (k, e) in entries.iter().enumerate() {
+                let b = arc::bytes(&data, e);
+                for o in (0..b.len().saturating_sub(32)).step_by(4) {
+                    index.entry(b[o..o + 8].try_into().unwrap()).or_default().push((k as u32, o as u32));
+                }
+            }
+            for s in log.strips.iter().take(6) {
+                println!("strip tick {}: words {:08x?}", s.tick, &s.words[..12]);
+            }
+            let mut by_word: BTreeMap<usize, (usize, usize)> = BTreeMap::new();
+            for s in &log.strips {
+                for (i, w) in s.words.iter().enumerate() {
+                    if !(0x8000_0000..0x817F_FFE0).contains(w) {
+                        continue;
+                    }
+                    let a = &s.at[i];
+                    let found = index.get(&<[u8; 8]>::try_from(&a[..8]).unwrap()).is_some_and(|v| {
+                        v.iter().any(|&(k, o)| {
+                            let b = arc::bytes(&data, &entries[k as usize]);
+                            b.get(o as usize..o as usize + 32) == Some(&a[..])
+                        })
+                    });
+                    let e = by_word.entry(i).or_default();
+                    e.1 += 1;
+                    e.0 += usize::from(found);
+                }
+            }
+            for (i, (f, n)) in &by_word {
+                println!("  word {i}: a pointer in {n} strips, its 32 bytes in models.arc for {f}");
             }
         }
         "texcheck" => {

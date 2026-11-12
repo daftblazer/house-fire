@@ -93,3 +93,14 @@ the home replay none of its strips of short arrays is recorded by `ERC_TriStripS
 `ERC_TriStripRefShort` (an observer hook on each: no call): the models are drawn otherwise,
 likely as GX display lists (the list's opcode 6) over the arrays a GeometrySetup (opcode 40)
 names, to be observed next.
+
+The strips the device plays (the command list's opcode 56): the observer's 'w' record, from
+`ERC_Play`'s loop (`../bustin-out-recomp/src/erc_play.cpp`; the handlers are called through it,
+past the HLE table, which is why hooks on the recording and playing functions saw nothing),
+writes each command's first 16 words and 32 bytes at each word that points into memory. The
+command keeps its arguments inline: the opcode byte (0x38) with three more, the vertex count,
+then the arrays' addresses. On the home replay (`home-w.log`, 581,110 steps; the first 4,000
+strips): words 2 and 3 always arrays, their first 32 bytes found verbatim in `models.arc` for
+1,424 and 1,842 of the 4,000; word 4 in 323 of 323; word 5 (always an array) never (made at run
+time: lit colours?); words 6, 11, 14, 15 in part. The rest are from elsewhere (the Sims'
+`characte.arc`?). `assets ISO stripcheck LOG` (study).
