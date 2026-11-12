@@ -1602,3 +1602,13 @@ runs in the original, 18,167 scoring above the base and 30,952 at it; at home ev
 observer print, reverted, the recomp rebuilt clean; the log the same 43,141,592 bytes) it runs 4
 times with the same arguments, returning 0. The object loop is behind fn_802266BC's 17
 indirect calls; their targets at the club are the next thing to print.
+
+What 462 does (iteration 68, study REPLAY_SHOW_462): node 0 compares global 10 (the house
+number) with the global file's constant 19215 (16): at home 1, false, and it returns at once;
+at the club 16, true, and it walks the lot (node 2 sets the stack object to parameter 0, then
+node 3 to the next, 2 and so on). Its caller 463 never sees a changed stack object (0 of 3,768
+of its node-1 steps with 0: a callee's stack object stays its own), so the evaluator does not
+learn of the community lot through the stack object, nor through 463's result (true on both
+lots). Leaving out first-tree-less objects on a community lot (by that same test) and an
+object whose first tree leaves another stack object (studies, reverted) change no figure but
+the aligned steps. Left open: plan.md, "Next".

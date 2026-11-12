@@ -759,6 +759,11 @@ impl Host for ReplayHost<'_, '_> {
                 }
             }
             let want = self.logged(s, n);
+            if n.opcode == 2 && (s.tree == 462 || s.tree == 463) && has("REPLAY_SHOW_462") && self.shown.next(&format!("462 {}", self.world.globals.get(10).copied().unwrap_or(0)), 40) {
+                let e = ExpressionOperand::of(n);
+                let x = s.expr.as_ref().map(|x| (x.lhs, x.lhs_after, x.rhs));
+                println!("462/463 (global 10 {:?}) {}:{} -> {}: lhs {}/{} op {} rhs {}/{}: logged lhs, after, rhs {x:?}; reads {:?}", self.world.globals.get(10), s.tree, s.node, s.after, e.lhs_scope, e.lhs_data, e.op, e.rhs_scope, e.rhs_data, s.lookups.iter().map(|v| (v.scope, v.data, v.value)).collect::<Vec<_>>());
+            }
             let k = || if n.opcode == 2 { "primitives: expression".to_string() } else { format!("primitives: SetToNext kind {}", n.operand[4] & 0x7F) };
             // a node whose two ways are one node: the log's next node does not tell true from
             // false (logged as true), so the same where native's way leads there too

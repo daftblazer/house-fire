@@ -163,3 +163,11 @@ The node step, calls and returns agree with the recompiled Bustin' Out in lockst
   definition.
 - The frames the engine pushes itself (+8 set) and the stack resets outside the node step:
   what starts an action, which is where the + 0x1000 interaction rule would show.
+- **Open: autonomy on a community lot** (the club; `simulation.md`, "Autonomy at the club").
+  The home lot's evaluations are native and right; at the club the original runs each object's
+  table first tree (463, whose callee 462 tests the house number, global 10, against the
+  global file's constant 19215 = 16) and then almost no guards, leaves out objects with no
+  first tree, and checks the dance floor part's guard after the Sims dancing on it. What
+  switches the guards off is not in the scripts' visible state (not the first tree's result,
+  not a score gate, not the stack object it leaves); it is in the evaluator (fn_802266BC,
+  behind its indirect calls), to be read there before it is built.
