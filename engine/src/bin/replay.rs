@@ -2494,6 +2494,20 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                 );
                 continue;
             };
+            // A tree the engine runs on an object over its Idle (the counter's update of its
+            // function scores, 8215 at ticks 165 and 844): pushed natively as an engine frame where
+            // the log starts it, from node 0, in the object's own file (when the engine does it is
+            // not native yet)
+            if !o_person && s.node == 0 && !has("REPLAY_NO_ENGINE_FRAMES") && lib.tree(o_file, s.tree) == Some(tree) {
+                let i = sim.stack_of(&h.world, ok);
+                let top_idle = !i.done() && top_node(lib, i).is_some_and(|n| n.opcode == 0) && i.stack().last().and_then(|f| f.tree) != Some(tree);
+                if top_idle && i.push(lib, tree, &[]) {
+                    i.top().engine = true;
+                    i.top().file = Some(file);
+                    i.top().stack_object = s.stack_object;
+                    h.counts.note("frames: an engine frame pushed over an object's Idle (the log's tree)");
+                }
+            }
             if has("REPLAY_SHOW_STANDIN") && h.world.get(ok).file.is_none() && h.shown.next(&format!("standin {o_id}"), 3) {
                 println!("standin: tick {t} object {o_id} {}:{} -> {} file {} defs {:?}", s.tree, s.node, s.after, lib.file(file).path, lib.file(file).definitions.iter().map(|d| (d.guid(), (0..48).map(|i| d.field(i)).collect::<Vec<_>>())).collect::<Vec<_>>());
             }

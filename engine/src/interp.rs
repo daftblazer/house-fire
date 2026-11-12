@@ -277,7 +277,13 @@ impl Interpreter {
                 self.finished = true;
                 return Step::Stop;
             }
-            self.stack.pop();
+            let engine = self.stack.pop().is_some_and(|f| f.engine);
+            // A frame the engine pushed itself (an object's update of its function scores over
+            // its Idle, the counter's 8215) returns into the frame below without moving it on:
+            // its node runs again on a later turn.
+            if engine {
+                return Step::Yield;
+            }
             // An interaction IdleForInput delivered comes back to that node, which runs again as
             // a step of its own (the log: 4106's return, then 281 node 4 to 2), not on by the
             // result.
