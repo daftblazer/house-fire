@@ -42,3 +42,21 @@ entry's first level byte for byte, at its size, and the kinds are GX formats: 16
 not in `textures.arc`: 18 frame-sized I8 (320x224 to 640x480: copies of the picture), 47 C8 of
 other sizes (32x256, 32x64, 128x128, 8x256, 8x64, 16x32: from another archive, to be found),
 one RGB5A3 256x256 and one IA8 4x4. `assets ISO texcheck LOG`.
+
+## Run-length textures
+
+`rletextu.arc`, 817 entries: the Sims' hair, faces and clothing, read by the original's
+`ERRleTexture` (the decompilation's `src/sims/ERRleTexture.cpp`; `engine/src/rle_texture.rs`):
+
+- a depth byte: 0x10 for a palette of 16 colours, anything else 256 (all 817 here: 256);
+- the palette, 4 bytes a colour, each word's bytes reversed as it is read;
+- the coded bytes' length (32 bits, big-endian), then the coded bytes.
+
+The coding is a series of runs read at a nibble position: a count byte (it may straddle two
+bytes), then for a count with its top bit set that many (the count negated, as a byte) indices
+each its own, otherwise one index for `count` texels (a count of 0 still gives one: the count is
+compared after each texel). An index is a nibble with 16 colours, a byte with 256. With 16
+colours a literal run is always followed by a repeat, the next count's top bit not looked at.
+The entry keeps no size: the original takes the texels one at a time. Decoded natively, every
+entry gives exactly 65,536 texels, 256 by 256 (`assets ISO rle`). Where they go (the Sim's
+256 by 256 textures, one RGB5A3 image among those the home replay sets up) is to be checked.

@@ -3,6 +3,7 @@
 //! Usage: assets ISO arcs [LIST]  every .arc on the disc: its layout read, its entry count; with
 //!                                LIST, each entry ("archive<TAB>name<TAB>offset<TAB>size") into it
 //!        assets ISO textures         textures.arc's entries read: by kind and size, any that do not
+//!        assets ISO rle              rletextu.arc's entries decoded: their texel counts
 //!        assets ISO texcheck LOG     the textures the original set up (the log's 'x' records)
 //!                                    against textures.arc's: each by its first level's hash
 
@@ -12,6 +13,7 @@ use std::process::ExitCode;
 use housefire::arc;
 use housefire::disc::Disc;
 use housefire::texture;
+use housefire::rle_texture;
 use housefire::tree_log::read_log;
 use std::collections::BTreeMap;
 
@@ -70,6 +72,25 @@ fn main() -> ExitCode {
                 println!("{n:5} {k}");
             }
             println!("textures read {}, not {bad}", entries.len() - bad);
+        }
+        "rle" => {
+            let data = d.read("rletextu.arc").unwrap_or_default();
+            let entries = arc::entries(&data).unwrap_or_default();
+            let (mut bad, mut counts) = (0, BTreeMap::<String, usize>::new());
+            for e in &entries {
+                match rle_texture::read(arc::bytes(&data, e)) {
+                    Some(t) => {
+                        let n = t.indices().len();
+                        let shape = if n.is_power_of_two() { format!("{n} (a power of two)") } else { format!("{n}") };
+                        *counts.entry(format!("{} colours, {shape}", t.palette.len())).or_default() += 1;
+                    }
+                    None => bad += 1,
+                }
+            }
+            for (k, n) in &counts {
+                println!("{n:5} {k}");
+            }
+            println!("run-length textures read {}, not {bad}", entries.len() - bad);
         }
         "texcheck" => {
             let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
