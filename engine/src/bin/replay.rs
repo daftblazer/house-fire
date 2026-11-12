@@ -922,6 +922,13 @@ impl Host for ReplayHost<'_, '_> {
                 return got;
             }
             let want = self.logged(s, n);
+            // the same node either way (true and false both to it) is the same step
+            let goes = |r: PrimResult| match r {
+                PrimResult::True => Some(n.true_target),
+                PrimResult::False => Some(n.false_target),
+                _ => None,
+            };
+            let got = if goes(got).is_some() && goes(got) == goes(want) { want } else { got };
             if has("REPLAY_SHOW_CNT") && got != want {
                 let so = self.world.find_object(so_before);
                 println!("CallNamedTree DIFFERENT tick {} by {me_id} at {}:{} operand {:?}: stack object {so_before} (person {:?}, file {:?}); native {got:?}, the log's {}", s.tick, s.tree, s.node, &n.operand[..8], so.map(|o| o.person), so.and_then(|o| o.file).map(|f| self.lib.file(f).path.clone()), s.after);
