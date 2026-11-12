@@ -236,12 +236,6 @@ struct ReplayHost<'a, 'l> {
     /// Objects made before their maker's step (its CreateObjectInstance runs the new object's
     /// init inside it, and the log has the init's steps first): the maker's step only places them.
     pre_made: BTreeSet<i16>,
-    /// the objects whose stacks have taken a native Idle step (a loaded stack's first wakes)
-    idled: BTreeSet<i16>,
-    /// the objects the lot loaded with (their stacks the save's)
-    loaded_ids: BTreeSet<i16>,
-    /// the objects whose stack the lot saved at an Idle node
-    saved_at_idle: BTreeSet<i16>,
 }
 
 /// Brings the native world's variables to what the original's lookups found, counting those
@@ -871,15 +865,9 @@ impl Host for ReplayHost<'_, '_> {
             // Idle
             let was = interp.sleep().woke();
             let t0 = Instant::now();
-            // a stack the lot saved asleep at this Idle and that resumes there: its first Idle
-            // step is its waking, the saved sleep run out, true whatever its parameter (51 of the
-            // home log's 52; the club's stacks restart instead of resuming)
-            let first = self.idled.insert(me_id) && self.saved_at_idle.contains(&me_id);
+            // (a stack saved at an Idle wakes there: the simulator's `stack_of` marks it)
             let got = {
                 let (sleep, f) = interp.sleep_and_top();
-                if first && self.loaded_ids.contains(&me_id) {
-                    sleep.sleep(0);
-                }
                 idle(sleep, f, n)
             };
             if let Some(b) = &mut self.bench {
@@ -1681,11 +1669,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
         now: 0,
         routing_returns: BTreeMap::new(),
         pre_made: BTreeSet::new(),
-        idled: BTreeSet::new(),
-        loaded_ids: BTreeSet::new(),
-        saved_at_idle: BTreeSet::new(),
     };
-    h.loaded_ids = h.world.objects().map(Object::id).collect();
     for i in 0..native_plans.0 {
         h.counts.note(if i < native_plans.1 {
             "planner: a plan's points natively, in the log's place, the same as the log's"
@@ -2201,15 +2185,6 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
             let st_len = interp.stack().len();
             let st_top = interp.stack().last().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.file));
             if first_step.insert(s.sim) {
-                // a stack the lot saved at an Idle node (asleep there) that resumes there (its
-                // first step at its saved top frame: the club's restart instead)
-                if let Some((Some(t), n, f)) = st_top
-                    && t == s.tree as i16
-                    && n == s.node
-                    && lib.tree(f, t as u16).and_then(|t| lib.tree_at(t).nodes.get(n as usize)).is_some_and(|nd| nd.opcode == 0)
-                {
-                    h.saved_at_idle.insert(o_id);
-                }
                 // Each lot object's first step against the stack the lot saved.
                 let same0 = st_top.is_some_and(|(t, n, _)| t == Some(s.tree as i16) && n == s.node);
                 h.counts.note(if same0 { "load: a stack's first step at its saved top frame" } else { "load: a stack's first step NOT at its saved top frame" });
@@ -2364,9 +2339,9 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                     ..Default::default()
                 });
                 interp.restore(nf);
-                if interp.asleep() {
-                    interp.sleep().wake();
-                }
+                // another stack than the one it had: no sleep of the old one (nor a saved
+                // Idle's waking) carries over
+                interp.sleep().wake();
             }
             if let Ok(w) = std::env::var("REPLAY_WATCH_ID")
                 && let Ok(w) = w.parse::<i16>()

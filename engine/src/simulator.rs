@@ -102,6 +102,13 @@ impl Simulator {
             let mut i = Interpreter::main();
             i.restore(o.stack.clone());
             i.set_defaults(o.temps.to_vec());
+            // A stack saved at an Idle node was asleep there and its sleep has run out (the
+            // save keeps no sleep): its first Idle step wakes, true whatever its parameter
+            // (docs/simulation.md, "A saved stack asleep at its Idle").
+            let lib = world.library();
+            if o.stack.last().and_then(|f| f.tree.and_then(|t| lib.get_tree(t)?.nodes.get(f.node as usize))).is_some_and(|n| n.opcode == 0) {
+                i.sleep().sleep(0);
+            }
             i
         })
     }

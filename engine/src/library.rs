@@ -558,6 +558,10 @@ impl Library {
     pub fn tree_at(&self, t: TreeId) -> &Tree {
         &self.trees[t.0 as usize]
     }
+    /// The tree, if this library holds it (a test's host may hold its own).
+    pub fn get_tree(&self, t: TreeId) -> Option<&Tree> {
+        self.trees.get(t.0 as usize)
+    }
     pub fn global(&self) -> Option<FileId> {
         self.global
     }
