@@ -221,6 +221,8 @@ struct ReplayHost<'a, 'l> {
     present: BTreeSet<i16>,
     /// Nested records already used out of order (calls').
     deferred: BTreeSet<usize>,
+    /// The last evaluation's choice: the object, its interaction's action and file.
+    chosen: Option<(i16, TreeId, Option<FileId>)>,
     /// The next logged score ('A').
     score_at: usize,
     /// While an evaluation runs: its checks' results against the log's (same, different).
@@ -607,6 +609,21 @@ impl Host for ReplayHost<'_, '_> {
                     self.natively_delivered.insert(me_id);
                     return got;
                 }
+            }
+        }
+        if n.opcode == 30 && let Some((id, t, file)) = self.chosen.take() {
+            // GosubFoundAction: the evaluation's choice run, its action pushed with the chosen
+            // object as stack object (the step goes on into it)
+            if interp.push(self.lib, t, &[]) {
+                interp.top().stack_object = id;
+                interp.top().file = file;
+                let next = self.log.steps[self.step + 1..].iter().find(|x| x.sim == s.sim);
+                self.counts.note(if next.is_some_and(|x| x.tree == self.lib.tree_at(t).id as u16 && x.node == 0 && x.stack_object == id) {
+                    "primitives: GosubFoundAction natively, the log's action"
+                } else {
+                    "primitives: GosubFoundAction natively, DIFFERENT"
+                });
+                return PrimResult::Continue;
             }
         }
         if n.opcode == 3 && self.world.get(me).person && !self.nested.is_empty() {
@@ -1322,7 +1339,11 @@ impl ReplayHost<'_, '_> {
                         );
                     }
                     if ok {
-                        native_choice = Some(cands[list[at.unwrap()].candidate].id);
+                        let c = &cands[list[at.unwrap()].candidate];
+                        native_choice = Some(c.id);
+                        // what GosubFoundAction (opcode 30) runs: the interaction's action, in
+                        // the chosen object's file
+                        self.chosen = lib.tree(c.object_file, c.interaction(lib).action).map(|t| (c.id, t, c.object_file));
                     }
                 }
             }
@@ -1778,6 +1799,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
         natively_delivered: BTreeSet::new(),
         present: BTreeSet::new(),
         deferred: BTreeSet::new(),
+        chosen: None,
         score_at: 0,
         on_check: None,
         counts: Counts { quiet, ..Default::default() },
