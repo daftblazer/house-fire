@@ -426,7 +426,7 @@ impl Host for ReplayHost<'_, '_> {
             let ni = self.nested[self.nested_pos];
             self.nested_pos += 1;
             let ns = &log.steps[ni];
-            if trace && self.me_id() == 169 {
+            if trace && std::env::var("REPLAY_TRACE_CHECK").ok().and_then(|v| v.parse::<i16>().ok()).is_none_or(|w| w == self.me_id()) {
                 println!(
                     "  check {}: native {tid}:{tnode} depth {}; log {}:{}->{} {}",
                     lib.tree_at(t).id,
@@ -938,6 +938,14 @@ impl ReplayHost<'_, '_> {
         // The engine's evaluation, each check's result against the log's: the step that ends it
         // (its bottom frame's return, 254 true or 255 false) is the last nested step used.
         self.on_check = Some((0, 0));
+        if has("REPLAY_SHOW_EVAL_OPERAND") {
+            println!("evaluation node at tick {} by {me_id}: tree {}:{} operand {:02x?} so {} params {:?}", s.tick, s.tree, s.node, n.operand, s.stack_object, s.params);
+            for id in [me_id, 150] {
+                if let Some(o) = self.world.find_object(id) {
+                    println!("   {id}: {} at ({},{},{}) container {} person {} data 0..12 {:?} person data 0..20 {:?}", o.file.map_or("?".into(), |f| file_name(lib, f)), o.x16 >> 4, o.y16 >> 4, o.level, o.data[2], o.person, &o.data[..12], o.person_data.get(..20));
+                }
+            }
+        }
         if has("REPLAY_SHOW_AUTONOMY") {
             let mut l = format!("evaluation by {me_id}: {} candidates, present {}; objects", cands.len(), self.present.len());
             let mut lastid = -1;
@@ -955,6 +963,9 @@ impl ReplayHost<'_, '_> {
         let checks: Vec<EvaluationCheck> = run_evaluation(lib, self, &cands, &defaults);
         let (same, different) = self.on_check.take().unwrap();
         let unfinished = checks.iter().filter(|c| c.passed.is_none()).count();
+        for c in checks.iter().filter(|c| c.candidate.is_none()) {
+            note!(self.counts, "autonomy study: a first tree's check {:?}", c.passed);
+        }
         let mut native_choice: Option<i16> = None;
         {
             let curves = score_curves(lib);
@@ -2548,6 +2559,28 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                     l += &format!(" {i}");
                 }
                 println!("{l}");
+                if has("REPLAY_SHOW_CAND_FLAGS") {
+                    let mut by_flag: BTreeMap<(u32, bool), Vec<i16>> = BTreeMap::new();
+                    for c in autonomy_candidates(world, me).iter().filter(|c| present.is_empty() || present.contains(&c.id)) {
+                        let e = c.interaction(lib);
+                        by_flag.entry((e.flags, logged.contains(&(c.id, e.guard)))).or_default().push(c.id);
+                    }
+                    for ((f, inlog), ids) in by_flag {
+                        println!("   flags {f:08x} checked by the original {inlog}: {} candidates, e.g. {:?}", ids.len(), &ids[..ids.len().min(6)]);
+                    }
+                    println!("   logged {logged:?}");
+                    for &(id, _) in logged.iter().take(1) {
+                        if let Some(o) = world.find_object(id) {
+                            let d = world.definition(o);
+                            println!("   {id}: file {:?} def {:?} field 6 {:?} field 7 {:?} tables {:?}", o.file.map(|f| file_name(lib, f)), o.definition, d.map(|d| d.field(6)), d.map(|d| d.field(7)), d.and_then(|d| o.file.and_then(|f| lib.interactions_of(d, f))));
+                            if let (Some(d), Some(f)) = (d, o.file) && let Some(t) = lib.interactions_of(d, f) {
+                                for e in lib.table(f, t) {
+                                    println!("      action {} guard {} threshold {} flags {:x}", e.action, e.guard, e.autonomy_threshold, e.flags);
+                                }
+                            }
+                        }
+                    }
+                }
                 let mut k = 0;
                 while k < logged.len() && k < native.len() && logged[k] == native[k] {
                     k += 1;
