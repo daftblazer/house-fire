@@ -1717,6 +1717,13 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
             }
         }
     }
+    if has("REPLAY_SHOW_PERSON_TABLE") {
+        for f in lib.files().iter().filter(|f| f.path.ends_with("person_sg.iff")) {
+            for (&id, t) in &f.tables {
+                println!("person table {id}: first {:?}; guards {:?}", f.table_first.get(&id), t.iter().map(|e| (e.guard, e.autonomy_threshold, e.flags)).collect::<Vec<_>>());
+            }
+        }
+    }
     if let Some(dump) = env("REPLAY_DUMP_ARRAYS") {
         // the lot's three arrays, raw, for study
         let bytes: Vec<u8> = read_lot_arrays(club).unwrap_or_default().iter().flat_map(|a| a.bytes.iter().copied()).collect();
@@ -2118,6 +2125,51 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                             h.nested.clear();
                             continue;
                         }
+                    }
+                }
+                // The engine re-checking a Sim's own interactions on itself (fn_80219A74's list,
+                // docs/simulation.md, "A Sim's own interactions re-checked"): its table's first
+                // tree, then, forward, the guards of the interactions flagged 0x400 (all, if the
+                // first tree passes), each with the Sim as stack object, above what it runs
+                if let Some(w) = w.filter(|&w| h.world.get(w).person && s.node == 0 && s.stack_object == h.world.get(w).id() && !has("REPLAY_NO_SELF_CHECKS")) {
+                    let o = h.world.get(w);
+                    let (ofile, oid) = (o.file, o.id());
+                    let tab = lib.table_of(ofile, true, None);
+                    let win = sim.stack_of(&h.world, w);
+                    let below = win.stack().last().and_then(|f| f.tree).map(|t| lib.tree_at(t).id);
+                    if tab.first != 0 && s.tree == tab.first && below != Some(tab.first as i16) && let (Some(tf), Some(tid)) = (tab.file, tab.table) {
+                        let nest: Vec<usize> = by_tick[t as usize].iter().copied().filter(|&j| j >= i && log.steps[j].sim == s.sim).take_while(|&j| log.steps[j].frame >= s.frame).collect();
+                        let defaults = win.defaults().to_vec();
+                        h.nested = nest.clone();
+                        h.nested_pos = 0;
+                        h.me = w;
+                        let (mut same, mut diff) = (0, 0);
+                        let want_of = |h: &mut ReplayHost, tree: u16| -> Option<bool> { lib.tree(ofile, tree).and_then(|t| h.run_check(t, ofile, oid, &defaults)) };
+                        let first = want_of(&mut h, tab.first);
+                        let mut checks = 1;
+                        for e in lib.table(tf, tid) {
+                            if e.guard == 0 || (first == Some(false) && e.flags & 0x400 == 0) || e.flags & 0x80 != 0 {
+                                continue;
+                            }
+                            if h.nested_pos >= h.nested.len() {
+                                break;
+                            }
+                            let _ = want_of(&mut h, e.guard);
+                            checks += 1;
+                        }
+                        let all = h.nested_pos == nest.len();
+                        if all { same += checks; } else { diff += 1; }
+                        h.counts.add("self checks: run natively, all the log's steps used", same.min(1) * checks);
+                        if diff != 0 {
+                            h.counts.note("self checks: run natively, NOT the log's steps");
+                            if has("REPLAY_SHOW_SELF_CHECKS") {
+                                println!("self checks: tick {t} object {oid} used {} of {} steps, {checks} checks, first {first:?}", h.nested_pos, nest.len());
+                            }
+                        }
+                        h.counts.note("self checks: a run");
+                        consumed.extend(nest.iter().copied());
+                        h.nested.clear();
+                        continue;
                     }
                 }
                 if let Some(w) = w.filter(|&w| h.world.get(w).person && !h.world.get(w).queue.is_empty() && s.node == 0) {

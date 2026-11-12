@@ -254,8 +254,11 @@ Every 30 to 60 ticks the engine runs a Sim's own interactions' checks on the Sim
 object the Sim): its semi-global table's first tree (person_sg's 8230), then the guards (8242,
 8271, 8295, 8297, 8319, 8323, 8232, 8344, 265 several times, 8394, 8437, 8449, 8209, ...), each
 from node 0 to its return, two frames above whatever the Sim is running (the club NPC 57 in an
-Animate, 8333 node 14, at ticks 53, 110, 140, ... of tree.log). Not native yet: tree.log's
-largest group of differing steps.
+Animate, 8333 node 14, at ticks 53, 110, 140, ... of tree.log). The order is the evaluator's
+list builder's (fn_80219A74): the first tree, then the table forward, and with the first tree
+false only the interactions flagged 0x400 (8242 0x604, 8271 0x615, 8295 0x704, ...), 0x80 ones
+left out. Checked (`replay`): tree.log's 107 runs all use exactly the log's steps (its
+differing steps 277 to 102).
 
 ## Autonomy
 
