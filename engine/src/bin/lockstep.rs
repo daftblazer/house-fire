@@ -689,6 +689,7 @@ fn main() -> ExitCode {
         let (lots, _, _, best, _) = pick_lot(&lib, &ngh, &log);
         let mut w = World::new(&lib);
         w.load_lot(&lots[best]).unwrap();
+        w.neighbours = housefire::save::read_neighbours(&ngh).unwrap_or_default();
         w
     };
     variables(&lib, &log, &step_object, &lot_world, &mut notes);
@@ -717,6 +718,8 @@ fn main() -> ExitCode {
 /// scopes name.
 fn variables(lib: &Library, log: &housefire::tree_log::Log, step_object: &[Option<FileId>], lot: &World, notes: &mut Notes) {
     let mut world = World::new(lib);
+    // the neighbourhood's neighbours (scopes 24 and 32 look them up)
+    world.neighbours = lot.neighbours.clone();
     let mut native: BTreeMap<u32, ObjectKey> = BTreeMap::new(); // the original's object pointer -> native object
     let mut cell_addr: HashMap<CellKey, u32> = HashMap::new();
     let mut addr_cell: BTreeMap<u32, CellKey> = BTreeMap::new();

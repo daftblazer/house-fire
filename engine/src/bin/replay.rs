@@ -250,11 +250,14 @@ fn sync_variables(world: &mut World, counts: &mut Counts, shown: &mut Shown, me:
             if env("REPLAY_SHOW_SCOPE").is_some_and(|e| atoi(&e) == v.scope as i64) && shown.next("scope", 40) {
                 let so = s.stack_object;
                 println!(
-                    "scope {} datum {} (not modelled): log {} (flags {}); me {}, stack object {so}, tree {}:{}",
+                    "scope {} datum {} (not modelled): log {} (flags {}, object {:08x} ptr {:08x}, offset {:#x}); me {}, stack object {so}, tree {}:{}",
                     v.scope,
                     v.data,
                     v.value,
                     v.flags,
+                    v.object,
+                    v.ptr,
+                    v.ptr.wrapping_sub(v.object) as i32,
                     vars.world.get(vars.me).id(),
                     s.tree,
                     s.node

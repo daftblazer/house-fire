@@ -39,6 +39,7 @@ pub mod scope {
     pub const STACK_DEFINITION: u8 = 21;
     pub const STACK_ATTRIBUTE_BY_PARAMETER: u8 = 22;
     pub const NEIGHBOUR_IN_STACK_OBJECT: u8 = 24;
+    pub const NEIGHBOUR_DATA_OF_STACK_OBJECT: u8 = 32;
     pub const LOCAL: u8 = 25;
     pub const STACK_SPRITE_FLAGS: u8 = 27;
     pub const CONSTANT: u8 = 26;
@@ -653,6 +654,19 @@ impl Variables for ScriptVariables<'_, '_> {
                     .find(|o| o.person && so != 0 && o.person_data.get(PERSON_NEIGHBOUR_ID) == Some(&so))
                     .map_or(0, Object::id);
                 return int(id);
+            }
+            scope::NEIGHBOUR_DATA_OF_STACK_OBJECT => {
+                // the person data of the neighbour whose id the stack object holds (the
+                // original's InterpValue: the neighbourhood's record by that id, its 16-bit field
+                // d, d below 79)
+                let so = self.frame.stack_object;
+                if !(0..79).contains(&d) {
+                    return None;
+                }
+                // no such neighbour: 0 (the original's lookup fails with 0x37 and gives 0: the
+                // club log's 45 reads of ids 4, 6, 7, 23, 56)
+                let v = self.world.neighbours.iter().find(|n| n.id == so).and_then(|n| n.person_data.get(d as usize).copied()).unwrap_or(0);
+                return int(v);
             }
             scope::STACK_SLOT | scope::MY_SLOT => {
                 // The object in the stack object's (16) or my (20) slot d: the one whose container

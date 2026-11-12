@@ -9,6 +9,7 @@ use housefire::iff::Order;
 use housefire::interp::{Frame, PrimResult, Sleep};
 use housefire::library::Library;
 use housefire::primitives::{dialog, idle, present, random, set_to_next, test_object_type};
+use housefire::expression::Variables;
 use housefire::world::{DATA_OBJECT_ID, Object, ObjectKey, ScriptVariables, World};
 
 fn node(op: u16, operand: [u8; 8]) -> Node {
@@ -110,6 +111,17 @@ fn the_primitives_rules() {
     f.stack_object = 0;
     assert_eq!(stn([0, 0, 0, 0, 9, 0, 0, 0], &mut w, &mut f), PrimResult::False);
     w.get_mut(k3).data[8] = 0;
+
+    // scope 32: the person data of the neighbour whose id the stack object holds; none, 0
+    let mut nb = housefire::save::Neighbour { id: 40, ..Default::default() };
+    nb.person_data = vec![0; 80];
+    nb.person_data[61] = 13;
+    w.neighbours = vec![nb];
+    f.stack_object = 40;
+    assert_eq!(ScriptVariables::new(&mut w, me, &mut f).get(32, 61).map(|v| v.value), Some(13));
+    f.stack_object = 41;
+    assert_eq!(ScriptVariables::new(&mut w, me, &mut f).get(32, 61).map(|v| v.value), Some(0));
+    w.neighbours.clear();
 
     // into a local (flag 0x80, scope 25, datum 0)
     f.locals = vec![0];
