@@ -221,8 +221,6 @@ struct ReplayHost<'a, 'l> {
     present: BTreeSet<i16>,
     /// Nested records already used out of order (calls').
     deferred: BTreeSet<usize>,
-    /// The lot is a save's (--card).
-    card_lot: bool,
     /// The next logged score ('A').
     score_at: usize,
     /// While an evaluation runs: its checks' results against the log's (same, different).
@@ -1705,7 +1703,6 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
         natively_delivered: BTreeSet::new(),
         present: BTreeSet::new(),
         deferred: BTreeSet::new(),
-        card_lot,
         score_at: 0,
         on_check: None,
         counts: Counts { quiet, ..Default::default() },
@@ -2001,13 +1998,9 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                     let ein = sim.stack_of(&h.world, w);
                     let en = if ein.done() { None } else { top_node(lib, ein) };
                     let etop = ein.stack().last().and_then(|f| f.tree.map(|t| (lib.tree_at(t).id, f.node, f.file)));
-                    // Native where it is checked: the save's lot (Mom's house, all three
-                    // evaluations exact); not the disc's club, whose evaluations look otherwise
-                    // (docs/simulation.md, "Autonomy"). REPLAY_EVALUATION=0 or 1 overrides.
-                    let evaluation = match &ev_env {
-                        Some(e) => e.starts_with('1'),
-                        None => h.card_lot,
-                    };
+                    // Native on every lot (the club's too since its guard limit, person data
+                    // 36: docs/simulation.md, "Autonomy"). REPLAY_EVALUATION=0 turns it off.
+                    let evaluation = ev_env.as_ref().is_none_or(|e| e.starts_with('1'));
                     if let (true, Some(en), Some((etree, enode, efile))) = (evaluation, en, etop)
                         && en.opcode == 3
                         && !(s.tree == etree as u16 && s.node == enode)
@@ -2433,6 +2426,9 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                     println!("{l}");
                 } else if st_top.is_none_or(|(t, _, _)| t != Some(s.tree as i16)) {
                     if !rerun { h.counts.note("steps: different: another tree"); }
+                    if !rerun && has("REPLAY_SHOW_OTHER_TREE") {
+                        println!("other tree: tick {t} object {o_id} native {:?} log {}:{} (op {})", st_top.map(|(t, n, _)| (t, n)), s.tree, s.node, lib.tree_at(tree).nodes.get(s.node as usize).map_or(-1, |n| n.opcode as i32));
+                    }
                     if has("REPLAY_SHOW_196") && o_id == 196 && h.shown.next("196", 2) {
                         let o = h.world.get(ok);
                         let f = o.file.map(|f| lib.file(f));

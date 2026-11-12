@@ -322,7 +322,8 @@ Native (`Candidate::listed`): the first trees run for every object, the guards o
 interactions. Checked (`replay --card`): the club's 2,706 evaluation checks all the log's (912
 different and 47,413 unfinished before), home's 437 unchanged. With no interaction passing, the evaluation
 makes no choice: the stack object stays as it was (the Sim itself; the club's 82 evaluations,
-all as the log's). 
+all as the log's). The old club logs (the disc's lot) the same: tree.log's 2,211 checks and
+tree3.log's 198 all the log's. 
 
 **Persons as candidates.** A person's interactions are its semi-global file's one table:
 `person_sg`'s (table 129, version 11, its first tree 8230 run before its guards) for a Sim,
