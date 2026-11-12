@@ -5100,13 +5100,13 @@ fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, counts: &mut
         let mut walk_starts: BTreeMap<u32, (u32, (f32, f32), f32, u32)> = BTreeMap::new();
         // the ticks of a follower's frames from its walk's start (the frame clock as it ran)
         if has("REPLAY_SHOW_FOLLOWS") {
-            for f in log.follows.iter().filter(|f| (2036..=2041).contains(&f.tick) || (4920..=4924).contains(&f.tick)) {
+            for f in log.follows.iter().filter(|f| (2036..=2041).contains(&f.tick) || (4920..=4935).contains(&f.tick)) {
                 println!("follow tick {} {:x}: state {} -> {}, at ({:.3}, {:.3}) -> ({:.3}, {:.3}) factor {} -> {}", f.tick, f.follower, f.before.state, f.after.state, f.before.x, f.before.y, f.after.x, f.after.y, f.before.factor, f.after.factor);
             }
             for p in log.places.iter().filter(|p| (4920..=4925).contains(&p.tick)) {
                 println!("any place tick {} {} ({}, {})", p.tick, p.id, p.x, p.y);
             }
-            for p in log.places.iter().filter(|p| p.id == 237 && ((2036..=2041).contains(&p.tick) || (4920..=4924).contains(&p.tick))) {
+            for p in log.places.iter().filter(|p| p.id == 237 && ((2036..=2041).contains(&p.tick) || (4920..=4935).contains(&p.tick))) {
                 println!("place tick {} 237 ({}, {})", p.tick, p.x, p.y);
             }
         }
