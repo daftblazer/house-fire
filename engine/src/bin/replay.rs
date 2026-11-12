@@ -956,6 +956,18 @@ impl ReplayHost<'_, '_> {
                     println!("   {id}: {} at ({},{},{}) leader {} data 0..12 {:?} def 6 {:?} 7 {:?} 8 {:?} 11 {:?}", o.file.map_or("?".into(), |f| file_name(lib, f)), o.x16 >> 4, o.y16 >> 4, o.level, o.leader, &o.data[..12], d.map(|d| d.field(6)), d.map(|d| d.field(7)), d.map(|d| d.field(8)), d.map(|d| d.field(11)));
                 }
             }
+            let visited: BTreeSet<i16> = self.nested.iter().map(|&i| log.steps[i].stack_object).collect();
+            let mut seen = BTreeSet::new();
+            for c in &cands {
+                if seen.insert(c.id) && let Some(o) = self.world.find_object(c.id) {
+                    let tab = lib.table_of(c.object_file, c.person, c.def.map(|d| lib.def(d)));
+                    println!("   cand {} visited {}: first {} file {}", c.id, visited.contains(&c.id), tab.first, o.file.map_or("?".into(), |f| file_name(lib, f)));
+                }
+            }
+            if let Some(m) = self.world.find_object(me_id) {
+                println!("   me {me_id} person data {:?} global 10 {:?}", m.person_data, self.world.globals.get(10));
+                println!("   me {me_id} at ({},{},{}) room {:?}", m.x16 >> 4, m.y16 >> 4, m.level, self.world.walls.room(m.x16 >> 4, m.y16 >> 4));
+            }
             let mut l = "   native candidates:".to_string();
             for c in cands.iter().take(40) {
                 l += &format!(" {}/{}", c.id, c.interaction(lib).guard);

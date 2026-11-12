@@ -1572,5 +1572,15 @@ objects another way than native's candidates (REPLAY_SHOW_EVAL_ORDER):
 - objects 3 (mailbox_outside, at 21,6) and 18 (zz_move_a__tron, at 15,4) are not visited at all,
   where at home the same mailbox definition, at the same place, is (object 33, guard 4105).
 Native lists the whole lot by id (599 candidates, 3 and 18 first), so its checks leave the log's
-steps from the first and mostly do not finish. Still to find: what leaves 3 and 18 out (the
-Sim's room, a lot area, reachability), and where 150's checks come from.
+steps from the first and mostly do not finish. What leaves objects out at the club is their
+table: every object whose table has no first tree (mailbox_outside, zz_move_a__tron, the two
+pinball machines, the smoke puff) is not visited, every one with a first tree (463, or 8230 for
+Sims) is (a clean split at tick 90), where at home objects without one are visited (the same
+mailbox, zz_move_a__tron, 30 more). Not place: the whole club is one room, and visited objects
+stand beside unvisited ones. The switch between the lots is still to find: the lot's globals
+differ at 3 (the selected Sim, 57 / 12) and 10 (16 / 1, likely the house number); the club
+evaluators' person data differ from the home Sim's at 29, 32, 34, 59 (1 / 0) and 69 (-1 / 22).
+Leaving out first-tree-less objects for a Sim with any of 29, 32, 34, 59 set (a study, reverted)
+lines up more check steps (57 → 766) but fewer results (3,500 → 3,165 as the log's), since the
+order (57 first, the Sims after the objects) and a false first tree leaving its object out are
+not native yet: the three go in together, or not at all.
