@@ -1584,3 +1584,14 @@ Leaving out first-tree-less objects for a Sim with any of 29, 32, 34, 59 set (a 
 lines up more check steps (57 → 766) but fewer results (3,500 → 3,165 as the log's), since the
 order (57 first, the Sims after the objects) and a false first tree leaving its object out are
 not native yet: the three go in together, or not at all.
+
+Tested further (studies, reverted; iteration 66). The order is plain id order (57, the objects
+83 ... 163, the Sims 164 ...), as native's. Leaving out first-tree-less objects for the visitor
+and skipping an object whose first tree is false lines up 8,753 check steps (57) and halves the
+unfinished checks, but differing results rise (912 → 945): the original's first tree 463 comes
+back true (node 254, native the same) and still no guard of that object runs at the club, while
+at home a true first tree is followed by the object's guards (skipping on true instead puts 63
+home checks off). So at the club the evaluation runs each object's first tree and then, all but
+the dance floor's part 150 (its guard 4122), no guards: a mode of its own, not the first tree's
+result. To find it, the evaluator itself (fn_802266BC, its object step fn_80219530, both all
+virtual calls) is to be watched: an observer record of the table entries it takes per object.
