@@ -29,7 +29,7 @@ banks).
 | h + 12 | flags: 0x0490, 0x0493, 0x04b3, 0x04d3, 0x0480 (wrap and filter, to be read against the original) |
 | h + 14 | the mip levels, the full-size one counted (0 for one) |
 | h + 16 | a float (1.0 with mips: a level-of-detail value, to be read) |
-| h + 20 | the texels, each level after the last, halved each time; then the palette, 4 bytes a colour |
+| h + 20 | the texels, each level after the last, halved each time; then the palette area, 4 bytes a colour: two palettes of 16-bit entries, the first the one the game loads (as IA8) |
 
 (h is just past the name's NUL.) Every entry's parts fill it exactly: 1,043 of 16 bits, 854 of
 blocks, 74 and 19 of palettes of 16 and 256, 3 of 32 bits, 38 with mip levels.
@@ -73,5 +73,12 @@ the low byte, row after row) and checked against the recompiled game's own GX de
 `assets ISO texbatch IN OUT` writes the first level of every texture without a palette (7,452:
 textures.arc's and datasets.arc's) and its native decoding; `tools/texdecode_check.sh` builds the
 recomp's decoder (gcn-recomp's `gx/texture.cpp`, as it is at check time) and decodes the same:
-the 189,997,056 bytes the same. The palette kinds wait for how the game makes its palettes
-(their 4-byte colours into a 16-bit GX palette).
+the 189,997,056 bytes the same.
+
+The palettes: the observer's 'u' record (each GXInitTlutObj: the palette's format, count and
+entries) on the home replay (`home-u.log`, 581,110 steps): 102 setups, 28 palettes, all of
+format 0 (IA8, intensity and alpha: the colour comes from the draw). A palette texture's area is
+two palettes of 16-bit entries, n each: the four palette textures the replay uses (2 C4, 2 C8)
+are a logged palette's entries byte for byte in their area's first half. With the first half as
+an IA8 palette (`texture::decode_indexed`) all 7,668 textures decode as the recomp's decoder does
+(270,002,944 bytes). What the second half is for is not known yet.

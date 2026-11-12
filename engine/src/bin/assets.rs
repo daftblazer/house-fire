@@ -4,11 +4,13 @@
 //!                                LIST, each entry ("archive<TAB>name<TAB>offset<TAB>size") into it
 //!        assets ISO textures         textures.arc's entries read: by kind and size, any that do not
 //!        assets ISO rle              rletextu.arc's entries decoded: their texel counts
-//!        assets ISO texbatch IN OUT  every texture without a palette (textures.arc's and
+//!        assets ISO texbatch IN OUT  every texture (textures.arc's and
 //!                                    datasets.arc's), its first level: IN the GX format, width,
-//!                                    height, size and bytes of each (little-endian words), OUT
+//!                                    height, size, palette size, texels and palette (IA8) of each (little-endian words), OUT
 //!                                    its texels decoded natively (RGBA words), for
 //!                                    tools/texdecode_check.sh
+//!        assets ISO tlutcheck LOG    the palettes the original set up (the log's 'u') against
+//!                                    the textures' palettes (study for now)
 //!        assets ISO texcheck LOG     the textures the original set up (the log's 'x' records)
 //!                                    against textures.arc's: each by its first level's hash
 
@@ -109,15 +111,23 @@ fn main() -> ExitCode {
                     texture::Kind::Bits16 => 5,
                     texture::Kind::Blocks => 14,
                     texture::Kind::Bits32 => 6,
-                    _ => return,
+                    texture::Kind::Palette4 => 8,
+                    texture::Kind::Palette8 => 9,
                 };
                 let first = (t.width as usize * t.height as usize * t.kind.bits() as usize) / 8;
                 let src = &b[t.texels.0..t.texels.0 + first];
-                let Some(px) = texture::decode_level(t.kind, t.width, t.height, src) else { return };
-                for v in [fmt, t.width, t.height, first as u32] {
+                // a palette's first half, as the game loads it (IA8)
+                let pal: &[u8] = t.palette.map_or(&[], |(p, n)| &b[p..p + n * 2]);
+                let px = match t.palette {
+                    Some(_) => texture::decode_indexed(t.kind, t.width, t.height, src, pal, 0),
+                    None => texture::decode_level(t.kind, t.width, t.height, src),
+                };
+                let Some(px) = px else { return };
+                for v in [fmt, t.width, t.height, first as u32, pal.len() as u32] {
                     inb.extend(v.to_le_bytes());
                 }
                 inb.extend(src);
+                inb.extend(pal);
                 for p in px {
                     outb.extend(p.to_le_bytes());
                 }
@@ -150,6 +160,55 @@ fn main() -> ExitCode {
                 return ExitCode::from(1);
             }
             println!("textures in the batch: {n}");
+        }
+        "tlutcheck" => {
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO tlutcheck LOG");
+                return ExitCode::from(2);
+            };
+            let mut seen: BTreeMap<(u8, Vec<u16>), usize> = BTreeMap::new();
+            for t in &log.tluts {
+                *seen.entry((t.format, t.entries.clone())).or_default() += 1;
+            }
+            println!("palette setups {}, distinct {}", log.tluts.len(), seen.len());
+            for ((f, e), n) in seen.iter().take(6) {
+                println!("  format {f} x{n}: {} entries, first {:04x?}", e.len(), &e[..e.len().min(6)]);
+            }
+            // each palette texture's palette bytes against the logged palettes' bytes (big-endian)
+            let logged: Vec<(u8, Vec<u8>)> = seen.keys().map(|(f, e)| (*f, e.iter().flat_map(|v| v.to_be_bytes()).collect())).collect();
+            let mut how: BTreeMap<String, usize> = BTreeMap::new();
+            let dt = d.read("textures.arc").unwrap_or_default();
+            for e in arc::entries(&dt).unwrap_or_default() {
+                let b = arc::bytes(&dt, &e);
+                let Some(t) = texture::read(b) else { continue };
+                let Some((p, n)) = t.palette else { continue };
+                let pal = &b[p..p + n * 4];
+                let (first, second) = (&pal[..n * 2], &pal[n * 2..]);
+                let mut k = "none".to_string();
+                for (f, l) in &logged {
+                    if l.len() >= first.len() && &l[..first.len()] == first {
+                        k = format!("first half, format {f}");
+                    } else if l.len() >= second.len() && &l[..second.len()] == second {
+                        k = format!("second half, format {f}");
+                    }
+                }
+                *how.entry(format!("{:?}: {k}", t.kind)).or_default() += 1;
+            }
+            for (k, n) in &how {
+                println!("  palette textures matching a logged palette by {k}: {n}");
+            }
+            let data = d.read("textures.arc").unwrap_or_default();
+            let mut shown = 0;
+            for e in arc::entries(&data).unwrap_or_default() {
+                let b = arc::bytes(&data, &e);
+                if let Some(t) = texture::read(b)
+                    && let Some((p, n)) = t.palette
+                    && shown < 6
+                {
+                    shown += 1;
+                    println!("  {} ({:?}, {n} colours): first {:02x?}", t.name, t.kind, &b[p..p + 24.min(n * 4)]);
+                }
+            }
         }
         "texcheck" => {
             let Some(log) = args.get(3).and_then(|p| read_log(p)) else {

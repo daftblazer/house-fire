@@ -31,6 +31,16 @@ pub struct TexObjRec {
     pub hash: u64,
 }
 
+/// A palette the original set up (GXInitTlutObj, 'u'): the tick, its address, its GX format
+/// (0 IA8, 1 RGB565, 2 RGB5A3) and its entries.
+#[derive(Clone, Debug)]
+pub struct TlutRec {
+    pub tick: u32,
+    pub address: u32,
+    pub format: u8,
+    pub entries: Vec<u16>,
+}
+
 /// A tree as the original had it loaded: its nodes' address, id, file, and its nodes' raw bytes.
 #[derive(Clone, Debug, Default)]
 pub struct TreeRec {
@@ -252,6 +262,8 @@ pub struct Log {
     pub stack_dumps: Vec<StackDump>,
     /// The textures the original set up ('x', in newer logs).
     pub textures: Vec<TexObjRec>,
+    /// The palettes the original set up ('u', in newer logs).
+    pub tluts: Vec<TlutRec>,
     pub trees: Vec<TreeRec>,
     pub lists: Vec<ListRec>,
     /// Tick -> its pass over the objects (logs with 'Q' records).
@@ -331,6 +343,18 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
                 r.u32();
                 log.ticks += 1;
+            }
+            b'u' => {
+                if !r.has(4 + 4 + 1 + 2) {
+                    break;
+                }
+                let (tick, address, format) = (r.u32(), r.u32(), r.u8());
+                let n = r.u16() as usize;
+                if !r.has(2 * n) {
+                    break;
+                }
+                let entries = (0..n).map(|_| r.u16()).collect();
+                log.tluts.push(TlutRec { tick, address, format, entries });
             }
             b'x' => {
                 if !r.has(4 + 4 + 2 + 2 + 4 + 4 + 8) {

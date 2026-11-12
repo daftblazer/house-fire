@@ -132,6 +132,54 @@ fn cmpr_colours(c0: u16, c1: u16) -> [Rgba; 4] {
     }
 }
 
+/// A 16-bit palette entry as GX reads it, by the palette's format (0 IA8: intensity in the
+/// low byte, alpha in the high; 1 RGB565; 2 RGB5A3).
+pub fn palette_colour(v: u16, format: u8) -> Rgba {
+    match format {
+        0 => {
+            let (a, i) = ((v >> 8) as u32, v as u32 & 0xFF);
+            rgba(i, i, i, a)
+        }
+        1 => rgb565(v),
+        _ => rgb5a3(v),
+    }
+}
+
+/// A palette texture's level: its indices (C4: 8 by 8 tiles of nibbles, the high first; C8: 8 by
+/// 4 tiles of bytes) through `palette` (16-bit big-endian entries, as the game loads the first
+/// half of the LFXT's palette) of `format`.
+pub fn decode_indexed(kind: Kind, w: u32, h: u32, src: &[u8], palette: &[u8], format: u8) -> Option<Vec<Rgba>> {
+    let (bw, bh) = match kind {
+        Kind::Palette4 => (8, 8),
+        Kind::Palette8 => (8, 4),
+        _ => return None,
+    };
+    let (w, h) = (w as usize, h as usize);
+    let mut out = vec![0u32; w * h];
+    let colour = |i: usize| -> Option<Rgba> { Some(palette_colour(u16::from_be_bytes([*palette.get(i * 2)?, *palette.get(i * 2 + 1)?]), format)) };
+    let mut p = 0usize;
+    for by in 0..h.div_ceil(bh) {
+        for bx in 0..w.div_ceil(bw) {
+            for y in 0..bh {
+                for x in 0..bw {
+                    let i = if kind == Kind::Palette4 {
+                        let b = *src.get(p + y * 4 + x / 2)?;
+                        (if x & 1 == 1 { b & 0xF } else { b >> 4 }) as usize
+                    } else {
+                        *src.get(p + y * 8 + x)? as usize
+                    };
+                    let (px, py) = (bx * bw + x, by * bh + y);
+                    if px < w && py < h {
+                        out[py * w + px] = colour(i)?;
+                    }
+                }
+            }
+            p += 32;
+        }
+    }
+    Some(out)
+}
+
 /// The kinds that need no palette, as the GX formats they are (16 bits RGB5A3, blocks CMPR,
 /// 32 bits RGBA8): one level `w` by `h` from `src` (its tiles in GX order), row after row.
 /// `None` for the palette kinds or data too short.

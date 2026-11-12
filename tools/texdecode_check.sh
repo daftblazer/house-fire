@@ -1,5 +1,5 @@
 #!/bin/sh
-# Decodes a batch of textures (engine/target/release/assets ISO texbatch IN NATIVE) with the
+# Decodes a batch of textures (palettes as IA8) (engine/target/release/assets ISO texbatch IN NATIVE) with the
 # recompiled game's own GX texture decoder (../bustin-out-recomp/gcn-recomp/runtime/gx/
 # texture.cpp, its decoding functions taken from the file as it is at check time; nothing of it
 # is kept here) and compares the result with the native decoding, byte for byte.
@@ -24,12 +24,14 @@ enum TexFmt : uint32_t {
 int main(int argc, char** argv) {
     FILE* in = std::fopen(argv[1], "rb");
     FILE* out = std::fopen(argv[2], "wb");
-    uint32_t h[4];
-    while (std::fread(h, 4, 4, in) == 4) {
-        std::vector<uint8_t> src(h[3]);
+    uint32_t h[5];
+    while (std::fread(h, 4, 5, in) == 5) {
+        std::vector<uint8_t> src(h[3]), pal(h[4] + 2);
         if (std::fread(src.data(), 1, h[3], in) != h[3]) return 1;
+        if (std::fread(pal.data(), 1, h[4], in) != h[4]) return 1;
         std::vector<uint32_t> px(h[1] * h[2]);
-        gx::decode_level(src.data(), h[0], h[1], h[2], nullptr, 0, px.data());
+        // a palette in IA8 (TLUT format 0), as the game loads them
+        gx::decode_level(src.data(), h[0], h[1], h[2], pal.data(), 0, px.data());
         std::fwrite(px.data(), 4, px.size(), out);
     }
     return 0;
