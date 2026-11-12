@@ -2940,6 +2940,23 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                 interp.step(&mut h);
                 h.counts.note("steps: a call node run ahead (its record before its callee's not in the log)");
             }
+            // A CreateObjectInstance node the log has no record of (the dream controller's 4121 node
+            // 1 at tree.log's tick 85, making the marker 179: node 0's step, then node 2): native on
+            // it, the log in the same frame at one of its ways: the node runs first.
+            if !interp.done()
+                && interp.stack().len() == fr_len
+                && let Some(n) = top_node(lib, interp).filter(|n| n.opcode == 42)
+                && interp.stack().last().and_then(|f| f.tree).is_some_and(|t| lib.tree_at(t).id as u16 == s.tree)
+                && (s.node == n.true_target as u16 || s.node == n.false_target as u16)
+                && interp.stack().last().is_some_and(|f| f.node != s.node)
+            {
+                h.step = i;
+                h.file_of_top = interp.stack().last().and_then(|f| f.file);
+                h.me = ok;
+                interp.reset_iterations();
+                interp.step(&mut h);
+                h.counts.note("steps: a CreateObjectInstance node run ahead (no record of it in the log)");
+            }
             let st_len = interp.stack().len();
             let st_top = interp.stack().last().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.file));
             let same = !interp.done() && interp.stack().len() == fr_len && st_top.is_some_and(|(t, n, _)| t == Some(s.tree as i16) && n == s.node);
