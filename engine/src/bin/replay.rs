@@ -2277,6 +2277,9 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                 );
                 continue;
             };
+            if has("REPLAY_SHOW_STANDIN") && h.world.get(ok).file.is_none() && h.shown.next(&format!("standin {o_id}"), 3) {
+                println!("standin: tick {t} object {o_id} {}:{} -> {} file {} defs {:?}", s.tree, s.node, s.after, lib.file(file).path, lib.file(file).definitions.iter().map(|d| (d.guid(), (0..48).map(|i| d.field(i)).collect::<Vec<_>>())).collect::<Vec<_>>());
+            }
             if let Some(w) = env("REPLAY_SHOW_OPS") {
                 // study: the opcodes a stack runs in a tick range, "id:from:to"
                 let v: Vec<i64> = w.split(':').filter_map(|x| x.parse().ok()).collect();
