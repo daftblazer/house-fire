@@ -366,6 +366,26 @@ impl<'lib> World<'lib> {
         semi.tree_by_name.get(name).and_then(|id| semi.trees.get(id)).copied()
     }
 
+    /// The player's command to a Sim (the front end's: a click on an object's menu, or the floor's
+    /// "go here" marker): the target's interaction with that action tree queued at the back of
+    /// the Sim's queue, its place in the target's table known, for IdleForInput to deliver with
+    /// its checks. False if the target or the interaction is not found.
+    pub fn queue_player_command(&mut self, sim: ObjectKey, target: i16, action: u16) -> bool {
+        let lib = self.library();
+        let Some(t) = self.find_object(target) else { return false };
+        let tab = lib.table_of(t.file, t.person, self.definition(t));
+        let (Some(f), Some(id)) = (tab.file, tab.table) else { return false };
+        let Some(k) = lib.table(f, id).iter().position(|e| e.action == action) else { return false };
+        let me = self.get(sim).id();
+        self.get_mut(sim).queue.push(SavedQueueEntry {
+            objects: [me, target, 0],
+            tree: action as i16,
+            interaction: Some(k),
+            ..Default::default()
+        });
+        true
+    }
+
     /// On a community lot the saved stacks restart from their bottom frame (`Simulator::stack_of`),
     /// so the interaction a Sim was running is lost there: the engine queues it again, first, and
     /// the Sim's IdleForInput delivers it (the club log's tick 2: six Sims, their saved current

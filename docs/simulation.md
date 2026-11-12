@@ -1753,3 +1753,15 @@ node. The home log's three AlterBudgets: two tests (ticks 260 and 693, the fridg
 8209 node 6, byte 4 one) with no balloon, and the fridge's 8215 node 1 at 931 (byte 4 zero),
 whose balloon runs after Sim 12's GotoRoutingSlot yields (4170 node 3). `Object::spent`,
 `World::money_balloon_tree`. The funds themselves are not changed natively yet.
+
+## The player's commands
+
+What the player tells a Sim to do (an object's menu, a click on the floor that makes the "go here"
+marker) is input, which the log does not record, as the dialogs' answers are: the front end queues
+the interaction on the Sim (`World::queue_player_command`: the target's interaction with that
+action, at the back of the queue, its place in the target's table known), and IdleForInput
+delivers it with its checks as any other. Replay takes the command from the log where a Sim at its
+IdleForInput has nothing queued natively and its log runs the target's checks and then, from 281
+node 4, the interaction's tree a frame up on that target: the home log's one, Sim 237 at 1579, the
+marker 197's 4108 check, then its 4107, delivered natively with exactly the log's check steps (the
+save's queued entries are the other three of the home log's deliveries).

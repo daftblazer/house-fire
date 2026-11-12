@@ -2506,6 +2506,21 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                         continue;
                     }
                 }
+                // The player's command (input the log does not record, as the dialogs' answers): a
+                // Sim at its IdleForInput with nothing queued natively, whose log runs checks and
+                // then, from 281 node 4, an interaction's tree a frame up on another object: that
+                // interaction queued as the player's (World::queue_player_command), for the native
+                // IdleForInput to deliver with its checks (the home log's 1579: Sim 237's "go here",
+                // the marker 197's 4108 check, then its 4107)
+                if let Some(w) = w.filter(|&w| h.world.get(w).person && h.world.get(w).queue.is_empty() && s.node == 0 && s.stack_object != h.world.get(w).id()) {
+                    let win = sim.stack_of(&h.world, w);
+                    let at_idle = !win.done() && top_node(lib, win).is_some_and(|n| n.opcode == 17);
+                    let idle = by_tick[t as usize].iter().copied().find(|&j| j > i && log.steps[j].sim == s.sim && log.steps[j].tree == 281 && log.steps[j].node == 4);
+                    let action = idle.and_then(|k| log.steps[k + 1..].iter().find(|x| x.sim == s.sim)).filter(|x| idle.is_some_and(|k| x.node == 0 && x.frame > log.steps[k].frame));
+                    if at_idle && let Some(a) = action && a.stack_object == s.stack_object && h.world.queue_player_command(w, a.stack_object, a.tree) {
+                        h.counts.note("queue: the player's command (from the log) queued for IdleForInput");
+                    }
+                }
                 if let Some(w) = w.filter(|&w| h.world.get(w).person && !h.world.get(w).queue.is_empty() && s.node == 0) {
                     let win = sim.stack_of(&h.world, w);
                     let wn = if win.done() { None } else { top_node(lib, win) };
