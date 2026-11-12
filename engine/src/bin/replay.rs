@@ -589,6 +589,26 @@ impl Host for ReplayHost<'_, '_> {
             }
             return self.logged(s, n);
         }
+        if n.opcode == 17 && self.world.get(me).person && !self.world.get(me).queue.is_empty() && self.nested.is_empty() {
+            // IdleForInput with an entry whose interaction has no checks: delivered in the step
+            // itself (the party controller's 4106 onto Sim 178 at the club's tick 156), where the
+            // log's next step of this stack starts a tree at node 0 above it
+            let next = log.steps[self.step + 1..].iter().find(|t| t.sim == s.sim);
+            if next.is_some_and(|t| t.node == 0 && t.frame > s.frame) {
+                let first = self.world.get(me).queue[0];
+                let got = idle_for_input(interp, self, me);
+                if got == PrimResult::Continue {
+                    let nt = next.unwrap();
+                    self.counts.note(if first.tree == nt.tree as i16 && first.objects[1] == nt.stack_object {
+                        "queue: IdleForInput delivered natively with no checks, the log's interaction"
+                    } else {
+                        "queue: IdleForInput delivered natively with no checks, DIFFERENT"
+                    });
+                    self.natively_delivered.insert(me_id);
+                    return got;
+                }
+            }
+        }
         if n.opcode == 3 && self.world.get(me).person && !self.nested.is_empty() {
             return self.evaluation(interp, s, n);
         }
