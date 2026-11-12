@@ -208,3 +208,9 @@ Against the original's opcode-66 draws (the observer's 'w' records widened to th
 `home-w66.log`, 581,110 steps): of 4,000, 858 carry as their word 6 a read sub-model's display
 list byte for byte (its first 32 bytes), and 286 of those its positions as word 2; the other
 3,142 are of records not read whole yet or of `datasets.arc`'s models (not read yet).
+
+`datasets.arc` keeps models too, inside its entries (the objects' own): 1,926 heads, 1,289 read
+whole there (`model::read_record_prefix`). With `models.arc`'s 843: 2,132 records whole (4,224
+nodes, 6,093 sub-models), and 533 of the home replay's strips come from one of their
+sub-models, all 533 with its count and texture coordinates. The opcode-66 figure is unchanged
+(858 of 4,000): the other display-list draws are of models not read whole yet (or the Sims').

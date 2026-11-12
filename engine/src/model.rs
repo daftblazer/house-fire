@@ -94,6 +94,12 @@ fn sub_model(b: &[u8], mut p: usize) -> Option<(u32, SubModel, usize)> {
 /// sub-model count and sub-models, and the 72 bytes of bounds that end it; `None` unless it reads
 /// so to its last byte (the kinds of sub-model known).
 pub fn read_record(b: &[u8]) -> Option<Record> {
+    read_record_prefix(b).filter(|&(_, end)| end == b.len()).map(|(r, _)| r)
+}
+
+/// Reads a record at the start of `b` (one kept inside other data, `datasets.arc`'s): the record
+/// and where it ends.
+pub fn read_record_prefix(b: &[u8]) -> Option<(Record, usize)> {
     if b.get(..4)? != [0, 1, 0, 0] {
         return None;
     }
@@ -125,7 +131,8 @@ pub fn read_record(b: &[u8]) -> Option<Record> {
         }
         nodes.push(Node { parent, subs });
     }
-    (b.len() == p + 72).then(|| Record { name, scale, nodes, bounds: b[p..].to_vec() })
+    let bounds = b.get(p..p + 72)?.to_vec();
+    Some((Record { name, scale, nodes, bounds }, p + 72))
 }
 
 /// A record's head and first sub-model.

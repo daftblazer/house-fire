@@ -366,7 +366,30 @@ fn main() -> ExitCode {
             for (k, n) in &ends {
                 println!("  {n:5} {k}");
             }
-            let whole: Vec<model::Record> = entries.iter().filter_map(|e| model::read_record(arc::bytes(&data, e))).collect();
+            let mut whole: Vec<model::Record> = entries.iter().filter_map(|e| model::read_record(arc::bytes(&data, e))).collect();
+            // and the records kept inside datasets.arc's entries (each at a "00 01 00 00 00 00"
+            // and a name whose head reads)
+            let ds = d.read("datasets.arc").unwrap_or_default();
+            let (mut found, mut whole_ds) = (0, 0);
+            for e in arc::entries(&ds).unwrap_or_default() {
+                let b = arc::bytes(&ds, &e);
+                let mut p = 0;
+                while let Some(q) = b[p..].windows(6).position(|w| w == [0, 1, 0, 0, 0, 0]) {
+                    let at = p + q;
+                    if model::read(&b[at..]).is_some() {
+                        found += 1;
+                    }
+                    match model::read_record_prefix(&b[at..]) {
+                        Some((r, end)) => {
+                            whole_ds += 1;
+                            whole.push(r);
+                            p = at + end;
+                        }
+                        None => p = at + 1,
+                    }
+                }
+            }
+            println!("datasets.arc: model heads {found}, read whole {whole_ds}");
             let subs: usize = whole.iter().map(|r| r.nodes.iter().map(|n| n.subs.len()).sum::<usize>()).sum();
             println!("records read whole to their end: {} ({} nodes, {subs} sub-models)", whole.len(), whole.iter().map(|r| r.nodes.len()).sum::<usize>());
             // the strips from any of their sub-models: count and texture coordinates
