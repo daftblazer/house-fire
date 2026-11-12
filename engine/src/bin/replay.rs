@@ -44,7 +44,7 @@ use housefire::interp::{Error, Frame, Host, Interpreter, Mode, PrimResult, Trees
 use housefire::library::{Advert, Library};
 use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
-    call_named_tree, create_object, drop_onto, grab, make_of_guid, place_made, remove_object, snap, dialog, idle, idle_for_input, present, push_action, random, set_motive_delta, set_to_next, test_object_type,
+    call_named_tree, create_object, drop_onto, grab, make_of_guid, place_made, remove_object, snap, dialog, idle, idle_for_input, present, push_action, random, run_functional_tree, function_entry, set_motive_delta, set_to_next, test_object_type,
 };
 use housefire::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, slot_pick, run_on_point, walk_frames, routing_return_tick, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
 use housefire::planner::{choose_goal, coarse_way, point_after_goal, refine, Growth, MapRect};
@@ -658,6 +658,22 @@ impl Host for ReplayHost<'_, '_> {
             }
             return self.logged(s, n);
         }
+        if n.opcode == 20 {
+            // RunFunctionalTree: natively (primitives::run_functional_tree), against the log's next
+            // step (that tree's node 0, a frame up, on the same stack object, with these parameters)
+            let next = log.steps[self.step + 1..].iter().find(|x| x.sim == s.sim);
+            let got = run_functional_tree(interp, self, n);
+            let same = got == PrimResult::Continue
+                && next.is_some_and(|x| {
+                    let f = interp.top();
+                    x.frame > s.frame && x.node == 0 && f.tree.is_some_and(|t| lib.tree_at(t).id as u16 == x.tree) && x.stack_object == f.stack_object && x.params[..] == f.params[..x.params.len().min(f.params.len())]
+                });
+            self.counts.note(if same { "primitives: RunFunctionalTree natively as the log's" } else { "primitives: RunFunctionalTree natively, NOT the log's" });
+            if got == PrimResult::Continue {
+                return got;
+            }
+            return self.logged(s, n);
+        }
         if n.opcode == 8 {
             // Random: the engine's own numbers; the result's range checked, the log's value taken
             self.sync(interp, s);
@@ -1164,21 +1180,7 @@ impl ReplayHost<'_, '_> {
     fn find_best_object(&mut self, interp: &mut Interpreter, s: &StepRec, n: &Node) -> PrimResult {
         let lib = self.lib;
         let me = self.me;
-        let (a, b): (i16, usize) = match n.operand[0] {
-            0 => (0x1F, 0x12),
-            1 => (0x20, 0x13),
-            2 => (0x21, 0x14),
-            3 => (0x24, 0x15),
-            6 => (0x25, 0x18),
-            7 => (0x26, 0x19),
-            8 => (-1, 0x1A),
-            10 => (0x3D, 0x0E),
-            11 => (0x27, 0x1C),
-            12 => (0x40, 0x10),
-            13 => (0x41, 0x11),
-            14 => (0x0F, 0x1D),
-            _ => return self.logged(s, n),
-        };
+        let Some((a, b)) = function_entry(n.operand[0]) else { return self.logged(s, n) };
         let (mx, my) = (self.world.get(me).x16 as f32 / 16.0, self.world.get(me).y16 as f32 / 16.0);
         let defaults = interp.defaults().to_vec();
         let candidates: Vec<(i16, Option<FileId>, u16, f32, f32, f32)> = self

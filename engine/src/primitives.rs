@@ -483,6 +483,51 @@ pub fn idle_for_input<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &mut H
     PrimResult::Continue
 }
 
+/// A function as FindBestObjectForFunction (14) and RunFunctionalTree (20) name it (their operand's
+/// first byte): the object datum that rates it (-1: none, 50 for all) and its entry in an object's
+/// function table (OBJf). Read in the recomp (fn_8020CC8C, `docs/primitives.md`); the functions
+/// not listed are not known.
+pub fn function_entry(function: u8) -> Option<(i16, usize)> {
+    Some(match function {
+        0 => (0x1F, 0x12),
+        1 => (0x20, 0x13),
+        2 => (0x21, 0x14),
+        3 => (0x24, 0x15),
+        6 => (0x25, 0x18),
+        7 => (0x26, 0x19),
+        8 => (-1, 0x1A),
+        10 => (0x3D, 0x0E),
+        11 => (0x27, 0x1C),
+        12 => (0x40, 0x10),
+        13 => (0x41, 0x11),
+        14 => (0x0F, 0x1D),
+        _ => return None,
+    })
+}
+
+/// RunFunctionalTree (opcode 20): the stack object's function (operand byte 0, `function_entry`)
+/// run: its function table's action tree pushed with the Sim's temps as its parameters, the stack
+/// object and its file the frame's; the node stays (Continue) and the tree's return takes its true
+/// or false way. Measured on the home log: food_sg's 8234 node 3 (function 7, the table 47's 8199)
+/// and 8206 node 11 (function 1, the stove 61's 8197), their parameters the temps. No such function
+/// or object: Stop. (`docs/primitives.md`, "RunFunctionalTree".)
+pub fn run_functional_tree<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &mut H, n: &Node) -> PrimResult {
+    let world = host.world();
+    let lib = world.library();
+    let Some((_, entry)) = function_entry(n.operand[0]) else { return PrimResult::Stop };
+    let so = interp.top().stack_object;
+    let Some(o) = world.find(so) else { return PrimResult::Stop };
+    let Some(tree) = world.function_tree(o, entry) else { return PrimResult::Stop };
+    let file = world.get(o).file;
+    let temps: Vec<i16> = interp.defaults().iter().take(4).copied().collect();
+    if !interp.push(lib, tree, &temps) {
+        return PrimResult::Stop;
+    }
+    interp.top().stack_object = so;
+    interp.top().file = file;
+    PrimResult::Continue
+}
+
 /// PushAction (opcode 13): queues an interaction for the Sim that is the stack object: the
 /// interaction in place byte 0 of the target's interaction table (its file's TTAB), the target
 /// the object whose id local byte 1 holds; true. Measured: the interactions the controller

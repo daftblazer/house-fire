@@ -321,3 +321,16 @@ which its "update function scores" tree keeps; the distance factor 3.0 (0x8037C5
 1.0; an object in use (+88 is its data 25, above 0) is left out. Replay runs it natively: all 6
 of the home log's find the original's object (the second search at 1356 skips counter 55, in
 use since the first).
+
+## RunFunctionalTree (opcode 20)
+
+Runs a function of the stack object: the operand's first byte names the function as
+FindBestObjectForFunction's does (`primitives::function_entry`: the same function → function-table
+entry pairs), and the object's function table (OBJf) entry's action tree is pushed with the Sim's
+temps as its parameters, the stack object unchanged. The node stays while it runs; its return takes
+the node's true or false way (the home log: food_sg's 8234 node 3 returns true to node 5 at 5084).
+The entry's test tree is not run first (the log goes straight to the action's node 0). Measured on
+the home log, 4 of 4 as the original's: 8234 node 3 (function 7, after node 2's
+FindBestObjectForFunction(7) chose the dining table 47: its entry 0x19, 8199, with 25, 198, 0) and
+food_sg's 8206 node 11 (function 1 on the stove 61: entry 0x13, 8197, with 26). The operand's third
+byte (1 in both) is not read yet. `primitives::run_functional_tree`.
