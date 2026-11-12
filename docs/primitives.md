@@ -294,3 +294,10 @@ others 5 of 6 the native place, the one left the trash pile's FindLocationFor.
 So of the tenth loop's 13 snaps, 4 are DropOnto, 2 Grab, 1 Snap (and 202's with it), 3 made
 objects' first places (CreateObjectInstance's byte 4, open), 1 an animation event and 1 the
 engine's marker.
+
+## The recomp's primitive dispatch
+
+The primitives are run by fn_8021242C, a compare tree on the opcode (in r5) that calls each
+handler directly: opcode 2 (the expression) fn_80213890, opcode 14 (FindBestObjectForFunction)
+fn_8020CC8C (from its case at 80212B30). The other cases are read the same way, from the
+compares at the function's start.
