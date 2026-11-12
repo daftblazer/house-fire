@@ -322,6 +322,8 @@ impl<'lib> World<'lib> {
         let Some(objt) = lot.find("objt") else { return Err(FormatError("a lot without objt".into())) };
         let guid_of: BTreeMap<i32, u32> = read_object_types(objt)?.iter().map(|t| (t.fields[4] as i32, t.guid)).collect();
         let mut missing = 0;
+        // each object's saved frames' tree ids, for the pass below
+        let mut saved_ids: Vec<(i16, Vec<u16>)> = Vec::new();
         for lo in self.read_objects(lot)?.objects {
             let mut o = Object::new();
             if let Some(&guid) = guid_of.get(&(lo.kind as i32)) {
@@ -361,6 +363,7 @@ impl<'lib> World<'lib> {
                 o.current = lo.current;
                 o.queue = lo.queue;
             }
+            saved_ids.push((o.id(), lo.stack.iter().map(|sf| sf.tree).collect()));
             for sf in lo.stack {
                 o.stack.push(Frame {
                     tree: self.lib.tree(o.file, sf.tree),
@@ -376,30 +379,32 @@ impl<'lib> World<'lib> {
             self.add(o, false);
         }
         // A saved frame above an IdleForInput node is the interaction it delivered: its tree is
-        // in the target's file (the frame's stack object), not the object's own (the paper
-        // girl's 4100 on object 8; the target may load after it, so once all are in).
-        {
-            let keys: Vec<ObjectKey> = self.order.clone();
-            for k in keys {
-                // the file the frames from here up are named in (the delivered interaction's,
-                // and the trees it calls)
-                let mut target_file = None;
-                for i in 1..self.get(k).stack.len() {
-                    let below = &self.get(k).stack[i - 1];
-                    let is_idle = below.tree.and_then(|t| self.lib.get_tree(t)?.nodes.get(below.node as usize).copied()).is_some_and(|n| n.opcode == 17);
-                    let f = &self.get(k).stack[i];
-                    if is_idle && f.stack_object != self.get(k).id() {
-                        target_file = self.find_object(f.stack_object).and_then(|t| t.file);
-                    } else if target_file.is_none() {
-                        continue;
-                    }
-                    let Some(target) = target_file else { continue };
-                    let id = f.tree.map(|t| self.lib.tree_at(t).id as u16);
-                    if let Some(t) = id.and_then(|id| self.lib.tree(Some(target), id)) {
-                        let f = &mut self.get_mut(k).stack[i];
-                        f.tree = Some(t);
-                        f.file = Some(target);
-                    }
+        // in its target's file (the frame's stack object), not the Sim's own (the paper girl's
+        // 4100 on object 8); the frames it called resolve in their own stack object's file where
+        // it has the tree, else in the one below's (Sim 237: the meal's 4201, then on the counter
+        // 54 8259 from food_sg, 8208 and 8207 from counter_sg). Once all objects are in (a
+        // target may load after its Sim).
+        for (id, ids) in saved_ids {
+            let Some(k) = self.find(id) else { continue };
+            let mut carried: Option<FileId> = None;
+            let n = self.get(k).stack.len().min(ids.len());
+            for (i, &saved_tree) in ids.iter().enumerate().take(n).skip(1) {
+                let below = &self.get(k).stack[i - 1];
+                let is_idle = below.tree.and_then(|t| self.lib.get_tree(t)?.nodes.get(below.node as usize).copied()).is_some_and(|n| n.opcode == 17);
+                let so = self.get(k).stack[i].stack_object;
+                if is_idle && so != id {
+                    carried = None;
+                } else if carried.is_none() {
+                    continue;
+                }
+                let own = self.find_object(so).and_then(|t| t.file);
+                let pick = own.filter(|&f| self.lib.tree(Some(f), saved_tree).is_some()).or(carried);
+                let Some(file) = pick else { continue };
+                if let Some(t) = self.lib.tree(Some(file), saved_tree) {
+                    let f = &mut self.get_mut(k).stack[i];
+                    f.tree = Some(t);
+                    f.file = Some(file);
+                    carried = Some(file);
                 }
             }
         }
