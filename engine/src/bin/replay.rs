@@ -711,8 +711,14 @@ impl Host for ReplayHost<'_, '_> {
         }
         if n.opcode == 28 {
             // CallNamedTree
+            let so_before = interp.top().stack_object;
             let got = call_named_tree(interp, n, &self.world);
             if got == PrimResult::Continue {
+                if has("REPLAY_SHOW_CNT") && self.shown.next(&format!("cnt {me_id}"), 3) {
+                    let f = interp.top();
+                    let t = f.tree.map(|t| self.lib.tree_at(t).id);
+                    println!("CallNamedTree tick {} by {me_id} at {}:{}: stack object {so_before}, called {t:?} from {:?}; the log's step {}:{} -> {}", s.tick, s.tree, s.node, f.file.map(|x| self.lib.file(x).path.clone()), s.tree, s.node, s.after);
+                }
                 self.counts.note("primitives: CallNamedTree: a tree called natively");
                 return got;
             }
@@ -1707,6 +1713,8 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
     let mut unseen: BTreeSet<u32> = BTreeSet::new(); // placeholder addresses of saved frames below a first step
     let mut delivered: BTreeSet<u32> = BTreeSet::new(); // Sims whose first interaction was seen
     let mut frame_tree: HashMap<(u32, u32, u16), (TreeId, FileId)> = HashMap::new();
+    // a log of today's observer: its plans carry the search's region lists ('r')
+    let new_observer = log.plans.iter().any(|p| !p.lookup_regions[0].is_empty());
     let (mut streak, mut best_streak) = (0usize, 0usize);
 
     // Which steps are turns: those in the tick's pass over the objects ('Q' records). The others
@@ -2147,6 +2155,21 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
             {
                 tf = Some((ot, of));
             }
+            // A step with no tree record (the observer writes one only for the node lookups it
+            // hooks: a tree a CallNamedTree reached has none): the tree native's stack is in,
+            // if it is that tree (its frame's file the one the call took it from). In logs of
+            // today's observer only (its plans' 'r' records): the older logs' tree records miss
+            // trees for another reason (its per-depth lookup they lack), native's not the log's.
+            if tf.is_none() && s.t.is_none() && new_observer {
+                let i = sim.stack_of(&h.world, ok);
+                if let Some(f) = i.stack().last().filter(|f| f.tree.is_some_and(|t| lib.tree_at(t).id as u16 == s.tree))
+                    && let (Some(t), Some(file)) = (f.tree, f.file)
+                {
+                    tf = Some((t, file));
+                    frame_tree.insert(key, (t, file));
+                    h.counts.note("steps: no tree record, the tree native's stack has");
+                }
+            }
             let Some((tree, file)) = tf else {
                 if has("REPLAY_TRACE_MAKERS") && matches!((s.tree, s.node), (0x2007, 1) | (0x2022, 1) | (0x200f, 6)) && s.look == b'X' {
                     println!("  maker step {i}: tree not found (tree record {:?}, the object's file {:?})", log.tree_of(s).map(|r| (r.tree, r.raw.len() / 12)), o_file.map(|f| &lib.file(f).path));
@@ -2291,7 +2314,20 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                     println!("{l}");
                 } else if st_top.is_none_or(|(t, _, _)| t != Some(s.tree as i16)) {
                     h.counts.note("steps: different: another tree");
-                    if has("REPLAY_SHOW_TREES") && h.shown.next("trees", 12) {
+                    if has("REPLAY_SHOW_196") && o_id == 196 && h.shown.next("196", 2) {
+                        let o = h.world.get(ok);
+                        let f = o.file.map(|f| lib.file(f));
+                        println!("196: file {:?} guid {:08x} def {:?}; has 4129 {:?} 4137 {:?} 4116 {:?} 4106 {:?}", f.map(|f| f.path.clone()), o.guid, o.definition, f.map(|f| f.trees.contains_key(&4129)), f.map(|f| f.trees.contains_key(&4137)), f.map(|f| f.trees.contains_key(&4116)), f.map(|f| f.trees.contains_key(&4106)));
+                        if let Some(t) = lib.tree(o.file, 4116) {
+                            for (k, n) in lib.tree_at(t).nodes.iter().enumerate() {
+                                println!("   4116 node {k}: op {} -> {} / {} operand {:02x?}", n.opcode, n.true_target, n.false_target, n.operand);
+                            }
+                        }
+                        for f in lib.files().iter().filter(|f| f.trees.contains_key(&4116) && f.trees.contains_key(&4106) && !f.trees.contains_key(&4137)) {
+                            println!("   a file with 4116 and 4106 but no 4137: {}", f.path);
+                        }
+                    }
+                    if has("REPLAY_SHOW_TREES") && h.shown.next("trees", if has("REPLAY_SHOW_ALL") { 100_000 } else { 12 }) {
                         let p = if i > 0 && log.steps[i - 1].sim == s.sim {
                             format!("{}:{}->{}", log.steps[i - 1].tree, log.steps[i - 1].node, log.steps[i - 1].after)
                         } else {
