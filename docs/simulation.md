@@ -307,7 +307,10 @@ three evaluations' 216 checks of objects (persons aside) the same natively, in o
 original keeps this as a per-id flag on the lot (bit 8 of the flag word, set when the object is
 placed: fn_801F41C8 from fn_801F4074, an object with at least one such interaction, one whose
 item at +24 is not 33), and its evaluator (fn_802266BC) visits only the ids with it, skipping
-the Sim itself and an object whose int16 at +88 is above 0 (both still to be named). 
+the Sim itself and an object whose int16 at +88 is above 0 (both still to be named). A
+table's first tree that comes back false leaves out the object's own interactions except those
+flagged 0x400 (not built: natively the club's first trees do not finish yet, so it cannot be
+checked). 
 
 **Persons as candidates.** A person's interactions are its semi-global file's one table:
 `person_sg`'s (table 129, version 11, its first tree 8230 run before its guards) for a Sim,

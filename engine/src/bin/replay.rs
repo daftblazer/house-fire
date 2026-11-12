@@ -1042,6 +1042,7 @@ impl ReplayHost<'_, '_> {
         let unfinished = checks.iter().filter(|c| c.passed.is_none()).count();
         for c in checks.iter().filter(|c| c.candidate.is_none()) {
             note!(self.counts, "autonomy study: a first tree's check {:?}", c.passed);
+            if has("REPLAY_SHOW_FIRST_TREES") { note!(self.counts, "study first tree {} {:?}", c.tree, c.passed); }
         }
         let mut native_choice: Option<i16> = None;
         {
