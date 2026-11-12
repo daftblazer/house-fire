@@ -342,7 +342,12 @@ Native (`Candidate::listed`): the first trees run for every object, the guards o
 interactions. Checked (`replay --card`): the club's 2,706 evaluation checks all the log's (912
 different and 47,413 unfinished before), home's 437 unchanged. With no interaction passing, the evaluation
 makes no choice: the stack object stays as it was (the Sim itself; the club's 82 evaluations,
-all as the log's). The old club logs (the disc's lot) the same: tree.log's 2,211 checks and
+all as the log's). After a person's first tree the evaluation checks joining what that person is
+doing: its current interaction's target, the last joinable entry (flag 0x2) with that
+interaction's tree, its guard on the target (`Candidate::join`; the club's dancers on the
+floor's part 150, 4104: the second entry's 4122, not the joining index's). Checked: the club's 82
+evaluations all use exactly the log's steps, 3,034 checks the log's, no check step different
+(1,132 before). The old club logs (the disc's lot) the same: tree.log's 2,211 checks and
 tree3.log's 198 all the log's. 
 
 **Persons as candidates.** A person's interactions are its semi-global file's one table:

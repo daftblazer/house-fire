@@ -23,6 +23,10 @@ pub struct Candidate {
     /// Whether the evaluating Sim's limits let its guard run (`autonomy_candidates`); the
     /// object's first tree runs either way.
     pub listed: bool,
+    /// A person's current interaction, if joinable (flag 0x2 in its target's table): the target's
+    /// id and file and the guard of the last joinable entry with its tree, checked on the target
+    /// after the person's first tree (the club's dancers on the floor's part 150: 4122).
+    pub join: Option<(i16, Option<FileId>, u16)>,
 }
 
 impl Candidate {
@@ -74,6 +78,19 @@ pub fn autonomy_candidates(world: &World, me: ObjectKey) -> Vec<Candidate> {
             lib.interactions_of(def, file).map(|t| (file, t))
         };
         let Some((tf, tid)) = table else { continue };
+        let join = if o.person && o.current.tree != 0 {
+            world.find(o.current.objects[1]).and_then(|t| {
+                let to = world.get(t);
+                let tab = lib.table_of(to.file, to.person, world.definition(to));
+                let tab = lib.table(tab.file?, tab.table?);
+                // the last joinable entry with the interaction's tree (the floor's two dance
+                // entries, 4104: the second, guard 4122)
+                let j = tab.iter().rfind(|e| e.action == o.current.tree as u16 && e.flags & 2 != 0)?;
+                (j.guard != 0).then_some((to.id(), to.file, j.guard))
+            })
+        } else {
+            None
+        };
         let mut guards: Vec<u16> = Vec::new();
         for (index, e) in lib.table(tf, tid).iter().enumerate().rev() {
             if e.autonomy_threshold >= 100 || e.flags & 0xC0 != 0 || e.guard == 0 || guards.contains(&e.guard) {
@@ -81,7 +98,7 @@ pub fn autonomy_candidates(world: &World, me: ObjectKey) -> Vec<Candidate> {
             }
             guards.push(e.guard);
             let listed = e.autonomy_threshold <= i32::from(limit) && (!visitor || e.flags & 1 != 0);
-            out.push(Candidate { object: k, id, file: tf, table: tid, index, object_file: o.file, person: o.person, def: o.definition, listed });
+            out.push(Candidate { object: k, id, file: tf, table: tid, index, object_file: o.file, person: o.person, def: o.definition, listed, join });
         }
     }
     out
@@ -116,6 +133,10 @@ pub fn run_evaluation<H: Host + ?Sized>(lib: &Library, host: &mut H, candidates:
             if tab.first != 0 {
                 let t = lib.tree(c.object_file, tab.first);
                 out.push(EvaluationCheck { object: c.object, tree: tab.first, candidate: None, passed: run(host, t, c), ad_range: Vec::new() });
+            }
+            if let Some((tid, tfile, guard)) = c.join {
+                let passed = lib.tree(tfile, guard).and_then(|t| host.run_check(t, tfile, tid, defaults));
+                out.push(EvaluationCheck { object: c.object, tree: guard, candidate: None, passed, ad_range: Vec::new() });
             }
         }
         // an interaction the Sim's limits leave off its object's list: no guard
