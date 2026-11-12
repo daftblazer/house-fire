@@ -1577,6 +1577,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
         for o in world.objects().filter(|o| o.person) {
             let diff: Vec<(usize, i16)> = o.person_data.iter().enumerate().filter(|(i, _)| *i < 80).map(|(i, &v)| (i, v)).collect();
             println!("requeue data {}: {:?}", o.id(), diff);
+            println!("requeue entry {}: {:?}", o.id(), o.current);
             println!("requeue: {} current tree {} on {:?} stack {:?} pd32 {:?} pd29 {:?} data4 {:?} saved queue {}", o.id(), o.current.tree, o.current.objects, o.stack.iter().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node)).collect::<Vec<_>>(), o.person_data.get(32), o.person_data.get(29), o.data.get(4), o.queue.len());
         }
     }
