@@ -2351,8 +2351,8 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                             println!("missing: object {o_id} file {:?} semi {:?}; frame file {:?}; log {}:{}", f.map(|f| f.path.clone()), f.and_then(|f| f.semi).map(|x| lib.file(x).path.clone()), st_top.and_then(|t| t.2).map(|x| lib.file(x).path.clone()), s.tree, s.node);
                         }
                     }
-                } else if st_len != fr_len {
-                    if !rerun { h.counts.note(if st_len < fr_len { "steps: different: the log's is deeper (a frame pushed)" } else { "steps: different: the native is deeper" }); }
+                } else if st_len != fr_len && !rerun {
+                    h.counts.note(if st_len < fr_len { "steps: different: the log's is deeper (a frame pushed)" } else { "steps: different: the native is deeper" });
                 }
                 if !interp.done() && st_len < fr_len && o_person && has("REPLAY_SHOW_PUSH") {
                     let wn = top_node(lib, interp);
