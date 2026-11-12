@@ -350,6 +350,22 @@ fn main() -> ExitCode {
             let models: Vec<model::Model> = entries.iter().filter_map(|e| model::read(arc::bytes(&data, e))).collect();
             let kinds = models.iter().filter(|m| m.first.kind == 1).count();
             println!("records {}, first sub-model read {} (kind 1: {kinds}, kind 0: {})", entries.len(), models.len(), models.len() - kinds);
+            // the kind-1 records whose first sub-model is then followed by just the 73-byte tail
+            let mut ends: BTreeMap<String, usize> = BTreeMap::new();
+            for e in &entries {
+                let b = arc::bytes(&data, e);
+                if let Some(m) = model::read(b) {
+                    let k = if b.len() == m.tail + 73 { "the 73-byte tail and the end".to_string() } else { format!("{} bytes more", b.len() as i64 - m.tail as i64) };
+                    if m.first.kind == 1 {
+                        *ends.entry(format!("kind 1, format {:#x}: {}", m.format, if k.starts_with("the") { k } else { "more".into() })).or_default() += 1;
+                    } else {
+                        *ends.entry(format!("kind 0, format {:#x}", m.format)).or_default() += 1;
+                    }
+                }
+            }
+            for (k, n) in &ends {
+                println!("  {n:5} {k}");
+            }
             if std::env::var_os("ASSETS_SHOW_TAILS").is_some() {
                 let mut shown = BTreeMap::<u8, usize>::new();
                 for e in &entries {
@@ -448,7 +464,7 @@ fn main() -> ExitCode {
                         && let Some(p) = m.first.positions.get(..32)
                     {
                         let n = m.first.count;
-                        let pos = m.tail - n * (8 + 4 + 3 + if m.first.colours.is_some() { 4 } else { 0 });
+                        let pos = m.tail - m.first.positions.len() - m.first.texcoords.len() - m.first.colours.as_ref().map_or(0, |c| c.len()) - m.first.normals.len() - m.first.values.as_ref().map_or(0, |v| v.len());
                         where_pos.insert(p.try_into().unwrap(), (e.name.clone(), n, pos, m.tail));
                     }
                 }

@@ -172,3 +172,13 @@ positions, 3 the texture coordinates, 4 the colours (kind 0; RGBA, the record's 
 19 of 19), and for kind 1, with no colours, word 4 is the normals as the record packs them
 (57). Every array of both kinds of sub-model is so the original's, byte for byte, in the strips
 the home replay plays from a read sub-model (133).
+
+The vertex format: the word at +0x25 past the name is a mask of the arrays a sub-model has, in
+this order after the positions: 0x08 texture coordinates (4n), 0x04 colours (4n), 0x10 normals
+(3n), 0x20 a 16-bit value a vertex (2n); 0x02 is always set. Kind-1 records are 0x1a (no
+colours) or 0x1e (colours); kind 0 mostly 0x1a, 0x3a, 0x3e (with the 16-bit values). Read by it
+(`model.rs`), 354 kind-1 records read exactly to their end (the 73-byte tail: 287 of 0x1a, 67 of
+0x1e; 80 go on, further sub-models), and against the strips: word 4 is the colours wherever the
+format has them (57 of 57 kind-0 strips, and the kind-1 strips of 0x1e, whose word 4 an earlier
+read took for normals), word 5 the normals widened to 4 bytes. Kind-0 reads with no plausible
+format (0x1f9fa000 and the like, about 30) are other heads misread.

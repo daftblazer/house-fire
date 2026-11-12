@@ -17,6 +17,8 @@ pub struct SubModel {
     pub colours: Option<Vec<u8>>,
     /// Normals: three s8 a vertex.
     pub normals: Vec<u8>,
+    /// A 16-bit value a vertex (format bit 0x20), as the record keeps it.
+    pub values: Option<Vec<u8>>,
 }
 
 /// A record's head and first sub-model.
@@ -25,6 +27,9 @@ pub struct Model {
     pub name: String,
     /// The positions' scale (1/4096 for most objects).
     pub scale: f32,
+    /// The vertex format (the word at +0x25 past the name): 0x08 texture coordinates, 0x04
+    /// colours, 0x10 normals, 0x20 a 16-bit value a vertex (0x02 always set).
+    pub format: u32,
     pub first: SubModel,
     /// Where the bytes after the first sub-model's arrays begin.
     pub tail: usize,
@@ -46,6 +51,7 @@ pub fn read(b: &[u8]) -> Option<Model> {
         return None;
     }
     let scale = f32::from_bits(u32::from_be_bytes(b.get(q + 0x15..q + 0x19)?.try_into().ok()?));
+    let format = u32::from_be_bytes(b.get(q + 0x25..q + 0x29)?.try_into().ok()?);
     let sub = q + 0x36;
     let kind = *b.get(sub)?;
     let (count, mut p) = match kind {
@@ -59,8 +65,9 @@ pub fn read(b: &[u8]) -> Option<Model> {
         Some(v)
     };
     let positions = take(8 * count)?;
-    let texcoords = take(4 * count)?;
-    let colours = if kind == 0 { Some(take(4 * count)?) } else { None };
-    let normals = take(3 * count)?;
-    Some(Model { name, scale, first: SubModel { kind, count, positions, texcoords, colours, normals }, tail: p })
+    let texcoords = if format & 0x08 != 0 { take(4 * count)? } else { Vec::new() };
+    let colours = if format & 0x04 != 0 { Some(take(4 * count)?) } else { None };
+    let normals = if format & 0x10 != 0 { take(3 * count)? } else { Vec::new() };
+    let values = if format & 0x20 != 0 { Some(take(2 * count)?) } else { None };
+    Some(Model { name, scale, format, first: SubModel { kind, count, positions, texcoords, colours, normals, values }, tail: p })
 }
