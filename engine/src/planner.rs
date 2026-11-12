@@ -338,14 +338,20 @@ pub const DIRECTION_STEP: [(i32, i32); 8] = [(-1, 0), (-1, 1), (0, 1), (1, 1), (
 /// points so far: kind -3 runs the last leg on once more; kinds -2 and -1 step one tile from the
 /// last point in the eight-way direction to the target (-1 away from it), or with the flags' 0x100
 /// go to the target itself; other kinds step one tile in direction (facing + kind) & 7. None
-/// when nothing is added: a point equal to the last, or a -3 whose last leg has no length (that
-/// one steps the routing object's way, not modelled), or no facing known.
-pub fn point_after_goal(kind: i32, flags: i32, target: (i32, i32), facing: Option<i32>, points: &[(i32, i32)]) -> Option<(i32, i32)> {
+/// when nothing is added: a point equal to the last, or no facing known. A -3 whose last leg has
+/// no length (the Sim already at its goal) steps one tile the routing object's way instead
+/// (`router_facing`, its eight-way direction: the club's six such plans).
+pub fn point_after_goal(kind: i32, flags: i32, target: (i32, i32), facing: Option<i32>, router_facing: i32, points: &[(i32, i32)]) -> Option<(i32, i32)> {
     let &last = points.last()?;
     let point = match kind {
         -3 => {
             let &prev = points.get(points.len().checked_sub(2)?)?;
-            (prev != last).then(|| (2 * last.0 - prev.0, 2 * last.1 - prev.1))
+            Some(if prev != last {
+                (2 * last.0 - prev.0, 2 * last.1 - prev.1)
+            } else {
+                let (dx, dy) = DIRECTION_STEP[(router_facing & 7) as usize];
+                (last.0 + 16 * dx, last.1 + 16 * dy)
+            })
         }
         -2 | -1 if flags & 0x100 != 0 => Some(target),
         -2 | -1 => {

@@ -1547,4 +1547,10 @@ routing checks there:
   where native had taken the middle. Done the original's way, every club plan is the log's
   where its inputs are logged (13 of 13 from the search to the point after the goal); the
   walks, the home log's 17 and the old club logs unchanged.
+- six club plans start at their goal (a Sim already there), and the original still adds its
+  point after the goal: kind -3, whose rule runs the last leg on, has no last leg, and steps one
+  tile the routing object's way instead (*state +40, already in 'h': 0, 1, 1, 0, 0, 0 for the
+  six, the steps (-16, 0) and (-16, +16) exactly). With that every club plan is the log's in
+  full, 13 of 13; the plan-shape studies run on them now give exactly what the log's own plans
+  give (REPLAY_LOGGED_PLANS).
 Lockstep: 3 differences (scope 0 and 1 places, the caller 80213900 also behind the home log's).

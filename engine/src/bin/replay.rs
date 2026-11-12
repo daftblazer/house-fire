@@ -1386,7 +1386,7 @@ fn native_plan_points(pl: &PlanRec, world: &World) -> Option<Vec<(i32, i32)>> {
     let mut points: Vec<(i32, i32)> = refine(&way).iter().map(|&(y, x)| (x, y)).collect();
     if let (Some(a), true) = (pl.approach, pl.chosen >= 0) {
         let facing = world.find_object(a[5] as i16).and_then(|o| o.data.get(1)).map(|&d| d as i32);
-        points.extend(point_after_goal(a[0], a[1], (a[3], a[4]), facing, &points));
+        points.extend(point_after_goal(a[0], a[1], (a[3], a[4]), facing, a[2], &points));
     }
     Some(points)
 }
@@ -1445,7 +1445,11 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
             if let Some(p) = native_plan_points(pl, &world) {
                 native_plans.1 += usize::from(p == pl.points);
                 if p != pl.points && has("REPLAY_SHOW_PLAN_DIFFS") {
-                    println!("plan tick {}: native {p:?}, the log's {:?}", pl.tick, pl.points);
+                    let a = pl.approach;
+                    let facing = a.and_then(|a| world.find_object(a[5] as i16)).and_then(|o| o.data.get(1)).copied();
+                    let sim = a.and_then(|a| world.find_object(a[7] as i16)).map(|o| (o.person, o.facing(), o.data.get(1).copied()));
+                    let place = a.and_then(|a| log.places.iter().rfind(|q| q.id == a[7] as i16 && q.tick < pl.tick).map(|q| (q.x, q.y, q.level)));
+                    println!("plan tick {}: native {p:?}, the log's {:?}; approach {a:?} chosen {} facing {facing:?} sim {sim:?} place {place:?}", pl.tick, pl.points, pl.chosen);
                 }
                 native_plans.0 += 1;
                 pl.points = p;
@@ -3166,7 +3170,7 @@ fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, counts: &mut
             if let (true, Some(a)) = (fits, pl.approach) {
                 let facing = world.find_object(a[5] as i16).and_then(|o| o.data.get(1)).map(|&d| d as i32);
                 // a plan that took no goal (the request's +88 left at -1) adds none
-                let ours = if pl.chosen < 0 { None } else { point_after_goal(a[0], a[1], (a[3], a[4]), facing, &refined) };
+                let ours = if pl.chosen < 0 { None } else { point_after_goal(a[0], a[1], (a[3], a[4]), facing, a[2], &refined) };
                 let theirs = pl.points.get(refined.len()).copied();
                 counts.note(if ours == theirs {
                     "planner: a plan's point after its goal (or none) natively its own"
