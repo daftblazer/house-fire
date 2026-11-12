@@ -664,6 +664,11 @@ impl Host for ReplayHost<'_, '_> {
                 _ => "Snap",
             };
             note!(self.counts, "objects: {name} natively{}", if done { "" } else { ": its objects not found (or not modelled)" });
+            if !done && has("REPLAY_SHOW_UNDONE") {
+                let at = |id: i16| self.world.find_object(id).map(|o| (o.x16, o.y16, o.level, o.data.get(1).copied(), o.data[2], o.data[3]));
+                let next = |id: i16| self.log.places.iter().find(|p| p.id == id && p.tick >= s.tick).map(|p| (p.tick, p.x, p.y, p.level));
+                println!("undone {name} tick {} by {me_id} so {so} operand {:02x?} -> {}: me {:?} next {:?}; so {:?} next {:?}", s.tick, n.operand, s.after, at(me_id), next(me_id), at(so), next(so));
+            }
             if let Ok(w) = std::env::var("REPLAY_WATCH_ID")
                 && let Ok(w) = w.parse::<i16>()
                 && (me_id == w || so == w)
@@ -1750,6 +1755,13 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                 } else if (x, y) == (p.x, p.y) {
                     "places: the native walk's, the same as the log's"
                 } else {
+                    if has("REPLAY_SHOW_WALK_MISS") {
+                        let prev = log.places.iter().rfind(|q| q.id == p.id && q.tick < p.tick).map(|q| (q.tick, q.x, q.y));
+                        let nxt = log.places.iter().find(|q| q.id == p.id && q.tick > p.tick).map(|q| (q.tick, q.x, q.y));
+                        let nat_prev = native_places.get(&(p.id, p.tick.saturating_sub(1))).copied();
+                        let nat_next = native_places.get(&(p.id, p.tick + 1)).copied();
+                        println!("walk miss {} tick {}: native {:?}, log {:?}; log before {prev:?} after {nxt:?}; native at t-1 {nat_prev:?} t+1 {nat_next:?}", p.id, p.tick, (x, y), (p.x, p.y));
+                    }
                     "places: the native walk's, NOT the log's"
                 });
             }
@@ -4359,7 +4371,11 @@ fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, counts: &mut
                                 let id = r.id;
                                 let Some(k) = ticks.iter().take(gone_after.len()).rposition(|&t| t <= r.tick) else { continue };
                                 let (x, y) = along_line(&line, 0, 0.0, gone_after[k]);
+                                // to the nearest (truncating puts 816 of 1,186 off)
                                 let ours = ((x + 0.5).floor() as i32, (y + 0.5).floor() as i32);
+                                if has("REPLAY_SHOW_WALK_MISS") && ours != (r.x, r.y) {
+                                    println!("walk float {id} tick {}: native ({x:.3}, {y:.3}), log {:?}, walked {:.3}", r.tick, (r.x, r.y), gone_after[k]);
+                                }
                                 native_places.insert((id, r.tick), ours);
                                 counts.note(if ours == (r.x, r.y) {
                                     "routing: a walking Sim's place each tick natively the original's (the walker's, rounded)"
