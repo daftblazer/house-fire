@@ -904,7 +904,13 @@ fn variables(lib: &Library, log: &housefire::tree_log::Log, step_object: &[Optio
                 let got = ScriptVariables::new(&mut world, me, &mut frame).get(v.scope as u8, v.data);
                 notes.note(&match got {
                     Some(g) if v.flags & 1 != 0 && g.value == v.value => format!("variables: {sc}: no cell, the value the same natively"),
-                    Some(_) if v.flags & 1 != 0 => format!("variables: {sc}: no cell, the value other natively (study)"),
+                    Some(g) if v.flags & 1 != 0 => {
+                        if std::env::var("LOCKSTEP_SHOW_UNMODELLED").ok().and_then(|x| x.parse::<i16>().ok()) == Some(v.scope) {
+                            let at = |k: Option<ObjectKey>| k.and_then(|k| world.get_live(k)).map(|o| (o.id(), o.x16, o.y16, o.level, o.person));
+                            eprintln!("other scope {} datum {}: native {}, log {} at tick {}: me {:?}, stack object {} {:?}", v.scope, v.data, g.value, v.value, s.tick, at(Some(me)), frame.stack_object, at(world.find(frame.stack_object)));
+                        }
+                        format!("variables: {sc}: no cell, the value other natively (study)")
+                    }
                     _ => {
                         if std::env::var("LOCKSTEP_SHOW_UNMODELLED").ok().and_then(|v| v.parse::<i16>().ok()) == Some(v.scope)
                             && let Some(o) = world.get_live(me)
