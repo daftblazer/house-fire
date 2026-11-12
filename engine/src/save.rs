@@ -535,11 +535,15 @@ pub struct SavedQueueEntry {
     /// (PushAction); `None` for a saved entry. An action can be in a table more than once, each
     /// with its own guard (the group meal's 4201: guards 4202 and 8248).
     pub interaction: Option<usize>,
+    /// Not saved: its place in the queue's order, highest first (`primitives::push_action`): 3 a
+    /// push of priority 1 (maximum), 2 one of priority 2, 1 a saved entry (one the lot re-queued
+    /// among them: the club's Sim 178's 4104 behind every later push).
+    pub rank: u8,
 }
 
 impl Default for SavedQueueEntry {
     fn default() -> Self {
-        SavedQueueEntry { a: 0, id: 0, b: 0, c: 0, flags: 0, objects: [0; 3], shorts: [0; 4], tree: 0, e: 0.0, interaction: None }
+        SavedQueueEntry { a: 0, id: 0, b: 0, c: 0, flags: 0, objects: [0; 3], shorts: [0; 4], tree: 0, e: 0.0, interaction: None, rank: 1 }
     }
 }
 
