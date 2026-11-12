@@ -2282,6 +2282,15 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                 }
                 if interp.done() {
                     h.counts.note("steps: different: the native stack stopped");
+                    if has("REPLAY_SHOW_STOPPED") {
+                        let p = if i > 0 && log.steps[i - 1].sim == s.sim { format!("{}:{}->{}", log.steps[i - 1].tree, log.steps[i - 1].node, log.steps[i - 1].after) } else { "another stack's".into() };
+                        note!(h.counts, "study stopped: error {:?} log {}:{} (before {p})", interp.error(), s.tree, s.node);
+                        if interp.error() == Error::Missing {
+                            let o = h.world.get(ok);
+                            let f = o.file.map(|f| lib.file(f));
+                            println!("missing: object {o_id} file {:?} semi {:?}; frame file {:?}; log {}:{}", f.map(|f| f.path.clone()), f.and_then(|f| f.semi).map(|x| lib.file(x).path.clone()), st_top.and_then(|t| t.2).map(|x| lib.file(x).path.clone()), s.tree, s.node);
+                        }
+                    }
                 } else if st_len != fr_len {
                     h.counts.note(if st_len < fr_len { "steps: different: the log's is deeper (a frame pushed)" } else { "steps: different: the native is deeper" });
                 }
@@ -2352,7 +2361,8 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                     h.counts.note("steps: different: another node");
                     if has("REPLAY_SHOW_NODES") {
                         let p = if i > 0 && log.steps[i - 1].sim == s.sim { format!("{}:{}->{}", log.steps[i - 1].tree, log.steps[i - 1].node, log.steps[i - 1].after) } else { "another stack's".into() };
-                        note!(h.counts, "study another node: tree {} native node {} log node {} (before: {p})", s.tree, st_top.map_or(0, |(_, n, _)| n), s.node);
+                        let op = lib.tree_at(tree).nodes.get(s.node as usize).map(|nd| nd.opcode);
+                        note!(h.counts, "study another node: tree {} native node {} log node {} op {op:?} after {} (before: {p})", s.tree, st_top.map_or(0, |(_, n, _)| n), s.node, s.after);
                     }
                 }
                 // Set to the log's: the frames below kept, the top one the log's.

@@ -649,7 +649,9 @@ impl Library {
         let f = match tree_kind(id) {
             TreeKind::Global => self.global,
             TreeKind::Own => object,
-            TreeKind::SemiGlobal => object.and_then(|o| self.file(o).semi),
+            // a semi-global file's own trees call its other semi-global trees (a frame whose
+            // file is PersonGlobals: the file itself when it has no semi-global link)
+            TreeKind::SemiGlobal => object.and_then(|o| self.file(o).semi.or(Some(o))),
             _ => None,
         }?;
         self.file(f).trees.get(&id).copied()

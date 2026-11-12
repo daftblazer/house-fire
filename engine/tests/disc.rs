@@ -133,7 +133,9 @@ fn every_script_on_the_disc() {
     assert!(fridge == 20 && toilet == 70 && easel == 10 && lib.slot_failures() == 0 && global_slots == 15);
     // The C++ engine's figures besides (its test_disc's lines).
     assert_eq!(constants, 1689);
-    assert_eq!(steps, 1251290);
+    // more than the C++ engine's 1,251,290: a semi-global file's trees reach its other trees
+    // (a frame whose file is PersonGlobals), as the original's do (the home log's Missing calls)
+    assert_eq!(steps, 1339572);
     assert_eq!(tables, 856);
     assert_eq!(slot_tables, 764);
 }
