@@ -203,3 +203,8 @@ position, texture coordinate, colour, normal in turn). E.g. the burn mark: 4 dra
 the command list's opcode 66 ("a model drawn from a list made when it was loaded"). Read so
 (`model::read_record`), 843 records whole (1,585 nodes, 2,267 sub-models). The display lists are
 to be checked against the original's opcode-66 draws.
+
+Against the original's opcode-66 draws (the observer's 'w' records widened to them;
+`home-w66.log`, 581,110 steps): of 4,000, 858 carry as their word 6 a read sub-model's display
+list byte for byte (its first 32 bytes), and 286 of those its positions as word 2; the other
+3,142 are of records not read whole yet or of `datasets.arc`'s models (not read yet).

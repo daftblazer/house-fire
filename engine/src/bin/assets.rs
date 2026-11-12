@@ -394,6 +394,47 @@ fn main() -> ExitCode {
                 }
             }
             println!("strips from a sub-model of a whole record {st}: count and texture coordinates the same {ok}");
+            // opcode 66 (the command's first byte 0x42): a model drawn from a display list; which
+            // of its words are a sub-model's display list and positions
+            let mut lists: std::collections::HashMap<[u8; 32], &model::SubModel> = std::collections::HashMap::new();
+            for r in &whole {
+                for n in &r.nodes {
+                    for (_, sm) in &n.subs {
+                        if let Some((_, _, l)) = &sm.list
+                            && let Some(h) = l.get(..32)
+                        {
+                            lists.insert(h.try_into().unwrap(), sm);
+                        }
+                    }
+                }
+            }
+            let mut ops66 = 0;
+            let mut words: BTreeMap<String, usize> = BTreeMap::new();
+            for s in log.strips.iter().filter(|s| s.words[0] >> 24 == 0x42) {
+                ops66 += 1;
+                let mut any = false;
+                for k in 1..16 {
+                    if !(0x8000_0000..0x817F_FFE0).contains(&s.words[k]) {
+                        continue;
+                    }
+                    if let Some(sm) = lists.get(&s.at[k]) {
+                        any = true;
+                        *words.entry(format!("word {k} a sub-model's display list")).or_default() += 1;
+                        for j in 1..16 {
+                            if sm.positions.get(..32) == Some(&s.at[j][..]) {
+                                *words.entry(format!("word {j} that sub-model's positions")).or_default() += 1;
+                            }
+                        }
+                    }
+                }
+                if !any {
+                    *words.entry("no word a known display list".into()).or_default() += 1;
+                }
+            }
+            println!("opcode 66 commands {ops66}:");
+            for (k, n) in &words {
+                println!("  {n:5} {k}");
+            }
             if std::env::var_os("ASSETS_SHOW_TAILS").is_some() {
                 let mut shown = BTreeMap::<u8, usize>::new();
                 for e in &entries {
