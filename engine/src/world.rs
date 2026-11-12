@@ -55,6 +55,8 @@ pub const PORTAL_FUNCTION: usize = 15;
 pub const SIT_FUNCTION: usize = 26;
 /// The label of the tree a routing Sim runs to ask someone in its way to move.
 pub const ASK_TO_MOVE: &str = "route ask to move animation";
+/// The label of the tree a routing Sim runs while the person it asked is still in its way.
+pub const ROUTE_WAIT: &str = "route waiting animation";
 /// The object data field that holds the way it faces (in eighths of a turn).
 pub const DATA_FACING: usize = 1;
 /// The object data field naming the object it sits in or on (0 none): a lamp on a table, the
@@ -103,6 +105,9 @@ pub struct Object {
     /// A Sim's interaction queue as the lot saved it: the entry it was on, the rest queued.
     pub current: SavedQueueEntry,
     pub queue: Vec<SavedQueueEntry>,
+    /// The person a routing Sim last asked to move out of a slot's places (`ask_to_move_tree`):
+    /// asked again while they stay, the Sim waits instead ("Asked to move").
+    pub asked_to_move: Option<i16>,
     /// Its tree stack, bottom first: a lot's objects' as the lot saved it (a frame whose tree is
     /// not on the disc keeps no tree).
     pub stack: Vec<Frame>,
@@ -333,10 +338,20 @@ impl<'lib> World<'lib> {
     /// The tree a routing Sim runs to ask a person in its way to move: its semi-global file's
     /// "route ask to move animation" (person_sg's 8302).
     pub fn ask_to_move_tree(&self, me: ObjectKey) -> Option<TreeId> {
+        self.semi_tree_named(me, ASK_TO_MOVE)
+    }
+
+    /// The tree a routing Sim runs while the person it asked to move is still in its way: its
+    /// semi-global file's "route waiting animation" (person_sg's 8276).
+    pub fn route_wait_tree(&self, me: ObjectKey) -> Option<TreeId> {
+        self.semi_tree_named(me, ROUTE_WAIT)
+    }
+
+    fn semi_tree_named(&self, me: ObjectKey, name: &str) -> Option<TreeId> {
         let lib = self.library();
         let f = lib.file(self.get(me).file?);
         let semi = lib.file(f.semi?);
-        semi.tree_by_name.get(ASK_TO_MOVE).and_then(|id| semi.trees.get(id)).copied()
+        semi.tree_by_name.get(name).and_then(|id| semi.trees.get(id)).copied()
     }
 
     /// On a community lot the saved stacks restart from their bottom frame (`Simulator::stack_of`),

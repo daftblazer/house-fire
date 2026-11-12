@@ -1734,3 +1734,11 @@ pushes the routing Sim's "route ask to move animation" (person_sg's 8302, found 
 Sim's semi-global file), with that person as the stack object and no parameters, and stays at its
 node. The home log's one: Sim 12 at tick 1503 (8275 node 0, the meal 198's routing slot), Sim 237
 on its place 0 (392, 344). `World::person_on_places`, `World::ask_to_move_tree`.
+
+Asked once, the Sim remembers whom (`Object::asked_to_move`, cleared when a route finds a way). Its
+next run of the slot step while that person still stands on a place does not plan at all: it pushes
+its "route waiting animation" (person_sg's 8276) with itself as the stack object, and stays at its
+node (the home log: Sim 12 at 1618, Sim 237 still on place 0; the wait returns at 1670, when the
+step plans and walks). `World::route_wait_tree`. Of the four logs' slot steps with no plan, this
+is the only one with a person on the slot's places; the others go on in their frame.
+

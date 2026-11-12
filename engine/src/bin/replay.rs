@@ -513,6 +513,9 @@ impl Host for ReplayHost<'_, '_> {
                 // the step that plans (its Sim's plan made this tick): with a way, it comes back to
                 // its own node and walks from the next; with none, it goes on at once
                 let native_again = !pl.points.is_empty();
+                if native_again {
+                    self.world.get_mut(me).asked_to_move = None; // a way: no one in it
+                }
                 // A route through a door: the step pushes the door's portal function (its leader's
                 // function table entry 15, the door its stack object) and stays at its node, which
                 // plans again when that returns (docs/simulation.md, "A route through a door")
@@ -554,6 +557,7 @@ impl Host for ReplayHost<'_, '_> {
                         } else {
                             "primitives: GotoRoutingSlot: no way, a person on the slot asked to move natively, NOT the log's"
                         });
+                        self.world.get_mut(me).asked_to_move = Some(pid);
                         if interp.push(lib, tree, &[]) {
                             interp.top().stack_object = pid;
                             interp.top().file = mfile;
@@ -591,7 +595,48 @@ impl Host for ReplayHost<'_, '_> {
                     "primitives: GotoRoutingSlot/GotoRelativePosition: the planning step NOT as the log's"
                 });
             } else {
+                // Still in the way of a slot's places after being asked to move: the router does not
+                // plan, it waits ("route waiting animation", on itself) and stays at its node
+                // (docs/simulation.md, "Asked to move")
+                if n.opcode == 45 {
+                    let w = &self.world;
+                    let places: Vec<(i32, i32)> = w
+                        .find_object(s.stack_object)
+                        .and_then(|o| Some((o, lib.routing_slot(o.file?, w.definition(o), n.operand16(1), n.operand16(0))?)))
+                        .map(|(o, slot)| slot_places(slot, o.x16, o.y16, o.facing()).into_iter().map(|p| p.1).collect())
+                        .unwrap_or_default();
+                    if let Some(p) = w.person_on_places(me, &places)
+                        && w.get(me).asked_to_move == Some(w.get(p).id())
+                        && let Some(tree) = w.route_wait_tree(me)
+                    {
+                        let mfile = w.get(me).file;
+                        let next = log.steps[self.step + 1..].iter().find(|x| x.sim == s.sim);
+                        let same = s.result == 0 && s.after == s.node && next.is_some_and(|x| x.frame > s.frame && x.node == 0 && x.tree == lib.tree_at(tree).id as u16 && x.stack_object == me_id);
+                        self.counts.note(if same {
+                            "primitives: GotoRoutingSlot: still in the way after asked, the wait natively as the log's"
+                        } else {
+                            "primitives: GotoRoutingSlot: still in the way after asked, the wait natively, NOT the log's"
+                        });
+                        if interp.push(lib, tree, &[]) {
+                            interp.top().stack_object = me_id;
+                            interp.top().file = mfile;
+                            return PrimResult::Continue;
+                        }
+                    }
+                }
                 self.counts.note("primitives: GotoRoutingSlot/GotoRelativePosition: its run not modelled (the log's taken)");
+                if has("REPLAY_SHOW_NO_WAY") && n.opcode == 45 {
+                    let w = &self.world;
+                    let places: Vec<(i32, i32)> = w
+                        .find_object(s.stack_object)
+                        .and_then(|o| Some((o, lib.routing_slot(o.file?, w.definition(o), n.operand16(1), n.operand16(0))?)))
+                        .map(|(o, slot)| slot_places(slot, o.x16, o.y16, o.facing()).into_iter().map(|p| p.1).collect())
+                        .unwrap_or_default();
+                    let by = w.person_on_places(me, &places).map(|p| w.get(p).id());
+                    let next = log.steps[self.step + 1..].iter().find(|x| x.sim == s.sim).map(|x| (x.tree, x.node, x.stack_object, x.frame > s.frame));
+                    let me_at = (w.get(me).x16, w.get(me).y16);
+                    println!("no plan: tick {} sim {me_id} {}:{} on {} res {} after {}; places {places:?}; person on them {by:?}; me at {me_at:?}; next {next:?}", s.tick, s.tree, s.node, s.stack_object, s.result, s.after);
+                }
                 if has("REPLAY_ROUTE_PUSHES") {
                     // study: what the run pushes (the stack's next step a frame up, at node 0)
                     let next = self.log.steps[self.step + 1..].iter().find(|x| x.sim == s.sim);
@@ -2800,7 +2845,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                         4
                     };
                     const NAMES: [&str; 5] = ["stopped", "deeper", "log deeper", "another tree", "another node"];
-                    if h.shown.next(&format!("diffs {cat}"), 6) {
+                    if h.shown.next(&format!("diffs {cat}"), env("REPLAY_DIFFS_LIMIT").map_or(6, |v| atoi(&v) as i32)) {
                         let prev = (0..i).rev().map(|j| &log.steps[j]).find(|p| p.sim == s.sim);
                         println!(
                             "{}: object {o_id} tick {t}: native {}:{} depth {st_len} (error {}), log {}:{} depth {fr_len}; its last step {}:{}->{} {} res {}",
