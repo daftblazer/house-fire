@@ -248,6 +248,15 @@ personality (`sMotiveDecayActiveMod`, `NeatMod`, `OutgoingMod`, `PlayfulMod`), a
 `MotiveConstantsClient::UpdateConstants`, which suggests the rates are game data: the
 engine's update is to be built from those, checked against every `N` record.
 
+## A Sim's own interactions re-checked
+
+Every 30 to 60 ticks the engine runs a Sim's own interactions' checks on the Sim itself (stack
+object the Sim): its semi-global table's first tree (person_sg's 8230), then the guards (8242,
+8271, 8295, 8297, 8319, 8323, 8232, 8344, 265 several times, 8394, 8437, 8449, 8209, ...), each
+from node 0 to its return, two frames above whatever the Sim is running (the club NPC 57 in an
+Animate, 8333 node 14, at ticks 53, 110, 140, ... of tree.log). Not native yet: tree.log's
+largest group of differing steps.
+
 ## Autonomy
 
 A Sim with nothing to do chooses for itself through **Find Best Action** (opcode 30,
