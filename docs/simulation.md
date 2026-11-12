@@ -1742,3 +1742,14 @@ node (the home log: Sim 12 at 1618, Sim 237 still on place 0; the wait returns a
 step plans and walks). `World::route_wait_tree`. Of the four logs' slot steps with no plan, this
 is the only one with a person on the slot's places; the others go on in their frame.
 
+
+## The money balloon
+
+A Sim that spends money in its turn (AlterBudget, opcode 25, with operand byte 4 zero: not a test
+of the funds) shows it when the turn ends: as its stack yields, the engine pushes the Sim's
+"display money balloon" (person_sg's 8384, by its label) over the yielding frame, an engine frame
+with no stack object (0), and runs it in the same turn; its return leaves the frame below at its
+node. The home log's three AlterBudgets: two tests (ticks 260 and 693, the fridge's 8215 node 0 and
+8209 node 6, byte 4 one) with no balloon, and the fridge's 8215 node 1 at 931 (byte 4 zero),
+whose balloon runs after Sim 12's GotoRoutingSlot yields (4170 node 3). `Object::spent`,
+`World::money_balloon_tree`. The funds themselves are not changed natively yet.

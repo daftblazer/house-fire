@@ -57,6 +57,8 @@ pub const SIT_FUNCTION: usize = 26;
 pub const ASK_TO_MOVE: &str = "route ask to move animation";
 /// The label of the tree a routing Sim runs while the person it asked is still in its way.
 pub const ROUTE_WAIT: &str = "route waiting animation";
+/// The label of the tree the engine runs over a Sim that spent money.
+pub const MONEY_BALLOON: &str = "display money balloon";
 /// The object data field that holds the way it faces (in eighths of a turn).
 pub const DATA_FACING: usize = 1;
 /// The object data field naming the object it sits in or on (0 none): a lamp on a table, the
@@ -108,6 +110,9 @@ pub struct Object {
     /// The person a routing Sim last asked to move out of a slot's places (`ask_to_move_tree`):
     /// asked again while they stay, the Sim waits instead ("Asked to move").
     pub asked_to_move: Option<i16>,
+    /// It spent money this turn (an AlterBudget that is not a test): the money balloon shows when
+    /// its turn ends (`money_balloon_tree`).
+    pub spent: bool,
     /// Its tree stack, bottom first: a lot's objects' as the lot saved it (a frame whose tree is
     /// not on the disc keeps no tree).
     pub stack: Vec<Frame>,
@@ -345,6 +350,13 @@ impl<'lib> World<'lib> {
     /// semi-global file's "route waiting animation" (person_sg's 8276).
     pub fn route_wait_tree(&self, me: ObjectKey) -> Option<TreeId> {
         self.semi_tree_named(me, ROUTE_WAIT)
+    }
+
+    /// The tree the engine runs over a Sim that spent money, when its turn ends: its semi-global
+    /// file's "display money balloon" (person_sg's 8384; the home log's tick 931, after the fridge's
+    /// AlterBudget).
+    pub fn money_balloon_tree(&self, me: ObjectKey) -> Option<TreeId> {
+        self.semi_tree_named(me, MONEY_BALLOON)
     }
 
     fn semi_tree_named(&self, me: ObjectKey, name: &str) -> Option<TreeId> {

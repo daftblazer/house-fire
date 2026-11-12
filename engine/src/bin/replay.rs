@@ -40,7 +40,7 @@ use housefire::bhav::{Node, Tree, TreeKind, tree_kind};
 use housefire::cfmt::g;
 use housefire::disc::Disc;
 use housefire::expression::{ExpressionOperand, Variables, expression};
-use housefire::interp::{Error, Frame, Host, Interpreter, Mode, PrimResult, Trees};
+use housefire::interp::{Error, Frame, Host, Interpreter, Mode, PrimResult, Step, Trees};
 use housefire::library::{Advert, Library};
 use housefire::motives::{MotiveRates, motive, update_motives};
 use housefire::primitives::{
@@ -657,6 +657,11 @@ impl Host for ReplayHost<'_, '_> {
                 }
             }
             return self.logged(s, n);
+        }
+        if n.opcode == 25 && n.operand[4] == 0 {
+            // AlterBudget that is not a test: the Sim's spending, shown when its turn ends (the
+            // funds themselves the log's for now)
+            self.world.get_mut(me).spent = true;
         }
         if n.opcode == 20 {
             // RunFunctionalTree: natively (primitives::run_functional_tree), against the log's next
@@ -2686,7 +2691,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
             // study: the log's steps of one object in a tick range ("id:first:last")
             if let Some(v) = env("REPLAY_SHOW_LOG_STEPS") {
                 let p: Vec<i64> = v.split(':').map(atoi).collect();
-                if p.len() == 3 && p[0] == o_id as i64 && (p[1]..=p[2]).contains(&(t as i64)) {
+                if p.len() == 3 && (p[0] == o_id as i64 || p[0] == -1) && (p[1]..=p[2]).contains(&(t as i64)) {
                     let op = lib.tree_at(tree).nodes.get(s.node as usize).map_or(-1, |n| n.opcode as i32);
                     println!("log step: tick {t} object {o_id} {}:{} op {op} -> {} look {} res {} frame {:x} so {} params {:?}", s.tree, s.node, s.after, if s.look != 0 { s.look as char } else { '-' }, s.result, s.frame & 0xFFFF, s.stack_object, s.params);
                 }
@@ -3152,7 +3157,23 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
             h.me = ok;
             interp.reset_iterations();
             let s0 = Instant::now();
-            interp.step(&mut h);
+            let stepped = interp.step(&mut h);
+            // A Sim that spent money this turn (AlterBudget, not a test) shows it when its turn
+            // ends: the engine pushes its "display money balloon" over the yielding frame, an
+            // engine frame with no stack object, run in the same turn (docs/simulation.md, "The
+            // money balloon")
+            if stepped == Step::Yield
+                && h.world.get_live(ok).is_some_and(|o| o.spent)
+                && std::mem::take(&mut h.world.get_mut(ok).spent)
+                && let Some(t) = h.world.money_balloon_tree(ok)
+                && interp.push(lib, t, &[])
+            {
+                let f = interp.top();
+                f.engine = true;
+                f.stack_object = 0;
+                f.file = h.world.get(ok).file;
+                h.counts.note("frames: the money balloon pushed natively when a Sim that spent yields");
+            }
             if let Some(b) = &mut h.bench {
                 let d = us(s0);
                 b.steps_us += d;
