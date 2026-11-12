@@ -1000,6 +1000,14 @@ impl Host for ReplayHost<'_, '_> {
             }
             println!("{l}");
         }
+        if n.opcode == 14 && has("REPLAY_SHOW_FIND_BEST") {
+            // study: FindBestObjectForFunction, the checks the log ran above this step (the
+            // steps of this stack between its previous step and this one, at node 0)
+            let prev = (0..self.step).rev().find(|&j| self.log.steps[j].sim == s.sim && self.log.steps[j].frame == s.frame).unwrap_or(0);
+            let checks: Vec<(u16, i16, u16)> = (prev + 1..self.step).map(|j| &self.log.steps[j]).filter(|x| x.sim == s.sim && x.node == 0).map(|x| (x.tree, x.stack_object, x.after)).collect();
+            println!("find best: tick {} by {me_id} {}:{} operand {:?} -> {} so after {}; checks {checks:?}", s.tick, s.tree, s.node, &n.operand[..4], s.after, s.stack_object_after);
+
+        }
         note!(self.counts, "primitives: from the log, opcode {}", n.opcode);
         let f = interp.top();
         f.params = s.params_after.clone();
