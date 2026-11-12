@@ -1700,3 +1700,16 @@ return leaves main at its first node for a later turn (`Simulator::stack_of`). T
 labels say so: the meal's 4099 "init single plate" and 4193 "main - regular meal", the trash
 pile's 8203 "init tree" and 8205 "main"; the counter's saved bottom tree is its entry 1 too.
 Checked (`replay`): differing steps home 56 to 40, club 22 to 18, tree 16 to 7, tree3 12 to 9.
+
+## A route through a door
+
+A routing step that plans (GotoRelativePosition, opcode 27; GotoRoutingSlot, 45) and whose route
+changes room at a door does not walk: it pushes the door's portal function (the function table's,
+OBJf, entry 15, as in The Sims: the archway's and the lattice door's 8215), with the door as the
+stack object, and stays at its node. The portal walks the Sim to the door (its own
+GotoRelativePosition, 8202 node 6, over the following ticks), through it, and returns; the
+routing node then runs again and plans from the far side (the home log: Sim 12's fridge walk,
+8210 node 0, pushes 8215 on the archway 67 at tick 260, which returns at 521; Sim 237's at 1901
+on the lattice door 65). The door is the leader of the parts on the two tiles of the route's
+first change of room; in both routes the leader is also the part on the near tile, so the logs
+do not tell those two apart. `World::portal_on_route`.

@@ -13,7 +13,7 @@ use crate::save::{
     read_lot_arrays, LotChunks, LotObjects, MotiveDelta, Neighbour, OBJECT_TEMPS, SavedClass, SavedQueueEntry, SavedRelationship, read_lot_objects,
     read_object_types,
 };
-use crate::FileId;
+use crate::{FileId, TreeId};
 
 /// The scopes, by the PC game's names where the measurements agree with them.
 pub mod scope {
@@ -49,6 +49,8 @@ pub mod scope {
 
 /// The object data field the engine relies on: the object's id.
 pub const DATA_OBJECT_ID: usize = 11;
+/// The function table's (OBJf) entry a door runs when a route goes through it (The Sims' "portal").
+pub const PORTAL_FUNCTION: usize = 15;
 /// The object data field that holds the way it faces (in eighths of a turn).
 pub const DATA_FACING: usize = 1;
 /// The object data field naming the object it sits in or on (0 none): a lamp on a table, the
@@ -273,6 +275,29 @@ impl<'lib> World<'lib> {
         let lib = self.library();
         self.globals.get(10).is_some_and(|&h| lib.constant(lib.global(), 19215) == Some(h))
     }
+    /// An object's function (its file's function table, OBJf, entry `k`): the action tree, if
+    /// it has one.
+    pub fn function_tree(&self, o: ObjectKey, k: usize) -> Option<TreeId> {
+        let lib = self.library();
+        let file = self.get(o).file?;
+        let &(_, action) = lib.file(file).functions.values().next()?.get(k)?;
+        (action != 0).then(|| lib.tree(Some(file), action)).flatten()
+    }
+
+    /// The door a route (its waypoints, sixteenths) goes through first: the leader of the door
+    /// whose parts stand on the two tiles of the route's first change of room (the home log's
+    /// two routes through a door, ticks 260 and 1901; docs/simulation.md, "A route through a
+    /// door").
+    pub fn portal_on_route(&self, points: &[(i32, i32)]) -> Option<ObjectKey> {
+        let w = &self.walls;
+        let (a, b) = points.windows(2).map(|p| ((p[0].0 >> 4, p[0].1 >> 4), (p[1].0 >> 4, p[1].1 >> 4))).find(|&(a, b)| {
+            let (r0, r1) = (w.room(a.0, a.1), w.room(b.0, b.1));
+            r0 != r1 && r0 != 0 && r1 != 0
+        })?;
+        let part = self.objects().find(|o| o.door && o.on_lot() && [a, b].contains(&(o.x16 >> 4, o.y16 >> 4)))?;
+        self.find(part.leader)
+    }
+
     /// On a community lot the saved stacks restart from their bottom frame (`Simulator::stack_of`),
     /// so the interaction a Sim was running is lost there: the engine queues it again, first, and
     /// the Sim's IdleForInput delivers it (the club log's tick 2: six Sims, their saved current

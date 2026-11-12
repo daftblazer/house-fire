@@ -286,9 +286,11 @@ impl Interpreter {
             }
             // An interaction IdleForInput delivered comes back to that node, which runs again as
             // a step of its own (the log: 4106's return, then 281 node 4 to 2), not on by the
-            // result.
+            // result; so does a door's portal function a routing step pushed (GotoRelativePosition
+            // 27, GotoRoutingSlot 45: the home log's 8215 returning to 8210 node 0 at tick 521),
+            // which plans again from the door's far side.
             let caller = self.stack.last().unwrap();
-            if caller.tree.and_then(|t| host.tree_at(t).nodes.get(caller.node as usize)).is_some_and(|n| n.opcode == 17) {
+            if caller.tree.and_then(|t| host.tree_at(t).nodes.get(caller.node as usize)).is_some_and(|n| matches!(n.opcode, 17 | 27 | 45)) {
                 return Step::Go;
             }
             return self.transition(host, value);

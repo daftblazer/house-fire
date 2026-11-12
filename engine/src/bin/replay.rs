@@ -52,7 +52,7 @@ use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lot_globals, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
 use housefire::tree_log::{Log, PassRec, PlanRec, StepRec, read_log, same_shape};
-use housefire::world::{DATA_OBJECT_ID, Object, ObjectKey, ScriptVariables, World};
+use housefire::world::{DATA_OBJECT_ID, PORTAL_FUNCTION, Object, ObjectKey, ScriptVariables, World};
 use housefire::{FileId, TreeId};
 
 fn env(name: &str) -> Option<String> {
@@ -513,6 +513,26 @@ impl Host for ReplayHost<'_, '_> {
                 // the step that plans (its Sim's plan made this tick): with a way, it comes back to
                 // its own node and walks from the next; with none, it goes on at once
                 let native_again = !pl.points.is_empty();
+                // A route through a door: the step pushes the door's portal function (its leader's
+                // function table entry 15, the door its stack object) and stays at its node, which
+                // plans again when that returns (docs/simulation.md, "A route through a door")
+                if let Some(door) = self.world.portal_on_route(&pl.points)
+                    && let Some(tree) = self.world.function_tree(door, PORTAL_FUNCTION)
+                {
+                    let (did, dfile) = (self.world.get(door).id(), self.world.get(door).file);
+                    let next = log.steps[self.step + 1..].iter().find(|x| x.sim == s.sim);
+                    let same = s.result == 0 && s.after == s.node && next.is_some_and(|x| x.frame > s.frame && x.node == 0 && x.tree == lib.tree_at(tree).id as u16 && x.stack_object == did);
+                    self.counts.note(if same {
+                        "primitives: GotoRoutingSlot/GotoRelativePosition: a route through a door, its portal pushed natively as the log's"
+                    } else {
+                        "primitives: GotoRoutingSlot/GotoRelativePosition: a route through a door, its portal pushed natively, NOT the log's"
+                    });
+                    if interp.push(lib, tree, &[]) {
+                        interp.top().stack_object = did;
+                        interp.top().file = dfile;
+                        return PrimResult::Continue;
+                    }
+                }
                 self.counts.note(if s.result == 0 && native_again == (s.after == s.node) {
                     "primitives: GotoRoutingSlot/GotoRelativePosition: the planning step natively as the log's (again with a way, on without one)"
                 } else {
@@ -1864,6 +1884,17 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
             }
         }
     }
+    if let Some(pat) = env("REPLAY_SHOW_FILE") {
+        // study: a file's function table and tree labels
+        for f in lib.files().iter().filter(|f| f.path.contains(&pat)) {
+            println!("file {}: functions {:?}; semi {:?}", f.path, f.functions, f.semi.map(|s| &lib.file(s).path));
+            let mut names: Vec<_> = f.tree_by_name.iter().map(|(n, id)| (*id, n.clone())).collect();
+            names.sort();
+            for (id, n) in names {
+                println!("  tree {id} {n:?}");
+            }
+        }
+    }
     if let Some(pat) = env("REPLAY_TREE_NAMES") {
         // study: the BHAV labels matching a pattern, by file
         for f in lib.files() {
@@ -2533,6 +2564,14 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                     o.attributes = vec![0; lib.def(def).field(56) as usize];
                     sim.forget(ok);
                     h.counts.note("objects: a stand-in given its first step's file and started");
+                }
+            }
+            // study: the log's steps of one object in a tick range ("id:first:last")
+            if let Some(v) = env("REPLAY_SHOW_LOG_STEPS") {
+                let p: Vec<i64> = v.split(':').map(atoi).collect();
+                if p.len() == 3 && p[0] == o_id as i64 && (p[1]..=p[2]).contains(&(t as i64)) {
+                    let op = lib.tree_at(tree).nodes.get(s.node as usize).map_or(-1, |n| n.opcode as i32);
+                    println!("log step: tick {t} object {o_id} {}:{} op {op} -> {} look {} res {} frame {:x} so {} params {:?}", s.tree, s.node, s.after, if s.look != 0 { s.look as char } else { '-' }, s.result, s.frame & 0xFFFF, s.stack_object, s.params);
                 }
             }
             if has("REPLAY_SHOW_MADE_DEFS") && matches!(o_id, 197 | 201 | 202) && h.shown.next(&format!("made def {o_id}"), 1) {
