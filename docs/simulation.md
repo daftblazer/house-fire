@@ -1553,4 +1553,9 @@ routing checks there:
   six, the steps (-16, 0) and (-16, +16) exactly). With that every club plan is the log's in
   full, 13 of 13; the plan-shape studies run on them now give exactly what the log's own plans
   give (REPLAY_LOGGED_PLANS).
-Lockstep: 3 differences (scope 0 and 1 places, the caller 80213900 also behind the home log's).
+Lockstep: 3 differences at first (scope 0 and 1 places, the caller 80213900), all one address:
+object 181's data. The engine made 181 during tick 6513 and Sim 57 read it in that same tick,
+when lockstep's world (which takes engine-made objects from the next tick's list) had no such
+object, so the address was bound to no owner; from tick 6595 it was 181's cell and counted as
+moved. A binding to no owner has no identity, so it is now bound anew once the address is an
+object's cell: 0 differences on all four logs (the rebinding once, here).

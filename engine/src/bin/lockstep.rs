@@ -921,6 +921,18 @@ fn variables(lib: &Library, log: &housefire::tree_log::Log, step_object: &[Optio
                     cell_addr.remove(&key);
                     notes.note("variables: object replaced");
                 }
+                // An address first read while its object was not in the world yet (bound to no
+                // owner: an engine-made object listed from the next tick, the club's 181 at tick
+                // 6513) has no identity: once it is an object's cell, it is bound anew.
+                if let Some(&c) = addr_cell.get(&addr)
+                    && c.0.is_none()
+                    && key.0.is_some()
+                {
+                    cell_addr.remove(&c);
+                    seen.remove(&c);
+                    addr_cell.remove(&addr);
+                    notes.note("variables: an address read before its object was in the world, bound to it now");
+                }
                 let ca = cell_addr.get(&key).copied();
                 let ac = addr_cell.get(&addr).copied();
                 addr_used.insert(addr, i);
@@ -929,6 +941,14 @@ fn variables(lib: &Library, log: &housefire::tree_log::Log, step_object: &[Optio
                     addr_cell.insert(addr, key);
                     bound_at.insert(key, s.tick);
                 } else if ca.is_some_and(|a| a != addr) || ac.is_some_and(|c| c != key) {
+                    if std::env::var_os("LOCKSTEP_SHOW_WHERE").is_some() {
+                        let other = ac.map(|c| (c.0.and_then(|t| t.owner().flatten()).and_then(|k| world.get_live(k)).map(|o| o.id()), c.1, bound_at.get(&c).copied()));
+                        eprintln!(
+                            "where tick {} scope {} data {} me {} stack {} addr {addr:08x}: the cell (owner {:?}, index {}) bound to {ca:08x?} since {:?}; the address bound to {other:?}",
+                            s.tick, v.scope, v.data, world.get(me).id(), frame.stack_object,
+                            cell.table.owner().flatten().and_then(|k| world.get_live(k)).map(|o| o.id()), cell.index, bound_at.get(&key)
+                        );
+                    }
                     differ(notes, &mut why, loaded_at, &format!("variables: {sc}: where DIFFERENT"), s, v);
                 } else {
                     notes.note(&format!("variables: {sc}: where the same"));
