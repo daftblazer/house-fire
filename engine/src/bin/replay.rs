@@ -2017,6 +2017,9 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
             for (id, sl) in &f.slots {
                 println!("  slots {id}: {sl:?}");
             }
+            for (id, t) in &f.tables {
+                println!("  table {id}: first {:?}; (action, guard, flags) {:?}", f.table_first.get(id), t.iter().map(|e| (e.action, e.guard, e.flags)).collect::<Vec<_>>());
+            }
             for d in &f.definitions {
                 let hits: Vec<(usize, u16)> = (0..80).map(|i| (i, d.field(i))).filter(|(_, v)| f.functions.contains_key(v)).collect();
                 println!("  def {:08x}: fields naming a function table {hits:?}", d.guid());
@@ -2465,7 +2468,13 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                     let win = sim.stack_of(&h.world, w);
                     let below = win.stack().last().and_then(|f| f.tree).map(|t| lib.tree_at(t).id);
                     let below_op = if win.done() { None } else { top_node(lib, win).map(|n| n.opcode) };
-                    if tab.first != 0 && s.tree == tab.first && below != Some(tab.first as i16) && !matches!(below_op, Some(3 | 17)) && let (Some(tf), Some(tid)) = (tab.file, tab.table) {
+                    // a table with no first tree starts at its first guard, and runs them all (the
+                    // "go here" marker's six at tree.log's 741 and 1684)
+                    let entry = match (tab.first, tab.file, tab.table) {
+                        (0, Some(tf), Some(tid)) => lib.table(tf, tid).iter().find(|e| e.guard != 0 && e.flags & 0x80 == 0).map_or(0, |e| e.guard),
+                        (f, _, _) => f,
+                    };
+                    if entry != 0 && s.tree == entry && below != Some(entry as i16) && !matches!(below_op, Some(3 | 17)) && let (Some(tf), Some(tid)) = (tab.file, tab.table) {
                         let nest: Vec<usize> = by_tick[t as usize].iter().copied().filter(|&j| j >= i && log.steps[j].sim == s.sim).take_while(|&j| log.steps[j].frame >= s.frame).collect();
                         let defaults = win.defaults().to_vec();
                         h.nested = nest.clone();
@@ -2479,8 +2488,10 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                         let mut first = None;
                         let mut checks = 0;
                         for _ in 0..parts {
-                            first = want_of(&mut h, tab.first);
-                            checks += 1;
+                            if tab.first != 0 {
+                                first = want_of(&mut h, tab.first);
+                                checks += 1;
+                            }
                             for e in lib.table(tf, tid) {
                                 if e.guard == 0 || (first == Some(false) && e.flags & 0x400 == 0) || e.flags & 0x80 != 0 {
                                     continue;

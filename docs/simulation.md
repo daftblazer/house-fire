@@ -1765,3 +1765,9 @@ IdleForInput has nothing queued natively and its log runs the target's checks an
 node 4, the interaction's tree a frame up on that target: the home log's one, Sim 237 at 1579, the
 marker 197's 4108 check, then its 4107, delivered natively with exactly the log's check steps (the
 save's queued entries are the other three of the home log's deliveries).
+
+The menu's checks of a target whose table names no first tree (the "go here" marker,
+destination_gohereandshow: six interactions, guards 4109, 4108, 4111, 4108, 4108, 4108) start at
+its first guard and run every guard in the table's order (as when a first tree passes): tree.log's
+Sim 57 at 741 and 1684 on the marker 179, both runs with exactly the log's steps.
+
