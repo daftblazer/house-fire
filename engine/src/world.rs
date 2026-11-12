@@ -381,14 +381,19 @@ impl<'lib> World<'lib> {
         {
             let keys: Vec<ObjectKey> = self.order.clone();
             for k in keys {
+                // the file the frames from here up are named in (the delivered interaction's,
+                // and the trees it calls)
+                let mut target_file = None;
                 for i in 1..self.get(k).stack.len() {
                     let below = &self.get(k).stack[i - 1];
                     let is_idle = below.tree.and_then(|t| self.lib.get_tree(t)?.nodes.get(below.node as usize).copied()).is_some_and(|n| n.opcode == 17);
                     let f = &self.get(k).stack[i];
-                    if !is_idle || f.stack_object == self.get(k).id() {
+                    if is_idle && f.stack_object != self.get(k).id() {
+                        target_file = self.find_object(f.stack_object).and_then(|t| t.file);
+                    } else if target_file.is_none() {
                         continue;
                     }
-                    let Some(target) = self.find_object(f.stack_object).and_then(|t| t.file) else { continue };
+                    let Some(target) = target_file else { continue };
                     let id = f.tree.map(|t| self.lib.tree_at(t).id as u16);
                     if let Some(t) = id.and_then(|id| self.lib.tree(Some(target), id)) {
                         let f = &mut self.get_mut(k).stack[i];
