@@ -458,6 +458,34 @@ fn main() -> ExitCode {
             for (k, n) in &words {
                 println!("  {n:5} {k}");
             }
+            // the unmatched draws' display lists (word 6's first 32 bytes, distinct), searched for
+            // in models.arc and datasets.arc: which entry keeps each and whether a head precedes it
+            if std::env::var_os("ASSETS_SHOW_UNMATCHED_66").is_some() {
+                let mut heads: BTreeMap<[u8; 32], usize> = BTreeMap::new();
+                for s in log.strips.iter().filter(|s| s.words[0] >> 24 == 0x42) {
+                    if !(1..16).any(|k| lists.contains_key(&s.at[k])) {
+                        *heads.entry(s.at[6]).or_default() += 1;
+                    }
+                }
+                println!("unmatched display lists, distinct {}", heads.len());
+                let ds = d.read("datasets.arc").unwrap_or_default();
+                let arcs = [("models", &data, entries.clone()), ("datasets", &ds, arc::entries(&ds).unwrap_or_default())];
+                for (h, n) in heads.iter().take(40) {
+                    let mut at = String::from("not found");
+                    'f: for (an, a, es) in &arcs {
+                        for e in es {
+                            let b = arc::bytes(a, e);
+                            if let Some(q) = b.windows(32).position(|w| w == h) {
+                                let head = b[..q].windows(6).rposition(|w| w == [0, 1, 0, 0, 0, 0]);
+                                let name = head.map(|x| b[x + 6..].iter().take_while(|&&c| c != 0).map(|&c| c as char).collect::<String>());
+                                at = format!("{an}:{} +{q} (entry {} bytes), head {:?} {:?}", e.name, b.len(), head, name);
+                                break 'f;
+                            }
+                        }
+                    }
+                    println!("  {n:4} {:02x?}: {at}", &h[..6]);
+                }
+            }
             if std::env::var_os("ASSETS_SHOW_TAILS").is_some() {
                 let mut shown = BTreeMap::<u8, usize>::new();
                 for e in &entries {

@@ -109,6 +109,10 @@ pub fn read_record_prefix(b: &[u8]) -> Option<(Record, usize)> {
     if be32(b, q)? != 0x25 {
         return None;
     }
+    // the head's entries (their count at +0x13, 0 for an object; the scenes' are 28 bytes each:
+    // two words, 12 zero bytes, two floats, e.g. 1 and 80), then a byte, the scale and the nodes
+    // 28 bytes a entry later
+    let q = q + 28 * *b.get(q + 0x13)? as usize;
     let scale = f32::from_bits(be32(b, q + 0x15)?);
     let count = be32(b, q + 0x19)? as usize;
     if count > 256 {

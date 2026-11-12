@@ -214,3 +214,13 @@ whole there (`model::read_record_prefix`). With `models.arc`'s 843: 2,132 record
 nodes, 6,093 sub-models), and 533 of the home replay's strips come from one of their
 sub-models, all 533 with its count and texture coordinates. The opcode-66 figure is unchanged
 (858 of 4,000): the other display-list draws are of models not read whole yet (or the Sims').
+
+The head's entries: the byte at +0x13 past the name counts entries of 28 bytes kept before the
+scale (0 for every object; 1 to 7 in 63 records, the scenes'): two words, 12 zero bytes, two
+floats (the Create-a-Sim scene's: 0x3dc4, 0x3e, 1.0, 80.0; a camera's or a light's, not read
+yet). The scale, node count and nodes follow them. Read so, 2,290 records whole (7,412
+sub-models), the Create-a-Sim scene among them (one node, 13 sub-models, to its last byte). On
+the home replay: every one of 4,000 opcode-66 draws carries a read sub-model's display list as
+word 6 (3,428 its positions as word 2), and 4,247 strips come from a read sub-model, all with its
+count and texture coordinates. Study ASSETS_SHOW_UNMATCHED_66 (the unmatched draws' lists,
+searched for in the archives).
