@@ -16,6 +16,7 @@ pub mod routing;
 pub mod interp;
 pub mod save;
 pub mod simulator;
+pub mod texture;
 pub mod tree_log;
 pub mod world;
 
