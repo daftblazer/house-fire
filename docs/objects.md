@@ -171,6 +171,15 @@ Kinds 8 and 9 by tile (operand byte 4 & 0x7F), false with the target kept when n
 The home log's stack objects differing 53 → 6, locals 20,622 → 20,616 differing; the club logs
 have no kind 8 or 9 steps.
 
+What is left of the stack objects (after kinds 0 and 6 keep, 1, 2, 4, 5 clear): the club log
+none; tree.log and tree3.log 16 each, all tree 4103 node 2's kind 6 from 153, where the original
+finds 152 and native 12: 152's field 59 is 17 in the original, written by its own scripts in
+steps these older logs do not carry (the club log's same walk is the original's); the home log
+2, both an expression of tree 8211 reading scope 16 (stack object 62's slot 0, the original's
+Sim 197, native none). 197's slot field becomes 0 at tick 693 (synced from the log) but no
+native step makes 62 its container: no Grab, DropOnto or Snap of it there (REPLAY_WATCH_ID
+shows its container and slot step by step), so the primitive that seats it is still to find.
+
 Checked on a world loaded natively from the club lot (`World::load_lot`). The lot is picked
 by the order of the original's longest walk; object ids are reused between lots and don't
 tell them apart. In this session the club lot is loaded at tick 0 and again at 2799, each

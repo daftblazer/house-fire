@@ -664,6 +664,13 @@ impl Host for ReplayHost<'_, '_> {
                 _ => "Snap",
             };
             note!(self.counts, "objects: {name} natively{}", if done { "" } else { ": its objects not found (or not modelled)" });
+            if let Ok(w) = std::env::var("REPLAY_WATCH_ID")
+                && let Ok(w) = w.parse::<i16>()
+                && (me_id == w || so == w)
+            {
+                let c = self.world.find_object(w).map(|o| (o.data[2], o.data[3]));
+                println!("watch {w}: tick {} {name} by {me_id} so {so} operand {:02x?} done {done}: now container/slot {c:?}", s.tick, n.operand);
+            }
             return self.logged(s, n);
         }
         if n.opcode == 13 {
@@ -1394,6 +1401,20 @@ fn native_plan_points(pl: &PlanRec, world: &World) -> Option<Vec<(i32, i32)>> {
 fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: &[Neighbour], bench: Option<Bench>, card_lot: bool) -> Option<(Counts, Option<Bench>)> {
     let mut world = World::new(lib);
     world.load_lot(club).expect("the lot");
+    if has("REPLAY_SHOW_SLOTTED") {
+        for id in [197i16, 62] {
+            if let Some(o) = world.find_object(id) {
+                println!("loaded {id}: person {} container {} slot {} at ({},{},{}) guid {:08x}", o.person, o.data[2], o.data[3], o.x16 >> 4, o.y16 >> 4, o.level, o.guid);
+            }
+        }
+        for o in world.objects() {
+            if o.data.get(3).is_some_and(|&s| s >= 0) && o.data.get(2) == Some(&0) {
+                let t = (o.x16 >> 4, o.y16 >> 4, o.level);
+                let mates: Vec<String> = world.objects().filter(|x| x.id() != o.id() && (x.x16 >> 4, x.y16 >> 4, x.level) == t).map(|x| format!("{}{}", x.id(), if x.person { "P" } else { "" })).collect();
+                println!("slotted, no container: {}{} slot {} at {t:?} x16 {} y16 {}; on its tile {mates:?}", o.id(), if o.person { "P" } else { "" }, o.data[3], o.x16, o.y16);
+            }
+        }
+    }
     // the lot's globals as saved (its SIMI): the clock among them
     world.globals = globals.to_vec();
     // The plans' points natively wherever the log carries the planner's inputs ('r', 'h'), so the
@@ -2201,6 +2222,18 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                     interp.sleep().wake();
                 }
             }
+            if let Ok(w) = std::env::var("REPLAY_WATCH_ID")
+                && let Ok(w) = w.parse::<i16>()
+                && let Some(o) = h.world.find_object(w)
+            {
+                let now = (o.data[2], o.data[3]);
+                let was = h.shown.0.insert(format!("watch {w}"), (now.0 as i32) << 16 | (now.1 as u16 as i32));
+                if was != Some((now.0 as i32) << 16 | (now.1 as u16 as i32)) {
+                    let prev = i.checked_sub(1).map(|k| &log.steps[k]);
+                    let ops: Vec<String> = h.world.objects().filter_map(|x| x.file).collect::<BTreeSet<_>>().into_iter().filter_map(|f| prev.and_then(|p| lib.tree(Some(f), p.tree).map(|t| lib.tree_at(t).nodes.get(p.node as usize).map(|n| (n.opcode, n.operand))))).flatten().map(|(op, o)| format!("op {op} {o:02x?}")).collect::<BTreeSet<_>>().into_iter().collect();
+                    println!("watch {w}: container/slot now {now:?} at tick {} step {i} ({}:{}; before it {:?}: {ops:?})", s.tick, s.tree, s.node, prev.map(|p| (p.tree, p.node, p.after)));
+                }
+            }
             if same {
                 // The frame's own state as the native kept it, against the log's at the step.
                 let f = interp.top();
@@ -2265,6 +2298,12 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                                         println!("obj {id}: guid {:08x} level {} x16 {} y16 {} data {:?} defn {:?}", o.guid, o.level, o.x16, o.y16, &o.data[..o.data.len().min(80)], h.world.definition(o).map(|d| &d.fields[..d.fields.len().min(80)]));
                                     }
                                 }
+                            }
+                        }
+                        if has("REPLAY_SHOW_SO_197") && let Some(o) = h.world.find_object(197) {
+                            l += &format!(" | tick {}: 197 container {} slot {} at ({},{})", s.tick, o.data[2], o.data[3], o.x16 >> 4, o.y16 >> 4);
+                            if let Some(c) = h.world.find_object(62) {
+                                l += &format!("; 62 at ({},{}) container {}", c.x16 >> 4, c.y16 >> 4, c.data[2]);
                             }
                         }
                         if has("REPLAY_SHOW_SO_59") {
