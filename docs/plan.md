@@ -133,6 +133,16 @@ worst 136-143 µs (tick 260, the yard to the front door, and tick 1901, both one
 together 0.83-0.85 ms. A tick plans at most once a Sim, so the worst is about 3% of the 5 ms
 budget on the PC; the RK3566's figure is the user's to measure (the same command there).
 
+**On the RK3566 (2026-11-11).** The same `replay --bench` on the home log (today's, with made
+objects, the clock and the planner native), a static aarch64 build (musl, `-C
+target-cpu=cortex-a55`, linked with rust-lld; musl's allocator may cost a little against the
+earlier glibc builds), pinned to one A55 (`taskset -c 3`), twice: the planner 216-222 µs a plan
+median, 1.04-1.05 ms at worst (tick 260; about 6.7x the PC), all 18 6.3 ms; a tick 112 µs on
+average (was 118), 1.75 µs median, 530-538 µs at the 99th percentile, 1.27-1.28 ms at worst past
+the load (was 2.2 ms); scripts 88 µs a tick, the pass 24 µs. The worst plan and the worst tick
+together, about 2.3 ms, fit the 5 ms budget; the planner's runs are not yet in the tick's
+figures (they are measured apart), nor animation and the rest of routing.
+
 ## What does not come over from Bustin' Out's port
 
 The port's own redrawn interface (its "HD UI": `src/hud_read.cpp`, `hud_pieces.h`,
