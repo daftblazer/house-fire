@@ -1506,3 +1506,18 @@ shifted by one).
 - What wakes a sleeping stack early (23 of 2,833 sleeps).
 - A stack that stops (an error): what the original does with the object.
 - The frames the engine pushes on a Sim's stack: its interaction queue.
+
+## A second lot: the club (2026-11-11)
+
+A session the user recorded at the club (`work/inputs/club-live`, its own starting card; two
+replays of it give the same 428,688 steps) logged with today's observer (`work/logs/club.log`,
+the save's lot 15: `replay ... --card work/inputs/club-live/memcard_a.raw --lot 15`). The
+routing checks there:
+- the planner: every plan whose inputs the log carries native and the original's from the
+  search to the point after the goal (12), one logged search ('I') of 13 not its coarse way;
+  5 of 5 requests of several goals take the planner's goal;
+- the walk: 170 of 171 walker steps, every walking Sim's place each tick (65), the 4 whole
+  walks frame for frame, 7 routing primitives returning on the original's tick;
+- the obstacles: 580 rectangles the planner's and 268 not: the club's objects (its dance
+  floor, booths, multi-tile pieces) are what the obstacle rules do not cover yet.
+Lockstep: 3 differences (scope 0 and 1 places, the caller 80213900 also behind the home log's).
