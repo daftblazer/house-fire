@@ -151,5 +151,12 @@ Read natively (`engine/src/model.rs`: a record's head and first sub-model, of th
 1,265 of the 1,843 records (434 of kind 1, 831 of kind 0). Checked against the strips the
 original plays (`assets ISO modelcheck LOG`, the home replay's 'w' records): the 133 strips
 whose positions are a read sub-model's have that sub-model's count, and their word 3 is its
-texture coordinates byte for byte, all 133. (Word 3 is the texture coordinates, the 4-byte array;
-the normals, 3 bytes in the record, are 4 apart in memory: the engine widens them as it loads.)
+texture coordinates byte for byte, all 133. (Word 3 is the texture coordinates, the 4-byte array.)
+
+After the arrays: a kind-1 sub-model's record ends with its 73-byte tail (the byte 6, then floats:
+the bound); a kind-0 one goes on with a 16-bit value a vertex (`00 85 00 85 …`, `00 f4 …`, runs of
+equal values: a per-vertex index, a bone's or a group's?), then more. Against the strips: kind
+1's word 4 is its normals as the record packs them (3 bytes a vertex; 57 strips), and in all 133
+kind-0 strips words 6, 7, 8, 9 and 11 point at those 16-bit values (several words the same
+array); no word is the 4-byte array read as colours, which is so something else. Some kind-0
+reads are misreads (a count of 0: a head of another shape, the Sims' parts and the maid).

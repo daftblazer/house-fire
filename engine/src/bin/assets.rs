@@ -350,6 +350,19 @@ fn main() -> ExitCode {
             let models: Vec<model::Model> = entries.iter().filter_map(|e| model::read(arc::bytes(&data, e))).collect();
             let kinds = models.iter().filter(|m| m.first.kind == 1).count();
             println!("records {}, first sub-model read {} (kind 1: {kinds}, kind 0: {})", entries.len(), models.len(), models.len() - kinds);
+            if std::env::var_os("ASSETS_SHOW_TAILS").is_some() {
+                let mut shown = BTreeMap::<u8, usize>::new();
+                for e in &entries {
+                    let b = arc::bytes(&data, e);
+                    if let Some(m) = model::read(b) {
+                        let n = shown.entry(m.first.kind).or_default();
+                        if *n < 8 {
+                            *n += 1;
+                            println!("  kind {} n {} {} ({} bytes, tail {}): {:02x?}", m.first.kind, m.first.count, m.name, b.len(), b.len() - m.tail, &b[m.tail..(m.tail + 40).min(b.len())]);
+                        }
+                    }
+                }
+            }
             // each strip whose positions' first 32 bytes are a read sub-model's: its word 3's
             // bytes against that sub-model's texture coordinates
             let mut by_pos: std::collections::HashMap<[u8; 32], &model::SubModel> = std::collections::HashMap::new();
@@ -369,6 +382,35 @@ fn main() -> ExitCode {
                 }
             }
             println!("strips from a read sub-model {strips}: the count the same {same_count}; word 3 the texture coordinates {same_uv}, not {other_uv}");
+            // which of a strip's words are a read sub-model's other parts: its colours, normals,
+            // and the 32 bytes after its arrays
+            let mut by_tail: std::collections::HashMap<[u8; 32], (u8, &str)> = std::collections::HashMap::new();
+            for (e, m) in entries.iter().filter_map(|e| model::read(arc::bytes(&data, e)).map(|m| (e, m))) {
+                let b = arc::bytes(&data, e);
+                if let Some(t) = b.get(m.tail..m.tail + 32) {
+                    by_tail.insert(t.try_into().unwrap(), (m.first.kind, "the bytes after the arrays"));
+                }
+                if let Some(c) = m.first.colours.as_ref().and_then(|c| c.get(..32)) {
+                    by_tail.insert(c.try_into().unwrap(), (m.first.kind, "the colours"));
+                }
+                if let Some(n) = m.first.normals.get(..32) {
+                    by_tail.insert(n.try_into().unwrap(), (m.first.kind, "the normals"));
+                }
+            }
+            let mut what: BTreeMap<String, usize> = BTreeMap::new();
+            for s in &log.strips {
+                if !by_pos.contains_key(&s.at[2]) {
+                    continue;
+                }
+                for k in 4..16 {
+                    if let Some((kind, w)) = by_tail.get(&s.at[k]) {
+                        *what.entry(format!("kind {kind}: word {k} is {w}")).or_default() += 1;
+                    }
+                }
+            }
+            for (k, n) in &what {
+                println!("  {n:4} {k}");
+            }
         }
         "texcheck" => {
             let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
