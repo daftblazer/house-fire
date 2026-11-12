@@ -397,7 +397,7 @@ impl<'lib> World<'lib> {
         }
         for &k in &self.order.clone() {
             let o = self.get_mut(k);
-            if o.person && o.data.get(4) != Some(&0) && o.current.tree != 0 {
+            if o.person && o.data.get(4) != Some(&0) && o.current.tree != 0 && o.person_data.get(32) != Some(&0) {
                 let c = o.current;
                 o.queue.insert(0, c);
             }

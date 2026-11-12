@@ -1771,3 +1771,8 @@ destination_gohereandshow: six interactions, guards 4109, 4108, 4111, 4108, 4108
 its first guard and run every guard in the table's order (as when a first tree passes): tree.log's
 Sim 57 at 741 and 1684 on the marker 179, both runs with exactly the log's steps.
 
+Not every Sim's saved interaction is queued again on a community lot: the club log's eight
+visitors' are (their person data 32 is 1), the player's Sim 57's is not (its 32 is 0: its saved
+4117 on the dream controller is never delivered, and at 6593 its IdleForInput delivers the player's
+"go here", 4096 on the marker 181 the click made). `World::requeue_current_on_community_lot`.
+
