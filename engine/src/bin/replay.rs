@@ -2341,8 +2341,19 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                             s.node
                         );
                     }
+                } else if st_top.is_some_and(|(t, n, _)| t == Some(s.tree as i16) && n == s.after)
+                    && lib.tree_at(tree).nodes.get(s.node as usize).is_some_and(|nd| nd.opcode == 28)
+                {
+                    // a CallNamedTree node's record, written when the call ends (after its
+                    // callee's steps): native is past it, at the node it went on to
+                    h.counts.note("steps: a call's record after its callee's (native past it)");
+                    continue;
                 } else {
                     h.counts.note("steps: different: another node");
+                    if has("REPLAY_SHOW_NODES") {
+                        let p = if i > 0 && log.steps[i - 1].sim == s.sim { format!("{}:{}->{}", log.steps[i - 1].tree, log.steps[i - 1].node, log.steps[i - 1].after) } else { "another stack's".into() };
+                        note!(h.counts, "study another node: tree {} native node {} log node {} (before: {p})", s.tree, st_top.map_or(0, |(_, n, _)| n), s.node);
+                    }
                 }
                 // Set to the log's: the frames below kept, the top one the log's.
                 let keep = st_len.min(fr_len - 1);
