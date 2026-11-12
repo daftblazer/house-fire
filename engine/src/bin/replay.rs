@@ -1961,6 +1961,12 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
             }
         }
     }
+    if has("REPLAY_SHOW_SAVED_STACKS") {
+        for o in world.objects().filter(|o| o.person) {
+            let fr: Vec<_> = o.stack.iter().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.stack_object, f.engine)).collect();
+            println!("saved stack {}: {fr:?}", o.id());
+        }
+    }
     if has("REPLAY_SHOW_OBJECTS") {
         for o in world.objects() {
             let mut l = format!("object {}: guid {:08x}, {} at {},{} facing {}; data", o.id(), o.guid, o.file.map_or("-".to_string(), |f| lib.file(f).path.clone()), o.x16, o.y16, o.data[1]);

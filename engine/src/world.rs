@@ -457,7 +457,13 @@ impl<'lib> World<'lib> {
                 o.queue = lo.queue;
             }
             saved_ids.push((o.id(), lo.stack.iter().map(|sf| sf.tree).collect()));
-            for sf in lo.stack {
+            // The original's +8 on a saved frame is on the frame a return comes back into (281
+            // under a delivered interaction, a routing step that pushed a door's portal): such a
+            // return takes no transition. Here that is the returning frame's `engine`: each
+            // saved flag moves to the frame above it (the home log's Sim 237: 8207's return into
+            // the counter's 8208 node 13 goes on to node 8, a call's true way).
+            let above: Vec<bool> = std::iter::once(false).chain(lo.stack.iter().map(|sf| sf.engine)).collect();
+            for (k, sf) in lo.stack.into_iter().enumerate() {
                 o.stack.push(Frame {
                     tree: self.lib.tree(o.file, sf.tree),
                     node: sf.node,
@@ -465,7 +471,7 @@ impl<'lib> World<'lib> {
                     locals: sf.locals,
                     stack_object: sf.stack_object,
                     file: o.file,
-                    engine: sf.engine,
+                    engine: above[k],
                     ..Default::default()
                 });
             }

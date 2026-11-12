@@ -260,3 +260,14 @@ A frame of the original's interpreter takes 16 bytes and two for each of its tre
 and locals, rounded up to a multiple of 8 (measured: the logs' frame addresses, 191,018 of
 191,030 calls). The engine does not keep addresses; replay uses the rule to place the saved
 frames the log has not shown yet.
+
+## The +8 flag in a saved stack
+
+A saved frame's +8 is set on the frame a return comes back into without a transition, not on the
+frame that returns: the home save's Sim 237 has it on Global 281 (under the interaction its
+IdleForInput delivered) and on 8207 (at its GotoRoutingSlot, node 7), the paper girl on 281 and
+4100. The engine marks the returning frame instead (`Frame::engine`: a made object's init, a tree
+the engine runs over an Idle), so the loader moves each saved flag to the frame above it. Read as
+the returning frame's, 8207's return into the counter's 8208 node 13 (a call, true to 8) had
+stayed at 13; moved up, it goes on to 8 as the original's (home differing steps 6 -> 4).
+
