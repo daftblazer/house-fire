@@ -2270,6 +2270,19 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
             // a call that gives no parameters passes the object's temps as they are now (the
             // interpreter keeps a pointer to them, +44)
             interp.set_defaults(temps);
+            // Returns the log does not show (a tree whose return the observer missed, such as
+            // 363 between 8283 and 8233 at the club): native deeper than the log and on a
+            // return node runs its returns until it is not.
+            let mut ran_returns = false;
+            while !interp.done() && interp.stack().len() > fr_len && interp.stack().last().is_some_and(|f| f.node > 250) {
+                interp.step(&mut h);
+                ran_returns = true;
+            }
+            if ran_returns {
+                h.counts.note("steps: native ran returns the log did not show");
+            }
+            let st_len = interp.stack().len();
+            let st_top = interp.stack().last().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.file));
             let same = !interp.done() && interp.stack().len() == fr_len && st_top.is_some_and(|(t, n, _)| t == Some(s.tree as i16) && n == s.node);
             if has("REPLAY_TRACE_MAKERS") && matches!((s.tree, s.node), (0x2007, 1) | (0x2022, 1) | (0x200f, 6)) && s.look == b'X' && !consumed.contains(&i) {
                 println!("  maker step {i}: tree found {:?}, native stack same {same} (native top {st_top:?}, depth {} of {fr_len}), node opcode {:?}", lib.file(file).path, interp.stack().len(), lib.tree_at(tree).nodes.get(s.node as usize).map(|n| n.opcode));
