@@ -370,21 +370,27 @@ fn main() -> ExitCode {
             let subs: usize = whole.iter().map(|r| r.nodes.iter().map(|n| n.subs.len()).sum::<usize>()).sum();
             println!("records read whole to their end: {} ({} nodes, {subs} sub-models)", whole.len(), whole.iter().map(|r| r.nodes.len()).sum::<usize>());
             // the strips from any of their sub-models: count and texture coordinates
-            let mut all: std::collections::HashMap<[u8; 32], &model::SubModel> = std::collections::HashMap::new();
+            // (several sub-models can share their positions' first bytes: all kept)
+            let mut all: std::collections::HashMap<[u8; 32], Vec<&model::SubModel>> = std::collections::HashMap::new();
             for r in &whole {
                 for n in &r.nodes {
                     for (_, sm) in &n.subs {
                         if let Some(p) = sm.positions.get(..32) {
-                            all.insert(p.try_into().unwrap(), sm);
+                            all.entry(p.try_into().unwrap()).or_default().push(sm);
                         }
                     }
                 }
             }
             let (mut st, mut ok) = (0, 0);
             for s in &log.strips {
-                if let Some(sm) = all.get(&s.at[2]) {
+                if let Some(v) = all.get(&s.at[2]) {
                     st += 1;
-                    ok += usize::from(sm.count as u32 == s.words[1] && sm.texcoords.get(..32).is_none_or(|t| t == &s.at[3][..]));
+                    let sm = v[0];
+                    let good = v.iter().any(|sm| sm.count as u32 == s.words[1] && sm.texcoords.get(..32).is_none_or(|t| t == &s.at[3][..]));
+                    ok += usize::from(good);
+                    if !good && std::env::var_os("ASSETS_SHOW_BAD_STRIPS").is_some() {
+                        println!("  differs: {} candidates; count {} strip {}; uv {:02x?} strip w3 {:02x?}; word0 {:08x}", v.len(), sm.count, s.words[1], sm.texcoords.get(..8), &s.at[3][..8], s.words[0]);
+                    }
                 }
             }
             println!("strips from a sub-model of a whole record {st}: count and texture coordinates the same {ok}");

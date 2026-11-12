@@ -189,6 +189,7 @@ sub-models, each a block of the format word, a 4-byte hash, the word 1, a zero b
 the header (kind 1: `01 00`, an index, four zeros, the count; kind 0: three bytes, the count), the
 arrays by the format, and the byte 6; after the last node 72 bytes (the bounds). 442 records
 read so to their last byte (1,182 nodes, 1,192 sub-models). Against the strips: 247 of the home
-replay's come from one of their sub-models, 209 with its count and texture coordinates (38 not:
-to be seen). The kind-0 records mostly do not have the 6 after their arrays: their 16-bit values
+replay's come from one of their sub-models, all 247 with its count and texture coordinates
+(sub-models can share their positions: the rubber tree plant's two, with other texture
+coordinates; the check takes each that has them). The kind-0 records mostly do not have the 6 after their arrays: their 16-bit values
 and more come first; other first bytes than 0 and 1 (2 to 254) are further kinds of sub-model.
