@@ -1612,3 +1612,12 @@ learn of the community lot through the stack object, nor through 463's result (t
 lots). Leaving out first-tree-less objects on a community lot (by that same test) and an
 object whose first tree leaves another stack object (studies, reverted) change no figure but
 the aligned steps. Left open: plan.md, "Next".
+
+## A saved stack asleep at its Idle (2026-11-11)
+
+The lot keeps each object's tree stack, not its sleep. A stack the lot saved with its top frame
+at an Idle node was asleep there, and when it resumes there (its first step at that saved top)
+its first Idle step is its waking: true whatever the frame's parameter, as the sleep had run
+out. 51 of the home log's 52 Idle steps that differed, all objects in the lot's first ticks
+(replay). The club's stacks do not resume (180 of 182 first steps elsewhere: they restart), so
+the rule leaves them, as it must (taking every loaded object's first Idle puts 6,454 off there).
