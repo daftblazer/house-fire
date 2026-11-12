@@ -85,6 +85,32 @@ fn the_primitives_rules() {
         w.get_mut(k).data[59] = 0;
     }
     f.params.clear();
+    // kinds 8 and 9 by tile (5 at tile (2, 3), 9 with it, 3 at (3, 3) beside them)
+    let place = |w: &mut World, id: i16, x: i32, y: i32| {
+        let k = w.find(id).unwrap();
+        let o = w.get_mut(k);
+        (o.x16, o.y16, o.level) = (x * 16 + 8, y * 16 + 8, 1);
+    };
+    place(&mut w, 5, 2, 3);
+    place(&mut w, 9, 2, 3);
+    place(&mut w, 3, 3, 3);
+    // kind 8: the next on the target's tile by id, the target among them, round from the last
+    f.stack_object = 5;
+    assert!(stn([0, 0, 0, 0, 8, 0, 0, 0], &mut w, &mut f) == PrimResult::True && f.stack_object == 9);
+    assert!(stn([0, 0, 0, 0, 8, 0, 0, 0], &mut w, &mut f) == PrimResult::True && f.stack_object == 5);
+    f.stack_object = 3; // alone: itself
+    assert!(stn([0, 0, 0, 0, 8, 0, 0, 0], &mut w, &mut f) == PrimResult::True && f.stack_object == 3);
+    // kind 9: beside me (5) on +x, +y, -y, -x, after the target's side; none after: false, kept
+    f.stack_object = 0;
+    assert!(stn([0, 0, 0, 0, 9, 0, 0, 0], &mut w, &mut f) == PrimResult::True && f.stack_object == 3);
+    assert!(stn([0, 0, 0, 0, 9, 0, 0, 0], &mut w, &mut f) == PrimResult::False && f.stack_object == 3);
+    // an object whose flags (data 8) have 4 is not found beside
+    let k3 = w.find(3).unwrap();
+    w.get_mut(k3).data[8] = 4;
+    f.stack_object = 0;
+    assert_eq!(stn([0, 0, 0, 0, 9, 0, 0, 0], &mut w, &mut f), PrimResult::False);
+    w.get_mut(k3).data[8] = 0;
+
     // into a local (flag 0x80, scope 25, datum 0)
     f.locals = vec![0];
     assert!(stn([0, 0, 0, 0, 0x82, 25, 0, 0], &mut w, &mut f) == PrimResult::True && f.locals[0] == 5);

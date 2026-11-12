@@ -155,7 +155,18 @@ byte 5, datum byte 7. The step is true with the target set, or false if there is
 and then the target is 0 (kinds 0-2 as kind 5; the stack object natively left as it was in
 2,757 steps of the home log, 2,704 of them that, e.g. the walk over the Sims in tree 4163 node
 10; the club 2,631 → 2,490, tree 2,269 → 2,154, tree3 531 → 521; lockstep 0 on all four).
-Kinds 8 and 9 (operand byte 4 & 0x7F) are not native yet: most of the home log's 53 left.
+Kinds 8 and 9 by tile (operand byte 4 & 0x7F), false with the target kept when none:
+- 8, the next object on the target's own tile, the target among them, in the object list's
+  order from its back (the oldest first), round from the last, so one alone gives itself (true);
+  what a Sim holds is not on the tile, a Sim in a chair is (a tile of 49, 104, Sim 12 in 49 and
+  202 in 12's hand: 104 → 12 → 49). Lockstep 23 of 23, replay 29 of 29.
+- 9, the next object beside me: the four tiles round mine in the order +x, +y, -y, -x, after
+  the side the target is on, each tile's lowest id among its objects that are not Sims, not
+  held by one, and whose flags (data 8) lack 4 (the home log's kitchen counters finding their
+  neighbours: from counter 52, counters 53, 135 and 65 on its +x, -y and -x). Lockstep 42 of 42
+  (with lockstep's me the step's own object now), replay 59 of 60.
+The home log's stack objects differing 53 → 6, locals 20,622 → 20,616 differing; the club logs
+have no kind 8 or 9 steps.
 
 Checked on a world loaded natively from the club lot (`World::load_lot`). The lot is picked
 by the order of the original's longest walk; object ids are reused between lots and don't

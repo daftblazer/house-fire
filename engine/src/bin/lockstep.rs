@@ -1490,7 +1490,9 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
         if node.operand[4] & 0x7F == 6 {
             set_made_fields(&mut lw, &made_ptr, i);
         }
-        let r = set_to_next(&node, &mut ScriptVariables::new(&mut lw, nobody, &mut f));
+        // me, the step's own object (kind 9 searches beside it)
+        let me_key = sim_object.get(&s.sim).and_then(|p| ptr_id.get(p)).and_then(|&id| lw.find(id)).unwrap_or(nobody);
+        let r = set_to_next(&node, &mut ScriptVariables::new(&mut lw, me_key, &mut f));
         let Some(raw) = raw_of(s) else { continue };
         let orig_true = s.after == raw[2] as u16;
         let kind = format!("SetToNext kind {}", node.operand[4] & 0x7F);

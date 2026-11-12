@@ -232,11 +232,58 @@ pub fn remove_object(n: &Node, w: &mut World, me: i16, stack_object: i16) -> Opt
     Some(id)
 }
 
+/// SetToNext by tile (kinds 8 and 9): false with the target kept when there is none.
+/// Kind 8, the next object on the target's own tile, the target among them, in the list's order
+/// from its back (the oldest first), round from the last (so one alone gives itself, true): 23
+/// of 23 in the home log's lockstep (a tile of 49, 104, 12 in a chair, and 202 in 12's hand:
+/// 104 → 12 → 49, what a Sim holds left out); false only when the target is no object. Kind 9, the next object beside me: the
+/// four tiles round mine in the order +x, +y, -y, -x, after the one the target is on, each tile's
+/// lowest id among the objects (not Sims) whose flags (data 8) lack 4, none a Sim holds (the home log's
+/// counters' walks: 42 of 42 in its lockstep).
+fn set_to_next_by_tile(kind: u8, sc: u8, data: i16, vars: &mut ScriptVariables) -> PrimResult {
+    let Some(cur) = vars.get(sc, data) else { return PrimResult::Stop };
+    let cur = cur.value;
+    let w = &*vars.world;
+    let tile = |o: &Object| (o.x16 >> 4, o.y16 >> 4, o.level);
+    // what a Sim holds is not on its tile (a Sim in a chair is)
+    let held = |x: &Object| x.data.get(crate::world::DATA_CONTAINER).is_some_and(|&c| c != 0 && w.find_object(c).is_some_and(|c| c.person));
+    let next = if kind == 8 {
+        let Some(t) = w.find_object(cur).map(tile) else { return PrimResult::False };
+        let on: Vec<i16> = w.order().iter().rev().map(|&k| w.get(k)).filter(|x| tile(x) == t && (x.id() == cur || !held(x))).map(Object::id).collect();
+        let at = on.iter().position(|&id| id == cur).unwrap_or(0);
+        on.get((at + 1) % on.len().max(1)).copied()
+    } else {
+        let Some(me) = w.get_live(vars.me) else { return PrimResult::False };
+        let (mx, my, ml) = tile(me);
+        const SIDES: [(i32, i32); 4] = [(1, 0), (0, 1), (0, -1), (-1, 0)];
+        let from = w.find_object(cur).and_then(|c| {
+            let (cx, cy, _) = tile(c);
+            SIDES.iter().position(|&(dx, dy)| (mx + dx, my + dy) == (cx, cy))
+        });
+        let first = from.map_or(0, |k| k + 1);
+        SIDES[first.min(4)..].iter().find_map(|&(dx, dy)| {
+            w.objects()
+                .filter(|x| tile(x) == (mx + dx, my + dy, ml) && !x.person && x.data.get(8).is_some_and(|f| f & 4 == 0) && !held(x))
+                .map(Object::id)
+                .min()
+        })
+    };
+    match next {
+        Some(id) => {
+            if vars.set(sc, data, id) { PrimResult::True } else { PrimResult::Stop }
+        }
+        None => PrimResult::False,
+    }
+}
+
 pub fn set_to_next(n: &Node, vars: &mut ScriptVariables) -> PrimResult {
     let o = &n.operand;
     let kind = o[4] & 0x7F;
     let (sc, data) = if o[4] & 0x80 != 0 { (o[5], o[7] as i16) } else { (scope::STACK_OBJECT, 0) };
     let guid = operand_guid(n);
+    if kind == 8 || kind == 9 {
+        return set_to_next_by_tile(kind, sc, data, vars);
+    }
     if kind > 6 {
         return PrimResult::Stop;
     }

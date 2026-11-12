@@ -2222,7 +2222,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                         "a step of the frame"
                     };
                     note!(h.counts, "frames: stack object different, after {what}");
-                    if has("REPLAY_SHOW_SO") && h.shown.next("so", 12) {
+                    if has("REPLAY_SHOW_SO") && h.shown.next("so", if has("REPLAY_SHOW_SO_NEAR") { 100_000 } else { 12 }) {
                         let mut l = format!(
                             "stack object: native {}, log {} at {}:{}; before: {}:{}->{} ({}) so {}->{}{}",
                             f.stack_object,
@@ -2248,6 +2248,36 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                         }
                         if let Some(n) = f.tree.and_then(|t| lib.tree_at(t).nodes.get(p.node as usize)) {
                             l += &format!(" node {}: op {} operand {:02x?}", p.node, n.opcode, n.operand);
+                        }
+                        if has("REPLAY_SHOW_SO_NEAR") && let Some(me_o) = h.world.find_object(o_id) {
+                            let (mx, my) = (me_o.x16 >> 4, me_o.y16 >> 4);
+                            let order = h.world.order().to_vec();
+                            for (k, &key) in order.iter().enumerate() {
+                                let o = h.world.get(key);
+                                if ((o.x16 >> 4) - mx).abs() <= 1 && ((o.y16 >> 4) - my).abs() <= 1 && o.id() != o_id {
+                                    l += &format!(" | #{k} {}: ({},{}) guid {:08x} p {}", o.id(), o.x16 >> 4, o.y16 >> 4, o.guid, o.person);
+                                }
+                            }
+                            l += &format!(" | me {o_id} at ({mx},{my})");
+                            if has("REPLAY_SHOW_SO_DATA") {
+                                for id in [102i16, 66, 57, 101, 109, 53, 139, 52, 65, 61, 62, 60, 56, 135, 136] {
+                                    if let Some(o) = h.world.find_object(id) {
+                                        println!("obj {id}: guid {:08x} level {} x16 {} y16 {} data {:?} defn {:?}", o.guid, o.level, o.x16, o.y16, &o.data[..o.data.len().min(80)], h.world.definition(o).map(|d| &d.fields[..d.fields.len().min(80)]));
+                                    }
+                                }
+                            }
+                        }
+                        if has("REPLAY_SHOW_SO_OBJECTS") {
+                            for id in [p.stack_object, p.stack_object_after, o_id] {
+                                if let Some(o) = h.world.find_object(id) {
+                                    l += &format!(
+                                        " | {id}: guid {:08x} person {} leader {} at ({},{},{}) container {} slot {} d0..12 {:?}",
+                                        o.guid, o.person, o.leader, o.x16 >> 4, o.y16 >> 4, o.level,
+                                        o.data.get(2).copied().unwrap_or(0), o.data.get(3).copied().unwrap_or(0),
+                                        &o.data[..o.data.len().min(12)]
+                                    );
+                                }
+                            }
                         }
                         println!("{l}");
                     }
