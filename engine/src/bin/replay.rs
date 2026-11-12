@@ -5206,7 +5206,7 @@ fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, counts: &mut
                                         e.0 += usize::from(((x + 0.5).floor() as i32, (y + 0.5).floor() as i32) == (r.x, r.y));
                                     }
                                 }
-                                println!("   walk from {start_tick} (follower {:x}, mapped to {id}): places by Sim (fit, of) {by:?}; frames {} ticks {:?}..", f.follower, gone_after.len(), &ticks[..ticks.len().min(3)]);
+                                println!("   walk from {start_tick} (follower {:x}, mapped to {id}): places by Sim (fit, of) {by:?}; frames {} ticks {:?}..; line {:?}", f.follower, gone_after.len(), &ticks[..ticks.len().min(3)], &line[..line.len().min(6)]);
                             }
                             // the Sims it walks: the follower's, and any other whose places during the
                             // walk the walk gives at least half the time (two Sims logged moving as one)
