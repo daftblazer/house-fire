@@ -236,6 +236,12 @@ struct ReplayHost<'a, 'l> {
     /// Objects made before their maker's step (its CreateObjectInstance runs the new object's
     /// init inside it, and the log has the init's steps first): the maker's step only places them.
     pre_made: BTreeSet<i16>,
+    /// the objects whose stacks have taken a native Idle step (a loaded stack's first wakes)
+    idled: BTreeSet<i16>,
+    /// the objects the lot loaded with (their stacks the save's)
+    loaded_ids: BTreeSet<i16>,
+    /// each stack's first step in the log (its saved top frame resumed)
+    first_steps: BTreeSet<usize>,
 }
 
 /// Brings the native world's variables to what the original's lookups found, counting those
@@ -865,8 +871,15 @@ impl Host for ReplayHost<'_, '_> {
             // Idle
             let was = interp.sleep().woke();
             let t0 = Instant::now();
+            // a stack the lot saved asleep at this Idle (its first step resumes it): the step is
+            // its waking, the saved sleep run out, true whatever its parameter (13 of the home
+            // log's 52; the club's stacks do not resume at an Idle)
+            let first = self.idled.insert(me_id) && self.first_steps.contains(&self.step);
             let got = {
                 let (sleep, f) = interp.sleep_and_top();
+                if first && self.loaded_ids.contains(&me_id) {
+                    sleep.sleep(0);
+                }
                 idle(sleep, f, n)
             };
             if let Some(b) = &mut self.bench {
@@ -895,6 +908,13 @@ impl Host for ReplayHost<'_, '_> {
             }
             let want = self.logged(s, n);
             self.counts.note(if got == want { "primitives: Idle: the same natively" } else { "primitives: Idle: DIFFERENT" });
+            if got != want && has("REPLAY_SHOW_IDLE_DIFF") {
+                let f = interp.stack().last().unwrap();
+                let op = n.operand16(0) as usize;
+                note!(self.counts, "study Idle diff: tree {}:{} native {got:?} log {want:?} param {}", s.tree, s.node, f.params.get(op).copied().unwrap_or(-999));
+                let o = self.world.get(me);
+                println!("idle diff tick {} by {me_id} (person {}) param {}: queue {} entries, operand {:02x?}, sleep woke {}", s.tick, o.person, f.params.get(op).copied().unwrap_or(-999), o.queue.len(), n.operand, interp.sleep().woke());
+            }
             return got;
         }
         self.counts.note("primitives: from the log");
@@ -1661,7 +1681,15 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
         now: 0,
         routing_returns: BTreeMap::new(),
         pre_made: BTreeSet::new(),
+        idled: BTreeSet::new(),
+        loaded_ids: BTreeSet::new(),
+        first_steps: BTreeSet::new(),
     };
+    h.loaded_ids = h.world.objects().map(Object::id).collect();
+    {
+        let mut seen = BTreeSet::new();
+        h.first_steps = log.steps.iter().enumerate().filter(|(_, st)| seen.insert(st.sim)).map(|(i, _)| i).collect();
+    }
     for i in 0..native_plans.0 {
         h.counts.note(if i < native_plans.1 {
             "planner: a plan's points natively, in the log's place, the same as the log's"
