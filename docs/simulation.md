@@ -1526,4 +1526,14 @@ routing checks there:
   177's square at tick 56, a sixteenth off: the planner, mid-tick, sees a person where it was
   logged before the plan's tick ('P' is written as a tick starts). With that all 841, and all 13
   plans with every obstacle right; the home log's 709 as before.
+- the one search off its coarse way (tick 56): its start (288, 367) lies on Sim 177's blocked
+  square (282, 367, 294, 379), so the native grower refuses it and gives no way. A one-off dump
+  of the original's cells there (the graph's +12 vector, observer change reverted) shows its
+  start cell is the 1x1 at the start, not grown, and its first 33 cells are the native cells
+  in order with that start. The search after them is not: the original goes from the strip
+  cell 2 (227, 366, 349, 367) straight to cell 9 (305, 367), then cell 25 (304, 372), then the
+  cost-10 cell 1 (300, 376), and cuts 112 cells; native, from the same start, goes 2 → 5 → 9 → 1
+  (the cheaper way by distance) after 69. Keeping a cell's first way does not explain it (it
+  breaks 3 club searches and 2 home ones). With only the 1x1 start the plan goes native the
+  wrong way and its walk leaves the log's, so the start waits for the search's cost.
 Lockstep: 3 differences (scope 0 and 1 places, the caller 80213900 also behind the home log's).

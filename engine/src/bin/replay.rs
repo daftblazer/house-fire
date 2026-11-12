@@ -3182,6 +3182,14 @@ fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, counts: &mut
         });
         if !same && !counts.quiet && has("REPLAY_SHOW_SEARCH") {
             println!("search tick {}: theirs {theirs:?}; native {ours:?}", pl.tick);
+            if let Some(&(sx, sy)) = pl.coarse.first() {
+                // the regions (y0, x0, y1, x1, cost) that hold the start, in each set
+                for (set, rs) in [("regions", &pl.regions), ("lookup 0", &pl.lookup_regions[0]), ("lookup 1", &pl.lookup_regions[1])] {
+                    for (k, r) in rs.iter().enumerate().filter(|(_, r)| r[0] <= sy && sy < r[2] && r[1] <= sx && sx < r[3]) {
+                        println!("   start ({sy}, {sx}) in {set} {k} of {}: {r:?}", rs.len());
+                    }
+                }
+            }
         }
     }
     let show_obstacles = has("REPLAY_SHOW_OBSTACLES");
