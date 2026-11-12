@@ -4374,7 +4374,8 @@ fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, counts: &mut
                                 // to the nearest (truncating puts 816 of 1,186 off)
                                 let ours = ((x + 0.5).floor() as i32, (y + 0.5).floor() as i32);
                                 if has("REPLAY_SHOW_WALK_MISS") && ours != (r.x, r.y) {
-                                    println!("walk float {id} tick {}: native ({x:.3}, {y:.3}), log {:?}, walked {:.3}", r.tick, (r.x, r.y), gone_after[k]);
+                                    let around: Vec<String> = (k.saturating_sub(3)..(k + 4).min(ticks.len()).min(gone_after.len())).map(|j| format!("{}{}:{}@{:.2}", if j == k { "*" } else { "" }, j, ticks[j], gone_after[j])).collect();
+                                    println!("walk float {id} tick {}: native ({x:.3}, {y:.3}), log {:?}, walked {:.3}; start {start_tick}; frames {}", r.tick, (r.x, r.y), gone_after[k], around.join(" "));
                                 }
                                 native_places.insert((id, r.tick), ours);
                                 counts.note(if ours == (r.x, r.y) {
