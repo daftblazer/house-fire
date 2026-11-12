@@ -263,8 +263,10 @@ differing steps 277 to 102).
 They come from the player's menu, not a timer: the same runs happen for objects (their first
 tree the club's 463, then their guards) on the stack of Sim 57, the one Sim on the lot that is
 not a visitor (the player's in that recording), at irregular ticks; the newer club log, played
-another way, has none. Replay runs them all natively (tree.log's differing steps 102 to 20); the
-91 on objects do not yet use exactly the log's steps (their guards' rule, to be found).
+another way, has none. Replay runs them all natively (tree.log's differing steps 102 to 20). A
+target of several parts has its checks once for each part, on the leader: the dance floor (135,
+16 tiles) its first tree 16 times, all false, and no guard (its interactions lack 0x400). All 198
+runs use exactly the log's steps.
 
 ## Autonomy
 

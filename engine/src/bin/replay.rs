@@ -2150,17 +2150,24 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                         h.me = w;
                         let (mut same, mut diff) = (0, 0);
                         let want_of = |h: &mut ReplayHost, tree: u16| -> Option<bool> { lib.tree(ofile, tree).and_then(|t| h.run_check(t, ofile, oid, &defaults)) };
-                        let first = want_of(&mut h, tab.first);
-                        let mut checks = 1;
-                        for e in lib.table(tf, tid) {
-                            if e.guard == 0 || (first == Some(false) && e.flags & 0x400 == 0) || e.flags & 0x80 != 0 {
-                                continue;
-                            }
-                            if h.nested_pos >= h.nested.len() {
-                                break;
-                            }
-                            let _ = want_of(&mut h, e.guard);
+                        // once for each of the target's parts (a dance floor's 16 tiles: the
+                        // first tree 16 times, on the leader), its own if it has none
+                        let parts = h.world.objects().filter(|p| p.leader == oid && !p.person).count().max(1);
+                        let mut first = None;
+                        let mut checks = 0;
+                        for _ in 0..parts {
+                            first = want_of(&mut h, tab.first);
                             checks += 1;
+                            for e in lib.table(tf, tid) {
+                                if e.guard == 0 || (first == Some(false) && e.flags & 0x400 == 0) || e.flags & 0x80 != 0 {
+                                    continue;
+                                }
+                                if h.nested_pos >= h.nested.len() {
+                                    break;
+                                }
+                                let _ = want_of(&mut h, e.guard);
+                                checks += 1;
+                            }
                         }
                         let all = h.nested_pos == nest.len();
                         if all { same += checks; } else { diff += 1; }
