@@ -125,3 +125,14 @@ byte 7 before the positions, first taken for the attributes, takes many values (
 an index, not a set of attributes. The smallest record, `prop_card_spade` (218 bytes), read by
 hand: one sub-model `01 00 2a 00 00 00 00`, a count of 4, four positions, 16 bytes of 4-byte
 pairs, 12 bytes of 3-byte triples, then floats (its bound) and `01 01 01` with zeros.
+
+A record of one sub-model, the simplest kind: the head (`00 01 00 00 00 00`, the name, then 0x36
+bytes: the word 0x25, zeros, the positions' scale as a float at +0x15 past the name, and fields
+not yet read), the sub-model's header (`01 00`, an index byte, four zeros, a 16-bit count n),
+then n vertices' arrays end to end: positions (8 bytes: three s16 and two more), a 4-byte array
+(the strips' word 3: texture coordinates?) and normals (3 bytes, three s8: the strips' word 4),
+15 bytes a vertex, and a 73-byte tail (floats: a bound; `01 01 01`; zeros). 287 of the 1,843
+records read this way to their last byte (the coffee mug: 115 vertices; the playing cards: 4).
+The head varies in the others: a list before the scale (the effects' `efx_lightning`,
+`efx_fire`: a count byte at +0x13 and floats), another scale (the shadows' 1/32768 at +0x15, a
+null model's 1.0), and more sub-models: to be read next.
