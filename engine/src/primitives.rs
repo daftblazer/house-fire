@@ -471,7 +471,10 @@ pub fn idle_for_input<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &mut H
             return PrimResult::Stop;
         }
     }
-    host.world().get_mut(me).queue.remove(0);
+    // the entry leaves the queue and is the Sim's current interaction (what an evaluation's join
+    // check of the Sim reads: `autonomy::Candidate::join`)
+    let o = host.world().get_mut(me);
+    o.current = o.queue.remove(0);
     if !interp.push(lib, action, &[]) {
         return PrimResult::Stop;
     }
