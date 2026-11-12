@@ -1608,8 +1608,10 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
     }
     // the lot's globals as saved (its SIMI): the clock among them
     world.globals = globals.to_vec();
-    if let Some(id) = env("REPLAY_SHOW_STACK").and_then(|v| v.parse::<i16>().ok()) {
-        if let Some(o) = world.find_object(id) {
+    if let Some(id) = env("REPLAY_SHOW_STACK").and_then(|v| v.parse::<i16>().ok())
+        && let Some(o) = world.find_object(id)
+    {
+        {
             println!("file {:?} semi {:?}", o.file.map(|f| file_name(lib, f)), o.file.and_then(|f| lib.file(f).semi).map(|s| file_name(lib, s)));
             for f in &o.stack {
                 if let Some(t) = f.tree {
