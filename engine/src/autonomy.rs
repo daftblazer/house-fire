@@ -20,6 +20,9 @@ pub struct Candidate {
     pub object_file: Option<FileId>,
     pub person: bool,
     pub def: Option<crate::library::DefId>,
+    /// Whether the evaluating Sim's limits let its guard run (`autonomy_candidates`); the
+    /// object's first tree runs either way.
+    pub listed: bool,
 }
 
 impl Candidate {
@@ -37,6 +40,12 @@ impl Candidate {
 pub fn autonomy_candidates(world: &World, me: ObjectKey) -> Vec<Candidate> {
     let lib = world.library();
     let mut out = Vec::new();
+    // The evaluating Sim's limits (the original's list of an object's entries, fn_80219F20): an
+    // interaction's guard runs if its autonomy threshold is at most the Sim's person data 36 (50
+    // at home, 1 at the club, where no guard runs), and a visitor's (person data 32 set) only
+    // for those flagged 0x1.
+    let pd = |i: usize| world.get(me).person_data.get(i).copied().unwrap_or(0);
+    let (limit, visitor) = (pd(36), pd(32) != 0);
     for (&id, &k) in world.by_id() {
         let o = world.get(k);
         if k == me {
@@ -71,7 +80,8 @@ pub fn autonomy_candidates(world: &World, me: ObjectKey) -> Vec<Candidate> {
                 continue;
             }
             guards.push(e.guard);
-            out.push(Candidate { object: k, id, file: tf, table: tid, index, object_file: o.file, person: o.person, def: o.definition });
+            let listed = e.autonomy_threshold <= i32::from(limit) && (!visitor || e.flags & 1 != 0);
+            out.push(Candidate { object: k, id, file: tf, table: tid, index, object_file: o.file, person: o.person, def: o.definition, listed });
         }
     }
     out
@@ -107,6 +117,10 @@ pub fn run_evaluation<H: Host + ?Sized>(lib: &Library, host: &mut H, candidates:
                 let t = lib.tree(c.object_file, tab.first);
                 out.push(EvaluationCheck { object: c.object, tree: tab.first, candidate: None, passed: run(host, t, c), ad_range: Vec::new() });
             }
+        }
+        // an interaction the Sim's limits leave off its object's list: no guard
+        if !c.listed {
+            continue;
         }
         // The trees as the object's own file names them (a person's table is its semi-global
         // file's, whose ids the object's file resolves).

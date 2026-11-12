@@ -975,6 +975,20 @@ impl ReplayHost<'_, '_> {
         // The engine's evaluation, each check's result against the log's: the step that ends it
         // (its bottom frame's return, 254 true or 255 false) is the last nested step used.
         self.on_check = Some((0, 0));
+        if has("REPLAY_SHOW_CAND_FIELDS") && self.shown.next("cand fields", 1) {
+            let pd = &self.world.get(me).person_data;
+            println!("evaluator {me_id} pd32 {:?} pd36 {:?}", pd.get(32), pd.get(36));
+            for c in &cands {
+                let e = c.interaction(lib);
+                println!("  cand {} guard {} threshold {} flags {:#x}", c.id, e.guard, e.autonomy_threshold, e.flags);
+            }
+        }
+        if has("REPLAY_SHOW_GUARD_RUNS") {
+            let pd = &self.world.get(me).person_data;
+            let guards: BTreeSet<(i16, u16)> = cands.iter().map(|c| (c.id, c.interaction(lib).guard)).collect();
+            let ran = self.nested.iter().any(|&i| guards.contains(&(log.steps[i].stack_object, log.steps[i].tree)));
+            note!(self.counts, "study guards run by the original: Sim {me_id} pd32 {:?} pd36 {:?} pd29 {:?} ran {ran}", pd.get(32), pd.get(36), pd.get(29));
+        }
         if has("REPLAY_SHOW_CAND_IDS") && self.shown.next("cand ids", 1) {
             let ids: BTreeSet<i16> = cands.iter().map(|c| c.id).collect();
             println!("candidate ids at tick {} by {me_id}: {ids:?}", s.tick);

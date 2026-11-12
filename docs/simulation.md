@@ -314,7 +314,13 @@ checked). Its guards run only for the entries of a list built per object (fn_802
 the evaluation context's +8 is set, else fn_80219A74); an empty list skips the object (at the
 club, objects whose first tree is true still get no guards). fn_80219A74 keeps the entries the
 first-tree rule leaves, drops those with 0x80 or a motive-33 item unless a global's +348 is set,
-and adds the rest through fn_80219D84; fn_80219F20 is still to be read. 
+and adds the rest through fn_80219D84. fn_80219F20 (the one the club's evaluations use, and some
+of home's) keeps an interaction whose autonomy threshold is at most the evaluating Sim's person
+data 36 (50 for the home Sims, 1 for the club's: so no guard runs there) and, for a visitor
+(person data 32 set), only one flagged 0x1; it drops 0x10 or 0x40 (by a person method) and 0x80.
+Native (`Candidate::listed`): the first trees run for every object, the guards only for listed
+interactions. Checked (`replay --card`): the club's 2,706 evaluation checks all the log's (912
+different and 47,413 unfinished before), home's 437 unchanged. 
 
 **Persons as candidates.** A person's interactions are its semi-global file's one table:
 `person_sg`'s (table 129, version 11, its first tree 8230 run before its guards) for a Sim,
