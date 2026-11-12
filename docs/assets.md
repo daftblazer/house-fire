@@ -182,3 +182,13 @@ colours) or 0x1e (colours); kind 0 mostly 0x1a, 0x3a, 0x3e (with the 16-bit valu
 format has them (57 of 57 kind-0 strips, and the kind-1 strips of 0x1e, whose word 4 an earlier
 read took for normals), word 5 the normals widened to 4 bytes. Kind-0 reads with no plausible
 format (0x1f9fa000 and the like, about 30) are other heads misread.
+
+A whole record (`model::read_record`): the head to +0x19 past the name, then a node count (a
+word), then each node: its parent (a word, -1 for the root) and its sub-model count, then its
+sub-models, each a block of the format word, a 4-byte hash, the word 1, a zero byte, a float,
+the header (kind 1: `01 00`, an index, four zeros, the count; kind 0: three bytes, the count), the
+arrays by the format, and the byte 6; after the last node 72 bytes (the bounds). 442 records
+read so to their last byte (1,182 nodes, 1,192 sub-models). Against the strips: 247 of the home
+replay's come from one of their sub-models, 209 with its count and texture coordinates (38 not:
+to be seen). The kind-0 records mostly do not have the 6 after their arrays: their 16-bit values
+and more come first; other first bytes than 0 and 1 (2 to 254) are further kinds of sub-model.

@@ -366,6 +366,28 @@ fn main() -> ExitCode {
             for (k, n) in &ends {
                 println!("  {n:5} {k}");
             }
+            let whole: Vec<model::Record> = entries.iter().filter_map(|e| model::read_record(arc::bytes(&data, e))).collect();
+            let subs: usize = whole.iter().map(|r| r.nodes.iter().map(|n| n.subs.len()).sum::<usize>()).sum();
+            println!("records read whole to their end: {} ({} nodes, {subs} sub-models)", whole.len(), whole.iter().map(|r| r.nodes.len()).sum::<usize>());
+            // the strips from any of their sub-models: count and texture coordinates
+            let mut all: std::collections::HashMap<[u8; 32], &model::SubModel> = std::collections::HashMap::new();
+            for r in &whole {
+                for n in &r.nodes {
+                    for (_, sm) in &n.subs {
+                        if let Some(p) = sm.positions.get(..32) {
+                            all.insert(p.try_into().unwrap(), sm);
+                        }
+                    }
+                }
+            }
+            let (mut st, mut ok) = (0, 0);
+            for s in &log.strips {
+                if let Some(sm) = all.get(&s.at[2]) {
+                    st += 1;
+                    ok += usize::from(sm.count as u32 == s.words[1] && sm.texcoords.get(..32).is_none_or(|t| t == &s.at[3][..]));
+                }
+            }
+            println!("strips from a sub-model of a whole record {st}: count and texture coordinates the same {ok}");
             if std::env::var_os("ASSETS_SHOW_TAILS").is_some() {
                 let mut shown = BTreeMap::<u8, usize>::new();
                 for e in &entries {

@@ -21,6 +21,97 @@ pub struct SubModel {
     pub values: Option<Vec<u8>>,
 }
 
+/// A node of a record's tree: its parent (-1 for the root) and its sub-models.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Node {
+    pub parent: i32,
+    pub subs: Vec<(u32, SubModel)>,
+}
+
+/// A whole record, read to its end: its nodes (each sub-model with its format) and its bounds
+/// (the 72 bytes at the end).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Record {
+    pub name: String,
+    pub scale: f32,
+    pub nodes: Vec<Node>,
+    pub bounds: Vec<u8>,
+}
+
+fn be32(b: &[u8], p: usize) -> Option<u32> {
+    Some(u32::from_be_bytes(b.get(p..p + 4)?.try_into().ok()?))
+}
+
+/// A sub-model block at `p` (its format, a hash, 1, a zero, a float, the header and the arrays,
+/// then the byte 6): the format, the sub-model and where the next block starts.
+fn sub_model(b: &[u8], mut p: usize) -> Option<(u32, SubModel, usize)> {
+    let format = be32(b, p)?;
+    p += 4 + 4 + 4 + 1 + 4;
+    let kind = *b.get(p)?;
+    let count = match kind {
+        1 => {
+            let c = be16(b, p + 7)? as usize;
+            p += 9;
+            c
+        }
+        0 => {
+            let c = be16(b, p + 3)? as usize;
+            p += 5;
+            c
+        }
+        _ => return None,
+    };
+    let mut take = |size: usize| -> Option<Vec<u8>> {
+        let v = b.get(p..p + size)?.to_vec();
+        p += size;
+        Some(v)
+    };
+    let positions = take(8 * count)?;
+    let texcoords = if format & 0x08 != 0 { take(4 * count)? } else { Vec::new() };
+    let colours = if format & 0x04 != 0 { Some(take(4 * count)?) } else { None };
+    let normals = if format & 0x10 != 0 { take(3 * count)? } else { Vec::new() };
+    let values = if format & 0x20 != 0 { Some(take(2 * count)?) } else { None };
+    (*b.get(p)? == 6).then_some((format, SubModel { kind, count, positions, texcoords, colours, normals, values }, p + 1))
+}
+
+/// Reads a whole record: the head, the node count (+0x19 past the name), each node's parent,
+/// sub-model count and sub-models, and the 72 bytes of bounds that end it; `None` unless it reads
+/// so to its last byte (the kinds of sub-model known).
+pub fn read_record(b: &[u8]) -> Option<Record> {
+    if b.get(..4)? != [0, 1, 0, 0] {
+        return None;
+    }
+    let len = b.get(6..)?.iter().position(|&c| c == 0)?;
+    let name: String = b[6..6 + len].iter().map(|&c| c as char).collect();
+    let q = 6 + len + 1;
+    if be32(b, q)? != 0x25 {
+        return None;
+    }
+    let scale = f32::from_bits(be32(b, q + 0x15)?);
+    let count = be32(b, q + 0x19)? as usize;
+    if count > 256 {
+        return None;
+    }
+    let mut p = q + 0x1d;
+    let mut nodes = Vec::with_capacity(count);
+    for _ in 0..count {
+        let parent = be32(b, p)? as i32;
+        let n = be32(b, p + 4)? as usize;
+        if n > 256 {
+            return None;
+        }
+        p += 8;
+        let mut subs = Vec::with_capacity(n);
+        for _ in 0..n {
+            let (format, sm, next) = sub_model(b, p)?;
+            subs.push((format, sm));
+            p = next;
+        }
+        nodes.push(Node { parent, subs });
+    }
+    (b.len() == p + 72).then(|| Record { name, scale, nodes, bounds: b[p..].to_vec() })
+}
+
 /// A record's head and first sub-model.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Model {
