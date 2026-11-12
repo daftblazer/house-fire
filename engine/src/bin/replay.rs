@@ -624,12 +624,22 @@ impl Host for ReplayHost<'_, '_> {
         }
         if n.opcode == 36 {
             // Dialog: the replay plays the player, answering when the original's did
-            if s.result != 2 {
+            // (result 1: a wait the pass goes on after, the scenario controller 194's at the
+            // home log's ticks 4 to 14; 2: a wait that stops the pass)
+            if s.result == 0 {
                 self.world.dialog_answer = Some(s.after == n.true_target as u16);
             }
+            let stop_before = self.world.stop_pass;
             let got = dialog(n, &mut self.world, me_id);
+            if s.result == 1 {
+                self.world.stop_pass = stop_before;
+            }
             self.world.presentation.clear();
-            let same = if s.result == 2 { got == PrimResult::Yield && self.world.stop_pass } else { got == self.logged(s, n) };
+            let same = match s.result {
+                2 => got == PrimResult::Yield && self.world.stop_pass,
+                1 => got == PrimResult::Yield,
+                _ => got == self.logged(s, n),
+            };
             self.counts.note(if same {
                 if s.result == 2 { "primitives: Dialog: waiting, as the log's" } else { "primitives: Dialog: answered, as the log's" }
             } else {
