@@ -2252,6 +2252,14 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                 );
                 continue;
             };
+            if let Some(w) = env("REPLAY_SHOW_OPS") {
+                // study: the opcodes a stack runs in a tick range, "id:from:to"
+                let v: Vec<i64> = w.split(':').filter_map(|x| x.parse().ok()).collect();
+                if v.len() == 3 && o_id as i64 == v[0] && (v[1]..=v[2]).contains(&(t as i64)) {
+                    let op = lib.tree_at(tree).nodes.get(s.node as usize).map_or(-1, |n| n.opcode as i32);
+                    note!(h.counts, "study ops: {}:{} op {op}", s.tree, s.node);
+                }
+            }
             // The interaction queue: the first interaction pushed onto a waiting Sim (a tree at
             // node 0 above "Wait For Notify", Global 281, other than its checks) against the
             // first entry of the queue the lot saved for it.
