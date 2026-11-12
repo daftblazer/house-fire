@@ -152,8 +152,9 @@ object after the target's in that order, or the first if the target is 0, of a k
 
 The target is the stack object, or with flag 0x80 in operand byte 4 the variable of scope
 byte 5, datum byte 7. The step is true with the target set, or false if there is no next,
-and then the target is 0 (kinds 1, 2, 4 and 6 as kind 5; kind 0 keeps its target: stack
-objects differing club 25 → 16, tree 41 → 32, tree3 40 → 32, home 4 → 3; kind 4's alone: the club 2,490 → 25,
+and then the target is 0 (kinds 1, 2 and 4 as kind 5; kinds 0 and 6 keep their target, e.g.
+the club's kind 6 walk 0 → 153 → 152 → 12, then false with 12: stack objects differing club
+25 → 0, tree 41 → 16, tree3 40 → 16, home 4 → 2; kind 4's alone: the club 2,490 → 25,
 tree 2,154 → 41, tree3 521 → 40, home 6 → 4; the stack object natively left as it was in
 2,757 steps of the home log, 2,704 of them that, e.g. the walk over the Sims in tree 4163 node
 10; the club 2,631 → 2,490, tree 2,269 → 2,154, tree3 531 → 521; lockstep 0 on all four).

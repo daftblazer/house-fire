@@ -2267,6 +2267,11 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                                 }
                             }
                         }
+                        if has("REPLAY_SHOW_SO_59") {
+                            let order = h.world.order().to_vec();
+                            let hits: Vec<String> = order.iter().enumerate().map(|(k, &key)| (k, h.world.get(key))).filter(|(_, o)| o.data.get(59) == s.params.first().or(p.params.first())).map(|(k, o)| format!("#{k} {}", o.id())).collect();
+                            l += &format!(" | params {:?} (before {:?}); field 59 = p0: {}", s.params, p.params, hits.join(" "));
+                        }
                         if has("REPLAY_SHOW_SO_OBJECTS") {
                             for id in [p.stack_object, p.stack_object_after, o_id] {
                                 if let Some(o) = h.world.find_object(id) {
