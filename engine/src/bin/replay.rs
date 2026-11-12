@@ -1883,6 +1883,9 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                 let i = sim.stack_of(&h.world, k);
                 let op = top_node(lib, i).map_or("?".to_string(), |n| n.opcode.to_string());
                 let slept = if i.sleep().woke() { " (slept)" } else { "" };
+                if has("REPLAY_SHOW_ONLY_NATIVE") && h.shown.next("only native", 6) {
+                    println!("only native {id}: stack {:?} done {} error {:?}", i.stack().iter().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node)).collect::<Vec<_>>(), i.done(), i.error());
+                }
                 note!(h.counts, "turns: the native would run, at opcode {op}{slept}");
             }
             let show = has("REPLAY_SHOW_TURNS");

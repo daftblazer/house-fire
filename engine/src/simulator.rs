@@ -100,13 +100,29 @@ impl Simulator {
         self.runs[at].get_or_insert_with(|| {
             let o = world.get(k);
             let mut i = Interpreter::main();
-            i.restore(o.stack.clone());
+            // On a community lot (the club) the saved stacks restart, each from its bottom
+            // frame at its first node (176 of the club log's 182 first steps); a home lot
+            // resumes them (docs/simulation.md, "The club's stacks restart").
+            let mut frames = o.stack.clone();
+            // (but an object whose data field 4 is 0, the scenario controllers 2 and 14,
+            // resumes its stack there too)
+            let keep = o.data.get(4) == Some(&0);
+            if world.is_community_lot() && !keep {
+                frames.truncate(1);
+                if let Some(f) = frames.first_mut() {
+                    f.node = 0;
+                    // no stack object yet (the saved one is not carried: 71 club steps); its
+                    // locals stay the saved ones (zeroing them puts 21 more off)
+                    f.stack_object = 0;
+                }
+            }
+            i.restore(frames.clone());
             i.set_defaults(o.temps.to_vec());
             // A stack saved at an Idle node was asleep there and its sleep has run out (the
             // save keeps no sleep): its first Idle step wakes, true whatever its parameter
             // (docs/simulation.md, "A saved stack asleep at its Idle").
             let lib = world.library();
-            if o.stack.last().and_then(|f| f.tree.and_then(|t| lib.get_tree(t)?.nodes.get(f.node as usize))).is_some_and(|n| n.opcode == 0) {
+            if frames.last().and_then(|f| f.tree.and_then(|t| lib.get_tree(t)?.nodes.get(f.node as usize))).is_some_and(|n| n.opcode == 0) {
                 i.sleep().sleep(0);
             }
             i

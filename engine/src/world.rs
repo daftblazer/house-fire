@@ -266,6 +266,12 @@ impl<'lib> World<'lib> {
     pub fn len(&self) -> usize {
         self.order.len()
     }
+    /// A community lot (the club): its house number (global 10) the global file's constant
+    /// 19215, as the scripts test it (Global 462).
+    pub fn is_community_lot(&self) -> bool {
+        let lib = self.library();
+        self.globals.get(10).is_some_and(|&h| lib.constant(lib.global(), 19215) == Some(h))
+    }
     pub fn is_empty(&self) -> bool {
         self.order.is_empty()
     }
