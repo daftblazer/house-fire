@@ -1593,5 +1593,12 @@ back true (node 254, native the same) and still no guard of that object runs at 
 at home a true first tree is followed by the object's guards (skipping on true instead puts 63
 home checks off). So at the club the evaluation runs each object's first tree and then, all but
 the dance floor's part 150 (its guard 4122), no guards: a mode of its own, not the first tree's
-result. To find it, the evaluator itself (fn_802266BC, its object step fn_80219530, both all
-virtual calls) is to be watched: an observer record of the table entries it takes per object.
+result. To find it, the evaluator itself (fn_802266BC, all virtual calls) is to be watched: an
+observer record of the table entries it takes per object.
+
+Not a score gate (iteration 67, study REPLAY_SCORE_GATE): at the club no native candidate's guard
+runs in the original, 18,167 scoring above the base and 30,952 at it; at home every one does
+(170 above, 255 at). And fn_80219530 is not the object step: hooked at tick 90 (a one-off
+observer print, reverted, the recomp rebuilt clean; the log the same 43,141,592 bytes) it runs 4
+times with the same arguments, returning 0. The object loop is behind fn_802266BC's 17
+indirect calls; their targets at the club are the next thing to print.

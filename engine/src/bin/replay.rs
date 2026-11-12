@@ -1007,6 +1007,18 @@ impl ReplayHost<'_, '_> {
             let curves = score_curves(lib);
             let person = self.world.get(me);
             let base = interaction_score(&curves, None, person, &person.motives);
+            if has("REPLAY_SCORE_GATE") {
+                // each candidate's score natively against the base, by whether the original ran
+                // its guard (a step of the guard tree with the candidate as the stack object)
+                let ran: BTreeSet<(i16, u16)> = self.nested.iter().map(|&i| (log.steps[i].stack_object, log.steps[i].tree)).collect();
+                for c in &cands {
+                    let e = c.interaction(lib);
+                    let sc = interaction_score(&curves, Some(&e.adverts), person, &person.motives);
+                    let checked = ran.contains(&(c.id, e.guard));
+                    let rel = if sc > base { "above base" } else if sc == base { "at base" } else { "below base" };
+                    note!(self.counts, "study score gate: {} score {rel}, guard run by the original {checked}", if self.world.globals.get(10) == Some(&1) { "home" } else { "club" });
+                }
+            }
             let mut values: Vec<(f32, usize)> = Vec::new();
             let (mut scores_same, mut scores_diff) = (0, 0);
             let mut values_scores: Vec<f32> = Vec::new();
