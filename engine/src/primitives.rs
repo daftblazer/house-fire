@@ -339,7 +339,11 @@ pub fn set_to_next(n: &Node, vars: &mut ScriptVariables) -> PrimResult {
         let next = w.objects().filter(|x| x.guid == guid && x.id() > cur).map(Object::id).min();
         return match next {
             Some(id) => set(vars, id),
-            None => PrimResult::False,
+            // after the last, the target 0 too (the club's 2,464 steps of tree 4120 node 1)
+            None => {
+                vars.set(sc, data, 0);
+                PrimResult::False
+            }
         };
     }
     let start = if cur != 0 { order.iter().position(|&k| w.get(k).id() == cur).map_or(0, |k| k + 1) } else { 0 };
