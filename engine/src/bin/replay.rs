@@ -1608,6 +1608,18 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
     }
     // the lot's globals as saved (its SIMI): the clock among them
     world.globals = globals.to_vec();
+    if let Some(id) = env("REPLAY_SHOW_STACK").and_then(|v| v.parse::<i16>().ok()) {
+        if let Some(o) = world.find_object(id) {
+            println!("file {:?} semi {:?}", o.file.map(|f| file_name(lib, f)), o.file.and_then(|f| lib.file(f).semi).map(|s| file_name(lib, s)));
+            for f in &o.stack {
+                if let Some(t) = f.tree {
+                    let tr = lib.tree_at(t);
+                    println!("  frame {} node {}: node op {:?}", tr.id, f.node, tr.nodes.get(f.node as usize).map(|n| (n.opcode, n.true_target, n.false_target)));
+                }
+            }
+            println!("stack of {id}: {:?}", o.stack.iter().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.file.map(|x| file_name(lib, x)))).collect::<Vec<_>>());
+        }
+    }
     if has("REPLAY_SHOW_REQUEUE") {
         for o in world.objects().filter(|o| o.person) {
             let diff: Vec<(usize, i16)> = o.person_data.iter().enumerate().filter(|(i, _)| *i < 80).map(|(i, &v)| (i, v)).collect();
