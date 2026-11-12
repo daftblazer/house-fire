@@ -156,7 +156,12 @@ texture coordinates byte for byte, all 133. (Word 3 is the texture coordinates, 
 After the arrays: a kind-1 sub-model's record ends with its 73-byte tail (the byte 6, then floats:
 the bound); a kind-0 one goes on with a 16-bit value a vertex (`00 85 00 85 …`, `00 f4 …`, runs of
 equal values: a per-vertex index, a bone's or a group's?), then more. Against the strips: kind
-1's word 4 is its normals as the record packs them (3 bytes a vertex; 57 strips), and in all 133
-kind-0 strips words 6, 7, 8, 9 and 11 point at those 16-bit values (several words the same
-array); no word is the 4-byte array read as colours, which is so something else. Some kind-0
-reads are misreads (a count of 0: a head of another shape, the Sims' parts and the maid).
+1's word 4 is its normals as the record packs them (3 bytes a vertex; 57 strips). What a strip's
+words are, from their addresses (`ASSETS_SHOW_DELTAS`): word 0 the opcode and flags, 1 the count,
+2 the positions, 3 the texture coordinates (about 4n bytes below the positions), 4 an array or
+none, 5 another below it (each copied to a scratch buffer, aligned, in front of the positions:
+the record is not drawn from in place), 6 and 7 zero, 8 0x08000000, 9 and on further values and
+addresses far off (the material's?). (An earlier count of kind-0 strips whose words 6 to 11
+"point at the bytes after the arrays" was a false match: those words are not addresses, their
+recorded bytes zeros, and those bytes often begin with zeros.) Some kind-0 reads are misreads (a
+count of 0: a head of another shape, the Sims' parts and the maid).

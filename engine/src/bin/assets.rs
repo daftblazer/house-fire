@@ -403,6 +403,10 @@ fn main() -> ExitCode {
                     continue;
                 }
                 for k in 4..16 {
+                    // words that point into memory only (the others' bytes are zeros)
+                    if !(0x8000_0000..0x817F_FFE0).contains(&s.words[k]) {
+                        continue;
+                    }
                     if let Some((kind, w)) = by_tail.get(&s.at[k]) {
                         *what.entry(format!("kind {kind}: word {k} is {w}")).or_default() += 1;
                     }
@@ -410,6 +414,31 @@ fn main() -> ExitCode {
             }
             for (k, n) in &what {
                 println!("  {n:4} {k}");
+            }
+            if std::env::var_os("ASSETS_SHOW_DELTAS").is_some() {
+                // study: a strip's words as offsets from its positions, beside where the record
+                // keeps the sub-model's arrays (from its positions)
+                let mut where_pos: std::collections::HashMap<[u8; 32], (String, usize, usize, usize)> = std::collections::HashMap::new();
+                for e in &entries {
+                    let b = arc::bytes(&data, e);
+                    if let Some(m) = model::read(b)
+                        && let Some(p) = m.first.positions.get(..32)
+                    {
+                        let n = m.first.count;
+                        let pos = m.tail - n * (8 + 4 + 3 + if m.first.colours.is_some() { 4 } else { 0 });
+                        where_pos.insert(p.try_into().unwrap(), (e.name.clone(), n, pos, m.tail));
+                    }
+                }
+                let mut shown = 0;
+                for s in &log.strips {
+                    let Some((name, n, pos, tail)) = where_pos.get(&s.at[2]) else { continue };
+                    if shown >= 6 {
+                        break;
+                    }
+                    shown += 1;
+                    let d: Vec<String> = s.words.iter().map(|&w| if (0x8000_0000..0x817F_FFE0).contains(&w) { format!("{:+}", w as i64 - s.words[2] as i64) } else { format!("{w:#x}") }).collect();
+                    println!("  {name} n {n}: arrays at +0 (positions), +{} (uv), +{} (4-byte), +{} (normals), tail +{}; words {}", 8 * n, 12 * n, 16 * n, tail - pos, d.join(" "));
+                }
             }
         }
         "texcheck" => {
