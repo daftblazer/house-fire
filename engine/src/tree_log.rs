@@ -51,6 +51,18 @@ pub struct StripRec {
     pub at: Vec<[u8; 32]>,
 }
 
+/// The material a draw was set up with ('m': ERC_SetMaterialStages's device as it was called):
+/// the tick, the layer count, the two layers' bytes, the two texture slots (a word and 32 bytes
+/// at it each), and how many strip records came before it (the draw it is for comes next).
+#[derive(Clone, Debug)]
+pub struct MaterialRec {
+    pub tick: u32,
+    pub layers: u32,
+    pub layer: [[u8; 0x18]; 2],
+    pub textures: [(u32, [u8; 32]); 2],
+    pub strips_before: usize,
+}
+
 /// A tree as the original had it loaded: its nodes' address, id, file, and its nodes' raw bytes.
 #[derive(Clone, Debug, Default)]
 pub struct TreeRec {
@@ -274,6 +286,8 @@ pub struct Log {
     pub textures: Vec<TexObjRec>,
     /// The palettes the original set up ('u', in newer logs).
     pub tluts: Vec<TlutRec>,
+    /// The materials draws were set up with ('m', in newer logs, at most 8,000).
+    pub materials: Vec<MaterialRec>,
     /// The strips of short arrays the device played ('w', in newer logs, at most 4,000).
     pub strips: Vec<StripRec>,
     pub trees: Vec<TreeRec>,
@@ -371,6 +385,25 @@ pub fn read_log(path: &str) -> Option<Log> {
                     at.push(b);
                 }
                 log.strips.push(StripRec { tick, words, at });
+            }
+            b'm' => {
+                if !r.has(4 + 4 + 48 + 2 * 36) {
+                    break;
+                }
+                let tick = r.u32();
+                let layers = r.u32();
+                let mut layer = [[0u8; 0x18]; 2];
+                for l in &mut layer {
+                    l.copy_from_slice(&r.b[r.p..r.p + 0x18]);
+                    r.p += 0x18;
+                }
+                let mut textures = [(0u32, [0u8; 32]); 2];
+                for t in &mut textures {
+                    t.0 = r.u32();
+                    t.1.copy_from_slice(&r.b[r.p..r.p + 32]);
+                    r.p += 32;
+                }
+                log.materials.push(MaterialRec { tick, layers, layer, textures, strips_before: log.strips.len() });
             }
             b'u' => {
                 if !r.has(4 + 4 + 1 + 2) {

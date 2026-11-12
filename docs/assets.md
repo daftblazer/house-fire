@@ -265,3 +265,17 @@ command at all. A mesh's material reaches the device past the list, by its SetMa
 makes it TEV stages (ERC_SetMaterialStages, the recomp's `src/erc_material.cpp`). Neither
 the 0x28 word nor an opcode-66 draw's words carry the sub-model's hash (kept now, `hash`, for
 the materials' check).
+
+## Materials as the device has them
+
+The observer's 'm' records (ERC_SetMaterialStages as it is called, before the draw it is for:
+`home-m.log`, the replay's output on it the same as on `home-w66.log`): the device's layer
+count, its two layers' 0x18 bytes, its two texture slots. A layer: a pointer, a word (8, 0x40,
+0x48: flags), 0x18 or 0x1c, a float (0.5, 0.01, 0.03), then the bytes ERC_SetMaterialStages
+reads (+0x10 mode, blend, blend-by, enabled, factor, unlit, uv source). A texture slot points
+at the loaded texture, its LFXT header's flags (`04 93`) in its first bytes. With one layer the
+second's bytes and slot are left from before (stale). Against the sub-model hashes of the
+7,962 draws of read batches: 20 hashes (a hash is shared by many sub-models: a material's,
+then, not a mesh's); one two-layer material is seen with every hash (a pass over everything:
+not a mesh's own); 18 hashes have one material of their own besides it, 2 have two (their
+texture differs). Study ASSETS_SHOW_MATERIALS.

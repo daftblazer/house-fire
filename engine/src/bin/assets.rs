@@ -500,6 +500,57 @@ fn main() -> ExitCode {
             for (k, n) in &words {
                 println!("  {n:5} {k}");
             }
+            // each draw's material (the last 'm' before its strip record) by its sub-model's hash:
+            // does a hash always come with the same material (layers, their bytes, the textures'
+            // first bytes)?
+            if !log.materials.is_empty() {
+                type Mat = (u32, [[u8; 0x18]; 2], [[u8; 32]; 2]);
+                let mut by_hash: BTreeMap<u32, std::collections::BTreeSet<Mat>> = BTreeMap::new();
+                let mut mi = 0;
+                let mut drawn = 0;
+                for (i, st) in log.strips.iter().enumerate() {
+                    while mi + 1 < log.materials.len() && log.materials[mi + 1].strips_before <= i {
+                        mi += 1;
+                    }
+                    let m = &log.materials[mi];
+                    if m.strips_before > i {
+                        continue;
+                    }
+                    let sm = if st.words[0] >> 24 == 0x42 {
+                        lists.get(&st.at[6]).copied()
+                    } else {
+                        all.get(&st.at[2]).and_then(|v| v.iter().find(|sm| sm.count as u32 == st.words[1]).copied())
+                    };
+                    let Some(sm) = sm else { continue };
+                    drawn += 1;
+                    // a second layer's bytes and texture are stale when there is one layer
+                    let (l1, t1) = if m.layers >= 2 { (m.layer[1], m.textures[1].1) } else { ([0; 0x18], [0; 32]) };
+                    by_hash.entry(sm.hash).or_default().insert((m.layers, [m.layer[0], l1], [m.textures[0].1, t1]));
+                }
+                let one = by_hash.values().filter(|v| v.len() == 1).count();
+                let mut sizes: BTreeMap<usize, usize> = BTreeMap::new();
+                for v in by_hash.values() {
+                    *sizes.entry(v.len()).or_default() += 1;
+                }
+                // a material seen with every hash (a pass over everything drawn, not a mesh's own)
+                let mut common: Option<std::collections::BTreeSet<Mat>> = None;
+                for v in by_hash.values() {
+                    common = Some(match common {
+                        None => v.clone(),
+                        Some(c) => c.intersection(v).cloned().collect(),
+                    });
+                }
+                let common = common.unwrap_or_default();
+                let own = by_hash.values().filter(|v| v.difference(&common).count() == 1).count();
+                println!("draws with a material and a read sub-model {drawn}: hashes {}, with one material {one}; materials a hash (count: hashes) {sizes:?}; seen with every hash {}, one material besides them {own}", by_hash.len(), common.len());
+                if std::env::var_os("ASSETS_SHOW_MATERIALS").is_some() {
+                    for (h, v) in by_hash.iter().take(12) {
+                        for (n, l, t) in v.iter().take(3) {
+                            println!("  {h:08x}: layers {n} {:02x?} {:02x?} tex {:02x?}", l[0], l[1], &t[0][..16]);
+                        }
+                    }
+                }
+            }
             // the unmatched draws' display lists (word 6's first 32 bytes, distinct), searched for
             // in models.arc and datasets.arc: which entry keeps each and whether a head precedes it
             if std::env::var_os("ASSETS_SHOW_UNMATCHED_66").is_some() {
