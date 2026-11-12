@@ -760,12 +760,22 @@ impl Host for ReplayHost<'_, '_> {
             }
             let want = self.logged(s, n);
             let k = || if n.opcode == 2 { "primitives: expression".to_string() } else { format!("primitives: SetToNext kind {}", n.operand[4] & 0x7F) };
+            // a node whose two ways are one node: the log's next node does not tell true from
+            // false (logged as true), so the same where native's way leads there too
+            let one_way = n.true_target == n.false_target && matches!(got, PrimResult::True | PrimResult::False) && matches!(want, PrimResult::True | PrimResult::False);
             if got == want {
                 note!(self.counts, "{}: the same natively", k());
+            } else if one_way {
+                note!(self.counts, "{}: the same way natively (both its ways one node)", k());
             } else {
                 note!(self.counts, "{}: DIFFERENT (the log's taken)", k());
                 if n.opcode == 2 && has("REPLAY_SHOW_EXPR_DIFFS") && self.shown.next("expr diff", 200) {
-                    println!("expression differs: tick {} me {me_id} tree {}:{} operand {:02x?}: native {:?}, log {:?}", s.tick, s.tree, s.node, n.operand, got, want);
+                    let e = ExpressionOperand::of(n);
+                    let mut vars = ScriptVariables::new(&mut self.world, me, interp.top());
+                    let lhs = vars.get(e.lhs_scope, e.lhs_data).map(|v| v.value);
+                    let rhs = vars.get(e.rhs_scope, e.rhs_data).map(|v| v.value);
+                    let logged: Vec<String> = s.lookups.iter().map(|v| format!("{}/{}={}", v.scope, v.data, v.value)).collect();
+                    println!("expression differs: tick {} me {me_id} tree {}:{} operand {:02x?}: native {:?}, log {:?}; native lhs {lhs:?} rhs {rhs:?}; logged {logged:?}", s.tick, s.tree, s.node, n.operand, got, want);
                 }
                 let kind = n.operand[4] & 0x7F;
                 if n.opcode == 31 && kind == 6 && has("REPLAY_KIND6") {
