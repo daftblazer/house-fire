@@ -16,6 +16,21 @@ pub struct StackDump {
     pub below: Vec<u8>,
 }
 
+/// A texture the original set up (GXInitTexObj, 'x'): the tick, its image's address, width,
+/// height, GX format, wraps, mipmap flag, its first level's size and FNV-1a hash.
+#[derive(Clone, Copy, Debug)]
+pub struct TexObjRec {
+    pub tick: u32,
+    pub image: u32,
+    pub width: u16,
+    pub height: u16,
+    pub format: u8,
+    pub wrap: (u8, u8),
+    pub mip: u8,
+    pub size: u32,
+    pub hash: u64,
+}
+
 /// A tree as the original had it loaded: its nodes' address, id, file, and its nodes' raw bytes.
 #[derive(Clone, Debug, Default)]
 pub struct TreeRec {
@@ -235,6 +250,8 @@ pub struct Log {
     /// Each interpreter at its first step ('k', in newer logs): the tick, its address, the frame it
     /// ran, its first 32 words and the 512 bytes below that frame (guest order).
     pub stack_dumps: Vec<StackDump>,
+    /// The textures the original set up ('x', in newer logs).
+    pub textures: Vec<TexObjRec>,
     pub trees: Vec<TreeRec>,
     pub lists: Vec<ListRec>,
     /// Tick -> its pass over the objects (logs with 'Q' records).
@@ -314,6 +331,17 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
                 r.u32();
                 log.ticks += 1;
+            }
+            b'x' => {
+                if !r.has(4 + 4 + 2 + 2 + 4 + 4 + 8) {
+                    break;
+                }
+                let (tick, image) = (r.u32(), r.u32());
+                let (width, height) = (r.u16(), r.u16());
+                let (format, ws, wt, mip) = (r.u8(), r.u8(), r.u8(), r.u8());
+                let size = r.u32();
+                let hash = r.u32() as u64 | (r.u32() as u64) << 32;
+                log.textures.push(TexObjRec { tick, image, width, height, format, wrap: (ws, wt), mip, size, hash });
             }
             b'k' => {
                 if !r.has(12 + 128 + 512) {

@@ -3,6 +3,8 @@
 //! Usage: assets ISO arcs [LIST]  every .arc on the disc: its layout read, its entry count; with
 //!                                LIST, each entry ("archive<TAB>name<TAB>offset<TAB>size") into it
 //!        assets ISO textures         textures.arc's entries read: by kind and size, any that do not
+//!        assets ISO texcheck LOG     the textures the original set up (the log's 'x' records)
+//!                                    against textures.arc's: each by its first level's hash
 
 use std::io::Write;
 use std::process::ExitCode;
@@ -10,6 +12,7 @@ use std::process::ExitCode;
 use housefire::arc;
 use housefire::disc::Disc;
 use housefire::texture;
+use housefire::tree_log::read_log;
 use std::collections::BTreeMap;
 
 fn main() -> ExitCode {
@@ -67,6 +70,47 @@ fn main() -> ExitCode {
                 println!("{n:5} {k}");
             }
             println!("textures read {}, not {bad}", entries.len() - bad);
+        }
+        "texcheck" => {
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO texcheck LOG");
+                return ExitCode::from(2);
+            };
+            let data = d.read("textures.arc").unwrap_or_default();
+            let entries = arc::entries(&data).unwrap_or_default();
+            // each entry's first level, hashed as the observer does
+            let fnv = |b: &[u8]| b.iter().fold(1469598103934665603u64, |h, &x| (h ^ x as u64).wrapping_mul(1099511628211));
+            let mut by_hash: BTreeMap<u64, Vec<(String, texture::Kind, u32, u32)>> = BTreeMap::new();
+            for e in &entries {
+                let b = arc::bytes(&data, e);
+                if let Some(t) = texture::read(b) {
+                    let first = (t.width as usize * t.height as usize * t.kind.bits() as usize) / 8;
+                    by_hash.entry(fnv(&b[t.texels.0..t.texels.0 + first])).or_default().push((t.name.clone(), t.kind, t.width, t.height));
+                }
+            }
+            let mut images: BTreeMap<u32, &housefire::tree_log::TexObjRec> = BTreeMap::new();
+            for x in &log.textures {
+                images.entry(x.image).or_insert(x);
+            }
+            let mut found: BTreeMap<String, usize> = BTreeMap::new();
+            let mut not: BTreeMap<String, usize> = BTreeMap::new();
+            for x in images.values() {
+                match by_hash.get(&x.hash) {
+                    Some(v) => {
+                        let (_, kind, w, h) = &v[0];
+                        let same = *w == x.width as u32 && *h == x.height as u32;
+                        *found.entry(format!("{kind:?} as GX format {}{}", x.format, if same { "" } else { ", size NOT the same" })).or_default() += 1;
+                    }
+                    None => *not.entry(format!("GX format {} {}x{}", x.format, x.width, x.height)).or_default() += 1,
+                }
+            }
+            println!("setups {}, images {}", log.textures.len(), images.len());
+            for (k, n) in &found {
+                println!("  found in textures.arc: {n:5} {k}");
+            }
+            for (k, n) in &not {
+                println!("  not found:             {n:5} {k}");
+            }
         }
         a => {
             println!("unknown command {a}");

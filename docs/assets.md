@@ -33,3 +33,12 @@ banks).
 
 (h is just past the name's NUL.) Every entry's parts fill it exactly: 1,043 of 16 bits, 854 of
 blocks, 74 and 19 of palettes of 16 and 256, 3 of 32 bits, 38 with mip levels.
+
+Checked against the original: the observer's 'x' record (each GXInitTexObj: the image, its size
+and GX format, and an FNV-1a hash of its first level) on the home replay (`work/logs/home-x.log`,
+581,110 steps as `home.log`): of the 215 images the original sets up, 148 are a `textures.arc`
+entry's first level byte for byte, at its size, and the kinds are GX formats: 16 bits RGB5A3 (5,
+55 images), blocks CMPR (14, 89), 4-bit palettes C4 (8, 2), 8-bit C8 (9, 2). The 67 others are
+not in `textures.arc`: 18 frame-sized I8 (320x224 to 640x480: copies of the picture), 47 C8 of
+other sizes (32x256, 32x64, 128x128, 8x256, 8x64, 16x32: from another archive, to be found),
+one RGB5A3 256x256 and one IA8 4x4. `assets ISO texcheck LOG`.
