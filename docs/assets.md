@@ -82,3 +82,14 @@ two palettes of 16-bit entries, n each: the four palette textures the replay use
 are a logged palette's entries byte for byte in their area's first half. With the first half as
 an IA8 palette (`texture::decode_indexed`) all 7,668 textures decode as the recomp's decoder does
 (270,002,944 bytes). What the second half is for is not known yet.
+
+## Models (surveyed)
+
+`models.arc`, 1,843 entries, each beginning `00 01 00 00`, two zero bytes and the model's name
+(NUL-ended), then a word 0x25 and the model's data; `shaders.arc`'s 2,132 begin with the word 13,
+12 zero bytes and a name (a material each, by the textures' names). The engine draws through its
+command list (`../bustin-out-recomp/docs/dev/native.md`, "The engine's command list"), but on
+the home replay none of its strips of short arrays is recorded by `ERC_TriStripShort` or
+`ERC_TriStripRefShort` (an observer hook on each: no call): the models are drawn otherwise,
+likely as GX display lists (the list's opcode 6) over the arrays a GeometrySetup (opcode 40)
+names, to be observed next.
