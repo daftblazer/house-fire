@@ -2081,11 +2081,21 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                 // (placeholders in `unseen`): the frames above it are gone, and it takes the
                 // place of the placeholder below them.
                 let mut popped = false;
-                while fr.last().is_some_and(|&b| b > s.frame) {
+                // the first placeholder popped is the frame the return lands in (the one just
+                // below the frames that returned: placeholders' addresses are guesses, the
+                // frames' sizes vary)
+                let mut landed: Option<u32> = None;
+                while let Some(&b) = fr.last().filter(|&&b| b > s.frame) {
                     fr.pop();
                     popped = true;
+                    if landed.is_none() && unseen.contains(&b) {
+                        landed = Some(b);
+                    }
                 }
-                if popped && fr.last().is_some_and(|b| unseen.contains(b)) {
+                if let Some(b) = landed {
+                    unseen.remove(&b);
+                    fr.push(s.frame);
+                } else if popped && fr.last().is_some_and(|b| unseen.contains(b)) {
                     unseen.remove(fr.last().unwrap());
                     *fr.last_mut().unwrap() = s.frame;
                 } else {
@@ -2285,6 +2295,10 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                     if has("REPLAY_SHOW_STOPPED") {
                         let p = if i > 0 && log.steps[i - 1].sim == s.sim { format!("{}:{}->{}", log.steps[i - 1].tree, log.steps[i - 1].node, log.steps[i - 1].after) } else { "another stack's".into() };
                         note!(h.counts, "study stopped: error {:?} log {}:{} (before {p})", interp.error(), s.tree, s.node);
+                        if interp.error() == Error::ReturnFromBottom && has("REPLAY_SHOW_RFB") {
+                            let back: Vec<String> = (i.saturating_sub(6)..i).map(|j| &log.steps[j]).filter(|t| t.sim == s.sim).map(|t| format!("{}:{}->{} f{:x}", t.tree, t.node, t.after, t.frame & 0xFFF)).collect();
+                            println!("rfb: object {o_id} tick {t} log {}:{} frame {:x} depth {fr_len}; before: {}", s.tree, s.node, s.frame & 0xFFF, back.join(" | "));
+                        }
                         if interp.error() == Error::Missing {
                             let o = h.world.get(ok);
                             let f = o.file.map(|f| lib.file(f));
