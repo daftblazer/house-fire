@@ -45,17 +45,17 @@ fn the_primitives_rules() {
         }
     };
 
-    // SetToNext over the list's order (not by id), from 0: any object (after the last, 0 and
-    // false), then the Sims, then a GUID
+    // SetToNext over the list's order (not by id), from 0: any object (after the last, false
+    // with the target kept), then the Sims (after the last, 0), then a GUID
     let any = [0; 8];
     f.stack_object = 0;
     assert!(stn(any, &mut w, &mut f) == PrimResult::True && f.stack_object == 5);
     assert!(stn(any, &mut w, &mut f) == PrimResult::True && f.stack_object == 9);
     assert!(stn(any, &mut w, &mut f) == PrimResult::True && f.stack_object == 3);
-    assert!(stn(any, &mut w, &mut f) == PrimResult::False && f.stack_object == 0);
-    f.stack_object = 3;
+    assert!(stn(any, &mut w, &mut f) == PrimResult::False && f.stack_object == 3);
     f.stack_object = 0;
     assert!(stn([0, 0, 0, 0, 1, 0, 0, 0], &mut w, &mut f) == PrimResult::True && f.stack_object == 9);
+    assert!(stn([0, 0, 0, 0, 1, 0, 0, 0], &mut w, &mut f) == PrimResult::False && f.stack_object == 0);
     // kind 4: the next of the GUID by id, not the list's order (5 and 3 are 0x111's: from 0, 3;
     // from 3, 5; from 5, none)
     f.stack_object = 0;

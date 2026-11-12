@@ -349,10 +349,13 @@ pub fn set_to_next(n: &Node, vars: &mut ScriptVariables) -> PrimResult {
     let start = if cur != 0 { order.iter().position(|&k| w.get(k).id() == cur).map_or(0, |k| k + 1) } else { 0 };
     match order[start.min(order.len())..].iter().map(|&k| w.get(k)).find(|x| fits(x)).map(Object::id) {
         Some(id) => set(vars, id),
-        // after the last, the target 0 and false (as kind 5): the home log's 2,757 stack
-        // objects left set, 2,704 of them
+        // after the last, false, and the target 0 for kinds 1, 2 and 6 (as kinds 4 and 5): the
+        // home log's 2,757 stack objects left set, 2,704 of them; kind 0 keeps its target (the
+        // club's 9 steps from 30 in trees 8374 and 8194)
         None => {
-            vars.set(sc, data, 0);
+            if kind != 0 {
+                vars.set(sc, data, 0);
+            }
             PrimResult::False
         }
     }
