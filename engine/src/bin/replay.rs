@@ -2705,6 +2705,14 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                     o.definition = Some(def);
                     o.file = Some(file);
                     o.attributes = vec![0; lib.def(def).field(56) as usize];
+                    // first seen mid-run (not at its init's first node: the club's markers 179,
+                    // 180 and 181, an Idle returning into their 4097 at node 1): its start is
+                    // not in the log, its frame the log's
+                    let init = f.functions.values().next().and_then(|t| t.first()).map(|e| e.1);
+                    if !(s.node == 0 && init == Some(s.tree)) {
+                        o.stack = vec![Frame { tree: Some(tree), node: s.node, params: s.params.clone(), locals: s.locals.clone(), stack_object: s.stack_object, file: Some(file), ..Default::default() }];
+                        h.counts.note("objects: a stand-in first seen mid-run, its frame the log's");
+                    }
                     sim.forget(ok);
                     h.counts.note("objects: a stand-in given its first step's file and started");
                 }
@@ -2723,7 +2731,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                     println!("made def {o_id} tick {t}: {:?} first step {}:{}; fields {:?}", o.file.map(|f| file_name(lib, f)), s.tree, s.node, (0..64).map(|i| d.field(i)).collect::<Vec<_>>());
                 }
             }
-            if has("REPLAY_SHOW_STANDIN") && h.world.get(ok).file.is_none() && h.shown.next(&format!("standin {o_id}"), 3) {
+            if has("REPLAY_SHOW_STANDIN") && h.world.get(ok).file.is_none() && h.shown.next(&format!("standin {o_id}"), 6) {
                 println!("standin: tick {t} object {o_id} {}:{} -> {} file {} defs {:?}", s.tree, s.node, s.after, lib.file(file).path, lib.file(file).definitions.iter().map(|d| (d.guid(), (0..48).map(|i| d.field(i)).collect::<Vec<_>>())).collect::<Vec<_>>());
             }
             if has("REPLAY_FRAME_SIZES") {
