@@ -885,7 +885,18 @@ fn variables(lib: &Library, log: &housefire::tree_log::Log, step_object: &[Optio
                 notes.note(&match got {
                     Some(g) if v.flags & 1 != 0 && g.value == v.value => format!("variables: {sc}: no cell, the value the same natively"),
                     Some(_) if v.flags & 1 != 0 => format!("variables: {sc}: no cell, the value other natively (study)"),
-                    _ => format!("variables: {sc}: not modelled yet"),
+                    _ => {
+                        if std::env::var("LOCKSTEP_SHOW_UNMODELLED").ok().and_then(|v| v.parse::<i16>().ok()) == Some(v.scope)
+                            && let Some(o) = world.get_live(me)
+                        {
+                            let so = world.find_object(frame.stack_object);
+                            eprintln!(
+                                "unmodelled scope {} datum {} = {} at tick {}: me {} (person {}, def {:?}, file {:?}), stack object {} (def {:?})",
+                                v.scope, v.data, v.value, s.tick, o.id(), o.person, o.definition, o.file, frame.stack_object, so.map(|o| o.definition)
+                            );
+                        }
+                        format!("variables: {sc}: not modelled yet")
+                    }
                 });
                 continue;
             };

@@ -259,6 +259,12 @@ fn sync_variables(world: &mut World, counts: &mut Counts, shown: &mut Shown, me:
                     s.tree,
                     s.node
                 );
+                if let Some(o) = vars.world.find_object(so) {
+                    let pd = o.person_data.get(v.data as usize).copied();
+                    let d = o.data.get(v.data as usize).copied();
+                    let room = vars.world.walls.room(o.x16 >> 4, o.y16 >> 4);
+                    println!("   so {so}: data[{}] {d:?} person_data {pd:?} tile ({},{},{}) room {room} file {:?}", v.data, o.x16 >> 4, o.y16 >> 4, o.level, o.file.map(|f| vars.world.library().file(f).path.clone()));
+                }
             }
             note!(counts, "variables: scope {}: not modelled", v.scope);
             continue;
