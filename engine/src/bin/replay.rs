@@ -5099,6 +5099,22 @@ fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, counts: &mut
         // each follower's walk: its start's tick and place, its speed then, and its frames to arrive
         let mut walk_starts: BTreeMap<u32, (u32, (f32, f32), f32, u32)> = BTreeMap::new();
         // the ticks of a follower's frames from its walk's start (the frame clock as it ran)
+        if has("REPLAY_SHOW_PLACE_OFFSETS") {
+            // study: each Sim's logged place against its walker's last float that tick (the walker
+            // mapped by its places: the follower whose position rounds to the place most often)
+            let mut last: BTreeMap<(u32, u32), (f32, f32)> = BTreeMap::new();
+            for f in &log.follows {
+                last.insert((f.follower, f.tick), (f.after.x, f.after.y));
+            }
+            let mut hist: BTreeMap<i32, usize> = BTreeMap::new();
+            for p in &log.places {
+                let best = last.range((0, p.tick)..).filter(|((_, t), _)| *t == p.tick).map(|(_, &(x, y))| ((p.x as f32 - x).powi(2) + (p.y as f32 - y).powi(2)).sqrt()).fold(f32::INFINITY, f32::min);
+                if best.is_finite() {
+                    *hist.entry((best * 10.0) as i32).or_default() += 1;
+                }
+            }
+            println!("place - nearest walker that tick, in tenths: {hist:?}");
+        }
         if has("REPLAY_SHOW_FOLLOWS") {
             for f in log.follows.iter().filter(|f| (2036..=2041).contains(&f.tick) || (4920..=4935).contains(&f.tick)) {
                 println!("follow tick {} {:x}: state {} -> {}, at ({:.3}, {:.3}) -> ({:.3}, {:.3}) factor {} -> {}", f.tick, f.follower, f.before.state, f.after.state, f.before.x, f.before.y, f.after.x, f.after.y, f.before.factor, f.after.factor);

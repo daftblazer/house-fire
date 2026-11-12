@@ -155,19 +155,22 @@ picture options, the audio mixing.
 
 ## Next
 
-The node step, calls and returns agree with the recompiled Bustin' Out in lockstep
-(`interpreter.md`, "Checked against the original"). Next:
+Stage 3 (the simulation) agrees with the recompiled Bustin' Out on every log there is (the
+eleventh loop's end, `loop.md`): replay runs the home lot (Mom's house), the club (a new log and
+the two old ones) with no step of any Sim's or object's stack different from the original's, and
+lockstep finds no difference. What the logs hold is a few minutes of play on two lots; each new
+log will show cases they did not.
 
-- The object model's next parts (`objects.md`): the scopes not modelled yet, the object
-  primitives (create, remove, SetToNext), and the sizes of each object's tables from its
-  definition.
-- The frames the engine pushes itself (+8 set) and the stack resets outside the node step:
-  what starts an action, which is where the + 0x1000 interaction rule would show.
-- **Open: autonomy on a community lot** (the club; `simulation.md`, "Autonomy at the club").
-  The home lot's evaluations are native and right; at the club the original runs each object's
-  table first tree (463, whose callee 462 tests the house number, global 10, against the
-  global file's constant 19215 = 16) and then almost no guards, leaves out objects with no
-  first tree, and checks the dance floor part's guard after the Sims dancing on it. What
-  switches the guards off is not in the scripts' visible state (not the first tree's result,
-  not a score gate, not the stack object it leaves); it is in the evaluator (fn_802266BC,
-  behind its indirect calls), to be read there before it is built.
+Left to stage 4, with the presentation they come from:
+
+- **A walking Sim's place at a tick's edge and at a walk's start** (20 of the home log's 1,186
+  walking places; `loop.md`, iterations 155-163). The walker itself moves exactly as the
+  original's; 14 places are taken a frame early or late where two of the walker's frames fall in
+  one tick (the game loop's order of frames and ticks), 6 are the Sim's body off its walker by up
+  to 1.5 sixteenths as a walk starts from a run on, closing over a dozen ticks (its animation).
+- **The family's funds**: AlterBudget's spending is seen (the money balloon), the funds are the
+  log's.
+- **The player's commands** come from the front end (`World::queue_player_command`); replay
+  takes them from the log, as the dialogs' answers.
+
+Then stage 4 proper: rendering, animation, sound, the menus, Create-A-Sim, saves, the story mode.
