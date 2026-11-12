@@ -2476,7 +2476,10 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                 best_streak = best_streak.max(streak);
             } else {
                 streak = 0;
-                if has("REPLAY_SHOW_DIFFS") {
+                // (not a call's record after its callee's, which is skipped below, not counted)
+                let call_record = st_top.is_some_and(|(t, n, _)| t == Some(s.tree as i16) && n == s.after)
+                    && lib.tree_at(tree).nodes.get(s.node as usize).is_some_and(|nd| nd.opcode == 28);
+                if has("REPLAY_SHOW_DIFFS") && !call_record {
                     let cat = if interp.done() {
                         0
                     } else if st_len > fr_len {
