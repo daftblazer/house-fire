@@ -1444,6 +1444,9 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
         for pl in &mut l.plans {
             if let Some(p) = native_plan_points(pl, &world) {
                 native_plans.1 += usize::from(p == pl.points);
+                if p != pl.points && has("REPLAY_SHOW_PLAN_DIFFS") {
+                    println!("plan tick {}: native {p:?}, the log's {:?}", pl.tick, pl.points);
+                }
                 native_plans.0 += 1;
                 pl.points = p;
             }

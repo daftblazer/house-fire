@@ -204,7 +204,12 @@ impl PartialOrd for Open {
 /// rects as the search sees them (the obstacles, then the regions, the blocked ones grown).
 pub fn coarse_way(rects: &[MapRect], growth: Growth, start: (i32, i32), goal: (i32, i32)) -> Option<Way> {
     let mut map = Map { rects, growth, cells: Vec::new() };
-    let first = map.cell_at(start.0, start.1)?;
+    // a start in a blocked region (a Sim on another's square) is a cell of its own, the 1x1 at
+    // the start, not grown (the original's cells at the club's tick-56 search)
+    let first = map.cell_at(start.0, start.1).unwrap_or_else(|| {
+        map.cells.push(MapRect::point(start.0, start.1));
+        map.cells.len() - 1
+    });
     map.cells[first].cost = 0;
     let last = map.cell_at(goal.0, goal.1);
     // node per cell, and one past them for the goal
@@ -250,6 +255,11 @@ pub fn coarse_way(rects: &[MapRect], growth: Growth, start: (i32, i32), goal: (i
             if b == c || map.cells[b].cost == BLOCKED {
                 continue;
             }
+            // linked only where the cells share an edge (the cutter's walk round one meets the
+            // other): grown rects overlapping across a one-wide cell between are no link
+            if !touches(&here, &map.cells[b]) {
+                continue;
+            }
             let Some((p, o)) = crossing(&here, &map.cells[b]) else { continue };
             let ng = gc + (distance(point[c], p) + 1.0) * step_weight(here.cost, map.cells[b].cost);
             if g[b].is_none_or(|old| ng < old) {
@@ -275,6 +285,13 @@ pub fn coarse_way(rects: &[MapRect], growth: Growth, start: (i32, i32), goal: (i
     None
 }
 
+/// Whether two cells share a stretch of edge: the one's walk round it meets the other.
+fn touches(a: &MapRect, b: &MapRect) -> bool {
+    let ys = a.y0 < b.y1 && b.y0 < a.y1;
+    let xs = a.x0 < b.x1 && b.x0 < a.x1;
+    ((a.x1 == b.x0 || b.x1 == a.x0) && ys) || ((a.y1 == b.y0 || b.y1 == a.y0) && xs) || (ys && xs)
+}
+
 /// The plan's points from a search's way: each crossing slides along its opening (across a
 /// thin opening the other axis stays the crossing's own) to where the line between its two
 /// neighbours meets it, rounded to the nearest and kept inside the opening, over and over until
@@ -286,9 +303,13 @@ pub fn refine(way: &Way) -> Vec<(i32, i32)> {
         for i in 1..pts.len().saturating_sub(1) {
             let Some(o) = way.openings.get(i - 1) else { break };
             let (a, b) = (pts[i - 1], pts[i + 1]);
+            // a line parallel to the opening divides by 0, as the original's floats do: an
+            // infinity saturates to that side, 0/0 (NaN) converts to the lowest int (PowerPC's
+            // fctiwz), so the clamp takes the opening's low end (the club's tick 56)
             let along = |from: i32, to: i32, at: f32, wf: i32, wt: i32| -> i32 {
-                let t = if wt != wf { (at - wf as f32) / (wt - wf) as f32 } else { 0.5 };
-                (from as f32 + t * (to - from) as f32 + 0.5).floor() as i32
+                let t = (at - wf as f32) / (wt - wf) as f32;
+                let v = (from as f32 + t * (to - from) as f32 + 0.5).floor();
+                if v.is_nan() { i32::MIN } else { v as i32 }
             };
             let q = if o.y1 - o.y0 <= 2 {
                 let y = pts[i].0;

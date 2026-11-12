@@ -1536,4 +1536,15 @@ routing checks there:
   (the cheaper way by distance) after 69. Keeping a cell's first way does not explain it (it
   breaks 3 club searches and 2 home ones). With only the 1x1 start the plan goes native the
   wrong way and its walk leaves the log's, so the start waits for the search's cost.
+  Found: native linked any two cells whose rects grown by 1 overlap, so cells 5 (x to 366) and 9
+  (x from 367), one column apart across the strip cell 2, were linked (crossing at (300, 366),
+  inside cell 2). The original links only cells that share an edge, as the cutter's walk round
+  one meets the other (on the home log the two rules never differ, which is why linking by the
+  walk "changed nothing" there). With both, the search is the original's: 13 of 13 coarse ways.
+  Its refined second point was then (289, 367) for the original's (288, 367): the line between
+  its neighbours runs along x 367, parallel to the opening, and the slide divides 0 by 0; the
+  original's NaN converts to the lowest int (fctiwz) and the clamp takes the opening's low end,
+  where native had taken the middle. Done the original's way, every club plan is the log's
+  where its inputs are logged (13 of 13 from the search to the point after the goal); the
+  walks, the home log's 17 and the old club logs unchanged.
 Lockstep: 3 differences (scope 0 and 1 places, the caller 80213900 also behind the home log's).
