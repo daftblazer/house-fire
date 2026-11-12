@@ -318,5 +318,6 @@ entry of the object's function table (OBJf) — its action tree the support, its
 check (the stove's entry 19: 8199 "cook test", 8197 "cook function"); the rating is the
 object's data a (the stove's data 32 = 16, the tables' 38, the counters' 61, the sink's 37),
 which its "update function scores" tree keeps; the distance factor 3.0 (0x8037C550), the floor
-1.0. Replay runs it natively (5 of the home log's 6 find the original's object; the sixth, the
-second search at 1356, finds 55 for the original's 54: the use count at +88 is not native).
+1.0; an object in use (+88 is its data 25, above 0) is left out. Replay runs it natively: all 6
+of the home log's find the original's object (the second search at 1356 skips counter 55, in
+use since the first).

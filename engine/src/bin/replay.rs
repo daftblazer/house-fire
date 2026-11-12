@@ -1058,6 +1058,8 @@ impl ReplayHost<'_, '_> {
             .world
             .objects()
             .filter(|o| o.id() != self.world.get(me).id())
+            // in use (its data 25, the int16 at +88, above 0) left out
+            .filter(|o| o.data.get(25).is_none_or(|&u| u <= 0))
             .filter_map(|o| {
                 let f = o.file?;
                 let &(test, action) = lib.file(f).functions.values().next()?.get(b)?;
