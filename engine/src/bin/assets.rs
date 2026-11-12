@@ -13,6 +13,8 @@
 //!                                    the textures' palettes (study for now)
 //!        assets ISO stripcheck LOG   the strips of short arrays the original played (the log's
 //!                                    'w') against models.arc: where each array's bytes are
+//!        assets ISO modelcheck LOG   models.arc's records read (their first sub-model) and
+//!                                    checked against the strips the original plays from them
 //!        assets ISO texcheck LOG     the textures the original set up (the log's 'x' records)
 //!                                    against textures.arc's: each by its first level's hash
 
@@ -21,6 +23,7 @@ use std::process::ExitCode;
 
 use housefire::arc;
 use housefire::disc::Disc;
+use housefire::model;
 use housefire::texture;
 use housefire::rle_texture;
 use housefire::tree_log::read_log;
@@ -336,6 +339,36 @@ fn main() -> ExitCode {
                     println!("strip count {} words0 {:08x}: w2 in {} at {:#x} (of {:#x}); {}", s.words[1], s.words[0], p2.0, p2.1, p2.2, others.join(", "));
                 }
             }
+        }
+        "modelcheck" => {
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO modelcheck LOG");
+                return ExitCode::from(2);
+            };
+            let data = d.read("models.arc").unwrap_or_default();
+            let entries = arc::entries(&data).unwrap_or_default();
+            let models: Vec<model::Model> = entries.iter().filter_map(|e| model::read(arc::bytes(&data, e))).collect();
+            let kinds = models.iter().filter(|m| m.first.kind == 1).count();
+            println!("records {}, first sub-model read {} (kind 1: {kinds}, kind 0: {})", entries.len(), models.len(), models.len() - kinds);
+            // each strip whose positions' first 32 bytes are a read sub-model's: its word 3's
+            // bytes against that sub-model's texture coordinates
+            let mut by_pos: std::collections::HashMap<[u8; 32], &model::SubModel> = std::collections::HashMap::new();
+            for m in &models {
+                if let Some(p) = m.first.positions.get(..32) {
+                    by_pos.insert(p.try_into().unwrap(), &m.first);
+                }
+            }
+            let (mut strips, mut same_count, mut same_uv, mut other_uv) = (0, 0, 0, 0);
+            for s in &log.strips {
+                let Some(sm) = by_pos.get(&s.at[2]) else { continue };
+                strips += 1;
+                same_count += usize::from(sm.count as u32 == s.words[1]);
+                match sm.texcoords.get(..32) {
+                    Some(t) if t == &s.at[3][..] => same_uv += 1,
+                    _ => other_uv += 1,
+                }
+            }
+            println!("strips from a read sub-model {strips}: the count the same {same_count}; word 3 the texture coordinates {same_uv}, not {other_uv}");
         }
         "texcheck" => {
             let Some(log) = args.get(3).and_then(|p| read_log(p)) else {

@@ -146,3 +146,10 @@ mark's) and a radius (23170.5, its corner's distance). The card's tail of 73 byt
 box too (-963 … 6064). So which arrays a sub-model has varies, and its first byte is not just
 "lit": the arrays' presence is to be read from the header next (against the strips' words: word
 3 the 4-byte array, word 4 the normals, word 5 the run-time colours).
+
+Read natively (`engine/src/model.rs`: a record's head and first sub-model, of the two kinds):
+1,265 of the 1,843 records (434 of kind 1, 831 of kind 0). Checked against the strips the
+original plays (`assets ISO modelcheck LOG`, the home replay's 'w' records): the 133 strips
+whose positions are a read sub-model's have that sub-model's count, and their word 3 is its
+texture coordinates byte for byte, all 133. (Word 3 is the texture coordinates, the 4-byte array;
+the normals, 3 bytes in the record, are 4 apart in memory: the engine widens them as it loads.)
