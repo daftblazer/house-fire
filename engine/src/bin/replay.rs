@@ -2349,6 +2349,11 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                             let back: Vec<String> = (i.saturating_sub(6)..i).map(|j| &log.steps[j]).filter(|t| t.sim == s.sim).map(|t| format!("{}:{}->{} f{:x}", t.tree, t.node, t.after, t.frame & 0xFFF)).collect();
                             println!("rfb: object {o_id} tick {t} log {}:{} frame {:x} depth {fr_len}; before: {}", s.tree, s.node, s.frame & 0xFFF, back.join(" | "));
                         }
+                        if interp.error() == Error::BadTransition && has("REPLAY_SHOW_BADT") {
+                            let back: Vec<String> = (i.saturating_sub(4)..i).map(|j| &log.steps[j]).filter(|t| t.sim == s.sim).map(|t| format!("{}:{}->{}", t.tree, t.node, t.after)).collect();
+                            let nodes: Vec<String> = interp.stack().last().and_then(|f| f.tree).map(|t| lib.tree_at(t)).unwrap_or(lib.tree_at(tree)).nodes.iter().take(4).map(|n| format!("op {} -> {}/{}", n.opcode, n.true_target, n.false_target)).collect();
+                            println!("badt: object {o_id} tick {t} log {}:{}; before {}; tree {} nodes {:?}; native stack {:?}", s.tree, s.node, back.join(" | "), s.tree, nodes, interp.stack().iter().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node)).collect::<Vec<_>>());
+                        }
                         if interp.error() == Error::Missing {
                             let o = h.world.get(ok);
                             let f = o.file.map(|f| lib.file(f));
