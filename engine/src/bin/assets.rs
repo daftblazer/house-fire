@@ -109,6 +109,26 @@ fn main() -> ExitCode {
                     by_hash.entry(fnv(&b[t.texels.0..t.texels.0 + first])).or_default().push((t.name.clone(), t.kind, t.width, t.height));
                 }
             }
+            // and those kept in datasets.arc's entries (the lots' and objects' own)
+            let ds = d.read("datasets.arc").unwrap_or_default();
+            let mut embedded = 0;
+            for e in arc::entries(&ds).unwrap_or_default() {
+                let b = arc::bytes(&ds, &e);
+                let mut p = 0;
+                while let Some(q) = b[p..].windows(4).position(|w| w == b"LFXT") {
+                    let at = p + q;
+                    if let Some((t, end)) = texture::read_prefix(&b[at..]) {
+                        let first = (t.width as usize * t.height as usize * t.kind.bits() as usize) / 8;
+                        let tex = &b[at + t.texels.0..at + t.texels.0 + first];
+                        by_hash.entry(fnv(tex)).or_default().push((format!("{}/{}", e.name, t.name), t.kind, t.width, t.height));
+                        embedded += 1;
+                        p = at + end;
+                    } else {
+                        p = at + 4;
+                    }
+                }
+            }
+            println!("textures in datasets.arc: {embedded}");
             let mut images: BTreeMap<u32, &housefire::tree_log::TexObjRec> = BTreeMap::new();
             for x in &log.textures {
                 images.entry(x.image).or_insert(x);
@@ -122,7 +142,13 @@ fn main() -> ExitCode {
                         let same = *w == x.width as u32 && *h == x.height as u32;
                         *found.entry(format!("{kind:?} as GX format {}{}", x.format, if same { "" } else { ", size NOT the same" })).or_default() += 1;
                     }
-                    None => *not.entry(format!("GX format {} {}x{}", x.format, x.width, x.height)).or_default() += 1,
+                    None => {
+                        *not.entry(format!("GX format {} {}x{}", x.format, x.width, x.height)).or_default() += 1;
+                        if std::env::var_os("ASSETS_SHOW_NOT_FOUND").is_some() {
+                            let uses: Vec<u32> = log.textures.iter().filter(|y| y.image == x.image).map(|y| y.tick).collect();
+                            println!("not found: image {:08x} format {} {}x{} wrap {:?} mip {} hash {:016x}; set up at ticks {:?}", x.image, x.format, x.width, x.height, x.wrap, x.mip, x.hash, &uses[..uses.len().min(6)]);
+                        }
+                    }
                 }
             }
             println!("setups {}, images {}", log.textures.len(), images.len());

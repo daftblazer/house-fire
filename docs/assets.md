@@ -60,3 +60,10 @@ colours a literal run is always followed by a repeat, the next count's top bit n
 The entry keeps no size: the original takes the texels one at a time. Decoded natively, every
 entry gives exactly 65,536 texels, 256 by 256 (`assets ISO rle`). Where they go (the Sim's
 256 by 256 textures, one RGB5A3 image among those the home replay sets up) is to be checked.
+
+`datasets.arc` (the lots' and objects' data) keeps 5,636 more `LFXT` records inside its
+entries; each reads at its tag (`texture::read_prefix`), all 5,636. None is one of the home
+replay's 47 unmatched C8 images: those are set up at tick 0 and again in sets at ticks 25, 2,050
+and 5,632 (the same seven contents each time: 8x64, 32x64 twice, 8x256, 32x256 twice, 128x128),
+as a menu opens: the menus' own (chunk 8, `flashes.arc`), not the lot's. The lot's textures are
+`textures.arc`'s.

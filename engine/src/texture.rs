@@ -66,6 +66,12 @@ fn level_size(w: u32, h: u32, bits: u32) -> usize {
 
 /// Reads an entry: `None` unless it is an `LFXT` of a kind known whose parts fill it exactly.
 pub fn read(e: &[u8]) -> Option<Texture> {
+    read_prefix(e).filter(|&(_, end)| end == e.len()).map(|(t, _)| t)
+}
+
+/// Reads an `LFXT` at the start of `e` (one kept inside other data, `datasets.arc`'s): the
+/// texture and where it ends, if its parts fit.
+pub fn read_prefix(e: &[u8]) -> Option<(Texture, usize)> {
     if e.get(..4)? != b"LFXT" {
         return None;
     }
@@ -84,7 +90,7 @@ pub fn read(e: &[u8]) -> Option<Texture> {
     let size: usize = (0..levels).map(|l| level_size((width >> l).max(1), (height >> l).max(1), kind.bits())).sum();
     let palette = matches!(kind, Kind::Palette4 | Kind::Palette8).then_some((start + size, colours));
     let end = start + size + palette.map_or(0, |p| p.1 * 4);
-    (end == e.len()).then_some(Texture { name, kind, width, height, levels, flags, texels: (start, size), palette })
+    (end <= e.len()).then_some((Texture { name, kind, width, height, levels, flags, texels: (start, size), palette }, end))
 }
 
 #[cfg(test)]
