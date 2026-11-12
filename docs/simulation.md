@@ -303,7 +303,11 @@ nor a part whose definition's field 6 is 1 to 0xFFFD (a bed's, a mailbox's, a co
 lesser parts; 0, 0xFFFE and 0xFFFF are in); its table (field 5, a part's master's, or the
 file's only one); the interactions whose autonomy threshold is below 100 and whose flags lack
 0x80, in reverse table order, a guard shared by several once. Checked (`replay --card`): the
-three evaluations' 216 checks of objects (persons aside) the same natively, in order. 
+three evaluations' 216 checks of objects (persons aside) the same natively, in order. The
+original keeps this as a per-id flag on the lot (bit 8 of the flag word, set when the object is
+placed: fn_801F41C8 from fn_801F4074, an object with at least one such interaction, one whose
+item at +24 is not 33), and its evaluator (fn_802266BC) visits only the ids with it, skipping
+the Sim itself and an object whose int16 at +88 is above 0 (both still to be named). 
 
 **Persons as candidates.** A person's interactions are its semi-global file's one table:
 `person_sg`'s (table 129, version 11, its first tree 8230 run before its guards) for a Sim,
