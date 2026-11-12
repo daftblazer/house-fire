@@ -301,3 +301,17 @@ The primitives are run by fn_8021242C, a compare tree on the opcode (in r5) that
 handler directly: opcode 2 (the expression) fn_80213890, opcode 14 (FindBestObjectForFunction)
 fn_8020CC8C (from its case at 80212B30). The other cases are read the same way, from the
 compares at the function's start.
+
+## FindBestObjectForFunction (opcode 14), read in the recomp
+
+fn_8020CC8C. Operand byte 0 the function; each maps to a pair (a, b): 0 (0x1F, 0x12), 1 (0x20,
+0x13), 2 (0x21, 0x14), 3 (0x24, 0x15), 6 (0x25, 0x18), 7 (0x26, 0x19), 8 (-1, 0x1A), 10 (0x3D,
+0x0E), 11 (0x27, 0x1C), 12 (0x40, 0x10), 13 (0x41, 0x11), 14 (0x0F, 0x1D); others none. It walks
+the lot's objects: one in use (its int16 at +88 above 0) or failing its method at 1176 is
+skipped; its definition must support function b (a method at slot 24 with b) and gives a check
+tree (slot 32 with b, 0 for none); its rating is the int16 at +38 + 2a (a = -1: 50), 0 skipping
+it; the check tree, if any, runs with the object as stack object (fn_8023EF78) and a false one
+skips it; the score is the rating less the distance times a factor, and the best is the result.
+Measured (the home log's six): function 1 checks the stove 61 with 8199, function 7 the four
+chairs with 8200 (two true, the nearer found), functions 10 and 6 no check. Not native yet: b's
+methods (24, 32) and the +38 field are to be named (the definition's?).
