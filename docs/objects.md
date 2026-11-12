@@ -151,7 +151,11 @@ object after the target's in that order, or the first if the target is 0, of a k
 | 6 | an object whose data field 59 is the frame's first parameter (Castaway's `TrySetToNext`, which shares the case with 0 and 2; in Bustin' Out's log field 59 is the parameter for 1,984 of 2,000 objects found). The operand's bytes 0-3 (the boombox's GUID in the club's use) are not read | 2,188 and 549 same (`replay`, two sessions) |
 
 The target is the stack object, or with flag 0x80 in operand byte 4 the variable of scope
-byte 5, datum byte 7. The step is true with the target set, or false if there is no next.
+byte 5, datum byte 7. The step is true with the target set, or false if there is no next,
+and then the target is 0 (kinds 0-2 as kind 5; the stack object natively left as it was in
+2,757 steps of the home log, 2,704 of them that, e.g. the walk over the Sims in tree 4163 node
+10; the club 2,631 → 2,490, tree 2,269 → 2,154, tree3 531 → 521; lockstep 0 on all four).
+Kinds 8 and 9 (operand byte 4 & 0x7F) are not native yet: most of the home log's 53 left.
 
 Checked on a world loaded natively from the club lot (`World::load_lot`). The lot is picked
 by the order of the original's longest walk; object ids are reused between lots and don't

@@ -2246,6 +2246,9 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                         for v in &p.lookups {
                             l += &format!(" [V {}/{}={} fl {}]", v.scope, v.data, v.value, v.flags);
                         }
+                        if let Some(n) = f.tree.and_then(|t| lib.tree_at(t).nodes.get(p.node as usize)) {
+                            l += &format!(" node {}: op {} operand {:02x?}", p.node, n.opcode, n.operand);
+                        }
                         println!("{l}");
                     }
                 }
