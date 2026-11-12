@@ -53,6 +53,8 @@ pub const DATA_OBJECT_ID: usize = 11;
 pub const PORTAL_FUNCTION: usize = 15;
 /// The entry a seat runs when a Sim routes to a slot to sit at it (The Sims' "sit").
 pub const SIT_FUNCTION: usize = 26;
+/// The label of the tree a routing Sim runs to ask someone in its way to move.
+pub const ASK_TO_MOVE: &str = "route ask to move animation";
 /// The object data field that holds the way it faces (in eighths of a turn).
 pub const DATA_FACING: usize = 1;
 /// The object data field naming the object it sits in or on (0 none): a lamp on a table, the
@@ -315,6 +317,26 @@ impl<'lib> World<'lib> {
         let tile = (x >> 4, y >> 4);
         let k = self.objects().find(|c| c.on_lot() && (c.x16 >> 4, c.y16 >> 4) == tile && c.id() != stack_object && c.file.and_then(|f| lib.file(f).functions.values().next()?.get(SIT_FUNCTION).copied()).is_some_and(|e| e.1 != 0))?;
         self.find(k.id())
+    }
+
+    /// The person in the way of a routing slot's places (sixteenths) when the route to them has
+    /// no way: another person on the lot standing on one of the places' tiles, in the places'
+    /// order (the home log's one, tick 1503: Sim 237 on the meal 198's slot place 0, Sim 12
+    /// routing; docs/simulation.md, "Asked to move").
+    pub fn person_on_places(&self, me: ObjectKey, places: &[(i32, i32)]) -> Option<ObjectKey> {
+        let me_id = self.get(me).id();
+        let at = |p: &(i32, i32)| self.objects().find(|o| o.person && o.on_lot() && o.id() != me_id && (o.x16 >> 4, o.y16 >> 4) == (p.0 >> 4, p.1 >> 4));
+        let o = places.iter().find_map(at)?;
+        self.find(o.id())
+    }
+
+    /// The tree a routing Sim runs to ask a person in its way to move: its semi-global file's
+    /// "route ask to move animation" (person_sg's 8302).
+    pub fn ask_to_move_tree(&self, me: ObjectKey) -> Option<TreeId> {
+        let lib = self.library();
+        let f = lib.file(self.get(me).file?);
+        let semi = lib.file(f.semi?);
+        semi.tree_by_name.get(ASK_TO_MOVE).and_then(|id| semi.trees.get(id)).copied()
     }
 
     /// On a community lot the saved stacks restart from their bottom frame (`Simulator::stack_of`),

@@ -1725,3 +1725,12 @@ dining table 47's routing slot 3 (sitting 10, standing 0), the chair 49 on the g
 pushed with 25, 198, 0, 0 (the temps; the caller's parameters were 25, 198, 2, 0).
 `World::seat_at_routing_slot`. Whether a slot with both fields set (the table's slots 0 and 1)
 sits or stands is not in the logs.
+
+## Asked to move
+
+A GotoRoutingSlot whose request has no goals (every place of the slot taken out) and another
+person standing on one of the slot's places (its tile, in the places' order) does not go on: it
+pushes the routing Sim's "route ask to move animation" (person_sg's 8302, found by its label in the
+Sim's semi-global file), with that person as the stack object and no parameters, and stays at its
+node. The home log's one: Sim 12 at tick 1503 (8275 node 0, the meal 198's routing slot), Sim 237
+on its place 0 (392, 344). `World::person_on_places`, `World::ask_to_move_tree`.

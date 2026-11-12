@@ -533,6 +533,34 @@ impl Host for ReplayHost<'_, '_> {
                         return PrimResult::Continue;
                     }
                 }
+                // A slot route with no way (a request of no goals) and a person on one of the slot's
+                // places: the router asks them to move (its "route ask to move animation", the
+                // person its stack object) and stays at its node (docs/simulation.md, "Asked to move")
+                if pl.points.is_empty() && n.opcode == 45 {
+                    let w = &self.world;
+                    let places: Vec<(i32, i32)> = w
+                        .find_object(s.stack_object)
+                        .and_then(|o| Some((o, lib.routing_slot(o.file?, w.definition(o), n.operand16(1), n.operand16(0))?)))
+                        .map(|(o, slot)| slot_places(slot, o.x16, o.y16, o.facing()).into_iter().map(|p| p.1).collect())
+                        .unwrap_or_default();
+                    if let Some(p) = w.person_on_places(me, &places)
+                        && let Some(tree) = w.ask_to_move_tree(me)
+                    {
+                        let (pid, mfile) = (w.get(p).id(), w.get(me).file);
+                        let next = log.steps[self.step + 1..].iter().find(|x| x.sim == s.sim);
+                        let same = s.result == 0 && s.after == s.node && next.is_some_and(|x| x.frame > s.frame && x.node == 0 && x.tree == lib.tree_at(tree).id as u16 && x.stack_object == pid);
+                        self.counts.note(if same {
+                            "primitives: GotoRoutingSlot: no way, a person on the slot asked to move natively as the log's"
+                        } else {
+                            "primitives: GotoRoutingSlot: no way, a person on the slot asked to move natively, NOT the log's"
+                        });
+                        if interp.push(lib, tree, &[]) {
+                            interp.top().stack_object = pid;
+                            interp.top().file = mfile;
+                            return PrimResult::Continue;
+                        }
+                    }
+                }
                 if n.opcode == 45
                     && let Some(chair) = self.world.seat_at_routing_slot(n, s.stack_object, &pl.points)
                     && let Some(tree) = self.world.function_tree(chair, SIT_FUNCTION)
