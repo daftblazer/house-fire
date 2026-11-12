@@ -718,6 +718,11 @@ impl Host for ReplayHost<'_, '_> {
             self.counts.note(note_range);
             return want;
         }
+        if n.opcode == 17 && has("REPLAY_SHOW_IDLE_QUEUE") && self.world.get(me).person {
+            let q: Vec<_> = self.world.get(me).queue.iter().map(|q| (q.tree, q.objects[1], q.interaction, q.rank)).collect();
+            let next = log.steps[self.step + 1..].iter().find(|x| x.sim == s.sim).map(|x| (x.tree, x.node, x.stack_object, x.frame > s.frame));
+            println!("idle queue: tick {} sim {me_id} nested {}; queue (tree, target, interaction, rank) {q:?}; the log's next {next:?}", s.tick, self.nested.len());
+        }
         if n.opcode == 17 && self.world.get(me).person && !self.world.get(me).queue.is_empty() && !self.nested.is_empty() {
             // IdleForInput delivering an entry
             let trace = has("REPLAY_TRACE_CHECK");
@@ -1962,7 +1967,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
         }
     }
     if has("REPLAY_SHOW_SAVED_STACKS") {
-        for o in world.objects().filter(|o| o.person) {
+        for o in world.objects().filter(|o| o.person || !o.stack.is_empty() && env("REPLAY_SHOW_SAVED_STACKS").is_some_and(|v| v == "all")) {
             let fr: Vec<_> = o.stack.iter().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.stack_object, f.engine)).collect();
             println!("saved stack {}: {fr:?}", o.id());
         }
