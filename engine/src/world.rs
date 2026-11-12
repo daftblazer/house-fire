@@ -721,6 +721,10 @@ impl Variables for ScriptVariables<'_, '_> {
     fn set(&mut self, scope: u8, d: i16, value: i16) -> bool {
         let Some(p) = self.cell16(scope, d) else { return false };
         *p = value;
+        // a local written is no longer unwritten (Frame::unset)
+        if scope == scope::LOCAL && (0..64).contains(&d) {
+            self.frame.unset &= !(1u64 << d);
+        }
         if d as usize == DATA_OBJECT_ID && d >= 0 {
             if scope == scope::MY_DATA {
                 self.world.reindex(self.me);

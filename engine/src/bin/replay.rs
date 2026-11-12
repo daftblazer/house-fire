@@ -296,6 +296,14 @@ fn sync_variables(world: &mut World, counts: &mut Counts, shown: &mut Shown, me:
                 s.tick
             );
         }
+        // a local this frame has not written: zero here, the original's left-over memory there
+        // (the listed deliberate difference, plan.md), counted apart
+        if v.scope == 25 && (0..64).contains(&v.data) && (vars.frame.unset >> v.data & 1) != 0 {
+            note!(counts, "variables: scope 25: an unwritten local, the original's left over (zero here, deliberately)");
+            // study REPLAY_ZERO_LOCALS: keep the engine's zero, to see what the scripts do with it
+            vars.set(v.scope as u8, v.data, if has("REPLAY_ZERO_LOCALS") { 0 } else { v.value });
+            continue;
+        }
         note!(counts, "variables: scope {}: different (set to the log's)", v.scope);
         vars.set(v.scope as u8, v.data, v.value);
     }
@@ -749,6 +757,9 @@ impl Host for ReplayHost<'_, '_> {
                 note!(self.counts, "{}: the same natively", k());
             } else {
                 note!(self.counts, "{}: DIFFERENT (the log's taken)", k());
+                if n.opcode == 2 && has("REPLAY_SHOW_EXPR_DIFFS") && self.shown.next("expr diff", 200) {
+                    println!("expression differs: tick {} me {me_id} tree {}:{} operand {:02x?}: native {:?}, log {:?}", s.tick, s.tree, s.node, n.operand, got, want);
+                }
                 let kind = n.operand[4] & 0x7F;
                 if n.opcode == 31 && kind == 6 && has("REPLAY_KIND6") {
                     // which data fields of the object found equal the frame's first parameter
