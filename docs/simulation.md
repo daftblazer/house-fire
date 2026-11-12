@@ -1644,6 +1644,10 @@ the rule leaves them, as it must (taking every loaded object's first Idle puts 6
 
 ## The club's stacks restart (2026-11-11)
 
+The interaction a restarted Sim was running is not lost: the engine queues its saved current
+entry again, first (`World::requeue_current_on_community_lot`), and the Sim's IdleForInput
+delivers it at tick 2 (six club Sims; the club's differing steps 69 to 40).
+
 At the club (the save's lot 15, `club.log`) every saved stack restarts: 176 of the 182 objects'
 first steps are node 0 of their saved bottom frame's tree (4096, 8220, 8216, ...), 4 have no
 saved stack; at home 66 of 71 resume at their saved top frame. The old club logs (the disc's lot,

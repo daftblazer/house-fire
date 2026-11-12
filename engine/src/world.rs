@@ -273,6 +273,23 @@ impl<'lib> World<'lib> {
         let lib = self.library();
         self.globals.get(10).is_some_and(|&h| lib.constant(lib.global(), 19215) == Some(h))
     }
+    /// On a community lot the saved stacks restart from their bottom frame (`Simulator::stack_of`),
+    /// so the interaction a Sim was running is lost there: the engine queues it again, first, and
+    /// the Sim's IdleForInput delivers it (the club log's tick 2: six Sims, their saved current
+    /// entries; docs/simulation.md, "The club's stacks restart"). Run once, after the lot and its
+    /// globals are in.
+    pub fn requeue_current_on_community_lot(&mut self) {
+        if !self.is_community_lot() {
+            return;
+        }
+        for &k in &self.order.clone() {
+            let o = self.get_mut(k);
+            if o.person && o.data.get(4) != Some(&0) && o.current.tree != 0 {
+                let c = o.current;
+                o.queue.insert(0, c);
+            }
+        }
+    }
     pub fn is_empty(&self) -> bool {
         self.order.is_empty()
     }
