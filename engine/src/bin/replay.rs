@@ -520,6 +520,16 @@ impl Host for ReplayHost<'_, '_> {
                 });
             } else {
                 self.counts.note("primitives: GotoRoutingSlot/GotoRelativePosition: its run not modelled (the log's taken)");
+                if has("REPLAY_ROUTE_PUSHES") {
+                    // study: what the run pushes (the stack's next step a frame up, at node 0)
+                    let next = self.log.steps[self.step + 1..].iter().find(|x| x.sim == s.sim);
+                    let what = match next {
+                        Some(x) if x.frame > s.frame && x.node == 0 => format!("pushes {} on {}", x.tree, if x.stack_object == s.stack_object { "the same".to_string() } else { "another".to_string() }),
+                        Some(x) if x.frame == s.frame => format!("goes on in its frame (after {})", s.after),
+                        _ => "returns or other".to_string(),
+                    };
+                    note!(self.counts, "study route run: opcode {} result {} {what}", n.opcode, s.result);
+                }
                 if has("REPLAY_SHOW_ROUTE_RUNS") {
                     let plans: Vec<_> = log.plans.iter().filter(|p| p.tick + 5 >= s.tick && p.tick <= s.tick + 5).map(|p| (p.tick, p.approach.map(|a| a[7]), p.chosen, p.points.len())).collect::<Vec<_>>();
                     println!("   plans within 5 ticks of {}: {plans:?}; log ends at tick {}", s.tick, log.ticks);
