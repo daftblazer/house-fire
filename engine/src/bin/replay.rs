@@ -1719,6 +1719,13 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
     let mut first_step: BTreeSet<u32> = BTreeSet::new(); // stacks whose first step was seen
     let mut unseen: BTreeSet<u32> = BTreeSet::new(); // placeholder addresses of saved frames below a first step
     let mut delivered: BTreeSet<u32> = BTreeSet::new(); // Sims whose first interaction was seen
+    if has("REPLAY_SHOW_OFFLIST") {
+        let want = [0x80ff7f78u32, 0x80ff8350, 0x80ff8728];
+        for st in log.steps.iter().filter(|st| want.contains(&st.sim) && st.tick == 260) {
+            println!("offlist {:x} tick {} {}:{} -> {} so {} reads {:?} params {:?}", st.sim, st.tick, st.tree, st.node, st.after, st.stack_object, st.lookups.iter().map(|v| (v.scope, v.data, v.value, v.object == st.sim)).collect::<Vec<_>>(), st.params);
+        }
+        println!("offlist ids: {:?}", want.iter().map(|p| (format!("{p:x}"), ids.get(p))).collect::<Vec<_>>());
+    }
     let mut frame_tree: HashMap<(u32, u32, u16), (TreeId, FileId)> = HashMap::new();
     // a log of today's observer: its plans carry the search's region lists ('r')
     let new_observer = log.plans.iter().any(|p| !p.lookup_regions[0].is_empty());
