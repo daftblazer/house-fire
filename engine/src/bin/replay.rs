@@ -1839,9 +1839,12 @@ fn native_plan_points(pl: &PlanRec, world: &World) -> Option<Vec<(i32, i32)>> {
     Some(points)
 }
 
-fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: &[Neighbour], bench: Option<Bench>, card_lot: bool) -> Option<(Counts, Option<Bench>)> {
+/// `lot`: the lot as loaded, and the disc's copy of it (its house) if a save is loaded.
+fn run(log: &Log, lib: &Library, lot: (&LotChunks, Option<&LotChunks>), globals: &[i16], neighbours: &[Neighbour], bench: Option<Bench>, card_lot: bool) -> Option<(Counts, Option<Bench>)> {
+    let (club, house) = lot;
     let mut world = World::new(lib);
     world.load_lot(club).expect("the lot");
+    let took_house = house.is_some_and(|h| world.take_house_from(h).unwrap_or(false));
     if has("REPLAY_SHOW_LOW_TREES") {
         for f in lib.files().iter().filter(|f| f.path.to_ascii_lowercase().contains("global")) {
             let t462 = f.trees.get(&462).map(|&t| lib.tree_at(t).nodes.first().map(|n| (n.opcode, n.operand)));
@@ -1968,7 +1971,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
     }
     if has("REPLAY_SHOW_SAVED_STACKS") {
         for o in world.objects().filter(|o| o.person || !o.stack.is_empty() && env("REPLAY_SHOW_SAVED_STACKS").is_some_and(|v| v == "all")) {
-            let fr: Vec<_> = o.stack.iter().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.stack_object, f.engine)).collect();
+            let fr: Vec<_> = o.stack.iter().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.stack_object, f.engine, f.params.clone())).collect();
             println!("saved stack {}: {fr:?}", o.id());
         }
     }
@@ -2054,7 +2057,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
         let _ = std::fs::write(dump, bytes);
     }
     // The disc's club: its motives do not move by themselves (measured; World::motives_run).
-    world.motives_run = card_lot;
+    world.motives_run = card_lot || has("REPLAY_MOTIVES_RUN");
     world.neighbours = neighbours.to_vec();
     if log.lists.first().is_none_or(|l| l.ids.len() != world.len()) {
         println!(
@@ -2096,6 +2099,9 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
     }
     let mut consumed: BTreeSet<usize> = BTreeSet::new(); // log steps a native primitive's checks have stepped
     let mut sim = Simulator::new(lib);
+    if took_house {
+        h.counts.note("load: the lot's house (walls, floors) from the disc's copy, the save keeping none");
+    }
     let mut finder = TreeFinder { lib, cache: HashMap::new(), shown: 0 };
     // stand-ins given a file before their first own step (the target of a player's command):
     // their first step still starts them as a stand-in's does
@@ -3553,6 +3559,9 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
         // or none, by the run's end)
         let mut loaded = World::new(lib);
         loaded.load_lot(club).expect("the lot");
+        if let Some(h) = house {
+            let _ = loaded.take_house_from(h);
+        }
         let _ = routing(log, lib, world, &loaded, counts, &ids);
     }
 
@@ -5539,8 +5548,27 @@ fn main() -> ExitCode {
     let lot_globals = read_lot_globals(&ngh).expect("the lots' globals");
     let the_globals: &[i16] = if lot_index < 0 || lot_index as usize >= lot_globals.len() { lot_globals.last().map_or(&[], |g| g) } else { &lot_globals[lot_index as usize] };
     let card_lot = card_path.is_some();
+    // the disc's copy of the lot (its house: walls and floors a save may not keep)
+    let disc_lots = if card_lot && !has("REPLAY_NO_DISC_HOUSE") { read_lots(&d.read("Runtime/default.ngh").unwrap_or_default()).unwrap_or_default() } else { Vec::new() };
+    let house = usize::try_from(lot_index).ok().and_then(|i| disc_lots.get(i));
+    if has("REPLAY_SHOW_LOT_CHUNKS") {
+        // study: the lot's chunks and its arrays as read
+        let kinds: Vec<(String, usize)> = the_lot.chunks.iter().map(|(k, c)| (k.clone(), c.len())).collect();
+        println!("lot chunks: {kinds:?}");
+        match read_lot_arrays(the_lot) {
+            Ok(a) => {
+                println!("lot arrays: {:?}", a.iter().map(|a| (a.width, a.height, a.element_size, a.bytes.iter().filter(|&&b| b != 0).count())).collect::<Vec<_>>());
+                if let Some(w) = a.get(1) {
+                    let per: Vec<usize> = (0..w.element_size as usize).map(|k| w.bytes.iter().skip(k).step_by(w.element_size as usize).filter(|&&b| b != 0).count()).collect();
+                    let low: usize = w.bytes.iter().step_by(w.element_size as usize).filter(|&&b| b & 0x0F != 0).count();
+                    println!("array 1 nonzero by byte {per:?}; byte 0 with wall bits {low}");
+                }
+            }
+            Err(e) => println!("lot arrays: error {e:?}"),
+        }
+    }
     if !bench {
-        let Some((counts, _)) = run(&log, &lib, the_lot, the_globals, &neighbours, None, card_lot) else { return ExitCode::from(1) };
+        let Some((counts, _)) = run(&log, &lib, (the_lot, house), the_globals, &neighbours, None, card_lot) else { return ExitCode::from(1) };
         for (k, n) in &counts.map {
             println!("  {k:<66} {n}");
         }
@@ -5549,7 +5577,7 @@ fn main() -> ExitCode {
     // The benchmark: five runs, each figure the median of the runs (the PC is shared).
     let mut runs: Vec<Bench> = Vec::new();
     for _ in 0..5 {
-        let Some((_, Some(b))) = run(&log, &lib, the_lot, the_globals, &neighbours, Some(Bench::default()), card_lot) else { return ExitCode::from(1) };
+        let Some((_, Some(b))) = run(&log, &lib, (the_lot, house), the_globals, &neighbours, Some(Bench::default()), card_lot) else { return ExitCode::from(1) };
         runs.push(b);
     }
     let median = |f: &dyn Fn(&Bench) -> f64| {

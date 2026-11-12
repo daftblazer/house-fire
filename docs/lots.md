@@ -290,3 +290,16 @@ tile kinds such as 7, 33 and 18 (the floors?); the second, of 8 bytes a tile, is
   floats, +1136 member and queue fields.
 - **The arrays' meaning** (decoded, not named).
 - **The two 32-bit values and the counted ones** of each table entry.
+
+## A community lot in a save (2026-11-12)
+
+The club-live save's copy of the club (lot 15) keeps its objects but not its house: its second
+array's first byte (the walls) is clear on every tile and its first array (the floors) has 233
+non-zero bytes to the disc's 1,333; the third (inside) is the same. The disc's copy has 209 tiles
+with walls (250 wall edges, 6 rooms). The original plays the club on its walls: the club log's 13
+planned routes all open through the disc's walls (doors included) and each within one room. The
+world takes a house from the disc's copy of the lot when the loaded lot keeps no walls
+(`World::take_house_from`); replay passes the disc's lot of the same number. The objects are the
+save's: the disc's copy, tried whole, puts 16 stack objects off (its object order, SetToNext) though
+it gives the dream controller's frame the original's (node 32, an Idle of 1, where the save has 9,
+an Idle of 10000): which of the save's other state the original takes from the disc is open.

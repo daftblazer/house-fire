@@ -531,6 +531,17 @@ impl<'lib> World<'lib> {
         Ok(missing)
     }
 
+    /// A lot whose save keeps no walls (the club, lot 15, in a save: its arrays' wall bits all
+    /// clear, its floors sparse) is built on its house as the disc has it: the walls, floors and
+    /// insides from `house`'s arrays, the objects the save's. True if it took them.
+    pub fn take_house_from(&mut self, house: &LotChunks) -> Result<bool, FormatError> {
+        if self.walls.wall_edges() != 0 {
+            return Ok(false);
+        }
+        self.walls = Walls::new(&read_lot_arrays(house)?, self);
+        Ok(true)
+    }
+
     /// The class the original's loader makes of an object of this definition (none: a
     /// character's): `docs/lots.md`, "The classes".
     pub fn saved_class(d: Option<&Definition>) -> SavedClass {
