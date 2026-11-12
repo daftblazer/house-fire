@@ -108,3 +108,12 @@ are in `datasets.arc` or `models.arc` (or both) for 3,152 of the 4,000 strips, n
 words 6, 14 and 15 alike; word 11's in `rletextu.arc` for 456; words 5, 9, 10, 12 and 13 never.
 The objects' models are in `datasets.arc` as well as `models.arc`. `assets ISO stripcheck LOG`
 (study).
+
+A model record (`models.arc`), as far as read: after the name (byte-packed, no alignment) the
+word 0x25, 16 zero bytes, the float 1/4096 (0x39800000: the positions' scale, 16-bit positions
+in 4096ths), then counts and floats (a bound) and the sub-models' data. A strip's positions
+(16-bit x, y, z, 8 bytes a vertex) follow a 16-bit vertex count, which is the strip's own count
+for 520 of the first 600 strips whose positions are found in `models.arc` (the other 80: their
+first 32 bytes found at another place, or another layout); before the count, bytes 01 00 and an
+attribute byte (01, 03) and a float. Next: the record walked from its start, sub-model by
+sub-model.

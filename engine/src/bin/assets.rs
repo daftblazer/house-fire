@@ -259,6 +259,54 @@ fn main() -> ExitCode {
             for (i, m) in &by_word {
                 println!("  word {i}: {m:?}");
             }
+            if std::env::var_os("ASSETS_SHOW_STRIP_PLACES").is_some() {
+                // study: for strips whose word 2 is in models.arc, each array's entry and offset
+                let data = d.read("models.arc").unwrap_or_default();
+                let entries = arc::entries(&data).unwrap_or_default();
+                let place = |n: &[u8; 32]| -> Option<(String, usize, usize)> {
+                    entries.iter().find_map(|e| {
+                        let b = arc::bytes(&data, e);
+                        (0..b.len().saturating_sub(32)).step_by(4).find(|&o| &b[o..o + 32] == n).map(|o| (e.name.clone(), o, b.len()))
+                    })
+                };
+                // the rule found: the 16 bits before a strip's positions are its vertex count
+                let (mut same, mut other, mut tested) = (0, 0, 0);
+                for s in log.strips.iter() {
+                    if tested >= 600 {
+                        break;
+                    }
+                    let Some((n, off, _)) = place(&s.at[2]) else { continue };
+                    tested += 1;
+                    let e = entries.iter().find(|e| e.name == n).unwrap();
+                    let b = arc::bytes(&data, e);
+                    let c = u16::from_be_bytes([b[off - 2], b[off - 1]]) as u32;
+                    if c == s.words[1] { same += 1 } else { other += 1 }
+                }
+                println!("strips whose positions are in models.arc: {tested} tested, the count before them the strip's for {same}, not for {other}");
+                let mut shown = 0;
+                let mut names = BTreeSet::new();
+                for s in &log.strips {
+                    if shown >= 10 {
+                        break;
+                    }
+                    let Some(p2) = place(&s.at[2]) else { continue };
+                    let n = &p2.0;
+                    if n.starts_with("a") || n.starts_with("c") || n.starts_with("m") || n.starts_with("shadow") || n.starts_with("u") || !names.insert(n.clone()) {
+                        continue;
+                    }
+                    if let Some(e) = entries.iter().find(|e| &e.name == n) {
+                        let b = arc::bytes(&data, e);
+                        println!("  before w2 in {n}: {:02x?}", &b[p2.1.saturating_sub(24)..p2.1]);
+                    }
+                    shown += 1;
+                    let others: Vec<String> = [3usize, 4, 6, 14, 15]
+                        .iter()
+                        .filter(|&&i| (0x8000_0000..0x817F_FFE0).contains(&s.words[i]))
+                        .map(|&i| format!("w{i} {:?} (+{:x} from w2)", place(&s.at[i]).map(|p| p.1), s.words[i].wrapping_sub(s.words[2])))
+                        .collect();
+                    println!("strip count {} words0 {:08x}: w2 in {} at {:#x} (of {:#x}); {}", s.words[1], s.words[0], p2.0, p2.1, p2.2, others.join(", "));
+                }
+            }
         }
         "texcheck" => {
             let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
