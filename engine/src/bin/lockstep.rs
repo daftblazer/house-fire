@@ -685,7 +685,13 @@ fn main() -> ExitCode {
             );
         }
     }
-    variables(&lib, &log, &step_object, &mut notes);
+    let lot_world = {
+        let (lots, _, _, best, _) = pick_lot(&lib, &ngh, &log);
+        let mut w = World::new(&lib);
+        w.load_lot(&lots[best]).unwrap();
+        w
+    };
+    variables(&lib, &log, &step_object, &lot_world, &mut notes);
     set_to_next_check(&lib, &ngh, &log, &step_object, &mut notes);
 
     for (k, v) in &notes.out {
@@ -709,7 +715,7 @@ fn main() -> ExitCode {
 /// (the engine, or a primitive not modelled yet: counted apart). And each cell must always be
 /// the same address in the original, and each address the same cell: that checks what the
 /// scopes name.
-fn variables(lib: &Library, log: &housefire::tree_log::Log, step_object: &[Option<FileId>], notes: &mut Notes) {
+fn variables(lib: &Library, log: &housefire::tree_log::Log, step_object: &[Option<FileId>], lot: &World, notes: &mut Notes) {
     let mut world = World::new(lib);
     let mut native: BTreeMap<u32, ObjectKey> = BTreeMap::new(); // the original's object pointer -> native object
     let mut cell_addr: HashMap<CellKey, u32> = HashMap::new();
@@ -881,6 +887,20 @@ fn variables(lib: &Library, log: &housefire::tree_log::Log, step_object: &[Optio
             let Some(cell) = ScriptVariables::new(&mut world, me, &mut frame).cell(v.scope as u8, v.data) else {
                 // a scope with no cell of its own (a value the engine works out): its value
                 // natively, where the native variables give one (study first: counted apart)
+                // an object whose steps name no file (a multi-tile part's): its id's file and
+                // definition in the lot (a definition's fields, scope 21)
+                for k in [Some(me), world.find(frame.stack_object)].into_iter().flatten() {
+                    if let Some(o) = world.get_live(k)
+                        && o.file.is_none()
+                        && let Some(l) = lot.find_object(o.id())
+                    {
+                        let (file, def) = (l.file, l.definition);
+                        let o = world.get_mut(k);
+                        o.file = file;
+                        o.definition = def;
+                        notes.note("variables: an object's file and definition from the lot (its steps name none)");
+                    }
+                }
                 let got = ScriptVariables::new(&mut world, me, &mut frame).get(v.scope as u8, v.data);
                 notes.note(&match got {
                     Some(g) if v.flags & 1 != 0 && g.value == v.value => format!("variables: {sc}: no cell, the value the same natively"),
@@ -1054,7 +1074,11 @@ fn variables(lib: &Library, log: &housefire::tree_log::Log, step_object: &[Optio
 /// natively; the objects that appear at the load and are not in the lot's table (two in the
 /// club) go in front, not Sims. Each SetToNext step the original took on the stack object is
 /// run natively on that world, from the step's frame.
-fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, step_object: &[Option<FileId>], notes: &mut Notes) {
+/// The lot the log ran on, among the save's (or the disc's) lots: the one whose table order the
+/// original's longest walk over every object follows furthest; with the lots, their ids, the walk
+/// and how far it follows.
+type LotPick = (Vec<housefire::save::LotChunks>, Vec<BTreeSet<i16>>, Vec<i16>, usize, usize);
+fn pick_lot(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log) -> LotPick {
     let lots = read_lots(ngh).expect("the lots");
     let orders: Vec<Vec<i16>> = lots.iter().map(|l| World::new(lib).read_objects(l).unwrap().objects.iter().map(|o| o.id).collect()).collect();
     let lot_ids: Vec<BTreeSet<i16>> = orders.iter().map(|o| o.iter().copied().collect()).collect();
@@ -1109,6 +1133,18 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
             best_n = n;
         }
     }
+    (lots, lot_ids, walk, best, best_n)
+}
+
+fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, step_object: &[Option<FileId>], notes: &mut Notes) {
+    let (lots, lot_ids, walk, best, best_n) = pick_lot(lib, ngh, log);
+    let raw_of = |s: &StepRec| -> Option<&[u8]> {
+        let t = log.tree_of(s)?;
+        if s.look != b'X' || t.tree != s.tree || s.node as usize * 12 >= t.raw.len() {
+            return None;
+        }
+        Some(&t.raw[12 * s.node as usize..12 * s.node as usize + 12])
+    };
     let mut lw = World::new(lib);
     lw.load_lot(&lots[best]).unwrap();
     // Objects made at load: in the walk but not in the lot, in front in the walk's order (when
