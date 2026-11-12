@@ -367,6 +367,15 @@ fn main() -> ExitCode {
                 println!("  {n:5} {k}");
             }
             let mut whole: Vec<model::Record> = entries.iter().filter_map(|e| model::read_record(arc::bytes(&data, e))).collect();
+            if std::env::var_os("ASSETS_SHOW_FAR_WORDS").is_some() {
+                let mut seen = std::collections::HashSet::new();
+                for st in log.strips.iter().filter(|s| seen.insert((s.words[0] >> 24, s.words[10]))).take(12) {
+                    println!("strip op {:02x} count {} w8 {:08x} w9 {:08x}", st.words[0] >> 24, st.words[1], st.words[8], st.words[9]);
+                    for k in 10..16 {
+                        println!("   w{k} {:08x}: {:02x?}", st.words[k], &st.at[k][..24]);
+                    }
+                }
+            }
             if std::env::var_os("ASSETS_SHOW_UNREAD").is_some() {
                 for e in entries.iter().filter(|e| model::read_record(arc::bytes(&data, e)).is_none()) {
                     let b = arc::bytes(&data, e);
@@ -423,6 +432,33 @@ fn main() -> ExitCode {
                 }
             }
             println!("strips from a sub-model of a whole record {st}: count and texture coordinates the same {ok}");
+            // the command after a strip: 0x22 with four bytes, then 0x28, then the next strip
+            // (0x38, its count, positions, texture coordinates): the four bytes against the next
+            // strip's batch's matrices (their slots, in order)
+            {
+                let (mut n, mut slots, mut idx, mut other) = (0, 0, 0, 0);
+                let mut shown = 0;
+                for st in log.strips.iter().filter(|s| s.words[8] >> 24 == 0x22 && s.words[12] >> 24 == 0x38) {
+                    let Some(v) = all.get(&st.at[14]) else { continue };
+                    let Some(sm) = v.iter().find(|sm| sm.count as u32 == st.words[13]) else { continue };
+                    n += 1;
+                    let w = st.words[9].to_be_bytes();
+                    let s: Vec<u8> = sm.matrices.iter().map(|m| m.0 as u8).collect();
+                    let k = s.len().min(4);
+                    if s[..k] == w[..k] {
+                        slots += 1;
+                    } else if sm.matrices.iter().take(4).map(|m| m.1).eq(w.iter().copied().take(k)) {
+                        idx += 1;
+                    } else {
+                        other += 1;
+                        if shown < 6 {
+                            shown += 1;
+                            println!("  0x22 bytes {:02x?} batch matrices {:?} weights {}", w, sm.matrices, sm.weights);
+                        }
+                    }
+                }
+                println!("strips followed by 0x22 and a strip of a read batch {n}: its four bytes the batch's slots {slots}, its indices {idx}, other {other}");
+            }
             // opcode 66 (the command's first byte 0x42): a model drawn from a display list; which
             // of its words are a sub-model's display list and positions
             let mut lists: std::collections::HashMap<[u8; 32], &model::SubModel> = std::collections::HashMap::new();

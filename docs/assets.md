@@ -246,3 +246,13 @@ matrix slots run to 82 (the whole-character records: NPCs, the promotion and car
 Read so, every one of models.arc's 1,843 records whole, and 4,232 records in all (27,785
 batches); the home replay's checks unchanged (7,962 strips, 4,000 opcode-66 draws, all
 matching). Study ASSETS_SHOW_UNREAD.
+
+## The command list around a strip
+
+The observer's 16 words from a strip run past it: a strip (opcode 0x38) is 8 words (opcode,
+count, positions, texture coordinates, colours, normals, two zeros), and what follows is the
+next commands. For the Sims' parts: `0x22` and a word of four bytes, the matrix slots the next
+batch uses (its `01 00 slot index` entries' slots, in order: 3,374 of 3,374 on the home replay);
+then `0x28` with 24 bits and a word (a hash: not read yet; an opcode-66 draw's word 12 is its
+sub-model's hash, `92964a4c` for the Sims' parts); then the next strip. Study
+ASSETS_SHOW_FAR_WORDS.
