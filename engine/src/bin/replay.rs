@@ -763,13 +763,21 @@ impl Host for ReplayHost<'_, '_> {
             // a node whose two ways are one node: the log's next node does not tell true from
             // false (logged as true), so the same where native's way leads there too
             let one_way = n.true_target == n.false_target && matches!(got, PrimResult::True | PrimResult::False) && matches!(want, PrimResult::True | PrimResult::False);
+            // native at another node than the log's step (a check tree run natively off the
+            // original's path, the log's next step not this node's): no comparison
+            let f = interp.top();
+            let here = f.tree.map(|t| (self.lib.tree_at(t).id as u16, f.node as u16));
+            if here.is_some_and(|h| h != (s.tree, s.node as u16)) {
+                note!(self.counts, "{}: native at another node than the log's step (not compared)", k());
+                return want;
+            }
             if got == want {
                 note!(self.counts, "{}: the same natively", k());
             } else if one_way {
                 note!(self.counts, "{}: the same way natively (both its ways one node)", k());
             } else {
                 note!(self.counts, "{}: DIFFERENT (the log's taken)", k());
-                if n.opcode == 2 && has("REPLAY_SHOW_EXPR_DIFFS") && self.shown.next("expr diff", 200) {
+                if n.opcode == 2 && has("REPLAY_SHOW_EXPR_DIFFS") && self.shown.next("expr diff", if has("REPLAY_SHOW_EXPR_ALL") { 1_000_000 } else { 200 }) {
                     let e = ExpressionOperand::of(n);
                     let mut vars = ScriptVariables::new(&mut self.world, me, interp.top());
                     let lhs = vars.get(e.lhs_scope, e.lhs_data).map(|v| v.value);
@@ -1411,6 +1419,19 @@ fn native_plan_points(pl: &PlanRec, world: &World) -> Option<Vec<(i32, i32)>> {
 fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: &[Neighbour], bench: Option<Bench>, card_lot: bool) -> Option<(Counts, Option<Bench>)> {
     let mut world = World::new(lib);
     world.load_lot(club).expect("the lot");
+    if has("REPLAY_SHOW_LOW_TREES") {
+        for f in lib.files().iter().filter(|f| f.path.to_ascii_lowercase().contains("global")) {
+            let t462 = f.trees.get(&462).map(|&t| lib.tree_at(t).nodes.first().map(|n| (n.opcode, n.operand)));
+            println!("file {}: {} trees, 462 node 0 {t462:?}", f.path, f.trees.len());
+        }
+        let files: BTreeSet<FileId> = world.objects().filter_map(|o| o.file).collect();
+        for f in files {
+            let low: Vec<u16> = lib.file(f).trees.keys().copied().filter(|&id| id < 0x1000).collect();
+            if !low.is_empty() {
+                println!("low trees in {}: {low:?}", lib.file(f).path);
+            }
+        }
+    }
     if has("REPLAY_SHOW_SLOTTED") {
         for id in [197i16, 62] {
             if let Some(o) = world.find_object(id) {
