@@ -2287,6 +2287,18 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
             if has("REPLAY_TRACE_MAKERS") && matches!((s.tree, s.node), (0x2007, 1) | (0x2022, 1) | (0x200f, 6)) && s.look == b'X' && !consumed.contains(&i) {
                 println!("  maker step {i}: tree found {:?}, native stack same {same} (native top {st_top:?}, depth {} of {fr_len}), node opcode {:?}", lib.file(file).path, interp.stack().len(), lib.tree_at(tree).nodes.get(s.node as usize).map(|n| n.opcode));
             }
+            // A tree run again in a frame that has just returned (the previous step this
+            // stack's, in the same frame, a return; this one at node 0): a new check of an
+            // evaluation, which older logs show as the Sim's own steps (no nesting): not compared.
+            let rerun = !same
+                && s.node == 0
+                && i > 0
+                && log.steps[..i].iter().rev().find(|p| p.sim == s.sim).is_some_and(|p| p.frame == s.frame && p.node > 250 && p.node == p.after);
+            if rerun {
+                h.counts.note("steps: a tree run again in a frame just returned (a check, not compared)");
+                streak = 0;
+                // native takes the log's: the frames below kept, the top one the log's
+            }
             if same {
                 h.counts.note("steps: the native stack as the log's");
                 streak += 1;
@@ -2325,7 +2337,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                     }
                 }
                 if interp.done() {
-                    h.counts.note("steps: different: the native stack stopped");
+                    if !rerun { h.counts.note("steps: different: the native stack stopped"); }
                     if has("REPLAY_SHOW_STOPPED") {
                         let p = if i > 0 && log.steps[i - 1].sim == s.sim { format!("{}:{}->{}", log.steps[i - 1].tree, log.steps[i - 1].node, log.steps[i - 1].after) } else { "another stack's".into() };
                         note!(h.counts, "study stopped: error {:?} log {}:{} (before {p})", interp.error(), s.tree, s.node);
@@ -2340,7 +2352,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                         }
                     }
                 } else if st_len != fr_len {
-                    h.counts.note(if st_len < fr_len { "steps: different: the log's is deeper (a frame pushed)" } else { "steps: different: the native is deeper" });
+                    if !rerun { h.counts.note(if st_len < fr_len { "steps: different: the log's is deeper (a frame pushed)" } else { "steps: different: the native is deeper" }); }
                 }
                 if !interp.done() && st_len < fr_len && o_person && has("REPLAY_SHOW_PUSH") {
                     let wn = top_node(lib, interp);
@@ -2370,7 +2382,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                     }
                     println!("{l}");
                 } else if st_top.is_none_or(|(t, _, _)| t != Some(s.tree as i16)) {
-                    h.counts.note("steps: different: another tree");
+                    if !rerun { h.counts.note("steps: different: another tree"); }
                     if has("REPLAY_SHOW_196") && o_id == 196 && h.shown.next("196", 2) {
                         let o = h.world.get(ok);
                         let f = o.file.map(|f| lib.file(f));
@@ -2406,7 +2418,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                     h.counts.note("steps: a call's record after its callee's (native past it)");
                     continue;
                 } else {
-                    h.counts.note("steps: different: another node");
+                    if !rerun { h.counts.note("steps: different: another node"); }
                     if has("REPLAY_SHOW_NODES") {
                         let p = if i > 0 && log.steps[i - 1].sim == s.sim { format!("{}:{}->{}", log.steps[i - 1].tree, log.steps[i - 1].node, log.steps[i - 1].after) } else { "another stack's".into() };
                         let op = lib.tree_at(tree).nodes.get(s.node as usize).map(|nd| nd.opcode);
