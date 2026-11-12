@@ -375,6 +375,29 @@ impl<'lib> World<'lib> {
             }
             self.add(o, false);
         }
+        // A saved frame above an IdleForInput node is the interaction it delivered: its tree is
+        // in the target's file (the frame's stack object), not the object's own (the paper
+        // girl's 4100 on object 8; the target may load after it, so once all are in).
+        {
+            let keys: Vec<ObjectKey> = self.order.clone();
+            for k in keys {
+                for i in 1..self.get(k).stack.len() {
+                    let below = &self.get(k).stack[i - 1];
+                    let is_idle = below.tree.and_then(|t| self.lib.get_tree(t)?.nodes.get(below.node as usize).copied()).is_some_and(|n| n.opcode == 17);
+                    let f = &self.get(k).stack[i];
+                    if !is_idle || f.stack_object == self.get(k).id() {
+                        continue;
+                    }
+                    let Some(target) = self.find_object(f.stack_object).and_then(|t| t.file) else { continue };
+                    let id = f.tree.map(|t| self.lib.tree_at(t).id as u16);
+                    if let Some(t) = id.and_then(|id| self.lib.tree(Some(target), id)) {
+                        let f = &mut self.get_mut(k).stack[i];
+                        f.tree = Some(t);
+                        f.file = Some(target);
+                    }
+                }
+            }
+        }
         self.walls = Walls::new(&read_lot_arrays(lot)?, self);
         Ok(missing)
     }

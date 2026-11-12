@@ -1616,7 +1616,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
             for f in &o.stack {
                 if let Some(t) = f.tree {
                     let tr = lib.tree_at(t);
-                    println!("  frame {} node {}: node op {:?}", tr.id, f.node, tr.nodes.get(f.node as usize).map(|n| (n.opcode, n.true_target, n.false_target)));
+                    println!("  frame {} node {}: node op {:?} stack object {}", tr.id, f.node, tr.nodes.get(f.node as usize).map(|n| (n.opcode, n.true_target, n.false_target)), f.stack_object);
                 }
             }
             println!("stack of {id}: {:?}", o.stack.iter().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.file.map(|x| file_name(lib, x)))).collect::<Vec<_>>());
