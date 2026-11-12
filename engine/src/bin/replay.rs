@@ -2167,6 +2167,10 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                             }
                         }
                         h.counts.note("self checks: a run");
+                        if has("REPLAY_SHOW_SELF_RUNS") {
+                            let below_node = sim.stack_of(&h.world, w).stack().last().map(|f| f.node);
+                            println!("self run: tick {t} object {oid} below {below:?}:{below_node:?} first {first:?} checks {checks}");
+                        }
                         consumed.extend(nest.iter().copied());
                         h.nested.clear();
                         continue;
