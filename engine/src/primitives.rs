@@ -484,8 +484,8 @@ pub fn idle_for_input<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &mut H
 /// interaction in place byte 0 of the target's interaction table (its file's TTAB), the target
 /// the object whose id local byte 1 holds; true. Measured: the interactions the controller
 /// pushes onto the club's Sims are the ones IdleForInput then delivers (`docs/simulation.md`).
-/// Not modelled yet: operand bytes 2 and 3 (1 or 2; 0x0a), a target whose file has several
-/// TTABs: Stop.
+/// Operand byte 2 the priority (1 maximum: first in the queue; 2 at its end). Not modelled yet:
+/// byte 3 (0x0a), a target whose file has several TTABs: Stop.
 pub fn push_action<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &mut H, n: &Node) -> PrimResult {
     let top = interp.top_index();
     let target_id = interp.local(host, top, n.operand[1] as usize);
@@ -504,7 +504,15 @@ pub fn push_action<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &mut H, n
         interaction: Some(n.operand[0] as usize),
         ..Default::default()
     };
-    world.get_mut(sim).queue.push(entry);
+    // operand byte 2 the priority: 1 (maximum) goes first in the queue, before what is waiting
+    // there (the club's party controller's 4106 onto Sim 178, delivered ahead of its re-queued
+    // current entry); 2 at the end
+    let q = &mut world.get_mut(sim).queue;
+    if n.operand[2] == 1 {
+        q.insert(0, entry);
+    } else {
+        q.push(entry);
+    }
     PrimResult::True
 }
 

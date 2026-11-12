@@ -688,6 +688,11 @@ impl Host for ReplayHost<'_, '_> {
         if n.opcode == 13 {
             // PushAction
             let got = push_action(interp, self, n);
+            if has("REPLAY_SHOW_PUSHACTION") {
+                let so = interp.top().stack_object;
+                let q: Vec<(i16, i16, i32)> = self.world.find(so).map(|k| self.world.get(k).queue.iter().map(|q| (q.tree, q.objects[1], q.c)).collect()).unwrap_or_default();
+                println!("pushaction: tick {} by {me_id} {}:{} onto {so} operand {:02x?}; queue now {q:?}", s.tick, s.tree, s.node, &n.operand[..8]);
+            }
             let want = self.logged(s, n);
             self.counts.note(if got == want {
                 "queue: PushAction the same natively"
