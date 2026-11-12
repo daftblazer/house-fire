@@ -260,6 +260,12 @@ false only the interactions flagged 0x400 (8242 0x604, 8271 0x615, 8295 0x704, .
 left out. Checked (`replay`): tree.log's 107 runs all use exactly the log's steps (its
 differing steps 277 to 102).
 
+They come from the player's menu, not a timer: the same runs happen for objects (their first
+tree the club's 463, then their guards) on the stack of Sim 57, the one Sim on the lot that is
+not a visitor (the player's in that recording), at irregular ticks; the newer club log, played
+another way, has none. Replay runs them all natively (tree.log's differing steps 102 to 20); the
+91 on objects do not yet use exactly the log's steps (their guards' rule, to be found).
+
 ## Autonomy
 
 A Sim with nothing to do chooses for itself through **Find Best Action** (opcode 30,

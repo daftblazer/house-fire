@@ -2127,17 +2127,22 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                         }
                     }
                 }
-                // The engine re-checking a Sim's own interactions on itself (fn_80219A74's list,
-                // docs/simulation.md, "A Sim's own interactions re-checked"): its table's first
-                // tree, then, forward, the guards of the interactions flagged 0x400 (all, if the
-                // first tree passes), each with the Sim as stack object, above what it runs
-                if let Some(w) = w.filter(|&w| h.world.get(w).person && s.node == 0 && s.stack_object == h.world.get(w).id() && !has("REPLAY_NO_SELF_CHECKS")) {
-                    let o = h.world.get(w);
+                // The engine checking a target's interactions on a Sim's stack (the player's menu
+                // of an object or the Sim itself, fn_80219A74's list; docs/simulation.md, "A Sim's
+                // own interactions re-checked"): the target's table's first tree, then, forward,
+                // the guards of the interactions flagged 0x400 (all, if the first tree passes),
+                // each with the target as stack object, above what the Sim runs (not over its
+                // IdleForInput or evaluation, whose checks are theirs)
+                if let Some(w) = w.filter(|&w| h.world.get(w).person && s.node == 0 && !has("REPLAY_NO_SELF_CHECKS"))
+                    && let Some(target) = h.world.find(s.stack_object)
+                {
+                    let o = h.world.get(target);
                     let (ofile, oid) = (o.file, o.id());
-                    let tab = lib.table_of(ofile, true, None);
+                    let tab = lib.table_of(ofile, o.person, h.world.definition(o));
                     let win = sim.stack_of(&h.world, w);
                     let below = win.stack().last().and_then(|f| f.tree).map(|t| lib.tree_at(t).id);
-                    if tab.first != 0 && s.tree == tab.first && below != Some(tab.first as i16) && let (Some(tf), Some(tid)) = (tab.file, tab.table) {
+                    let below_op = if win.done() { None } else { top_node(lib, win).map(|n| n.opcode) };
+                    if tab.first != 0 && s.tree == tab.first && below != Some(tab.first as i16) && !matches!(below_op, Some(3 | 17)) && let (Some(tf), Some(tid)) = (tab.file, tab.table) {
                         let nest: Vec<usize> = by_tick[t as usize].iter().copied().filter(|&j| j >= i && log.steps[j].sim == s.sim).take_while(|&j| log.steps[j].frame >= s.frame).collect();
                         let defaults = win.defaults().to_vec();
                         h.nested = nest.clone();
