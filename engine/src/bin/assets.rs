@@ -382,6 +382,17 @@ fn main() -> ExitCode {
                 }
             }
             println!("strips from a read sub-model {strips}: the count the same {same_count}; word 3 the texture coordinates {same_uv}, not {other_uv}");
+            // kind 0: word 4 its colours, word 5 its normals widened to 4 bytes (a zero after each)
+            let (mut k0, mut col, mut nrm) = (0, 0, 0);
+            for s in &log.strips {
+                let Some(sm) = by_pos.get(&s.at[2]) else { continue };
+                let Some(c) = sm.colours.as_ref() else { continue };
+                k0 += 1;
+                col += usize::from(c.get(..32) == Some(&s.at[4][..]));
+                let wide: Vec<u8> = sm.normals.chunks(3).take(8).flat_map(|n| [n[0], n[1], n[2], 0]).collect();
+                nrm += usize::from(wide[..] == s.at[5][..wide.len().min(32)]);
+            }
+            println!("kind-0 strips {k0}: word 4 the colours {col}, word 5 the normals widened {nrm}");
             // which of a strip's words are a read sub-model's other parts: its colours, normals,
             // and the 32 bytes after its arrays
             let mut by_tail: std::collections::HashMap<[u8; 32], (u8, &str)> = std::collections::HashMap::new();
@@ -414,6 +425,18 @@ fn main() -> ExitCode {
             }
             for (k, n) in &what {
                 println!("  {n:4} {k}");
+            }
+            if std::env::var_os("ASSETS_SHOW_KIND0").is_some() {
+                // study: kind-0 strips' words 4 and 5 beside the sub-model's 4-byte array and normals
+                let mut shown = 0;
+                for s in &log.strips {
+                    let Some(sm) = by_pos.get(&s.at[2]) else { continue };
+                    if sm.kind != 0 || shown >= 3 {
+                        continue;
+                    }
+                    shown += 1;
+                    println!("  kind-0 strip n {}: w4 {:02x?}\n     w5 {:02x?}\n     4-byte {:02x?}\n     normals {:02x?}", sm.count, &s.at[4][..16], &s.at[5][..16], &sm.colours.as_ref().unwrap()[..16], &sm.normals[..16]);
+                }
             }
             if std::env::var_os("ASSETS_SHOW_DELTAS").is_some() {
                 // study: a strip's words as offsets from its positions, beside where the record

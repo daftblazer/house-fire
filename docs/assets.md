@@ -165,3 +165,10 @@ addresses far off (the material's?). (An earlier count of kind-0 strips whose wo
 "point at the bytes after the arrays" was a false match: those words are not addresses, their
 recorded bytes zeros, and those bytes often begin with zeros.) Some kind-0 reads are misreads (a
 count of 0: a head of another shape, the Sims' parts and the maid).
+
+The arrays settled against the strips (`assets ISO modelcheck`): a strip's word 2 is the
+positions, 3 the texture coordinates, 4 the colours (kind 0; RGBA, the record's 4-byte array:
+19 of 19 strips), 5 the normals widened to 4 bytes (kind 0: the record's three s8 and a zero,
+19 of 19), and for kind 1, with no colours, word 4 is the normals as the record packs them
+(57). Every array of both kinds of sub-model is so the original's, byte for byte, in the strips
+the home replay plays from a read sub-model (133).
