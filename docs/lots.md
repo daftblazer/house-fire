@@ -303,3 +303,12 @@ world takes a house from the disc's copy of the lot when the loaded lot keeps no
 save's: the disc's copy, tried whole, puts 16 stack objects off (its object order, SetToNext) though
 it gives the dream controller's frame the original's (node 32, an Idle of 1, where the save has 9,
 an Idle of 10000): which of the save's other state the original takes from the disc is open.
+
+The controllers off the lot (its objects at -24, -24 that are not persons: the dream controller,
+the party and NPC controllers, the social interactions, 22 on the club) are the disc's copy's too.
+The observer's 'k' record (an interpreter's first 32 words at its first step, +8 its stack's
+first frame, and the 512 bytes below that step's frame) shows the original's dream controller at
+its first tick with 4104 at node 32 (the frame reads 0x9008, node 0x20), the disc's state, where
+the save has node 9 in an Idle of 10000. With the controllers' stacks from the disc
+(`World::take_house_from`), the club log runs with no differing step, a new club log of the same
+428,688 steps (`club-k.log`, with 'k' records) likewise.

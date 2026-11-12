@@ -2013,6 +2013,37 @@ fn run(log: &Log, lib: &Library, lot: (&LotChunks, Option<&LotChunks>), globals:
             }
         }
     }
+    if let Some(v) = env("REPLAY_SHOW_STACK_DUMPS") {
+        // study: the interpreters' first-step dumps ('k') of those whose first step is this tree
+        println!("log steps: {}; dumps {}; first sims {:x?}", log.steps.len(), log.stack_dumps.len(), log.stack_dumps.iter().take(3).map(|d| (d.tick, d.sim, d.frame)).collect::<Vec<_>>());
+        let want = atoi(&v) as u16;
+        // or the interpreter of the step whose frame's low half is `want`
+        let by_frame: Option<u32> = log.steps.iter().find(|x| x.frame & 0xFFFF == want as u32).map(|x| x.sim);
+        if let Some(sm) = by_frame {
+            println!("the step with frame ..{want:04x}: sim {sm:08x}; its dump {}", log.stack_dumps.iter().any(|d| d.sim == sm));
+        }
+        for d in &log.stack_dumps {
+            let (tick, sim, frame, words, below) = (&d.tick, &d.sim, &d.frame, &d.words, &d.below);
+            if by_frame.is_some_and(|sm| sm == *sim) {
+                println!("dump tick {tick} sim {sim:08x} frame {frame:08x}; words {words:08x?}");
+                for row in below.chunks(32).skip(8) {
+                    println!("  {:02x?}", row);
+                }
+            }
+            let first = log.steps.iter().find(|x| x.sim == *sim);
+            if has("REPLAY_SHOW_STACK_DUMP_FIRSTS") {
+                println!("dump sim {sim:08x} frame {frame:08x} first {:?}", first.map(|x| (x.tick, x.tree, x.node, x.frame)));
+            }
+            let Some(first) = first else { continue };
+            if first.tree != want && first.frame & 0xFFFF != want as u32 {
+                continue;
+            }
+            println!("dump tick {tick} sim {sim:08x} frame {frame:08x} first {}:{}; words {:08x?}", first.tree, first.node, words);
+            for row in below.chunks(32).skip(8) {
+                println!("  {:02x?}", row);
+            }
+        }
+    }
     if let Some(pat) = env("REPLAY_SHOW_FILE") {
         // study: a file's function table and tree labels
         for f in lib.files().iter().filter(|f| f.path.contains(&pat)) {

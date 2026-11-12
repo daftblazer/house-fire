@@ -534,11 +534,25 @@ impl<'lib> World<'lib> {
     /// A lot whose save keeps no walls (the club, lot 15, in a save: its arrays' wall bits all
     /// clear, its floors sparse) is built on its house as the disc has it: the walls, floors and
     /// insides from `house`'s arrays, the objects the save's. True if it took them.
+    ///
+    /// So are the controllers off the lot (its objects at -24, -24 that are not persons): their
+    /// stacks are the disc's copy's, the save's left (the club's dream controller, saved at 4104
+    /// node 9 in an Idle of 10000, is at node 32 in an Idle of 1 at the original's first tick, as
+    /// the disc has it; an observer record of its stack then, 'k').
     pub fn take_house_from(&mut self, house: &LotChunks) -> Result<bool, FormatError> {
         if self.walls.wall_edges() != 0 {
             return Ok(false);
         }
         self.walls = Walls::new(&read_lot_arrays(house)?, self);
+        let mut disc = World::new(self.lib);
+        disc.load_lot(house)?;
+        let keys: Vec<ObjectKey> = self.objects().filter(|o| !o.on_lot() && !o.person).filter_map(|o| self.find(o.id())).collect();
+        for k in keys {
+            let (id, guid) = (self.get(k).id(), self.get(k).guid);
+            if let Some(d) = disc.find_object(id).filter(|d| d.guid == guid) {
+                self.get_mut(k).stack = d.stack.clone();
+            }
+        }
         Ok(true)
     }
 

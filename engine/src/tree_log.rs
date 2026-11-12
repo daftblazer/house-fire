@@ -5,6 +5,17 @@ use std::collections::BTreeMap;
 
 use crate::bhav::Tree;
 
+/// An interpreter at its first step ('k'): the tick, its address, the frame it ran, its first 32
+/// words (+8 its stack's first frame) and the 512 bytes below that frame (guest order).
+#[derive(Clone, Debug)]
+pub struct StackDump {
+    pub tick: u32,
+    pub sim: u32,
+    pub frame: u32,
+    pub words: [u32; 32],
+    pub below: Vec<u8>,
+}
+
 /// A tree as the original had it loaded: its nodes' address, id, file, and its nodes' raw bytes.
 #[derive(Clone, Debug, Default)]
 pub struct TreeRec {
@@ -221,6 +232,9 @@ pub struct MotiveRec {
 
 #[derive(Clone, Debug, Default)]
 pub struct Log {
+    /// Each interpreter at its first step ('k', in newer logs): the tick, its address, the frame it
+    /// ran, its first 32 words and the 512 bytes below that frame (guest order).
+    pub stack_dumps: Vec<StackDump>,
     pub trees: Vec<TreeRec>,
     pub lists: Vec<ListRec>,
     /// Tick -> its pass over the objects (logs with 'Q' records).
@@ -300,6 +314,16 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
                 r.u32();
                 log.ticks += 1;
+            }
+            b'k' => {
+                if !r.has(12 + 128 + 512) {
+                    break;
+                }
+                let (tick, sim, frame) = (r.u32(), r.u32(), r.u32());
+                let words: [u32; 32] = std::array::from_fn(|_| r.u32());
+                let below = r.b[r.p..r.p + 512].to_vec();
+                r.p += 512;
+                log.stack_dumps.push(StackDump { tick, sim, frame, words, below });
             }
             b'L' => {
                 // the object list, when it changed
