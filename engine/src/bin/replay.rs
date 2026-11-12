@@ -2508,6 +2508,23 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                     h.counts.note("frames: an engine frame pushed over an object's Idle (the log's tree)");
                 }
             }
+            // A stand-in the engine made (no file yet: the club's "go here" markers) takes the
+            // file and definition its first step's tree is in (a file of one definition) and
+            // starts as a made object does (main and init, Simulator::stack_of)
+            if h.world.get(ok).file.is_none() && !has("REPLAY_NO_STANDIN_FILE") {
+                let f = lib.file(file);
+                if let [d] = &f.definitions[..]
+                    && let Some(def) = lib.definition(d.guid())
+                {
+                    let o = h.world.get_mut(ok);
+                    o.guid = d.guid();
+                    o.definition = Some(def);
+                    o.file = Some(file);
+                    o.attributes = vec![0; lib.def(def).field(56) as usize];
+                    sim.forget(ok);
+                    h.counts.note("objects: a stand-in given its first step's file and started");
+                }
+            }
             if has("REPLAY_SHOW_MADE_DEFS") && matches!(o_id, 197 | 201 | 202) && h.shown.next(&format!("made def {o_id}"), 1) {
                 let o = h.world.get(ok);
                 if let Some(d) = h.world.definition(o) {
