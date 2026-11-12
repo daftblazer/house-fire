@@ -922,6 +922,10 @@ impl Host for ReplayHost<'_, '_> {
                 return got;
             }
             let want = self.logged(s, n);
+            if has("REPLAY_SHOW_CNT") && got != want {
+                let so = self.world.find_object(so_before);
+                println!("CallNamedTree DIFFERENT tick {} by {me_id} at {}:{} operand {:?}: stack object {so_before} (person {:?}, file {:?}); native {got:?}, the log's {}", s.tick, s.tree, s.node, &n.operand[..8], so.map(|o| o.person), so.and_then(|o| o.file).map(|f| self.lib.file(f).path.clone()), s.after);
+            }
             self.counts.note(if got == want {
                 "primitives: CallNamedTree: the same natively (no tree)"
             } else {
@@ -2806,6 +2810,22 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
             }
             if ran_returns {
                 h.counts.note("steps: native ran returns the log did not show");
+            }
+            // A CallNamedTree node whose record before its callee the log lacks (Global 337 node 3
+            // at tick 1356: node 4's step, then 8241's node 0 a frame up, the call's record after):
+            // native on the call node, the log a frame deeper at a tree's first node: the call
+            // node runs first.
+            if !interp.done()
+                && s.node == 0
+                && interp.stack().len() + 1 == fr_len
+                && top_node(lib, interp).is_some_and(|n| n.opcode == 28)
+            {
+                h.step = i;
+                h.file_of_top = interp.stack().last().and_then(|f| f.file);
+                h.me = ok;
+                interp.reset_iterations();
+                interp.step(&mut h);
+                h.counts.note("steps: a call node run ahead (its record before its callee's not in the log)");
             }
             let st_len = interp.stack().len();
             let st_top = interp.stack().last().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.file));
