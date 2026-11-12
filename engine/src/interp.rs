@@ -278,6 +278,13 @@ impl Interpreter {
                 return Step::Stop;
             }
             self.stack.pop();
+            // An interaction IdleForInput delivered comes back to that node, which runs again as
+            // a step of its own (the log: 4106's return, then 281 node 4 to 2), not on by the
+            // result.
+            let caller = self.stack.last().unwrap();
+            if caller.tree.and_then(|t| host.tree_at(t).nodes.get(caller.node as usize)).is_some_and(|n| n.opcode == 17) {
+                return Step::Go;
+            }
             return self.transition(host, value);
         }
 
