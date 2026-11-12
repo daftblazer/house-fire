@@ -2695,6 +2695,31 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
             // A stand-in the engine made (no file yet: the club's "go here" markers) takes the
             // file and definition its first step's tree is in (a file of one definition) and
             // starts as a made object does (main and init, Simulator::stack_of)
+            // A stand-in whose first step is a global tree (the club's markers: Global 280, "idle",
+            // above their 4097): its file is that of its first own step below, and its stack the
+            // calling frame (the node calling this tree whose return goes on to that step's node)
+            // with this tree above
+            if h.world.get(ok).file.is_none() && !has("REPLAY_NO_STANDIN_FILE") && tree_kind(s.tree) == TreeKind::Global {
+                let below = log.steps[i + 1..].iter().find(|x| x.sim == s.sim && x.frame < s.frame && tree_kind(x.tree) == TreeKind::Own);
+                if let Some(b) = below
+                    && let Some((bt, bfile)) = finder.find(log, b)
+                    && let [d] = &lib.file(bfile).definitions[..]
+                    && let Some(def) = lib.definition(d.guid())
+                    && let Some(c) = lib.tree_at(bt).nodes.iter().position(|n| n.opcode == s.tree && (n.true_target == b.node as u8 || n.false_target == b.node as u8))
+                {
+                    let o = h.world.get_mut(ok);
+                    o.guid = d.guid();
+                    o.definition = Some(def);
+                    o.file = Some(bfile);
+                    o.attributes = vec![0; lib.def(def).field(56) as usize];
+                    o.stack = vec![
+                        Frame { tree: Some(bt), node: c as u16, params: b.params.clone(), locals: b.locals.clone(), stack_object: b.stack_object, file: Some(bfile), ..Default::default() },
+                        Frame { tree: Some(tree), node: s.node, params: s.params.clone(), locals: s.locals.clone(), stack_object: s.stack_object, file: Some(bfile), ..Default::default() },
+                    ];
+                    sim.forget(ok);
+                    h.counts.note("objects: a stand-in first seen in a global tree, given its own step's file and the calling frame");
+                }
+            }
             if h.world.get(ok).file.is_none() && !has("REPLAY_NO_STANDIN_FILE") {
                 let f = lib.file(file);
                 if let [d] = &f.definitions[..]
