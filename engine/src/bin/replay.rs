@@ -905,6 +905,9 @@ impl Host for ReplayHost<'_, '_> {
                 }
             }
             let want = self.logged(s, n);
+            if has("REPLAY_TRACE_251") && me_id == 251 && (250..=500).contains(&s.tick) {
+                println!("idle 251 tick {} {}:{} -> {} result {}: native {got:?}, log {want:?}, params {:?}", s.tick, s.tree, s.node, s.after, s.result, interp.top().params);
+            }
             self.counts.note(if got == want { "primitives: Idle: the same natively" } else { "primitives: Idle: DIFFERENT" });
             if got != want && has("REPLAY_SHOW_IDLE_DIFF") {
                 let f = interp.stack().last().unwrap();
