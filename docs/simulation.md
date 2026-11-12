@@ -1522,6 +1522,8 @@ routing checks there:
   were one object: the club's smoke-puff effect (179, made by the engine during play), which
   replay's world held as a placeholder from the log's list with no definition and zero data, so
   the obstacle rule took it for a blocking object and every rectangle after it was out by one.
-  An object without its definition is no obstacle: 840 the planner's, 1 not; 12 of 13 plans with
-  all their obstacles right.
+  An object without its definition is no obstacle: 840 the planner's, 1 not. The last was Sim
+  177's square at tick 56, a sixteenth off: the planner, mid-tick, sees a person where it was
+  logged before the plan's tick ('P' is written as a tick starts). With that all 841, and all 13
+  plans with every obstacle right; the home log's 709 as before.
 Lockstep: 3 differences (scope 0 and 1 places, the caller 80213900 also behind the home log's).

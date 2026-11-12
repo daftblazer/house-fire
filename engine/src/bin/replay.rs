@@ -3301,7 +3301,9 @@ fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, counts: &mut
                     // an object not in the native world holds its place (as the log keeps it)
                     let Some(o) = world.find_object(id) else { return (!out).then_some([0; 5]) };
                     if o.person {
-                        let p = place_at(id, pl.tick).unwrap_or((o.x16, o.y16));
+                        // its place as the planner sees it, mid-tick: the one logged before the
+                        // plan's tick ('P' is written as a tick starts; the club's tick 56)
+                        let p = log.places.iter().rfind(|q| q.id == id && q.tick < pl.tick).map(|q| (q.x, q.y)).unwrap_or((o.x16, o.y16));
                         return (!out).then_some([p.0 - 3 - half, p.1 - 3 - half, p.0 + 3 + half, p.1 + 3 + half, BLOCKS]);
                     }
                     // an object replay's world holds without its definition (one the engine made,
@@ -3330,6 +3332,9 @@ fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, counts: &mut
             let unknown = native.iter().filter(|a| **a == [0; 5]).count();
             let miss = native.len().min(pl.obstacles.len()) - hit - unknown;
             if show_obstacles {
+                for (k, (a, b)) in native.iter().zip(&pl.obstacles).enumerate().filter(|(_, (a, b))| a != b && **a != [0; 5]) {
+                    println!("      rectangle {k} of tick {}: native {a:?}, the planner's {b:?}, object {:?}", pl.tick, pl.tested.iter().filter(|t| !t.1).nth(k).map(|t| t.0));
+                }
                 for (a, b) in native.iter().zip(&pl.obstacles).filter(|(a, b)| a != b && **a != [0; 5]) {
                     println!("   native obstacle {a:?}, the planner's {b:?}");
                 }
