@@ -253,3 +253,10 @@ a cell's binding stale once its object's id is made again), and the lot-state ch
 an id's reads after it left the lot, **lockstep finds no difference on any of the three logs**
 (the home log, `tree.log`, `tree3.log`; 2026-11-11). What it does not check yet is listed under
 "not modelled yet" (the scopes 16, 20, 21, 23, 24, 27, 35, 40, 41 in its own variables pass).
+
+## The original's frame size
+
+A frame of the original's interpreter takes 16 bytes and two for each of its tree's parameters
+and locals, rounded up to a multiple of 8 (measured: the logs' frame addresses, 191,018 of
+191,030 calls). The engine does not keep addresses; replay uses the rule to place the saved
+frames the log has not shown yet.

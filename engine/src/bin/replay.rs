@@ -1820,6 +1820,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
     let mut frames: BTreeMap<u32, Vec<u32>> = BTreeMap::new(); // the log's stacks: frame addresses, bottom first
     let mut first_seen: BTreeMap<u32, u32> = BTreeMap::new(); // stack -> tick of its first step
     let mut first_step: BTreeSet<u32> = BTreeSet::new(); // stacks whose first step was seen
+    let mut last_frame: HashMap<u32, (u32, TreeId)> = HashMap::new();
     let mut unseen: BTreeSet<u32> = BTreeSet::new(); // placeholder addresses of saved frames below a first step
     let mut delivered: BTreeSet<u32> = BTreeSet::new(); // Sims whose first interaction was seen
     if has("REPLAY_SHOW_OFFLIST") {
@@ -2372,6 +2373,18 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
             if has("REPLAY_SHOW_STANDIN") && h.world.get(ok).file.is_none() && h.shown.next(&format!("standin {o_id}"), 3) {
                 println!("standin: tick {t} object {o_id} {}:{} -> {} file {} defs {:?}", s.tree, s.node, s.after, lib.file(file).path, lib.file(file).definitions.iter().map(|d| (d.guid(), (0..48).map(|i| d.field(i)).collect::<Vec<_>>())).collect::<Vec<_>>());
             }
+            if has("REPLAY_FRAME_SIZES") {
+                // study: a call's frame address against the caller's: the size of a frame
+                if let Some(&(pf, pt)) = last_frame.get(&s.sim)
+                    && s.frame > pf
+                    && s.node == 0
+                {
+                    let (ca, cl) = (lib.tree_at(pt).args, lib.tree_at(pt).locals);
+                    let (ea, el) = (lib.tree_at(tree).args, lib.tree_at(tree).locals);
+                    note!(h.counts, "study frame: delta {} caller args {ca} locals {cl} callee args {ea} locals {el}", s.frame - pf);
+                }
+                last_frame.insert(s.sim, (s.frame, tree));
+            }
             if let Some(w) = env("REPLAY_SHOW_OPS") {
                 // study: the opcodes a stack runs in a tick range, "id:from:to"
                 let v: Vec<i64> = w.split(':').filter_map(|x| x.parse().ok()).collect();
@@ -2431,11 +2444,23 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                 // step's are taken as the log's too (addresses below its, never seen).
                 let fr = frames.get_mut(&s.sim).unwrap();
                 if same0 && st_len > fr.len() {
+                    // their addresses by the frames' sizes: 16 and the tree's parameters and
+                    // locals, two bytes each, to a multiple of 8 (all but 12 of the logs' 191,030
+                    // calls; study REPLAY_FRAME_SIZES)
+                    let size = |f: &Frame| f.tree.map_or(16, |t| {
+                        let tr = lib.tree_at(t);
+                        16 + (2 * (u32::from(tr.args) + u32::from(tr.locals))).div_ceil(8) * 8
+                    });
+                    let saved = interp.stack();
+                    let n = st_len - fr.len();
                     let mut below = Vec::new();
-                    for k in (1..=st_len - fr.len()).rev() {
-                        below.push(s.frame.wrapping_sub(16 * k as u32));
-                        unseen.insert(*below.last().unwrap());
+                    let mut at = s.frame;
+                    for k in (0..n).rev() {
+                        at = at.wrapping_sub(size(&saved[k]));
+                        below.push(at);
+                        unseen.insert(at);
                     }
+                    below.reverse();
                     fr.splice(0..0, below);
                 }
                 if !same0 && has("REPLAY_SHOW_LOAD") && h.shown.next("load", 12) {
