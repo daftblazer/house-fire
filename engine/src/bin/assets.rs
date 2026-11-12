@@ -283,6 +283,35 @@ fn main() -> ExitCode {
                     if c == s.words[1] { same += 1 } else { other += 1 }
                 }
                 println!("strips whose positions are in models.arc: {tested} tested, the count before them the strip's for {same}, not for {other}");
+                // the arrays after the positions: which of the strip's other words' bytes are at
+                // positions + 8n (and + 12n, + 11n, + 16n), by the attribute byte 7 before them
+                let mut after: BTreeMap<String, usize> = BTreeMap::new();
+                let mut tested = 0;
+                for s in log.strips.iter() {
+                    if tested >= 600 {
+                        break;
+                    }
+                    let Some((n, off, _)) = place(&s.at[2]) else { continue };
+                    let e = entries.iter().find(|e| e.name == n).unwrap();
+                    let b = arc::bytes(&data, e);
+                    let c = u16::from_be_bytes([b[off - 2], b[off - 1]]) as usize;
+                    if c as u32 != s.words[1] {
+                        continue;
+                    }
+                    tested += 1;
+                    let attr = b[off - 7];
+                    for (name, at) in [("8n", off + 8 * c), ("12n", off + 12 * c), ("11n", off + 11 * c), ("16n", off + 16 * c)] {
+                        for k in 3..16 {
+                            if (0x8000_0000..0x817F_FFE0).contains(&s.words[k]) && b.get(at..at + 32) == Some(&s.at[k][..]) {
+                                *after.entry(format!("attribute {attr:#04x}: word {k} at positions + {name}")).or_default() += 1;
+                            }
+                        }
+                    }
+                    *after.entry(format!("attribute {attr:#04x}: strips")).or_default() += 1;
+                }
+                for (k, n) in &after {
+                    println!("  {n:5} {k}");
+                }
                 let mut shown = 0;
                 let mut names = BTreeSet::new();
                 for s in &log.strips {

@@ -117,3 +117,11 @@ for 520 of the first 600 strips whose positions are found in `models.arc` (the o
 first 32 bytes found at another place, or another layout); before the count, bytes 01 00 and an
 attribute byte (01, 03) and a float. Next: the record walked from its start, sub-model by
 sub-model.
+
+The arrays after the positions (the same strips): the strip's word 3 array is the 4n bytes
+right after the positions in 489 of them (4 bytes a vertex: three 8-bit normal components and
+one more?), word 4 the 4n after that in 27 (texture coordinates?), word 14 at +16n in 19. The
+byte 7 before the positions, first taken for the attributes, takes many values (0x01 to 0x34):
+an index, not a set of attributes. The smallest record, `prop_card_spade` (218 bytes), read by
+hand: one sub-model `01 00 2a 00 00 00 00`, a count of 4, four positions, 16 bytes of 4-byte
+pairs, 12 bytes of 3-byte triples, then floats (its bound) and `01 01 01` with zeros.
