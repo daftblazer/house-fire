@@ -320,7 +320,9 @@ data 36 (50 for the home Sims, 1 for the club's: so no guard runs there) and, fo
 (person data 32 set), only one flagged 0x1; it drops 0x10 or 0x40 (by a person method) and 0x80.
 Native (`Candidate::listed`): the first trees run for every object, the guards only for listed
 interactions. Checked (`replay --card`): the club's 2,706 evaluation checks all the log's (912
-different and 47,413 unfinished before), home's 437 unchanged. 
+different and 47,413 unfinished before), home's 437 unchanged. With no interaction passing, the evaluation
+makes no choice: the stack object stays as it was (the Sim itself; the club's 82 evaluations,
+all as the log's). 
 
 **Persons as candidates.** A person's interactions are its semi-global file's one table:
 `person_sg`'s (table 129, version 11, its first tree 8230 run before its guards) for a Sim,

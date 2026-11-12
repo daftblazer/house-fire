@@ -1295,6 +1295,17 @@ impl ReplayHost<'_, '_> {
             }
             values.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
             let rank = values.iter().position(|v| cands[v.1].id == s.stack_object_after).map_or(0, |p| p + 1);
+            if values.is_empty() {
+                // nothing passed (the club's evaluations: no guard runs there): no choice, the
+                // stack object as it was
+                let kept = interp.top().stack_object;
+                native_choice = Some(kept);
+                self.counts.note(if kept == s.stack_object_after {
+                    "autonomy: no interaction passed, the stack object kept, as the log's"
+                } else {
+                    "autonomy: no interaction passed, the stack object kept, DIFFERENT"
+                });
+            } else {
             self.counts.note(if (1..=4).contains(&rank) {
                 "autonomy: the log's choice among the native best four"
             } else {
@@ -1306,6 +1317,7 @@ impl ReplayHost<'_, '_> {
                     l += &format!(" {}/{}={}", cands[v.1].id, cands[v.1].interaction(lib).action, g(v.0 as f64, 6));
                 }
                 println!("{l}");
+            }
             }
         }
         self.counts.add("autonomy: an evaluation's checks, result as the log's", same);
