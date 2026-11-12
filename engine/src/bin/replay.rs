@@ -766,8 +766,8 @@ impl Host for ReplayHost<'_, '_> {
             // native at another node than the log's step (a check tree run natively off the
             // original's path, the log's next step not this node's): no comparison
             let f = interp.top();
-            let here = f.tree.map(|t| (self.lib.tree_at(t).id as u16, f.node as u16));
-            if here.is_some_and(|h| h != (s.tree, s.node as u16)) {
+            let here = f.tree.map(|t| (self.lib.tree_at(t).id as u16, f.node));
+            if here.is_some_and(|h| h != (s.tree, s.node)) {
                 note!(self.counts, "{}: native at another node than the log's step (not compared)", k());
                 return want;
             }
