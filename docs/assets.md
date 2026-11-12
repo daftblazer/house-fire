@@ -193,3 +193,13 @@ replay's come from one of their sub-models, all 247 with its count and texture c
 (sub-models can share their positions: the rubber tree plant's two, with other texture
 coordinates; the check takes each that has them). The kind-0 records mostly do not have the 6 after their arrays: their 16-bit values
 and more come first; other first bytes than 0 and 1 (2 to 254) are further kinds of sub-model.
+
+Kind 0 is an indexed mesh: format bit 0x20 is not a per-vertex value but a GX display list
+after the arrays: the vertices it draws (a word), the indices a vertex (a byte: one for each
+attribute, 3 or 4), the list's size (a word, padded to 32 bytes), the word 3, then the list
+itself: 0x9e (a triangle strip in vertex format 6), a 16-bit count, the indices (16 bits each,
+position, texture coordinate, colour, normal in turn). E.g. the burn mark: 4 drawn, 4 indices,
+0x40 bytes; the Persian rug 21 drawn, 3 indices, 0xa0 (21 × 3 × 2 + 3 = 129, padded). These are
+the command list's opcode 66 ("a model drawn from a list made when it was loaded"). Read so
+(`model::read_record`), 843 records whole (1,585 nodes, 2,267 sub-models). The display lists are
+to be checked against the original's opcode-66 draws.

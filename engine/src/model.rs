@@ -17,8 +17,12 @@ pub struct SubModel {
     pub colours: Option<Vec<u8>>,
     /// Normals: three s8 a vertex.
     pub normals: Vec<u8>,
-    /// A 16-bit value a vertex (format bit 0x20), as the record keeps it.
+    /// Unused: kept for the first-sub-model reader (`read`).
     pub values: Option<Vec<u8>>,
+    /// Kind 0's GX display list (format bit 0x20): the vertices it draws, the indices a vertex
+    /// (one for each attribute) and its bytes (0x9e, a triangle strip of vertex format 6, a 16-bit
+    /// count, then the indices; padded to 32).
+    pub list: Option<(usize, usize, Vec<u8>)>,
 }
 
 /// A node of a record's tree: its parent (-1 for the root) and its sub-models.
@@ -42,6 +46,13 @@ fn be32(b: &[u8], p: usize) -> Option<u32> {
     Some(u32::from_be_bytes(b.get(p..p + 4)?.try_into().ok()?))
 }
 
+/// `size` bytes at `*p`, moving `*p` past them.
+fn take(b: &[u8], p: &mut usize, size: usize) -> Option<Vec<u8>> {
+    let v = b.get(*p..*p + size)?.to_vec();
+    *p += size;
+    Some(v)
+}
+
 /// A sub-model block at `p` (its format, a hash, 1, a zero, a float, the header and the arrays,
 /// then the byte 6): the format, the sub-model and where the next block starts.
 fn sub_model(b: &[u8], mut p: usize) -> Option<(u32, SubModel, usize)> {
@@ -61,17 +72,22 @@ fn sub_model(b: &[u8], mut p: usize) -> Option<(u32, SubModel, usize)> {
         }
         _ => return None,
     };
-    let mut take = |size: usize| -> Option<Vec<u8>> {
-        let v = b.get(p..p + size)?.to_vec();
-        p += size;
-        Some(v)
+    let positions = take(b, &mut p, 8 * count)?;
+    let texcoords = if format & 0x08 != 0 { take(b, &mut p, 4 * count)? } else { Vec::new() };
+    let colours = if format & 0x04 != 0 { Some(take(b, &mut p, 4 * count)?) } else { None };
+    let normals = if format & 0x10 != 0 { take(b, &mut p, 3 * count)? } else { Vec::new() };
+    // kind 0 with bit 0x20: the display list after the arrays: its vertex count (a word), the
+    // indices a vertex (a byte), the list's size (a word, padded to 32), the word 3, the list
+    let list = if format & 0x20 != 0 {
+        let drawn = be32(b, p)? as usize;
+        let per = *b.get(p + 4)? as usize;
+        let size = be32(b, p + 5)? as usize;
+        p += 13;
+        Some((drawn, per, take(b, &mut p, size)?))
+    } else {
+        None
     };
-    let positions = take(8 * count)?;
-    let texcoords = if format & 0x08 != 0 { take(4 * count)? } else { Vec::new() };
-    let colours = if format & 0x04 != 0 { Some(take(4 * count)?) } else { None };
-    let normals = if format & 0x10 != 0 { take(3 * count)? } else { Vec::new() };
-    let values = if format & 0x20 != 0 { Some(take(2 * count)?) } else { None };
-    (*b.get(p)? == 6).then_some((format, SubModel { kind, count, positions, texcoords, colours, normals, values }, p + 1))
+    (*b.get(p)? == 6).then_some((format, SubModel { kind, count, positions, texcoords, colours, normals, values: None, list }, p + 1))
 }
 
 /// Reads a whole record: the head, the node count (+0x19 past the name), each node's parent,
@@ -160,5 +176,5 @@ pub fn read(b: &[u8]) -> Option<Model> {
     let colours = if format & 0x04 != 0 { Some(take(4 * count)?) } else { None };
     let normals = if format & 0x10 != 0 { take(3 * count)? } else { Vec::new() };
     let values = if format & 0x20 != 0 { Some(take(2 * count)?) } else { None };
-    Some(Model { name, scale, format, first: SubModel { kind, count, positions, texcoords, colours, normals, values }, tail: p })
+    Some(Model { name, scale, format, first: SubModel { kind, count, positions, texcoords, colours, normals, values, list: None }, tail: p })
 }
