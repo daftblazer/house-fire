@@ -2217,6 +2217,24 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
             let interp = sim.stack_of(&h.world, ok);
             let st_len = interp.stack().len();
             let st_top = interp.stack().last().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.file));
+            if first_step.contains(&s.sim) {
+            } else if has("REPLAY_SHOW_FIRST_TREE") {
+                let o = h.world.get(ok);
+                let fields: Vec<usize> = h.world.definition(o).map(|d| (0..d.fields.len()).filter(|&k| d.field(k) == s.tree as u16 as i32 as _).collect()).unwrap_or_default();
+                note!(h.counts, "study first tree: node {} person {} the definition's fields equal to it {fields:?}", s.node, o.person);
+                let saved: Vec<(i16, u16)> = o.stack.iter().map(|f| (f.tree.map_or(-1, |t| lib.tree_at(t).id), f.node)).collect();
+                let rel = match saved.iter().position(|&(t, _)| t == s.tree as i16) {
+                    Some(k) if k + 1 == saved.len() => "the saved top's tree",
+                    Some(0) => "the saved bottom's tree",
+                    Some(_) => "a saved middle frame's tree",
+                    None if saved.is_empty() => "no saved stack",
+                    None => "no saved frame's tree",
+                };
+                note!(h.counts, "study first tree vs the saved stack: {rel}, node {}{}", s.node, if saved.last().is_some_and(|&(t, n)| t == s.tree as i16 && n == s.node) { " (the saved top itself)" } else { "" });
+                if fields.is_empty() && !o.person && h.shown.next("first tree", 4) {
+                    println!("first tree {} of object {o_id} ({:?}): def fields {:?}", s.tree, o.file.map(|f| file_name(lib, f)), h.world.definition(o).map(|d| &d.fields[..d.fields.len().min(40)]));
+                }
+            }
             if first_step.insert(s.sim) {
                 // Each lot object's first step against the stack the lot saved.
                 let same0 = st_top.is_some_and(|(t, n, _)| t == Some(s.tree as i16) && n == s.node);

@@ -1621,3 +1621,15 @@ its first Idle step is its waking: true whatever the frame's parameter, as the s
 out. 51 of the home log's 52 Idle steps that differed, all objects in the lot's first ticks
 (replay). The club's stacks do not resume (180 of 182 first steps elsewhere: they restart), so
 the rule leaves them, as it must (taking every loaded object's first Idle puts 6,454 off there).
+
+## The club's stacks restart (2026-11-11, open)
+
+At the club (the save's lot 15, `club.log`) every saved stack restarts: 176 of the 182 objects'
+first steps are node 0 of their saved bottom frame's tree (4096, 8220, 8216, ...), 4 have no
+saved stack; at home 66 of 71 resume at their saved top frame. The old club logs (the disc's lot,
+no save) have stacks of one frame at node 0 already. The objects' definitions name no starting
+tree (no field equals it for 139 of 173). Restarting each saved stack from its bottom frame on a
+community lot (global 10 the constant 19215, as Global 462 tests it) in the simulator's
+`stack_of` (a study, reverted) puts those 176 first steps right and the club's differing steps
+595 → 472, but the turns go wrong (240,726 native turns the log does not run, Idle 4 → 282): the
+original does not run the restarted stacks at once, and when it does is still to find.
