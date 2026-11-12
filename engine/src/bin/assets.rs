@@ -4,6 +4,11 @@
 //!                                LIST, each entry ("archive<TAB>name<TAB>offset<TAB>size") into it
 //!        assets ISO textures         textures.arc's entries read: by kind and size, any that do not
 //!        assets ISO rle              rletextu.arc's entries decoded: their texel counts
+//!        assets ISO texbatch IN OUT  every texture without a palette (textures.arc's and
+//!                                    datasets.arc's), its first level: IN the GX format, width,
+//!                                    height, size and bytes of each (little-endian words), OUT
+//!                                    its texels decoded natively (RGBA words), for
+//!                                    tools/texdecode_check.sh
 //!        assets ISO texcheck LOG     the textures the original set up (the log's 'x' records)
 //!                                    against textures.arc's: each by its first level's hash
 
@@ -91,6 +96,60 @@ fn main() -> ExitCode {
                 println!("{n:5} {k}");
             }
             println!("run-length textures read {}, not {bad}", entries.len() - bad);
+        }
+        "texbatch" => {
+            let (Some(inp), Some(outp)) = (args.get(3), args.get(4)) else {
+                println!("usage: assets ISO texbatch IN OUT");
+                return ExitCode::from(2);
+            };
+            let (mut inb, mut outb) = (Vec::new(), Vec::new());
+            let mut n = 0;
+            let mut add = |t: &texture::Texture, b: &[u8]| {
+                let fmt: u32 = match t.kind {
+                    texture::Kind::Bits16 => 5,
+                    texture::Kind::Blocks => 14,
+                    texture::Kind::Bits32 => 6,
+                    _ => return,
+                };
+                let first = (t.width as usize * t.height as usize * t.kind.bits() as usize) / 8;
+                let src = &b[t.texels.0..t.texels.0 + first];
+                let Some(px) = texture::decode_level(t.kind, t.width, t.height, src) else { return };
+                for v in [fmt, t.width, t.height, first as u32] {
+                    inb.extend(v.to_le_bytes());
+                }
+                inb.extend(src);
+                for p in px {
+                    outb.extend(p.to_le_bytes());
+                }
+                n += 1;
+            };
+            let data = d.read("textures.arc").unwrap_or_default();
+            for e in arc::entries(&data).unwrap_or_default() {
+                let b = arc::bytes(&data, &e);
+                if let Some(t) = texture::read(b) {
+                    add(&t, b);
+                }
+            }
+            let ds = d.read("datasets.arc").unwrap_or_default();
+            for e in arc::entries(&ds).unwrap_or_default() {
+                let b = arc::bytes(&ds, &e);
+                let mut p = 0;
+                while let Some(q) = b[p..].windows(4).position(|w| w == b"LFXT") {
+                    let at = p + q;
+                    match texture::read_prefix(&b[at..]) {
+                        Some((t, end)) => {
+                            add(&t, &b[at..]);
+                            p = at + end;
+                        }
+                        None => p = at + 4,
+                    }
+                }
+            }
+            if std::fs::write(inp, &inb).is_err() || std::fs::write(outp, &outb).is_err() {
+                println!("cannot write the batch");
+                return ExitCode::from(1);
+            }
+            println!("textures in the batch: {n}");
         }
         "texcheck" => {
             let Some(log) = args.get(3).and_then(|p| read_log(p)) else {

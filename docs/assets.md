@@ -67,3 +67,11 @@ replay's 47 unmatched C8 images: those are set up at tick 0 and again in sets at
 and 5,632 (the same seven contents each time: 8x64, 32x64 twice, 8x256, 32x256 twice, 128x128),
 as a menu opens: the menus' own (chunk 8, `flashes.arc`), not the lot's. The lot's textures are
 `textures.arc`'s.
+
+Decoded natively (`texture::decode_level`, the GX formats: RGB5A3, CMPR, RGBA8; RGBA, red in
+the low byte, row after row) and checked against the recompiled game's own GX decoder:
+`assets ISO texbatch IN OUT` writes the first level of every texture without a palette (7,452:
+textures.arc's and datasets.arc's) and its native decoding; `tools/texdecode_check.sh` builds the
+recomp's decoder (gcn-recomp's `gx/texture.cpp`, as it is at check time) and decodes the same:
+the 189,997,056 bytes the same. The palette kinds wait for how the game makes its palettes
+(their 4-byte colours into a 16-bit GX palette).

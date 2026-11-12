@@ -93,6 +93,102 @@ pub fn read_prefix(e: &[u8]) -> Option<(Texture, usize)> {
     (end <= e.len()).then_some((Texture { name, kind, width, height, levels, flags, texels: (start, size), palette }, end))
 }
 
+/// A texel as the renderer takes it: RGBA, red in the low byte.
+pub type Rgba = u32;
+
+fn rgba(r: u32, g: u32, b: u32, a: u32) -> Rgba {
+    r | g << 8 | b << 16 | a << 24
+}
+
+/// GX's RGB565: 5, 6 and 5 bits widened by repeating their top bits.
+pub fn rgb565(v: u16) -> Rgba {
+    let (r, g, b) = ((v >> 11) as u32 & 31, (v >> 5) as u32 & 63, v as u32 & 31);
+    rgba(r << 3 | r >> 2, g << 2 | g >> 4, b << 3 | b >> 2, 255)
+}
+
+/// GX's RGB5A3: opaque 5-5-5 with the top bit set, else 3 bits of alpha and 4-4-4.
+pub fn rgb5a3(v: u16) -> Rgba {
+    if v & 0x8000 != 0 {
+        let (r, g, b) = ((v >> 10) as u32 & 31, (v >> 5) as u32 & 31, v as u32 & 31);
+        rgba(r << 3 | r >> 2, g << 3 | g >> 2, b << 3 | b >> 2, 255)
+    } else {
+        let (a, r, g, b) = ((v >> 12) as u32 & 7, (v >> 8) as u32 & 15, (v >> 4) as u32 & 15, v as u32 & 15);
+        rgba(r * 17, g * 17, b * 17, a << 5 | a << 2 | a >> 1)
+    }
+}
+
+/// One CMPR block's four colours (DXT1: two 565 colours, then two between them, or one
+/// between and transparent black when the first is not the greater).
+fn cmpr_colours(c0: u16, c1: u16) -> [Rgba; 4] {
+    let (p0, p1) = (rgb565(c0), rgb565(c1));
+    let ch = |c: Rgba, s: u32| (c >> s) & 0xFF;
+    let mix = |w0: u32, w1: u32, d: u32| [0, 8, 16].map(|s| (w0 * ch(p0, s) + w1 * ch(p1, s)) / d);
+    if c0 > c1 {
+        let (a, b) = (mix(2, 1, 3), mix(1, 2, 3));
+        [p0, p1, rgba(a[0], a[1], a[2], 255), rgba(b[0], b[1], b[2], 255)]
+    } else {
+        let m = mix(1, 1, 2);
+        [p0, p1, rgba(m[0], m[1], m[2], 255), rgba(m[0], m[1], m[2], 0)]
+    }
+}
+
+/// The kinds that need no palette, as the GX formats they are (16 bits RGB5A3, blocks CMPR,
+/// 32 bits RGBA8): one level `w` by `h` from `src` (its tiles in GX order), row after row.
+/// `None` for the palette kinds or data too short.
+pub fn decode_level(kind: Kind, w: u32, h: u32, src: &[u8]) -> Option<Vec<Rgba>> {
+    let (bw, bh) = match kind {
+        Kind::Blocks => (8, 8),
+        Kind::Bits16 | Kind::Bits32 => (4, 4),
+        Kind::Palette4 | Kind::Palette8 => return None,
+    };
+    let (w, h) = (w as usize, h as usize);
+    let mut out = vec![0u32; w * h];
+    let mut p = 0usize;
+    let be16 = |b: &[u8], i: usize| -> Option<u16> { Some(u16::from_be_bytes([*b.get(i)?, *b.get(i + 1)?])) };
+    for by in 0..h.div_ceil(bh) {
+        for bx in 0..w.div_ceil(bw) {
+            let (x0, y0) = (bx * bw, by * bh);
+            let mut put = |x: usize, y: usize, c: Rgba| {
+                if x0 + x < w && y0 + y < h {
+                    out[(y0 + y) * w + x0 + x] = c;
+                }
+            };
+            match kind {
+                Kind::Bits16 => {
+                    for i in 0..16 {
+                        put(i % 4, i / 4, rgb5a3(be16(src, p + i * 2)?));
+                    }
+                    p += 32;
+                }
+                Kind::Bits32 => {
+                    for i in 0..16 {
+                        let k = p + i * 2;
+                        let (a, r) = (*src.get(k)? as u32, *src.get(k + 1)? as u32);
+                        let (g, b) = (*src.get(k + 32)? as u32, *src.get(k + 33)? as u32);
+                        put(i % 4, i / 4, rgba(r, g, b, a));
+                    }
+                    p += 64;
+                }
+                Kind::Blocks => {
+                    for sb in 0..4 {
+                        let pal = cmpr_colours(be16(src, p)?, be16(src, p + 2)?);
+                        let (sx, sy) = ((sb & 1) * 4, (sb >> 1) * 4);
+                        for y in 0..4 {
+                            let bits = *src.get(p + 4 + y)?;
+                            for x in 0..4 {
+                                put(sx + x, sy + y, pal[(bits >> (6 - 2 * x)) as usize & 3]);
+                            }
+                        }
+                        p += 8;
+                    }
+                }
+                Kind::Palette4 | Kind::Palette8 => unreachable!(),
+            }
+        }
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
