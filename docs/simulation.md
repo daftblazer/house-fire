@@ -1518,6 +1518,10 @@ routing checks there:
   5 of 5 requests of several goals take the planner's goal;
 - the walk: 170 of 171 walker steps, every walking Sim's place each tick (65), the 4 whole
   walks frame for frame, 7 routing primitives returning on the original's tick;
-- the obstacles: 580 rectangles the planner's and 268 not: the club's objects (its dance
-  floor, booths, multi-tile pieces) are what the obstacle rules do not cover yet.
+- the obstacles: 580 rectangles the planner's and 268 not at first; all but one of the 268
+  were one object: the club's smoke-puff effect (179, made by the engine during play), which
+  replay's world held as a placeholder from the log's list with no definition and zero data, so
+  the obstacle rule took it for a blocking object and every rectangle after it was out by one.
+  An object without its definition is no obstacle: 840 the planner's, 1 not; 12 of 13 plans with
+  all their obstacles right.
 Lockstep: 3 differences (scope 0 and 1 places, the caller 80213900 also behind the home log's).

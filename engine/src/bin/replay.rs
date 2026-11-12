@@ -3304,6 +3304,10 @@ fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, counts: &mut
                         let p = place_at(id, pl.tick).unwrap_or((o.x16, o.y16));
                         return (!out).then_some([p.0 - 3 - half, p.1 - 3 - half, p.0 + 3 + half, p.1 + 3 + half, BLOCKS]);
                     }
+                    // an object replay's world holds without its definition (one the engine made,
+                    // taken from the log's list: the club's smoke-puff effect) has no footprint
+                    // here: none, as the original's loop left it out
+                    world.definition(o)?;
                     obstacle(o, world.definition(o).map_or(0, |d| d.field(75)), world.definition(o).map_or(0, |d| d.field(65)), half)
                 })
                 // one whose footprint (before it is grown) overlaps the Sim's is dropped
@@ -3380,6 +3384,20 @@ fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, counts: &mut
             }
             if show_obstacles {
                 println!("   native list tick {}: {} rects, the planner's {}, kept {}, the Sim's {sim_rect:?}, {hit} the same", pl.tick, native.len(), pl.obstacles.len(), kept.len());
+                if native.len() != pl.obstacles.len() {
+                    let ids: Vec<String> = pl
+                        .tested
+                        .iter()
+                        .map(|&(id, out, off)| {
+                            let o = world.find_object(id);
+                            let nat = o.map(|o| {
+                                if o.person { "P".to_string() } else { format!("f{:x}c{}", o.data.get(8).copied().unwrap_or(0), o.data.get(2).copied().unwrap_or(0)) }
+                            });
+                            format!("{id}{}{}{}", if out { "-" } else { "+" }, if off == PERSON_PART_OFFSET { "p" } else { "" }, nat.unwrap_or("?".into()))
+                        })
+                        .collect();
+                    println!("      tested (id, + kept / - left out, native flags and container): {}", ids.join(" "));
+                }
                 let only_native: Vec<_> = native.iter().filter(|r| !pl.obstacles.contains(r)).collect();
                 let only_theirs: Vec<_> = pl.obstacles.iter().filter(|r| !native.contains(r)).collect();
                 if !only_native.is_empty() || !only_theirs.is_empty() {
