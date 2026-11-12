@@ -1559,3 +1559,18 @@ when lockstep's world (which takes engine-made objects from the next tick's list
 object, so the address was bound to no owner; from tick 6595 it was 181's cell and counted as
 moved. A binding to no owner has no identity, so it is now bound anew once the address is an
 object's cell: 0 differences on all four logs (the rebinding once, here).
+
+## Autonomy at the club (2026-11-11, open)
+
+Every club evaluation (82; PersonGlobals 8233 node 0, operand zero as at home) goes over the
+objects another way than native's candidates (REPLAY_SHOW_EVAL_ORDER):
+- each object's table's first tree runs (463 for objects, which calls 462; 8230 for Sims,
+  calling 8277), and nearly all come back false, so their guards do not run;
+- the order is 57 (a Sim), the objects 83 ... 163 by id, then the Sims 164 ... 178 by id, with
+  the dance floor's part 150 and its guard 4122 (the floor's lead is 135) after four of the Sims
+  (171, 172, 174, 177 at tick 90): not by id;
+- objects 3 (mailbox_outside, at 21,6) and 18 (zz_move_a__tron, at 15,4) are not visited at all,
+  where at home the same mailbox definition, at the same place, is (object 33, guard 4105).
+Native lists the whole lot by id (599 candidates, 3 and 18 first), so its checks leave the log's
+steps from the first and mostly do not finish. Still to find: what leaves 3 and 18 out (the
+Sim's room, a lot area, reachability), and where 150's checks come from.

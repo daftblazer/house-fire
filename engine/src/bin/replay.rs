@@ -938,6 +938,30 @@ impl ReplayHost<'_, '_> {
         // The engine's evaluation, each check's result against the log's: the step that ends it
         // (its bottom frame's return, 254 true or 255 false) is the last nested step used.
         self.on_check = Some((0, 0));
+        if has("REPLAY_SHOW_EVAL_ORDER") && self.shown.next("eval order", 2) {
+            let mut l = format!("evaluation order at tick {} by {me_id} ({} nested steps):", s.tick, self.nested.len());
+            let mut prev = None;
+            for &i in &self.nested {
+                let t = &log.steps[i];
+                let key = (t.tree, t.stack_object);
+                if t.node == 0 && prev != Some((key, t.frame)) {
+                    l += &format!(" {}/{}@{}", t.tree, t.stack_object, t.frame);
+                }
+                prev = Some((key, t.frame));
+            }
+            println!("{l}");
+            for id in [3i16, 18, 33, 150, 135] {
+                if let Some(o) = self.world.find_object(id) {
+                    let d = self.world.definition(o);
+                    println!("   {id}: {} at ({},{},{}) leader {} data 0..12 {:?} def 6 {:?} 7 {:?} 8 {:?} 11 {:?}", o.file.map_or("?".into(), |f| file_name(lib, f)), o.x16 >> 4, o.y16 >> 4, o.level, o.leader, &o.data[..12], d.map(|d| d.field(6)), d.map(|d| d.field(7)), d.map(|d| d.field(8)), d.map(|d| d.field(11)));
+                }
+            }
+            let mut l = "   native candidates:".to_string();
+            for c in cands.iter().take(40) {
+                l += &format!(" {}/{}", c.id, c.interaction(lib).guard);
+            }
+            println!("{l}");
+        }
         if has("REPLAY_SHOW_EVAL_OPERAND") {
             println!("evaluation node at tick {} by {me_id}: tree {}:{} operand {:02x?} so {} params {:?}", s.tick, s.tree, s.node, n.operand, s.stack_object, s.params);
             for id in [me_id, 150] {
