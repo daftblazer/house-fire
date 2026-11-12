@@ -367,6 +367,12 @@ fn main() -> ExitCode {
                 println!("  {n:5} {k}");
             }
             let mut whole: Vec<model::Record> = entries.iter().filter_map(|e| model::read_record(arc::bytes(&data, e))).collect();
+            if std::env::var_os("ASSETS_SHOW_UNREAD").is_some() {
+                for e in entries.iter().filter(|e| model::read_record(arc::bytes(&data, e)).is_none()) {
+                    let b = arc::bytes(&data, e);
+                    println!("  not read whole: {} ({} bytes): {:02x?}", e.name, b.len(), &b[..b.len().min(12)]);
+                }
+            }
             // and the records kept inside datasets.arc's entries (each at a "00 01 00 00 00 00"
             // and a name whose head reads)
             let ds = d.read("datasets.arc").unwrap_or_default();

@@ -230,11 +230,19 @@ the matrix slots its vertices use (1 for an object, up to 11 for a Sim's part). 
 float, the sub-model is a run of batches until the byte 6. A batch is its matrices (`01`, a
 16-bit slot, its index in the batch; none for an object's mesh), three zero bytes, a 16-bit
 count and the arrays (positions, texture coordinates, colours, normals as the format says).
-A byte from 2 to 5 between batches sets the weights a vertex of the batches after it (the Sims'
-skins: 2 bytes a weight a vertex, in an array after the others); a 3 with no batch after it
-appears too. The "kinds" 0 and 1 of the first reading are a batch with none and with one
+A byte from 2 to 5 between batches makes the batches after it blended (the Sims' skins: 4
+bytes a vertex, in an array after the others, whether the byte is 2 or 4; what its value says
+is not known yet); a 3 with no batch after it appears too. The "kinds" 0 and 1 of the first reading are a batch with none and with one
 matrix. Read so: 4,140 records whole (1,820 of models.arc's 1,843, 2,320 in datasets.arc),
 26,996 batches. On the home replay, 7,962 strips come from a read batch, every one with its
 count and texture coordinates; the 4,000 opcode-66 draws stay matched. Left of models.arc: 7
 cursors whose display list runs past the end, 4 other cursors, 3 BUYMODE_CURSOR, 1 with weights
 4 (sports_dive_high).
+
+Float vertices. Format bit 0x10 is not the normals (every batch keeps them, 3 bytes a vertex):
+with it, positions and texture coordinates are 16-bit (8 and 4 bytes a vertex); without it
+(the cursors' formats 0x2a and 0x2e) floats: x, y, z and a zero (16 bytes), and two (8). The
+matrix slots run to 82 (the whole-character records: NPCs, the promotion and career scenes).
+Read so, every one of models.arc's 1,843 records whole, and 4,232 records in all (27,785
+batches); the home replay's checks unchanged (7,962 strips, 4,000 opcode-66 draws, all
+matching). Study ASSETS_SHOW_UNREAD.

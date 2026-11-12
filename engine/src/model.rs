@@ -9,9 +9,10 @@ pub struct SubModel {
     /// (an object's one-piece mesh).
     pub kind: u8,
     pub count: usize,
-    /// Positions: three s16 and two more bytes a vertex, in the record's scale.
+    /// Positions: three s16 and two more bytes a vertex, in the record's scale (format bit 0x10),
+    /// or three floats and a zero.
     pub positions: Vec<u8>,
-    /// Texture coordinates: two 16-bit values a vertex (4096ths).
+    /// Texture coordinates: two 16-bit values a vertex (4096ths), or two floats.
     pub texcoords: Vec<u8>,
     /// Colours (RGBA) for the kind that has them.
     pub colours: Option<Vec<u8>>,
@@ -28,7 +29,7 @@ pub struct SubModel {
     pub weights: u8,
     /// The matrices the batch uses: each a slot and its index in the batch.
     pub matrices: Vec<(u16, u8)>,
-    /// A blended batch's weights: 2 bytes a weight a vertex, after the other arrays.
+    /// A blended batch's weights: 4 bytes a vertex, after the other arrays.
     pub blend: Vec<u8>,
 }
 
@@ -63,13 +64,13 @@ fn take(b: &[u8], p: &mut usize, size: usize) -> Option<Vec<u8>> {
 /// A sub-model block at `p`: its format, a hash, its matrix slots (a count, a byte each), a
 /// float, then its batches, until the byte 6. A batch is its matrices (`01 00` slot, index, each),
 /// three zero bytes, a 16-bit count and the arrays by the format; a byte from 2 to 5 before a
-/// batch sets the weights a vertex for the batches after it (2 bytes a weight more a vertex, kept
-/// in an array after the others). A display list (format 0x20) follows its one batch. Each batch is given as
+/// batch makes the batches after it blended (4 bytes more a vertex, in an array after the
+/// others; what the byte's value says is not known yet). A display list (format 0x20) follows its one batch. Each batch is given as
 /// a `SubModel`, with the format; and where the next block starts.
 fn sub_model(b: &[u8], mut p: usize) -> Option<(Vec<(u32, SubModel)>, usize)> {
     let format = be32(b, p)?;
     let slots = be32(b, p + 8)? as usize;
-    if slots > 64 {
+    if slots > 255 {
         return None;
     }
     p += 4 + 4 + 4 + slots + 4;
@@ -95,11 +96,15 @@ fn sub_model(b: &[u8], mut p: usize) -> Option<(Vec<(u32, SubModel)>, usize)> {
         }
         let count = be16(b, p + 3)? as usize;
         p += 5;
-        let positions = take(b, &mut p, 8 * count)?;
-        let texcoords = if format & 0x08 != 0 { take(b, &mut p, 4 * count)? } else { Vec::new() };
+        // format bit 0x10: positions and texture coordinates in 16 bits (8 and 4 bytes a vertex);
+        // without it floats (x, y, z, 0: 16 bytes; 8) — the cursors'. Normals are always kept.
+        let short = format & 0x10 != 0;
+        let positions = take(b, &mut p, if short { 8 } else { 16 } * count)?;
+        let texcoords = if format & 0x08 != 0 { take(b, &mut p, if short { 4 } else { 8 } * count)? } else { Vec::new() };
         let colours = if format & 0x04 != 0 { Some(take(b, &mut p, 4 * count)?) } else { None };
-        let normals = if format & 0x10 != 0 { take(b, &mut p, 3 * count)? } else { Vec::new() };
-        let blend = take(b, &mut p, 2 * weights as usize * count)?;
+        let normals = take(b, &mut p, 3 * count)?;
+        // a blended batch's array: 4 bytes a vertex, whatever the byte that set it (2 or 4)
+        let blend = take(b, &mut p, if weights >= 2 { 4 * count } else { 0 })?;
         // the display list after the arrays: its vertex count (a word), the indices a vertex (a
         // byte), the list's size (a word, padded to 32), the word 3, the list
         let list = if format & 0x20 != 0 {
