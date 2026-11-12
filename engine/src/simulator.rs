@@ -118,10 +118,28 @@ impl Simulator {
             }
             i.restore(frames.clone());
             i.set_defaults(o.temps.to_vec());
+            // An object with no saved stack (made during play) starts as the original's: its main
+            // tree (its function table's entry 1) with its init tree (entry 0) above it, an engine
+            // frame whose return leaves main at its first node (the meal's 4099 "init single
+            // plate", then 4193 "main - regular meal")
+            let lib = world.library();
+            if frames.is_empty() && !o.person
+                && let Some(table) = o.file.and_then(|f| lib.file(f).functions.values().next())
+            {
+                let tree = |k: usize| table.get(k).filter(|e| e.1 != 0).and_then(|e| lib.tree(o.file, e.1));
+                if let (Some(init), Some(main)) = (tree(0), tree(1)) {
+                    if i.push(lib, main, &[]) {
+                        i.top().file = o.file;
+                    }
+                    if i.push(lib, init, &[]) {
+                        i.top().file = o.file;
+                        i.top().engine = true;
+                    }
+                }
+            }
             // A stack saved at an Idle node was asleep there and its sleep has run out (the
             // save keeps no sleep): its first Idle step wakes, true whatever its parameter
             // (docs/simulation.md, "A saved stack asleep at its Idle").
-            let lib = world.library();
             if frames.last().and_then(|f| f.tree.and_then(|t| lib.get_tree(t)?.nodes.get(f.node as usize))).is_some_and(|n| n.opcode == 0) {
                 i.sleep().sleep(0);
             }

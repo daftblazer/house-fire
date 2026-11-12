@@ -1691,3 +1691,12 @@ stack object (the saved one carried puts 71 steps off); its locals stay (zeroing
 off). In the simulator (`stack_of`): club steps differing 595 → 243, the native stack as the
 log's 323,856 → 324,032, stacks whose first step is the native top 2 → 178 of 182; the home lot
 and the disc's club lot (the old logs) unchanged.
+
+## A made object's start
+
+An object made during play (no saved stack) starts with its main tree, its function table's
+(OBJf) entry 1, and its init tree, entry 0, above it as an engine frame; init runs, and its
+return leaves main at its first node for a later turn (`Simulator::stack_of`). The trees' own
+labels say so: the meal's 4099 "init single plate" and 4193 "main - regular meal", the trash
+pile's 8203 "init tree" and 8205 "main"; the counter's saved bottom tree is its entry 1 too.
+Checked (`replay`): differing steps home 56 to 40, club 22 to 18, tree 16 to 7, tree3 12 to 9.
