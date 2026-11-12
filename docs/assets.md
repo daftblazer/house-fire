@@ -253,6 +253,15 @@ The observer's 16 words from a strip run past it: a strip (opcode 0x38) is 8 wor
 count, positions, texture coordinates, colours, normals, two zeros), and what follows is the
 next commands. For the Sims' parts: `0x22` and a word of four bytes, the matrix slots the next
 batch uses (its `01 00 slot index` entries' slots, in order: 3,374 of 3,374 on the home replay);
-then `0x28` with 24 bits and a word (a hash: not read yet; an opcode-66 draw's word 12 is its
-sub-model's hash, `92964a4c` for the Sims' parts); then the next strip. Study
+then `0x28`, GeometrySetup (opcode 40: no arguments; its second word is padding, stale
+bytes, the commands being whole 8-byte units); then the next strip. Study
 ASSETS_SHOW_FAR_WORDS.
+
+Where the materials come from. The home replay's command lists play, a frame: GeometrySetup
+1,704, short strips 912, matrix slots 905, Terminate 822, display-list models 596, float strips
+196 (BUSTIN_ERCSTATS): every mesh a list of its own, and no Texture (17) or Material (35)
+command at all. A mesh's material reaches the device past the list, by its SetMaterial
+(fn_801A63C0: up to two layers, each with a texture bound by the device), and GeometrySetup
+makes it TEV stages (ERC_SetMaterialStages, the recomp's `src/erc_material.cpp`). Neither
+the 0x28 word nor an opcode-66 draw's words carry the sub-model's hash (kept now, `hash`, for
+the materials' check).

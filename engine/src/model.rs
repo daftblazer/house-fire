@@ -31,6 +31,8 @@ pub struct SubModel {
     pub matrices: Vec<(u16, u8)>,
     /// A blended batch's weights: 4 bytes a vertex, after the other arrays.
     pub blend: Vec<u8>,
+    /// The hash in its sub-model's block (after the format).
+    pub hash: u32,
 }
 
 /// A node of a record's tree: its parent (-1 for the root) and its sub-models' batches.
@@ -69,6 +71,7 @@ fn take(b: &[u8], p: &mut usize, size: usize) -> Option<Vec<u8>> {
 /// a `SubModel`, with the format; and where the next block starts.
 fn sub_model(b: &[u8], mut p: usize) -> Option<(Vec<(u32, SubModel)>, usize)> {
     let format = be32(b, p)?;
+    let hash = be32(b, p + 4)?;
     let slots = be32(b, p + 8)? as usize;
     if slots > 255 {
         return None;
@@ -117,7 +120,7 @@ fn sub_model(b: &[u8], mut p: usize) -> Option<(Vec<(u32, SubModel)>, usize)> {
             None
         };
         let kind = u8::from(!matrices.is_empty());
-        out.push((format, SubModel { kind, count, positions, texcoords, colours, normals, values: None, list, weights, matrices, blend }));
+        out.push((format, SubModel { kind, count, positions, texcoords, colours, normals, values: None, list, weights, matrices, blend, hash }));
         if format & 0x20 != 0 && *b.get(p)? != 6 {
             return None;
         }
@@ -222,5 +225,5 @@ pub fn read(b: &[u8]) -> Option<Model> {
     let colours = if format & 0x04 != 0 { Some(take(4 * count)?) } else { None };
     let normals = if format & 0x10 != 0 { take(3 * count)? } else { Vec::new() };
     let values = if format & 0x20 != 0 { Some(take(2 * count)?) } else { None };
-    Some(Model { name, scale, format, first: SubModel { kind, count, positions, texcoords, colours, normals, values, list: None, weights: 0, matrices: Vec::new(), blend: Vec::new() }, tail: p })
+    Some(Model { name, scale, format, first: SubModel { kind, count, positions, texcoords, colours, normals, values, list: None, weights: 0, matrices: Vec::new(), blend: Vec::new(), hash: 0 }, tail: p })
 }
