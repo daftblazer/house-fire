@@ -24,7 +24,7 @@ use housefire::disc::Disc;
 use housefire::texture;
 use housefire::rle_texture;
 use housefire::tree_log::read_log;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
@@ -217,39 +217,47 @@ fn main() -> ExitCode {
                 println!("usage: assets ISO stripcheck LOG");
                 return ExitCode::from(2);
             };
-            let data = d.read("models.arc").unwrap_or_default();
-            let entries = arc::entries(&data).unwrap_or_default();
-            // every 4-aligned 8-byte window of every entry -> (entry, offset)
-            let mut index: std::collections::HashMap<[u8; 8], Vec<(u32, u32)>> = std::collections::HashMap::new();
-            for (k, e) in entries.iter().enumerate() {
-                let b = arc::bytes(&data, e);
-                for o in (0..b.len().saturating_sub(32)).step_by(4) {
-                    index.entry(b[o..o + 8].try_into().unwrap()).or_default().push((k as u32, o as u32));
+            // the strips' arrays' first 32 bytes, each a needle; every archive scanned for them
+            // (4-aligned), each needle's archives noted
+            let mut needles: std::collections::HashMap<[u8; 8], Vec<[u8; 32]>> = std::collections::HashMap::new();
+            for s in &log.strips {
+                for (i, w) in s.words.iter().enumerate() {
+                    if (0x8000_0000..0x817F_FFE0).contains(w) && s.at[i] != [0u8; 32] {
+                        let v = needles.entry(s.at[i][..8].try_into().unwrap()).or_default();
+                        if !v.contains(&s.at[i]) {
+                            v.push(s.at[i]);
+                        }
+                    }
                 }
             }
-            for s in log.strips.iter().take(6) {
-                println!("strip tick {}: words {:08x?}", s.tick, &s.words[..12]);
+            let mut found: std::collections::HashMap<[u8; 32], BTreeSet<String>> = std::collections::HashMap::new();
+            for path in d.files().keys().filter(|p| p.to_ascii_lowercase().ends_with(".arc")) {
+                let data = d.read(path).unwrap_or_default();
+                for o in (0..data.len().saturating_sub(32)).step_by(4) {
+                    if let Some(v) = needles.get(&<[u8; 8]>::try_from(&data[o..o + 8]).unwrap()) {
+                        for n in v {
+                            if &data[o..o + 32] == n {
+                                found.entry(*n).or_default().insert(path.clone());
+                            }
+                        }
+                    }
+                }
             }
-            let mut by_word: BTreeMap<usize, (usize, usize)> = BTreeMap::new();
+            let mut by_word: BTreeMap<usize, BTreeMap<String, usize>> = BTreeMap::new();
             for s in &log.strips {
                 for (i, w) in s.words.iter().enumerate() {
                     if !(0x8000_0000..0x817F_FFE0).contains(w) {
                         continue;
                     }
-                    let a = &s.at[i];
-                    let found = index.get(&<[u8; 8]>::try_from(&a[..8]).unwrap()).is_some_and(|v| {
-                        v.iter().any(|&(k, o)| {
-                            let b = arc::bytes(&data, &entries[k as usize]);
-                            b.get(o as usize..o as usize + 32) == Some(&a[..])
-                        })
-                    });
-                    let e = by_word.entry(i).or_default();
-                    e.1 += 1;
-                    e.0 += usize::from(found);
+                    let k = match found.get(&s.at[i]) {
+                        Some(a) => a.iter().cloned().collect::<Vec<_>>().join("+"),
+                        None => "nowhere".to_string(),
+                    };
+                    *by_word.entry(i).or_default().entry(k).or_default() += 1;
                 }
             }
-            for (i, (f, n)) in &by_word {
-                println!("  word {i}: a pointer in {n} strips, its 32 bytes in models.arc for {f}");
+            for (i, m) in &by_word {
+                println!("  word {i}: {m:?}");
             }
         }
         "texcheck" => {

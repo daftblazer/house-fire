@@ -102,5 +102,9 @@ command keeps its arguments inline: the opcode byte (0x38) with three more, the 
 then the arrays' addresses. On the home replay (`home-w.log`, 581,110 steps; the first 4,000
 strips): words 2 and 3 always arrays, their first 32 bytes found verbatim in `models.arc` for
 1,424 and 1,842 of the 4,000; word 4 in 323 of 323; word 5 (always an array) never (made at run
-time: lit colours?); words 6, 11, 14, 15 in part. The rest are from elsewhere (the Sims'
-`characte.arc`?). `assets ISO stripcheck LOG` (study).
+time: lit colours?); words 6, 11, 14, 15 in part. With every archive scanned: word 2's bytes
+are in `datasets.arc` or `models.arc` (or both) for 3,152 of the 4,000 strips, nowhere for 848
+(made at run time: the Sims' skinned vertices?); word 3's for 3,224; word 4's 323 of 323;
+words 6, 14 and 15 alike; word 11's in `rletextu.arc` for 456; words 5, 9, 10, 12 and 13 never.
+The objects' models are in `datasets.arc` as well as `models.arc`. `assets ISO stripcheck LOG`
+(study).
