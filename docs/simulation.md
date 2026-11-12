@@ -310,7 +310,11 @@ item at +24 is not 33), and its evaluator (fn_802266BC) visits only the ids with
 the Sim itself and an object whose int16 at +88 is above 0 (both still to be named). A
 table's first tree that comes back false leaves out the object's own interactions except those
 flagged 0x400 (not built: natively the club's first trees do not finish yet, so it cannot be
-checked). 
+checked). Its guards run only for the entries of a list built per object (fn_80219A40: fn_80219F20 when
+the evaluation context's +8 is set, else fn_80219A74); an empty list skips the object (at the
+club, objects whose first tree is true still get no guards). fn_80219A74 keeps the entries the
+first-tree rule leaves, drops those with 0x80 or a motive-33 item unless a global's +348 is set,
+and adds the rest through fn_80219D84; fn_80219F20 is still to be read. 
 
 **Persons as candidates.** A person's interactions are its semi-global file's one table:
 `person_sg`'s (table 129, version 11, its first tree 8230 run before its guards) for a Sim,
