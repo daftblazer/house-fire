@@ -261,3 +261,6 @@ girl's id free again, tick 693), a trash pile (201, 1220), a "go here and show" 
 scripts write later: lockstep takes it from the log (reads through scopes 3 and 4, the address
 back to the object, and expressions' writes, after their step), and all 44 of the home log's
 kind-6 steps agree.
+
+A motive (scopes 14 and 15, floats) read as an integer rounds to the nearest: 19.5 and above
+reads 20 (the home log's tree 4155, 244 expressions; truncating put them and 50 motive reads off).

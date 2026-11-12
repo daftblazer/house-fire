@@ -718,7 +718,10 @@ impl Variables for ScriptVariables<'_, '_> {
             _ => {}
         }
         if let Some(&mut f) = self.cell_float(scope, d) {
-            return Some(Variable { value: f as i32 as i16, f: Some(f) });
+            // to the nearest (19.5 and up reads 20): the home log's 4155 reads of 19.5, 19.875,
+            // 19.92 as 20; truncating put 248 expressions and 50 motive reads off
+            let v = (f + 0.5).floor() as i32 as i16;
+            return Some(Variable { value: v, f: Some(f) });
         }
         let v = *self.cell16(scope, d)?;
         int(v)

@@ -804,8 +804,9 @@ impl Host for ReplayHost<'_, '_> {
                     let mut vars = ScriptVariables::new(&mut self.world, me, interp.top());
                     let lhs = vars.get(e.lhs_scope, e.lhs_data).map(|v| v.value);
                     let rhs = vars.get(e.rhs_scope, e.rhs_data).map(|v| v.value);
+                    let lhs_f = vars.get(e.lhs_scope, e.lhs_data).and_then(|v| v.f);
                     let logged: Vec<String> = s.lookups.iter().map(|v| format!("{}/{}={}", v.scope, v.data, v.value)).collect();
-                    println!("expression differs: tick {} me {me_id} tree {}:{} operand {:02x?}: native {:?}, log {:?}; native lhs {lhs:?} rhs {rhs:?}; logged {logged:?}", s.tick, s.tree, s.node, n.operand, got, want);
+                    println!("expression differs: tick {} me {me_id} tree {}:{} operand {:02x?}: native {:?}, log {:?}; native lhs {lhs:?} ({lhs_f:?}) rhs {rhs:?}; logged {logged:?}", s.tick, s.tree, s.node, n.operand, got, want);
                 }
                 let kind = n.operand[4] & 0x7F;
                 if n.opcode == 31 && kind == 6 && has("REPLAY_KIND6") {
