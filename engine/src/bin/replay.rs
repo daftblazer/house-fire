@@ -1573,6 +1573,13 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
     }
     // the lot's globals as saved (its SIMI): the clock among them
     world.globals = globals.to_vec();
+    if has("REPLAY_SHOW_REQUEUE") {
+        for o in world.objects().filter(|o| o.person) {
+            let diff: Vec<(usize, i16)> = o.person_data.iter().enumerate().filter(|(i, _)| *i < 80).map(|(i, &v)| (i, v)).collect();
+            println!("requeue data {}: {:?}", o.id(), diff);
+            println!("requeue: {} current tree {} on {:?} stack {:?} pd32 {:?} pd29 {:?} data4 {:?} saved queue {}", o.id(), o.current.tree, o.current.objects, o.stack.iter().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node)).collect::<Vec<_>>(), o.person_data.get(32), o.person_data.get(29), o.data.get(4), o.queue.len());
+        }
+    }
     world.requeue_current_on_community_lot();
     // The plans' points natively wherever the log carries the planner's inputs ('r', 'h'), so the
     // walk checks run on the native planner's ways (study REPLAY_LOGGED_PLANS: the log's instead)
@@ -2440,6 +2447,10 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                     if !rerun && has("REPLAY_SHOW_CURRENT") && t < 5 {
                         let c = &h.world.get(ok).current;
                         println!("current: tick {t} object {o_id} id {} objects {:?} shorts {:?} a {} b {} c {} tree {}; log {}:{}", c.id, c.objects, c.shorts, c.a, c.b, c.c, c.tree, s.tree, s.node);
+                    }
+                    if !rerun && has("REPLAY_SHOW_QUEUE_AT") && !h.world.get(ok).queue.is_empty() {
+                        let q: Vec<String> = h.world.get(ok).queue.iter().map(|q| format!("[id {} tree {} objects {:?} interaction {:?}]", q.id, q.tree, q.objects, q.interaction)).collect();
+                        println!("queue at: tick {t} object {o_id} log {}:{} so {}; {}", s.tree, s.node, s.stack_object, q.join(" "));
                     }
                     if !rerun && has("REPLAY_SHOW_OTHER_TREE") {
                         println!("other tree: tick {t} object {o_id} queue {} native {:?} log {}:{} (op {})", h.world.get(ok).queue.len(), st_top.map(|(t, n, _)| (t, n)), s.tree, s.node, lib.tree_at(tree).nodes.get(s.node as usize).map_or(-1, |n| n.opcode as i32));
