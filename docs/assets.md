@@ -136,3 +136,13 @@ records read this way to their last byte (the coffee mug: 115 vertices; the play
 The head varies in the others: a list before the scale (the effects' `efx_lightning`,
 `efx_fire`: a count byte at +0x13 and floats), another scale (the shadows' 1/32768 at +0x15, a
 null model's 1.0), and more sub-models: to be read next.
+
+A sub-model whose first byte is 0 (the burn mark, `efx_burn_mark`; the shadows) has a 5-byte
+header (`00 00 00` and the count) and more arrays: positions (8n), texture coordinates (4n: two
+16-bit values in 4096ths, 0x0002-0x0ffe on the burn mark's quad), colours (4n, 0x80 each) and
+normals (3n: 0, 0, 127), 19 bytes a vertex; then what reads as strip indices (`00 04 04 …`, small
+16-bit values) and floats: a bounding box (min and max: -16384 to 16384 and 396 on the burn
+mark's) and a radius (23170.5, its corner's distance). The card's tail of 73 bytes holds such a
+box too (-963 … 6064). So which arrays a sub-model has varies, and its first byte is not just
+"lit": the arrays' presence is to be read from the header next (against the strips' words: word
+3 the 4-byte array, word 4 the normals, word 5 the run-time colours).
