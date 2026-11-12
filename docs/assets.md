@@ -224,3 +224,17 @@ the home replay: every one of 4,000 opcode-66 draws carries a read sub-model's d
 word 6 (3,428 its positions as word 2), and 4,247 strips come from a read sub-model, all with its
 count and texture coordinates. Study ASSETS_SHOW_UNMATCHED_66 (the unmatched draws' lists,
 searched for in the archives).
+
+Batches. After a sub-model's hash comes not the word 1 but a count of bytes, then those bytes:
+the matrix slots its vertices use (1 for an object, up to 11 for a Sim's part). Then, after the
+float, the sub-model is a run of batches until the byte 6. A batch is its matrices (`01`, a
+16-bit slot, its index in the batch; none for an object's mesh), three zero bytes, a 16-bit
+count and the arrays (positions, texture coordinates, colours, normals as the format says).
+A byte from 2 to 5 between batches sets the weights a vertex of the batches after it (the Sims'
+skins: 2 bytes a weight a vertex, in an array after the others); a 3 with no batch after it
+appears too. The "kinds" 0 and 1 of the first reading are a batch with none and with one
+matrix. Read so: 4,140 records whole (1,820 of models.arc's 1,843, 2,320 in datasets.arc),
+26,996 batches. On the home replay, 7,962 strips come from a read batch, every one with its
+count and texture coordinates; the 4,000 opcode-66 draws stay matched. Left of models.arc: 7
+cursors whose display list runs past the end, 4 other cursors, 3 BUYMODE_CURSOR, 1 with weights
+4 (sports_dive_high).
