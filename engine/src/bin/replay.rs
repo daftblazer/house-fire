@@ -626,6 +626,9 @@ impl Host for ReplayHost<'_, '_> {
                 return PrimResult::Continue;
             }
         }
+        if n.opcode == 14 && !has("REPLAY_LOGGED_FIND_BEST") {
+            return self.find_best_object(interp, s, n);
+        }
         if n.opcode == 3 && self.world.get(me).person && !self.nested.is_empty() {
             return self.evaluation(interp, s, n);
         }
@@ -1006,6 +1009,13 @@ impl Host for ReplayHost<'_, '_> {
             let prev = (0..self.step).rev().find(|&j| self.log.steps[j].sim == s.sim && self.log.steps[j].frame == s.frame).unwrap_or(0);
             let checks: Vec<(u16, i16, u16)> = (prev + 1..self.step).map(|j| &self.log.steps[j]).filter(|x| x.sim == s.sim && x.node == 0).map(|x| (x.tree, x.stack_object, x.after)).collect();
             println!("find best: tick {} by {me_id} {}:{} operand {:?} -> {} so after {}; checks {checks:?}", s.tick, s.tree, s.node, &n.operand[..4], s.after, s.stack_object_after);
+            if has("REPLAY_SHOW_FIND_DEFS") {
+                for id in [61i16, 47, 54, 55, 57] {
+                    if let Some(o) = self.world.find_object(id) && let Some(f) = o.file {
+                        println!("   functions of {id} ({}): {:?}", file_name(self.lib, f), self.lib.file(f).functions);
+                    }
+                }
+            }
 
         }
         note!(self.counts, "primitives: from the log, opcode {}", n.opcode);
@@ -1019,6 +1029,78 @@ impl Host for ReplayHost<'_, '_> {
 }
 
 impl ReplayHost<'_, '_> {
+    /// FindBestObjectForFunction (opcode 14), as the original's fn_8020CC8C (docs/primitives.md):
+    /// the function's (rating datum, function-table entry); each object whose function table
+    /// (OBJf) has an action for the entry and whose rating (its data, a: -1 for 50) is not 0,
+    /// its test tree (if any) run as a check on it; the score the rating less three times the
+    /// distance, at least 1, the best (the first of equals) the stack object, true; none, false.
+    fn find_best_object(&mut self, interp: &mut Interpreter, s: &StepRec, n: &Node) -> PrimResult {
+        let lib = self.lib;
+        let me = self.me;
+        let (a, b): (i16, usize) = match n.operand[0] {
+            0 => (0x1F, 0x12),
+            1 => (0x20, 0x13),
+            2 => (0x21, 0x14),
+            3 => (0x24, 0x15),
+            6 => (0x25, 0x18),
+            7 => (0x26, 0x19),
+            8 => (-1, 0x1A),
+            10 => (0x3D, 0x0E),
+            11 => (0x27, 0x1C),
+            12 => (0x40, 0x10),
+            13 => (0x41, 0x11),
+            14 => (0x0F, 0x1D),
+            _ => return self.logged(s, n),
+        };
+        let (mx, my) = (self.world.get(me).x16 as f32 / 16.0, self.world.get(me).y16 as f32 / 16.0);
+        let defaults = interp.defaults().to_vec();
+        let candidates: Vec<(i16, Option<FileId>, u16, f32, f32, f32)> = self
+            .world
+            .objects()
+            .filter(|o| o.id() != self.world.get(me).id())
+            .filter_map(|o| {
+                let f = o.file?;
+                let &(test, action) = lib.file(f).functions.values().next()?.get(b)?;
+                if action == 0 {
+                    return None;
+                }
+                let rating = if a < 0 { 50 } else { *o.data.get(a as usize)? };
+                (rating != 0).then_some((o.id(), Some(f), test, f32::from(rating), o.x16 as f32 / 16.0, o.y16 as f32 / 16.0))
+            })
+            .collect();
+        let mut best: Option<(i16, f32)> = None;
+        for (id, file, test, rating, x, y) in candidates {
+            if test != 0 {
+                let ok = lib.tree(file, test).and_then(|t| self.run_check(t, file, id, &defaults));
+                if ok != Some(true) {
+                    continue;
+                }
+            }
+            let dist = ((x - mx) * (x - mx) + (y - my) * (y - my)).sqrt();
+            let score = (rating - 3.0 * dist).max(1.0);
+            if best.is_none_or(|(_, b)| score > b) {
+                best = Some((id, score));
+            }
+        }
+        let want = self.logged(s, n);
+        let got = match best {
+            Some((id, _)) => {
+                interp.top().stack_object = id;
+                PrimResult::True
+            }
+            None => PrimResult::False,
+        };
+        self.counts.note(if got == want && best.map(|b| b.0) == Some(s.stack_object_after).or(if got == PrimResult::False { Some(s.stack_object_after) } else { None }) {
+            "primitives: FindBestObjectForFunction natively, the original's object"
+        } else {
+            "primitives: FindBestObjectForFunction natively, DIFFERENT"
+        });
+        if has("REPLAY_SHOW_FIND_BEST") {
+            println!("find best natively: tick {} function {} found {best:?}, log {} {:?}", s.tick, n.operand[0], s.stack_object_after, want);
+        }
+        got
+    }
+
     /// The autonomy evaluation (opcode 3), natively: its checks against the log's, its scores,
     /// the list and the choice.
     fn evaluation(&mut self, interp: &mut Interpreter, s: &StepRec, n: &Node) -> PrimResult {
@@ -1770,6 +1852,16 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
             }
         }
     }
+    if let Some(pat) = env("REPLAY_TREE_NAMES") {
+        // study: the BHAV labels matching a pattern, by file
+        for f in lib.files() {
+            for (name, id) in &f.tree_by_name {
+                if name.to_lowercase().contains(&pat.to_lowercase()) {
+                    println!("tree name: {} {id} {name:?}", f.path);
+                }
+            }
+        }
+    }
     if has("REPLAY_SHOW_PERSON_TABLE") {
         for f in lib.files().iter().filter(|f| f.path.ends_with("person_sg.iff")) {
             for (&id, t) in &f.tables {
@@ -2108,7 +2200,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                     // 36: docs/simulation.md, "Autonomy"). REPLAY_EVALUATION=0 turns it off.
                     let evaluation = ev_env.as_ref().is_none_or(|e| e.starts_with('1'));
                     if let (true, Some(en), Some((etree, enode, efile))) = (evaluation, en, etop)
-                        && en.opcode == 3
+                        && (en.opcode == 3 || (en.opcode == 14 && !has("REPLAY_LOGGED_FIND_BEST")))
                         && !(s.tree == etree as u16 && s.node == enode)
                     {
                         let mut k = i;
@@ -2151,7 +2243,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
                             }
                             nest = kept;
                         }
-                        if k != i && nest.len() >= 20 {
+                        if k != i && (nest.len() >= 20 || en.opcode == 14) {
                             h.present.clear();
                             for l in &log.lists {
                                 if l.tick <= t {

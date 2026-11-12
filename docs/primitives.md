@@ -313,5 +313,10 @@ tree (slot 32 with b, 0 for none); its rating is the int16 at +38 + 2a (a = -1: 
 it; the check tree, if any, runs with the object as stack object (fn_8023EF78) and a false one
 skips it; the score is the rating less the distance times a factor, and the best is the result.
 Measured (the home log's six): function 1 checks the stove 61 with 8199, function 7 the four
-chairs with 8200 (two true, the nearer found), functions 10 and 6 no check. Not native yet: b's
-methods (24, 32) and the +38 field are to be named (the definition's?).
+chairs with 8200 (two true, the nearer found), functions 10 and 6 no check. Named: b is the
+entry of the object's function table (OBJf) — its action tree the support, its test tree the
+check (the stove's entry 19: 8199 "cook test", 8197 "cook function"); the rating is the
+object's data a (the stove's data 32 = 16, the tables' 38, the counters' 61, the sink's 37),
+which its "update function scores" tree keeps; the distance factor 3.0 (0x8037C550), the floor
+1.0. Replay runs it natively (5 of the home log's 6 find the original's object; the sixth, the
+second search at 1356, finds 55 for the original's 54: the use count at +88 is not native).
