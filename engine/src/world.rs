@@ -51,6 +51,8 @@ pub mod scope {
 pub const DATA_OBJECT_ID: usize = 11;
 /// The function table's (OBJf) entry a door runs when a route goes through it (The Sims' "portal").
 pub const PORTAL_FUNCTION: usize = 15;
+/// The entry a seat runs when a Sim routes to a slot to sit at it (The Sims' "sit").
+pub const SIT_FUNCTION: usize = 26;
 /// The object data field that holds the way it faces (in eighths of a turn).
 pub const DATA_FACING: usize = 1;
 /// The object data field naming the object it sits in or on (0 none): a lamp on a table, the
@@ -296,6 +298,23 @@ impl<'lib> World<'lib> {
         })?;
         let part = self.objects().find(|o| o.door && o.on_lot() && [a, b].contains(&(o.x16 >> 4, o.y16 >> 4)))?;
         self.find(part.leader)
+    }
+
+    /// The seat a GotoRoutingSlot (its node) leads to: where the slot it names (on the stack object)
+    /// is one to sit at (its sitting field set) and an object with a sit function (`SIT_FUNCTION`)
+    /// stands on its route's last tile (the home log's one, tick 1791: the dining table 47's slot
+    /// 3, the chair 49; docs/simulation.md, "A seat at a routing slot").
+    pub fn seat_at_routing_slot(&self, n: &crate::bhav::Node, stack_object: i16, points: &[(i32, i32)]) -> Option<ObjectKey> {
+        let lib = self.library();
+        let o = self.find_object(stack_object)?;
+        let slot = lib.routing_slot(o.file?, self.definition(o), n.operand16(1), n.operand16(0))?;
+        if slot.sitting <= 0 {
+            return None;
+        }
+        let &(x, y) = points.last()?;
+        let tile = (x >> 4, y >> 4);
+        let k = self.objects().find(|c| c.on_lot() && (c.x16 >> 4, c.y16 >> 4) == tile && c.id() != stack_object && c.file.and_then(|f| lib.file(f).functions.values().next()?.get(SIT_FUNCTION).copied()).is_some_and(|e| e.1 != 0))?;
+        self.find(k.id())
     }
 
     /// On a community lot the saved stacks restart from their bottom frame (`Simulator::stack_of`),

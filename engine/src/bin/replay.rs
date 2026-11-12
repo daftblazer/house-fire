@@ -52,7 +52,7 @@ use housefire::library::Slot;
 use housefire::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lot_globals, read_lots, read_neighbours};
 use housefire::simulator::{SimHost, Simulator};
 use housefire::tree_log::{Log, PassRec, PlanRec, StepRec, read_log, same_shape};
-use housefire::world::{DATA_OBJECT_ID, PORTAL_FUNCTION, Object, ObjectKey, ScriptVariables, World};
+use housefire::world::{DATA_OBJECT_ID, PORTAL_FUNCTION, SIT_FUNCTION, Object, ObjectKey, ScriptVariables, World};
 use housefire::{FileId, TreeId};
 
 fn env(name: &str) -> Option<String> {
@@ -530,6 +530,30 @@ impl Host for ReplayHost<'_, '_> {
                     if interp.push(lib, tree, &[]) {
                         interp.top().stack_object = did;
                         interp.top().file = dfile;
+                        return PrimResult::Continue;
+                    }
+                }
+                if n.opcode == 45
+                    && let Some(chair) = self.world.seat_at_routing_slot(n, s.stack_object, &pl.points)
+                    && let Some(tree) = self.world.function_tree(chair, SIT_FUNCTION)
+                {
+                    let (cid, cfile) = (self.world.get(chair).id(), self.world.get(chair).file);
+                    // the Sim's temps, as a call with default operands passes them (the log's 25, 198, 0, 0;
+                    // the caller's own were 25, 198, 2, 0)
+                    let params: Vec<i16> = interp.defaults().iter().take(4).copied().collect();
+                    if has("REPLAY_SHOW_SIT") {
+                        println!("sit push: tick {} sim {me_id} chair {cid}; params {params:?}; the log's {:?}", s.tick, log.steps[self.step + 1..].iter().find(|x| x.sim == s.sim).map(|x| (x.tree, x.stack_object, x.params.clone())));
+                    }
+                    let next = log.steps[self.step + 1..].iter().find(|x| x.sim == s.sim);
+                    let same = s.result == 0 && s.after == s.node && next.is_some_and(|x| x.frame > s.frame && x.node == 0 && x.tree == lib.tree_at(tree).id as u16 && x.stack_object == cid && x.params[..] == params[..x.params.len().min(params.len())]);
+                    self.counts.note(if same {
+                        "primitives: GotoRoutingSlot: a sitting slot's seat, its sit function pushed natively as the log's"
+                    } else {
+                        "primitives: GotoRoutingSlot: a sitting slot's seat, its sit function pushed natively, NOT the log's"
+                    });
+                    if interp.push(lib, tree, &params) {
+                        interp.top().stack_object = cid;
+                        interp.top().file = cfile;
                         return PrimResult::Continue;
                     }
                 }
@@ -1848,7 +1872,7 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
     }
     if has("REPLAY_SHOW_OBJECTS") {
         for o in world.objects() {
-            let mut l = format!("object {}: guid {:08x}, {}; data", o.id(), o.guid, o.file.map_or("-".to_string(), |f| lib.file(f).path.clone()));
+            let mut l = format!("object {}: guid {:08x}, {} at {},{} facing {}; data", o.id(), o.guid, o.file.map_or("-".to_string(), |f| lib.file(f).path.clone()), o.x16, o.y16, o.data[1]);
             for v in &o.data {
                 l += &format!(" {v}");
             }
@@ -1888,6 +1912,13 @@ fn run(log: &Log, lib: &Library, club: &LotChunks, globals: &[i16], neighbours: 
         // study: a file's function table and tree labels
         for f in lib.files().iter().filter(|f| f.path.contains(&pat)) {
             println!("file {}: functions {:?}; semi {:?}", f.path, f.functions, f.semi.map(|s| &lib.file(s).path));
+            for (id, sl) in &f.slots {
+                println!("  slots {id}: {sl:?}");
+            }
+            for d in &f.definitions {
+                let hits: Vec<(usize, u16)> = (0..80).map(|i| (i, d.field(i))).filter(|(_, v)| f.functions.contains_key(v)).collect();
+                println!("  def {:08x}: fields naming a function table {hits:?}", d.guid());
+            }
             let mut names: Vec<_> = f.tree_by_name.iter().map(|(n, id)| (*id, n.clone())).collect();
             names.sort();
             for (id, n) in names {

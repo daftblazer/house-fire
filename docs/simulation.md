@@ -1713,3 +1713,15 @@ routing node then runs again and plans from the far side (the home log: Sim 12's
 on the lattice door 65). The door is the leader of the parts on the two tiles of the route's
 first change of room; in both routes the leader is also the part on the near tile, so the logs
 do not tell those two apart. `World::portal_on_route`.
+
+## A seat at a routing slot
+
+A GotoRoutingSlot that plans to a slot for sitting (the SLOT entry's sitting field set) where a
+seat stands on the route's last tile does not walk either: it pushes the seat's sit function (the
+function table's entry 26, as in The Sims), the seat its stack object, with the Sim's temps as the
+parameters (as a call with default operands passes them), and stays at its node (a return into a
+routing node runs it again). The home log's one: Sim 12 at tick 1791, table_sg 8218 node 74 to the
+dining table 47's routing slot 3 (sitting 10, standing 0), the chair 49 on the goal tile, its 8207
+pushed with 25, 198, 0, 0 (the temps; the caller's parameters were 25, 198, 2, 0).
+`World::seat_at_routing_slot`. Whether a slot with both fields set (the table's slots 0 and 1)
+sits or stands is not in the logs.
