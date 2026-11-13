@@ -408,6 +408,20 @@ fn main() -> ExitCode {
                 println!("  {n:5} {k}");
             }
             let mut whole: Vec<model::Record> = entries.iter().filter_map(|e| model::read_record(arc::bytes(&data, e))).collect();
+            if !log.matrices.is_empty() {
+                let ticks: BTreeSet<u32> = log.matrices.iter().map(|m| m.tick).collect();
+                let mut by_id: BTreeMap<(bool, u8), usize> = BTreeMap::new();
+                for m in &log.matrices {
+                    *by_id.entry((m.projection, m.id)).or_default() += 1;
+                }
+                println!("matrices {} over ticks {:?}..{:?} ({} ticks): by (projection, id) {by_id:?}", log.matrices.len(), ticks.first(), ticks.last(), ticks.len());
+                if std::env::var_os("ASSETS_SHOW_MATRICES").is_some() {
+                    for m in log.matrices.iter().filter(|m| m.id >= 0xF0).take(12) {
+                        let v = &m.values;
+                        println!("  tick {} id {:x} rows [{:.3} {:.3} {:.3} | {:.3}] [{:.3} {:.3} {:.3} | {:.3}] [{:.3} {:.3} {:.3} | {:.3}]", m.tick, m.id, v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], v[11]);
+                    }
+                }
+            }
             if std::env::var_os("ASSETS_SHOW_FAR_WORDS").is_some() {
                 let mut seen = std::collections::HashSet::new();
                 for st in log.strips.iter().filter(|s| seen.insert((s.words[0] >> 24, s.words[10]))).take(12) {

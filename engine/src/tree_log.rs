@@ -81,6 +81,19 @@ impl TexLoadRec {
     }
 }
 
+/// A matrix the original loaded ('p': GX position matrices by id, and ERC_ApplyState's view
+/// (id 0xF0, when it changes) and world matrix (0xF1, for each model-view made); 'j': a
+/// projection, the id its type): the tick, the id, its floats, and how many strip records came
+/// before (the draw it is for comes next).
+#[derive(Clone, Debug)]
+pub struct MatrixRec {
+    pub tick: u32,
+    pub projection: bool,
+    pub id: u8,
+    pub values: Vec<f32>,
+    pub strips_before: usize,
+}
+
 /// A tree as the original had it loaded: its nodes' address, id, file, and its nodes' raw bytes.
 #[derive(Clone, Debug, Default)]
 pub struct TreeRec {
@@ -304,6 +317,8 @@ pub struct Log {
     pub textures: Vec<TexObjRec>,
     /// The palettes the original set up ('u', in newer logs).
     pub tluts: Vec<TlutRec>,
+    /// The matrices loaded ('p', at most 20,000) and projections ('j', at most 2,000), in newer logs.
+    pub matrices: Vec<MatrixRec>,
     /// The textures loaded for draws ('l', in newer logs, at most 16,000).
     pub tex_loads: Vec<TexLoadRec>,
     /// The materials draws were set up with ('m', in newer logs, at most 8,000).
@@ -405,6 +420,17 @@ pub fn read_log(path: &str) -> Option<Log> {
                     at.push(b);
                 }
                 log.strips.push(StripRec { tick, words, at });
+            }
+            b'p' | b'j' => {
+                if !r.has(4 + 2) {
+                    break;
+                }
+                let (tick, id, n) = (r.u32(), r.u8(), r.u8() as usize);
+                if !r.has(4 * n) {
+                    break;
+                }
+                let values = (0..n).map(|_| f32::from_bits(r.u32())).collect();
+                log.matrices.push(MatrixRec { tick, projection: k == b'j', id, values, strips_before: log.strips.len() });
             }
             b'l' => {
                 if !r.has(4 + 1 + 32) {

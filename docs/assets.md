@@ -310,3 +310,16 @@ texture; 216 POLYSHADOW draws keep the draw before's material (none of their own
 Privacy_Window and Plate_Glass_Window (12 each) have their float halved (0.02 to 0.01) and,
 the plate glass, flag 0x08 cleared: set at run time, not read yet. Two-layer draws are of the
 common pass (its own material). Study ASSETS_SHOW_LAYER_DIFFS.
+
+## The scene's matrices
+
+The observer's 'p' records: GX's position matrices (GXLoadPosMtxImm, by id) and, from
+ERC_ApplyState as each draw is set up, the render context's view (id 0xF0, when it changes) and
+world matrix (0xF1, each time a model-view is made from it), 3x4 rows; 'j' the projections
+(GXSetProjection: the type, its six floats). Their caps (20,000, 2,000) and the other draw
+records' are spent from a tick on (`BUSTIN_TREE_DRAW_TICK`, 0 by default: `home-m.log` was such
+a run, made again by running so): from tick 1,000 of the home replay (`home-d.log`, the
+replay's output on it the same as on `home-w66.log`) they cover ticks 1,000 to 1,142: 1,191
+views, 18,809 world matrices, 2,000 projections (910 perspective, 1,090 orthographic). The
+world matrices' translations sit on the lot's tiles (14.5, 12; 15.5, 12; ...: tile centres,
+in tiles). Against our world's objects: next.
