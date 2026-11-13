@@ -279,3 +279,16 @@ second's bytes and slot are left from before (stale). Against the sub-model hash
 then, not a mesh's); one two-layer material is seen with every hash (a pass over everything:
 not a mesh's own); 18 hashes have one material of their own besides it, 2 have two (their
 texture differs). Study ASSETS_SHOW_MATERIALS.
+
+The textures a draw uses. A material's texture slot is an in-memory texture object (`90 0d be
+ef`, two code addresses, a data pointer; +0x10 width, +0x12 height, +0x18 the LFXT kind byte),
+whose bytes reach the texels for 6 of 41 slots only. The observer's 'l' records instead take
+each texture as GX loads it (GXLoadTexObjPreLoaded, before the draw it is for: the map and the
+GXTexObj's 32 bytes, its image at +0x0C as the physical address >> 5): all 16,000 on the home
+replay are an 'x' record's image, 9,658 named by their hash (an LFXT of textures.arc or
+datasets.arc). Each draw of a read sub-model with the map-0 texture loaded last before it, by
+the sub-model's hash: each of the 20 hashes one LFXT (cas_door, cas_sky_blue, rubber_tree_plant,
+af_eyelashes, ...) besides two textures made at run time: one with most hashes (the common
+pass's) and the Sims' skin (every `92964a4c` part). The hash is not the LFXT's name hash in the
+archive index, nor in the LFXT: what it names is to be read (shaders.arc). Study
+ASSETS_SHOW_DRAW_TEXTURES.

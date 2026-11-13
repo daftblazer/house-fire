@@ -29,6 +29,46 @@ use housefire::rle_texture;
 use housefire::tree_log::read_log;
 use std::collections::{BTreeMap, BTreeSet};
 
+type TexByHash = BTreeMap<u64, Vec<(String, texture::Kind, u32, u32)>>;
+
+/// Every texture of textures.arc and datasets.arc by its first level's FNV-1a hash (as the
+/// observer's 'x' records hash a texture's image): its name, kind and size; and how many were
+/// in datasets.arc.
+fn texture_hashes(d: &Disc) -> (TexByHash, usize) {
+    let data = d.read("textures.arc").unwrap_or_default();
+    let entries = arc::entries(&data).unwrap_or_default();
+    // each entry's first level, hashed as the observer does
+    let fnv = |b: &[u8]| b.iter().fold(1469598103934665603u64, |h, &x| (h ^ x as u64).wrapping_mul(1099511628211));
+    let mut by_hash: BTreeMap<u64, Vec<(String, texture::Kind, u32, u32)>> = BTreeMap::new();
+    for e in &entries {
+        let b = arc::bytes(&data, e);
+        if let Some(t) = texture::read(b) {
+            let first = (t.width as usize * t.height as usize * t.kind.bits() as usize) / 8;
+            by_hash.entry(fnv(&b[t.texels.0..t.texels.0 + first])).or_default().push((t.name.clone(), t.kind, t.width, t.height));
+        }
+    }
+    // and those kept in datasets.arc's entries (the lots' and objects' own)
+    let ds = d.read("datasets.arc").unwrap_or_default();
+    let mut embedded = 0;
+    for e in arc::entries(&ds).unwrap_or_default() {
+        let b = arc::bytes(&ds, &e);
+        let mut p = 0;
+        while let Some(q) = b[p..].windows(4).position(|w| w == b"LFXT") {
+            let at = p + q;
+            if let Some((t, end)) = texture::read_prefix(&b[at..]) {
+                let first = (t.width as usize * t.height as usize * t.kind.bits() as usize) / 8;
+                let tex = &b[at + t.texels.0..at + t.texels.0 + first];
+                by_hash.entry(fnv(tex)).or_default().push((format!("{}/{}", e.name, t.name), t.kind, t.width, t.height));
+                embedded += 1;
+                p = at + end;
+            } else {
+                p = at + 4;
+            }
+        }
+    }
+    (by_hash, embedded)
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 3 {
@@ -504,7 +544,7 @@ fn main() -> ExitCode {
             // does a hash always come with the same material (layers, their bytes, the textures'
             // first bytes)?
             if !log.materials.is_empty() {
-                type Mat = (u32, [[u8; 0x18]; 2], [[u8; 32]; 2]);
+                type Mat = (u32, [[u8; 0x18]; 2], [[u8; 128]; 2]);
                 let mut by_hash: BTreeMap<u32, std::collections::BTreeSet<Mat>> = BTreeMap::new();
                 let mut mi = 0;
                 let mut drawn = 0;
@@ -524,7 +564,7 @@ fn main() -> ExitCode {
                     let Some(sm) = sm else { continue };
                     drawn += 1;
                     // a second layer's bytes and texture are stale when there is one layer
-                    let (l1, t1) = if m.layers >= 2 { (m.layer[1], m.textures[1].1) } else { ([0; 0x18], [0; 32]) };
+                    let (l1, t1) = if m.layers >= 2 { (m.layer[1], m.textures[1].1) } else { ([0; 0x18], [0; 128]) };
                     by_hash.entry(sm.hash).or_default().insert((m.layers, [m.layer[0], l1], [m.textures[0].1, t1]));
                 }
                 let one = by_hash.values().filter(|v| v.len() == 1).count();
@@ -543,6 +583,91 @@ fn main() -> ExitCode {
                 let common = common.unwrap_or_default();
                 let own = by_hash.values().filter(|v| v.difference(&common).count() == 1).count();
                 println!("draws with a material and a read sub-model {drawn}: hashes {}, with one material {one}; materials a hash (count: hashes) {sizes:?}; seen with every hash {}, one material besides them {own}", by_hash.len(), common.len());
+                // each material's first texture slot (an in-memory texture: +0x10 width, +0x12
+                // height, +0x18 the LFXT kind byte, +0x1c the texels' address): its address an 'x'
+                // record's image, whose hash names an LFXT of that kind and size
+                {
+                    let (tex_hash, _) = texture_hashes(&d);
+                    let images: BTreeMap<u32, u64> = log.textures.iter().map(|x| (x.image, x.hash)).collect();
+                    // the slot's 128 bytes searched for an 'x' image's address, as itself or as GX
+                    // keeps it in a GXTexObj (the physical address >> 5): at which offset
+                    let mut at: BTreeMap<(usize, &str), usize> = BTreeMap::new();
+                    let (mut slots_n, mut named) = (0, 0);
+                    let mut seen = BTreeSet::new();
+                    for m in &log.materials {
+                        let (addr, b) = (m.textures[0].0, &m.textures[0].1);
+                        if addr < 0x8000_0000 || !seen.insert(addr) {
+                            continue;
+                        }
+                        slots_n += 1;
+                        let mut hit = false;
+                        for k in (0..124).step_by(4) {
+                            let w = u32::from_be_bytes([b[k], b[k + 1], b[k + 2], b[k + 3]]);
+                            for (form, img) in [("address", w), ("GX (phys >> 5)", (w & 0x00FF_FFFF) << 5 | 0x8000_0000)] {
+                                if let Some(h) = images.get(&img) {
+                                    *at.entry((k, form)).or_default() += 1;
+                                    if !hit && tex_hash.contains_key(h) {
+                                        hit = true;
+                                        named += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    println!("materials' first slots {slots_n}: an 'x' image found in them for {named} (named by its hash); at {at:?}");
+                }
+                // each texture loaded for a draw: its image an 'x' record's, named by its hash
+                if !log.tex_loads.is_empty() {
+                    let (tex_hash, _) = texture_hashes(&d);
+                    let images: BTreeMap<u32, u64> = log.textures.iter().map(|x| (x.image, x.hash)).collect();
+                    let (mut seen_x, mut named) = (0, 0);
+                    for t in &log.tex_loads {
+                        if let Some(h) = images.get(&t.image()) {
+                            seen_x += 1;
+                            named += usize::from(tex_hash.contains_key(h));
+                        }
+                    }
+                    println!("textures loaded for draws {}: the image an 'x' record's {seen_x}, named (an LFXT by its hash) {named}", log.tex_loads.len());
+                    // the draws of read sub-models: the map-0 texture loaded last before each, by
+                    // the sub-model's hash
+                    let mut by: BTreeMap<u32, BTreeMap<String, usize>> = BTreeMap::new();
+                    let mut ti = 0;
+                    for (i, st) in log.strips.iter().enumerate() {
+                        let sm = if st.words[0] >> 24 == 0x42 {
+                            lists.get(&st.at[6]).copied()
+                        } else {
+                            all.get(&st.at[2]).and_then(|v| v.iter().find(|sm| sm.count as u32 == st.words[1]).copied())
+                        };
+                        while ti < log.tex_loads.len() && log.tex_loads[ti].strips_before <= i {
+                            ti += 1;
+                        }
+                        let Some(sm) = sm else { continue };
+                        let Some(t) = log.tex_loads[..ti].iter().rev().find(|t| t.map == 0) else { continue };
+                        let name = images
+                            .get(&t.image())
+                            .and_then(|h| tex_hash.get(h))
+                            .map_or_else(|| format!("{:08x}", t.image()), |v| v[0].0.clone());
+                        *by.entry(sm.hash).or_default().entry(name).or_default() += 1;
+                    }
+                    if std::env::var_os("ASSETS_SHOW_DRAW_TEXTURES").is_some() {
+                        for (h, v) in &by {
+                            println!("  {h:08x}: {v:?}");
+                        }
+                    }
+                }
+                if std::env::var_os("ASSETS_SHOW_SLOTS").is_some() {
+                    let mut slots: BTreeMap<[u8; 128], usize> = BTreeMap::new();
+                    for m in &log.materials {
+                        *slots.entry(m.textures[0].1).or_default() += 1;
+                    }
+                    let tx = d.read("textures.arc").unwrap_or_default();
+                    println!("distinct first-slot bytes {}", slots.len());
+                    for (b, n) in slots.iter().take(10) {
+                        let at = tx.windows(32).position(|w| w == &b[..32]);
+                        let lfxt = at.and_then(|a| tx[..a].windows(4).rposition(|w| w == b"LFXT").map(|l| a - l));
+                        println!("  {n:5} {:02x?}: in textures.arc {at:?}, past its LFXT {lfxt:?}", &b[..64]);
+                    }
+                }
                 if std::env::var_os("ASSETS_SHOW_MATERIALS").is_some() {
                     for (h, v) in by_hash.iter().take(12) {
                         for (n, l, t) in v.iter().take(3) {
@@ -698,37 +823,7 @@ fn main() -> ExitCode {
                 println!("usage: assets ISO texcheck LOG");
                 return ExitCode::from(2);
             };
-            let data = d.read("textures.arc").unwrap_or_default();
-            let entries = arc::entries(&data).unwrap_or_default();
-            // each entry's first level, hashed as the observer does
-            let fnv = |b: &[u8]| b.iter().fold(1469598103934665603u64, |h, &x| (h ^ x as u64).wrapping_mul(1099511628211));
-            let mut by_hash: BTreeMap<u64, Vec<(String, texture::Kind, u32, u32)>> = BTreeMap::new();
-            for e in &entries {
-                let b = arc::bytes(&data, e);
-                if let Some(t) = texture::read(b) {
-                    let first = (t.width as usize * t.height as usize * t.kind.bits() as usize) / 8;
-                    by_hash.entry(fnv(&b[t.texels.0..t.texels.0 + first])).or_default().push((t.name.clone(), t.kind, t.width, t.height));
-                }
-            }
-            // and those kept in datasets.arc's entries (the lots' and objects' own)
-            let ds = d.read("datasets.arc").unwrap_or_default();
-            let mut embedded = 0;
-            for e in arc::entries(&ds).unwrap_or_default() {
-                let b = arc::bytes(&ds, &e);
-                let mut p = 0;
-                while let Some(q) = b[p..].windows(4).position(|w| w == b"LFXT") {
-                    let at = p + q;
-                    if let Some((t, end)) = texture::read_prefix(&b[at..]) {
-                        let first = (t.width as usize * t.height as usize * t.kind.bits() as usize) / 8;
-                        let tex = &b[at + t.texels.0..at + t.texels.0 + first];
-                        by_hash.entry(fnv(tex)).or_default().push((format!("{}/{}", e.name, t.name), t.kind, t.width, t.height));
-                        embedded += 1;
-                        p = at + end;
-                    } else {
-                        p = at + 4;
-                    }
-                }
-            }
+            let (by_hash, embedded) = texture_hashes(&d);
             println!("textures in datasets.arc: {embedded}");
             let mut images: BTreeMap<u32, &housefire::tree_log::TexObjRec> = BTreeMap::new();
             for x in &log.textures {

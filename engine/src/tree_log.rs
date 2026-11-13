@@ -52,15 +52,33 @@ pub struct StripRec {
 }
 
 /// The material a draw was set up with ('m': ERC_SetMaterialStages's device as it was called):
-/// the tick, the layer count, the two layers' bytes, the two texture slots (a word and 32 bytes
+/// the tick, the layer count, the two layers' bytes, the two texture slots (a word and 128 bytes
 /// at it each), and how many strip records came before it (the draw it is for comes next).
 #[derive(Clone, Debug)]
 pub struct MaterialRec {
     pub tick: u32,
     pub layers: u32,
     pub layer: [[u8; 0x18]; 2],
-    pub textures: [(u32, [u8; 32]); 2],
+    pub textures: [(u32, [u8; 128]); 2],
     pub strips_before: usize,
+}
+
+/// A texture loaded for a draw ('l': GXLoadTexObjPreLoaded): the tick, the map, the GXTexObj's
+/// bytes (its image at +0x0C, the physical address >> 5), and how many strip records came before.
+#[derive(Clone, Debug)]
+pub struct TexLoadRec {
+    pub tick: u32,
+    pub map: u8,
+    pub obj: [u8; 32],
+    pub strips_before: usize,
+}
+
+impl TexLoadRec {
+    /// The image's address, as the CPU sees it.
+    pub fn image(&self) -> u32 {
+        let w = u32::from_be_bytes([self.obj[12], self.obj[13], self.obj[14], self.obj[15]]);
+        ((w & 0x1F_FFFF) << 5) | 0x8000_0000
+    }
 }
 
 /// A tree as the original had it loaded: its nodes' address, id, file, and its nodes' raw bytes.
@@ -286,6 +304,8 @@ pub struct Log {
     pub textures: Vec<TexObjRec>,
     /// The palettes the original set up ('u', in newer logs).
     pub tluts: Vec<TlutRec>,
+    /// The textures loaded for draws ('l', in newer logs, at most 16,000).
+    pub tex_loads: Vec<TexLoadRec>,
     /// The materials draws were set up with ('m', in newer logs, at most 8,000).
     pub materials: Vec<MaterialRec>,
     /// The strips of short arrays the device played ('w', in newer logs, at most 4,000).
@@ -386,8 +406,19 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
                 log.strips.push(StripRec { tick, words, at });
             }
+            b'l' => {
+                if !r.has(4 + 1 + 32) {
+                    break;
+                }
+                let tick = r.u32();
+                let map = r.u8();
+                let mut obj = [0u8; 32];
+                obj.copy_from_slice(&r.b[r.p..r.p + 32]);
+                r.p += 32;
+                log.tex_loads.push(TexLoadRec { tick, map, obj, strips_before: log.strips.len() });
+            }
             b'm' => {
-                if !r.has(4 + 4 + 48 + 2 * 36) {
+                if !r.has(4 + 4 + 48 + 2 * 132) {
                     break;
                 }
                 let tick = r.u32();
@@ -397,11 +428,11 @@ pub fn read_log(path: &str) -> Option<Log> {
                     l.copy_from_slice(&r.b[r.p..r.p + 0x18]);
                     r.p += 0x18;
                 }
-                let mut textures = [(0u32, [0u8; 32]); 2];
+                let mut textures = [(0u32, [0u8; 128]); 2];
                 for t in &mut textures {
                     t.0 = r.u32();
-                    t.1.copy_from_slice(&r.b[r.p..r.p + 32]);
-                    r.p += 32;
+                    t.1.copy_from_slice(&r.b[r.p..r.p + 128]);
+                    r.p += 128;
                 }
                 log.materials.push(MaterialRec { tick, layers, layer, textures, strips_before: log.strips.len() });
             }
