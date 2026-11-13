@@ -882,6 +882,45 @@ fn main() -> ExitCode {
                 }
             }
         }
+        "scenecheck" => {
+            // the original's world matrices (the observer's 0xF1 'p' records) at a tick against
+            // this world's objects then (lockstep's LOCKSTEP_DUMP_PLACES file): each object's place
+            // (sixteenths of a tile) a matrix's translation, by the offset that fits most
+            let (Some(log), Some(places), Some(tick)) = (
+                args.get(3).and_then(|p| read_log(p)),
+                args.get(4).and_then(|p| std::fs::read_to_string(p).ok()),
+                args.get(5).and_then(|t| t.parse::<u32>().ok()),
+            ) else {
+                println!("usage: assets ISO scenecheck LOG PLACES TICK");
+                return ExitCode::from(2);
+            };
+            let worlds: Vec<[f32; 3]> = log.matrices.iter().filter(|m| m.id == 0xF1 && m.tick == tick).map(|m| [m.values[3], m.values[7], m.values[11]]).collect();
+            let objects: Vec<(String, f32, f32, i32, String)> = places
+                .lines()
+                .filter_map(|l| {
+                    let f: Vec<&str> = l.split(' ').collect();
+                    let (x, y): (i32, i32) = (f.get(2)?.parse().ok()?, f.get(3)?.parse().ok()?);
+                    // on the lot, not held, not a person
+                    (x > 0 && y > 0 && f.get(6)? == &"0" && f.get(7)? == &"0").then(|| (f[0].to_string(), x as f32 / 16.0, y as f32 / 16.0, f[5].parse().unwrap_or(0), f.get(8).unwrap_or(&"").to_string()))
+                })
+                .collect();
+            println!("tick {tick}: world matrices {}, objects on the lot (not held, not persons) {}", worlds.len(), objects.len());
+            // the tile's centre a place is drawn at: the tile by floor, or by floor of (x16 - 1)
+            // (a place on a tile's corner counts to the tile below)
+            type Rule = (&'static str, fn(f32) -> f32);
+            let rules: [Rule; 2] = [("floor", |x| x.floor() + 0.5), ("corner to the lower", |x| ((x * 16.0 - 1.0) / 16.0).floor() + 0.5)];
+            for (name, r) in rules {
+                let found = objects.iter().filter(|o| worlds.iter().any(|w| (w[0] - r(o.1)).abs() < 0.01 && (w[1] - r(o.2)).abs() < 0.01)).count();
+                println!("  the tile's centre ({name}): objects with a world matrix there {found}");
+            }
+            if std::env::var_os("ASSETS_SHOW_UNPLACED").is_some() {
+                let r = |x: f32| ((x * 16.0 - 1.0) / 16.0).floor() + 0.5;
+                for o in objects.iter().filter(|o| !worlds.iter().any(|w| (w[0] - r(o.1)).abs() < 0.01 && (w[1] - r(o.2)).abs() < 0.01)).take(25) {
+                    let near = worlds.iter().min_by(|a, b| ((a[0] - o.1).powi(2) + (a[1] - o.2).powi(2)).total_cmp(&((b[0] - o.1).powi(2) + (b[1] - o.2).powi(2))));
+                    println!("  {} at ({}, {}) facing {}: nearest {near:?} ({})", o.0, o.1, o.2, o.3, o.4);
+                }
+            }
+        }
         "texcheck" => {
             let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
                 println!("usage: assets ISO texcheck LOG");

@@ -323,3 +323,14 @@ replay's output on it the same as on `home-w66.log`) they cover ticks 1,000 to 1
 views, 18,809 world matrices, 2,000 projections (910 perspective, 1,090 orthographic). The
 world matrices' translations sit on the lot's tiles (14.5, 12; 15.5, 12; ...: tile centres,
 in tiles). Against our world's objects: next.
+
+Against our world. `lockstep` writes this world's objects as it reaches a tick
+(`LOCKSTEP_DUMP_PLACES=TICK`, `LOCKSTEP_DUMP_OUT`: id, GUID, place in sixteenths, level, facing,
+container, person, file), and `assets ISO scenecheck LOG PLACES TICK` sets them beside the
+original's world matrices then. Home replay, tick 1,000 (lockstep the same, 0 differences): 1,035
+world matrices, 172 objects on the lot (not held, not persons). An object's place is not where
+it is drawn: 82 have a world matrix at the centre of the tile their place is in (the newspaper's
+place 20.3125, 7.3125 drawn at 20.5, 7.5); the rest are drawn as their model's nodes, each its
+own matrix (heights, small offsets: the trees' four parts, a quarter tile apart, swaying), and
+objects on a tile's corner (the jukebox at 13, 16 drawn at 12.5, 15.5: its footprint). To read
+next: a model's node transforms, and the footprint and facing that place a root.

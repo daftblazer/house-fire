@@ -39,7 +39,7 @@ use housefire::library::Library;
 use housefire::primitives::{create_object, drop_onto, grab, remove_object, set_to_next, snap};
 use housefire::save::{memory_card_file, read_lots};
 use housefire::tree_log::{ExprRec, LookupRec, StepRec, read_log, same_shape};
-use housefire::world::{DATA_CONTAINER, DATA_OBJECT_ID, Object, ObjectKey, ScriptVariables, Table, World, scope};
+use housefire::world::{DATA_FACING, DATA_CONTAINER, DATA_OBJECT_ID, Object, ObjectKey, ScriptVariables, Table, World, scope};
 use housefire::{FileId, TreeId};
 
 /// The variables as the original's lookup found them: the right side is asked for first, then
@@ -1346,7 +1346,38 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
     let mut li = 0;
     let mut shown = 0;
     let mut place_at = log.places.iter().position(|p| p.tick > 0).unwrap_or(log.places.len()); // the next 'P' after the lot's
+    // study (LOCKSTEP_DUMP_PLACES=TICK, LOCKSTEP_DUMP_OUT=PATH): this world's objects as the
+    // step loop reaches the tick (id, GUID, place in sixteenths, level, facing, container, file),
+    // one a line, for the assets tool's check of the original's world matrices
+    let dump_at = std::env::var("LOCKSTEP_DUMP_PLACES").ok().and_then(|v| v.parse::<u32>().ok());
+    let mut dumped = false;
     for (i, s) in log.steps.iter().enumerate() {
+        if let Some(t) = dump_at
+            && !dumped
+            && s.tick >= t
+        {
+            dumped = true;
+            let mut out = String::new();
+            for o in lw.objects() {
+                let path = o.file.map_or("", |f| lib.file(f).path.as_str());
+                out += &format!(
+                    "{} {:08x} {} {} {} {} {} {} {}\n",
+                    o.id(),
+                    o.guid,
+                    o.x16,
+                    o.y16,
+                    o.level,
+                    o.data.get(DATA_FACING).copied().unwrap_or(0),
+                    o.data.get(DATA_CONTAINER).copied().unwrap_or(0),
+                    u8::from(o.person),
+                    path
+                );
+            }
+            let at = std::env::var("LOCKSTEP_DUMP_OUT").unwrap_or_else(|_| "work/logs/places.txt".into());
+            if std::fs::write(&at, out).is_ok() {
+                println!("places at tick {} written to {at}", s.tick);
+            }
+        }
         // The places the log has for the ticks before this step's (each the end of its tick),
         // against this world's for objects that are not persons: made, grabbed, dropped and
         // snapped natively (persons walk: routing's, not this world's)
