@@ -26,6 +26,7 @@ use housefire::disc::Disc;
 use housefire::model;
 use housefire::texture;
 use housefire::rle_texture;
+use housefire::shader;
 use housefire::tree_log::read_log;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -649,6 +650,55 @@ fn main() -> ExitCode {
                             .map_or_else(|| format!("{:08x}", t.image()), |v| v[0].0.clone());
                         *by.entry(sm.hash).or_default().entry(name).or_default() += 1;
                     }
+                    // against shaders.arc: each draw's sub-model hash a shader's name hash; that
+                    // shader's first layer names the texture loaded (an LFXT by its name hash);
+                    // the device's first layer (+4..+0x18) the shader's layer
+                    let sh = d.read("shaders.arc").unwrap_or_default();
+                    let sh_entries = arc::entries(&sh).unwrap_or_default();
+                    let shaders: Vec<shader::Shader> = sh_entries.iter().filter_map(|e| shader::read(arc::bytes(&sh, e))).collect();
+                    println!("shaders.arc: {} entries, read whole {}", sh_entries.len(), shaders.len());
+                    let by_name: BTreeMap<u32, &shader::Shader> = shaders.iter().map(|s| (shader::name_hash(&s.name), s)).collect();
+                    let (mut draws, mut found, mut tex_same, mut tex_named, mut layer_same) = (0, 0, 0, 0, 0);
+                    let (mut ti, mut mi) = (0, 0);
+                    for (i, st) in log.strips.iter().enumerate() {
+                        while ti < log.tex_loads.len() && log.tex_loads[ti].strips_before <= i {
+                            ti += 1;
+                        }
+                        while mi < log.materials.len() && log.materials[mi].strips_before <= i {
+                            mi += 1;
+                        }
+                        let sm = if st.words[0] >> 24 == 0x42 {
+                            lists.get(&st.at[6]).copied()
+                        } else {
+                            all.get(&st.at[2]).and_then(|v| v.iter().find(|sm| sm.count as u32 == st.words[1]).copied())
+                        };
+                        // (the material set after the strip pairs worse: 225 of 1,351 draws)
+                        let m = mi.checked_sub(1).map(|k| &log.materials[k]);
+                        let t = log.tex_loads[..ti].iter().rev().find(|t| t.map == 0);
+                        let (Some(sm), Some(t), Some(m)) = (sm, t, m) else { continue };
+                        // a two-layer draw's device layers are the common pass's
+                        if m.layers != 1 {
+                            continue;
+                        }
+                        draws += 1;
+                        let Some(s) = by_name.get(&sm.hash) else { continue };
+                        found += 1;
+                        let Some(l) = s.layers.first() else { continue };
+                        if let Some(names) = images.get(&t.image()).and_then(|h| tex_hash.get(h)) {
+                            tex_named += 1;
+                            let base = |n: &str| n.rsplit('/').next().unwrap_or(n).to_string();
+                            tex_same += usize::from(names.iter().any(|n| shader::name_hash(&base(&n.0)) == l.texture));
+                        }
+                        let dl = &m.layer[0];
+                        let w = |k: usize| u32::from_be_bytes([dl[k], dl[k + 1], dl[k + 2], dl[k + 3]]);
+                        // the factor (+0x14) is the game's at run time (a fade: 0x80 against the shader's 0xff)
+                        let same = w(4) == l.flags && w(8) == l.word && w(12) == l.value.to_bits() && dl[16..20] == l.bytes[..4] && dl[21..23] == l.bytes[5..];
+                        layer_same += usize::from(same);
+                        if !same && std::env::var_os("ASSETS_SHOW_LAYER_DIFFS").is_some() {
+                            println!("  {} layers {}: device {:02x?} shader {:08x} {:08x} {:08x} {:02x?}", s.name, m.layers, &dl[4..23], l.flags, l.word, l.value.to_bits(), l.bytes);
+                        }
+                    }
+                    println!("one-layer draws of read sub-models {draws}: their hash a shader's {found}; of those with a named texture {tex_named}, the shader's first layer naming it {tex_same}; the device's first layer the shader's {layer_same}");
                     if std::env::var_os("ASSETS_SHOW_DRAW_TEXTURES").is_some() {
                         for (h, v) in &by {
                             println!("  {h:08x}: {v:?}");

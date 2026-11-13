@@ -292,3 +292,21 @@ af_eyelashes, ...) besides two textures made at run time: one with most hashes (
 pass's) and the Sims' skin (every `92964a4c` part). The hash is not the LFXT's name hash in the
 archive index, nor in the LFXT: what it names is to be read (shaders.arc). Study
 ASSETS_SHOW_DRAW_TEXTURES.
+
+## Shaders
+
+`shaders.arc`'s 2,132 entries (`shader::read`, all read to their size): the word 13, 12 zero
+bytes, the name, then 78 bytes (the layer count, a byte, first; colours: nine floats of 1, then
+10 and 1; not read yet), the layers of 23 bytes each (the texture by name hash, a flags word,
+a word, the seven bytes the device's SetMaterialStages reads at +0x10, a float), then 28 bytes.
+A sub-model names its shader and a layer its texture by the CRC-32 of the name in capitals
+(`shader::name_hash`: `CAS_SKY_BLUE` 0x51a6fa33). The device's layer is the shader's, its texture
+hash made a pointer and the float moved before the bytes.
+
+Against the home replay (`home-m.log`): every one of the 7,962 draws of read sub-models names a
+shader. Of the 574 drawn with one layer: 334 have the shader's first layer exactly (the factor
+byte, +0x14, aside: the game sets it at run time, 0x80 for the shader's 0xff, a fade) and its
+texture; 216 POLYSHADOW draws keep the draw before's material (none of their own is set);
+Privacy_Window and Plate_Glass_Window (12 each) have their float halved (0.02 to 0.01) and,
+the plate glass, flag 0x08 cleared: set at run time, not read yet. Two-layer draws are of the
+common pass (its own material). Study ASSETS_SHOW_LAYER_DIFFS.

@@ -14,6 +14,7 @@ pub mod motives;
 pub mod planner;
 pub mod primitives;
 pub mod rle_texture;
+pub mod shader;
 pub mod routing;
 pub mod interp;
 pub mod save;
