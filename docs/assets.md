@@ -334,3 +334,18 @@ place 20.3125, 7.3125 drawn at 20.5, 7.5); the rest are drawn as their model's n
 own matrix (heights, small offsets: the trees' four parts, a quarter tile apart, swaying), and
 objects on a tile's corner (the jukebox at 13, 16 drawn at 12.5, 15.5: its footprint). To read
 next: a model's node transforms, and the footprint and facing that place a root.
+
+A world matrix's 3x3 carries the model's own scale (its 16-bit positions' scale folded in:
+0.001 to 0.004), so it is a rotation times that scale. At an object's tile centre its rotation
+about the vertical is mostly 90° - 45° x facing (facing 0 at 90°, 2 at 0°, 4 at -90°, 6 at
+180°: 164 of 213 such matrices at tick 1,000; the rest other objects' on the tile or nodes').
+
+Which model an object draws. Each world matrix is followed by its draw, whose batch or display
+list names its record (1,033 of 1,035 at tick 1,000 read). The records are named by the
+catalogue's names (`Snoozemore_Alarm_Clock`, `Mulberry_Tree`), not the objects' files
+(`electronics_alarmclock.iff`, `plant_tree_mulberry.iff`): none matches by file name. Datasets
+`RD_<kind> - <name>` (`RD_Clock - Alarm`) keep an object's models, shaders and textures, its
+model by name hash; `globals` keeps the objects' definitions (their GUIDs); `characte.arc` (238
+entries, named after objects: `snoozemore_alarm_clock`) keeps their skeletons: the name, a bone
+count, then bones (`Object01`, ...) each with a 4x4 (the node transforms a sub-model's matrix
+slots index). What ties an object's file to its dataset and skeleton is to be found.

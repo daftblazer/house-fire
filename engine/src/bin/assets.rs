@@ -70,6 +70,34 @@ fn texture_hashes(d: &Disc) -> (TexByHash, usize) {
     (by_hash, embedded)
 }
 
+/// Every model record read whole: models.arc's, and those kept inside datasets.arc's entries;
+/// each with the archive entry it is in.
+fn all_records(d: &Disc) -> Vec<(String, model::Record)> {
+    let mut out = Vec::new();
+    let data = d.read("models.arc").unwrap_or_default();
+    for e in arc::entries(&data).unwrap_or_default() {
+        if let Some(r) = model::read_record(arc::bytes(&data, &e)) {
+            out.push((e.name.clone(), r));
+        }
+    }
+    let ds = d.read("datasets.arc").unwrap_or_default();
+    for e in arc::entries(&ds).unwrap_or_default() {
+        let b = arc::bytes(&ds, &e);
+        let mut p = 0;
+        while let Some(q) = b[p..].windows(6).position(|w| w == [0, 1, 0, 0, 0, 0]) {
+            let at = p + q;
+            match model::read_record_prefix(&b[at..]) {
+                Some((r, end)) => {
+                    out.push((e.name.clone(), r));
+                    p = at + end;
+                }
+                None => p = at + 1,
+            }
+        }
+    }
+    out
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 3 {
@@ -912,6 +940,79 @@ fn main() -> ExitCode {
             for (name, r) in rules {
                 let found = objects.iter().filter(|o| worlds.iter().any(|w| (w[0] - r(o.1)).abs() < 0.01 && (w[1] - r(o.2)).abs() < 0.01)).count();
                 println!("  the tile's centre ({name}): objects with a world matrix there {found}");
+            }
+            // the matrix at an object's tile centre: its rotation about the vertical (the 3x3's
+            // first column, in degrees) against the object's facing, and its scale
+            let full: Vec<&Vec<f32>> = log.matrices.iter().filter(|m| m.id == 0xF1 && m.tick == tick).map(|m| &m.values).collect();
+            let mut by_facing: BTreeMap<i32, BTreeMap<i32, usize>> = BTreeMap::new();
+            for o in &objects {
+                let (cx, cy) = (o.1.floor() + 0.5, o.2.floor() + 0.5);
+                for v in full.iter().filter(|v| (v[3] - cx).abs() < 0.01 && (v[7] - cy).abs() < 0.01) {
+                    let scale = (v[0] * v[0] + v[4] * v[4] + v[8] * v[8]).sqrt();
+                    let angle = v[4].atan2(v[0]).to_degrees().round() as i32;
+                    // (the scale is the model's: its 16-bit positions' scale folded in)
+                    let key = if scale > 1e-7 { angle } else { 9999 };
+                    *by_facing.entry(o.3).or_default().entry(key).or_default() += 1;
+                }
+            }
+            println!("  facing -> the matrix's angle in degrees (9999: a zero matrix): {by_facing:?}");
+            // the matrices that draw (their 3x3 not zero): their scale, and the nearest object
+            let drawn: Vec<&&Vec<f32>> = full.iter().filter(|v| v[0].abs() + v[1].abs() + v[4].abs() + v[5].abs() + v[10].abs() > 1e-3).collect();
+            let mut scales: BTreeMap<i32, usize> = BTreeMap::new();
+            let mut near: BTreeMap<i32, usize> = BTreeMap::new();
+            for v in &drawn {
+                let scale = (v[0] * v[0] + v[4] * v[4] + v[8] * v[8]).sqrt();
+                *scales.entry((scale * 100.0).round() as i32).or_default() += 1;
+                let d = objects.iter().map(|o| ((v[3] - o.1).powi(2) + (v[7] - o.2).powi(2)).sqrt()).fold(f32::MAX, f32::min);
+                *near.entry((d * 10.0).ceil() as i32).or_default() += 1;
+            }
+            println!("  drawing matrices {}: scales (x100) {scales:?}; distance to the nearest object's place (tenths of a tile, rounded up) {near:?}", drawn.len());
+            if std::env::var_os("ASSETS_SHOW_DRAWING").is_some() {
+                for v in drawn.iter().take(30) {
+                    println!("    [{:.3} {:.3} {:.3} | {:.3}] [{:.3} {:.3} {:.3} | {:.3}] [{:.3} {:.3} {:.3} | {:.3}]", v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8], v[9], v[10], v[11]);
+                }
+            }
+            // each world matrix with the model drawn after it (the next strip's batch or display
+            // list, by its first bytes): the records' entries and names against the objects'
+            // files, and the matrix's place and angle against the object's
+            let recs = all_records(&d);
+            let mut owner: std::collections::HashMap<[u8; 32], (&str, &str)> = std::collections::HashMap::new();
+            for (entry, r) in &recs {
+                for n in &r.nodes {
+                    for (_, sm) in &n.subs {
+                        if let Some(p) = sm.positions.get(..32) {
+                            owner.entry(p.try_into().unwrap()).or_insert((entry, &r.name));
+                        }
+                        if let Some(l) = sm.list.as_ref().and_then(|l| l.2.get(..32)) {
+                            owner.entry(l.try_into().unwrap()).or_insert((entry, &r.name));
+                        }
+                    }
+                }
+            }
+            let stem = |path: &str| path.rsplit('/').next().unwrap_or(path).trim_end_matches(".iff").to_ascii_lowercase();
+            let (mut with_model, mut named, mut at_place, mut angle_ok) = (0, 0, 0, 0);
+            let mut unnamed: BTreeMap<String, usize> = BTreeMap::new();
+            for m in log.matrices.iter().filter(|m| m.id == 0xF1 && m.tick == tick) {
+                let Some(st) = log.strips.get(m.strips_before) else { continue };
+                let key = if st.words[0] >> 24 == 0x42 { st.at[6] } else { st.at[2] };
+                let Some(&(entry, name)) = owner.get(&key) else { continue };
+                with_model += 1;
+                let v = &m.values;
+                let mine: Vec<&(String, f32, f32, i32, String)> = objects.iter().filter(|o| stem(&o.4) == entry.to_ascii_lowercase() || stem(&o.4) == name.to_ascii_lowercase()).collect();
+                if mine.is_empty() {
+                    *unnamed.entry(format!("{entry}/{name}")).or_default() += 1;
+                    continue;
+                }
+                named += 1;
+                if let Some(o) = mine.iter().find(|o| (v[3] - (o.1.floor() + 0.5)).abs() < 0.01 && (v[7] - (o.2.floor() + 0.5)).abs() < 0.01) {
+                    at_place += 1;
+                    let angle = v[4].atan2(v[0]).to_degrees().round() as i32;
+                    angle_ok += usize::from((angle - (90 - 45 * o.3)).rem_euclid(360) == 0);
+                }
+            }
+            println!("  world matrices with a read model drawn after {with_model}: its record an object's file {named}, at that object's tile centre {at_place}, at the angle 90 - 45 x facing {angle_ok}");
+            if std::env::var_os("ASSETS_SHOW_UNNAMED").is_some() {
+                println!("  records drawn with no object of their name: {unnamed:?}");
             }
             if std::env::var_os("ASSETS_SHOW_UNPLACED").is_some() {
                 let r = |x: f32| ((x * 16.0 - 1.0) / 16.0).floor() + 0.5;
