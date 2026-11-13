@@ -359,3 +359,16 @@ model one of those datasets keeps, 31 are at the tile centre of an object of the
 tables", "Play Structure", "doors", "New Tree Table"), and lot datasets (`housepre01`) keep their
 objects' models too. The objects' own link to their dataset (by GUID: `globals`' definitions, or
 the program's table) is to be found. Study ASSETS_SHOW_NO_RD.
+
+What a dataset holds, and how an object finds it. A dataset entry is its name, then sections,
+each a name and its items by name CRC: `RD_Clock - Alarm` has Textures (4), Shaders,
+ParticleTypes, Animations (6), Models (1: `36b9fdd5`, `SNOOZEMORE_ALARM_CLOCK`) and Characters
+(1, the same CRC). `globals` keeps the characters' animation lists (rows of the character's CRC,
+an animation's, an index). The object files hold no model name, CRC or dataset name (OBJD, CTSS
+and the rest searched in every byte order). The decompilation's ESimsDataManager
+(`src/sims/ESimsDataManager.cpp`: collectResInfoForSel) loads an object's resources by id: its
+ObjSelector's material word +0x44 and its definition's extra word +0x10, ids the archive manager
+finds by (fn_80176F6C: an id to an offset and size). The datasets.arc index keeps three words a
+name: the jukebox's dataset's third (`5fa7103e`) is in `globals` in a row `00 00 00 0a 5f a7 10
+3e 48 93 93 7d` (kind 0x0a, the id, another word); the alarm clock's (`2a2af469`) far in. To
+read next: those rows (kind, id) and where an ObjSelector's material is made from.
