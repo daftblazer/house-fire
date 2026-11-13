@@ -70,16 +70,10 @@ fn texture_hashes(d: &Disc) -> (TexByHash, usize) {
     (by_hash, embedded)
 }
 
-/// Every model record read whole: models.arc's, and those kept inside datasets.arc's entries;
-/// each with the archive entry it is in.
+/// Every model record read whole: those kept inside datasets.arc's entries (an object's `RD_`
+/// dataset), then models.arc's; each with the archive entry it is in.
 fn all_records(d: &Disc) -> Vec<(String, model::Record)> {
     let mut out = Vec::new();
-    let data = d.read("models.arc").unwrap_or_default();
-    for e in arc::entries(&data).unwrap_or_default() {
-        if let Some(r) = model::read_record(arc::bytes(&data, &e)) {
-            out.push((e.name.clone(), r));
-        }
-    }
     let ds = d.read("datasets.arc").unwrap_or_default();
     for e in arc::entries(&ds).unwrap_or_default() {
         let b = arc::bytes(&ds, &e);
@@ -93,6 +87,12 @@ fn all_records(d: &Disc) -> Vec<(String, model::Record)> {
                 }
                 None => p = at + 1,
             }
+        }
+    }
+    let data = d.read("models.arc").unwrap_or_default();
+    for e in arc::entries(&data).unwrap_or_default() {
+        if let Some(r) = model::read_record(arc::bytes(&data, &e)) {
+            out.push((e.name.clone(), r));
         }
     }
     out
@@ -1011,6 +1011,48 @@ fn main() -> ExitCode {
                 }
             }
             println!("  world matrices with a read model drawn after {with_model}: its record an object's file {named}, at that object's tile centre {at_place}, at the angle 90 - 45 x facing {angle_ok}");
+            // an object's dataset: "RD_" and its interaction table's label without " tree table"
+            let rd_of = |path: &str| -> Option<String> {
+                let iff = housefire::iff::IffFile::parse(d.read(path)?);
+                let label = iff.of(b"TTAB").next()?.label.clone();
+                Some(format!("RD_{}", label.strip_suffix(" tree table").unwrap_or(&label)))
+            };
+            let rds: Vec<Option<String>> = objects.iter().map(|o| rd_of(&o.4)).collect();
+            let ds_names: BTreeSet<String> = arc::entries(&d.read("datasets.arc").unwrap_or_default()).unwrap_or_default().into_iter().map(|e| e.name).collect();
+            let with_rd = rds.iter().filter(|r| r.as_ref().is_some_and(|r| ds_names.contains(r))).count();
+            if std::env::var_os("ASSETS_SHOW_NO_RD").is_some() {
+                let mut seen = BTreeSet::new();
+                for (o, r) in objects.iter().zip(&rds) {
+                    if r.as_ref().is_none_or(|r| !ds_names.contains(r)) && seen.insert(o.4.clone()) {
+                        println!("    no dataset: {} -> {r:?}", o.4);
+                    }
+                }
+            }
+            // the models an RD_ dataset keeps, by name
+            let mut rd_models: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+            for (entry, r) in &recs {
+                if entry.starts_with("RD_") {
+                    rd_models.entry(entry).or_default().insert(&r.name);
+                }
+            }
+            let (mut from_rd, mut placed, mut turned) = (0, 0, 0);
+            for m in log.matrices.iter().filter(|m| m.id == 0xF1 && m.tick == tick) {
+                let Some(st) = log.strips.get(m.strips_before) else { continue };
+                let key = if st.words[0] >> 24 == 0x42 { st.at[6] } else { st.at[2] };
+                let Some(&(_, name)) = owner.get(&key) else { continue };
+                let has = |r: &Option<String>| r.as_deref().and_then(|r| rd_models.get(r)).is_some_and(|ms| ms.contains(name));
+                if !rds.iter().any(has) {
+                    continue;
+                }
+                from_rd += 1;
+                let v = &m.values;
+                if let Some((o, _)) = objects.iter().zip(&rds).find(|(o, r)| has(r) && (v[3] - (o.1.floor() + 0.5)).abs() < 0.01 && (v[7] - (o.2.floor() + 0.5)).abs() < 0.01) {
+                    placed += 1;
+                    let angle = v[4].atan2(v[0]).to_degrees().round() as i32;
+                    turned += usize::from((angle - (90 - 45 * o.3)).rem_euclid(360) == 0);
+                }
+            }
+            println!("  objects whose RD_ dataset (TTAB label) is on the disc {with_rd} of {}; world matrices of a model one of the lot's objects' datasets keeps {from_rd}: at the tile centre of such an object {placed}, turned 90 - 45 x facing {turned}", objects.len());
             if std::env::var_os("ASSETS_SHOW_UNNAMED").is_some() {
                 println!("  records drawn with no object of their name: {unnamed:?}");
             }

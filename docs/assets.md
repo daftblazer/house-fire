@@ -349,3 +349,13 @@ model by name hash; `globals` keeps the objects' definitions (their GUIDs); `cha
 entries, named after objects: `snoozemore_alarm_clock`) keeps their skeletons: the name, a bone
 count, then bones (`Object01`, ...) each with a 4x4 (the node transforms a sub-model's matrix
 slots index). What ties an object's file to its dataset and skeleton is to be found.
+
+An object's dataset, a first lead. For some objects the interaction table's label names it:
+"Clock - Alarm tree table" in `electronics_alarmclock.iff`, the dataset `RD_Clock - Alarm`;
+"Stereo - Jukebox tree table", `RD_Stereo - Jukebox`. For 38 of the 172 objects at tick 1,000
+that name is on the disc, and their draws agree with the placement: of 112 world matrices of a
+model one of those datasets keeps, 31 are at the tile centre of an object of the dataset, all
+31 turned 90° - 45° x facing. It is not the link: many tables are shared or misnamed ("debugging
+tables", "Play Structure", "doors", "New Tree Table"), and lot datasets (`housepre01`) keep their
+objects' models too. The objects' own link to their dataset (by GUID: `globals`' definitions, or
+the program's table) is to be found. Study ASSETS_SHOW_NO_RD.
