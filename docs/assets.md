@@ -849,3 +849,16 @@ fields, nor the object's data or attributes; its writer is still to find. Checke
 observer's 'y' records (each window light: side, raw reach, base colour, its window object, the
 kind): home's 28, every reach, base colour and height the engine's from the logged kind and the
 light's room.
+
+The window kind (`light::window_kind`). The original sets it in 0x801679CC, which 0x80078A68
+calls with the window object's +0x138, from a fixed table of nine name hashes:
+- kind 1: 08FD5188, 27B37C8F, 437C7240, CDDD1EDE, D02B5C12 (home's storm windows), D491D417;
+- kind 2: 92751A1A (home's small rectangle windows);
+- kind 3: 61B5D7D6, 040E93A9, 63BE954C;
+- any other key: 0.
+The key is the engine's `quickdata::ObjResources::key`: the first word of the record that the
+first word of the definition's `ObjDefinition::ResData` row points at. A window's ResData row
+belongs to its second tile's definition, not to the leader's. Found with a `-DGCN_WATCH` build
+watching a window's +0xC; the observer's 'y' record now also carries +0x138. Checked by lockstep
+(`LOCKSTEP_WINDOW_LIGHTS`): home's 28 window lights, each at the engine's place, with the
+engine's kind taken from the window group's key.

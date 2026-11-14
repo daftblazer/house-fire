@@ -1886,6 +1886,67 @@ fn main() -> ExitCode {
             }
             println!("rebuilds {checked}: ranges the engine's {same_ranges}, own lights' objects in order {same_own}, other lights' {same_other}; objects of no known class {unknown}");
         }
+        "arcat" => {
+            // which entry of a disc archive holds an offset (study)
+            let (Some(name), Some(at)) = (args.get(3), args.get(4).and_then(|v| usize::from_str_radix(v, 16).ok())) else {
+                println!("usage: assets ISO arcat ARCHIVE HEXOFFSET");
+                return ExitCode::FAILURE;
+            };
+            let q = d.read(name).unwrap_or_default();
+            for e in arc::entries(&q).unwrap_or_default().iter().filter(|e| (e.offset as usize..(e.offset + e.size) as usize).contains(&at)) {
+                println!("{} id {:08x} offset {:x} size {:x} (+{:x})", e.name, e.id, e.offset, e.size, at - e.offset as usize);
+            }
+        }
+        "qfind" => {
+            // which SimsObjects table rows hold a word (study): the table, row, word index, and
+            // the row's words
+            let Some(v) = args.get(3).and_then(|g| u32::from_str_radix(g, 16).ok()) else {
+                println!("usage: assets ISO qfind HEXWORD");
+                return ExitCode::FAILURE;
+            };
+            let q = d.read("quickdat.arc").unwrap_or_default();
+            let Some(img) = arc::entries(&q).unwrap_or_default().into_iter().find(|e| e.name == "SimsObjects").and_then(|e| quickdata::Image::read(arc::bytes(&q, &e))) else {
+                return ExitCode::FAILURE;
+            };
+            let hits: Vec<usize> = (0..img.data.len() / 4).map(|k| 4 * k).filter(|&o| img.u32(o) == Some(v)).collect();
+            for &h in &hits {
+                // the pointers that point at or just before it, and the tables they sit in
+                let to: Vec<usize> = (0..img.data.len() / 4).map(|k| 4 * k).filter(|&o| img.ptr(o).is_some_and(|t| t <= h && t + 0x40 > h)).collect();
+                for o in to {
+                    let t = img.ptr(o).unwrap_or(0);
+                    let table = img.tables.iter().find(|(_, tb)| o >= tb.rows && o < tb.rows + tb.count * tb.row_size).map(|(n, tb)| (n.clone(), (o - tb.rows) / tb.row_size.max(1), (o - tb.rows) % tb.row_size.max(1)));
+                    println!("hit {h:x}: pointed at {t:x} (+{:x}) from {o:x} {table:?}", h - t);
+                }
+            }
+            for (name, t) in &img.tables {
+                for r in img.rows(name) {
+                    for k in 0..t.row_size / 4 {
+                        if img.u32(r + 4 * k) == Some(v) {
+                            let words = (0..t.row_size / 4).filter_map(|j| img.u32(r + 4 * j)).map(|w| format!("{w:08x}")).collect::<Vec<_>>().join(" ");
+                            let ptrs = (0..t.row_size / 4).filter(|&j| img.ptr(r + 4 * j).is_some()).collect::<Vec<_>>();
+                            println!("{name} row {} word {k} (pointers at {ptrs:?}): {words}", (r - t.rows) / t.row_size.max(1));
+                        }
+                    }
+                }
+            }
+        }
+        "objdef" => {
+            // an object definition's SimsObjects row and its ResData row, as words (study)
+            let Some(guid) = args.get(3).and_then(|g| u32::from_str_radix(g, 16).ok()) else {
+                println!("usage: assets ISO objdef GUID");
+                return ExitCode::FAILURE;
+            };
+            let q = d.read("quickdat.arc").unwrap_or_default();
+            let Some(img) = arc::entries(&q).unwrap_or_default().into_iter().find(|e| e.name == "SimsObjects").and_then(|e| quickdata::Image::read(arc::bytes(&q, &e))) else {
+                return ExitCode::FAILURE;
+            };
+            for r in img.rows("ObjDefinition").filter(|&r| img.u32(r + 0x1c) == Some(guid)) {
+                println!("row: {}", (0..49).filter_map(|k| img.u32(r + 4 * k)).map(|v| format!("{v:08x}")).collect::<Vec<_>>().join(" "));
+                if let Some(res) = img.ptr(r + 0xc0) {
+                    println!("res: {}", (0..12).filter_map(|k| img.u32(res + 4 * k)).map(|v| format!("{v:08x}")).collect::<Vec<_>>().join(" "));
+                }
+            }
+        }
         "windowlights" => {
             // the window light objects and their game objects, for study
             let Some(log) = args.get(3).and_then(|p| read_log(p)) else {

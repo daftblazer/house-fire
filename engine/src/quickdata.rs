@@ -106,6 +106,9 @@ pub struct ObjResources {
     /// The row's second word: its bit 0x40000000 set for an object hung on a wall (drawn 0.45
     /// tile towards the wall, `scene.rs`).
     pub flags: u32,
+    /// The first word of what the row's first word points at (0 without one): the name hash
+    /// the original keys a window's kind by (`light::window_kind`).
+    pub key: u32,
 }
 
 impl ObjResources {
@@ -116,12 +119,13 @@ impl ObjResources {
 
 /// Each object's resources by GUID, from `SimsObjects`: an `ObjDefinition` row (196 bytes, the
 /// GUID at +0x1c) points (+0xc0) at an `ObjDefinition::ResData` row (48 bytes: flags at +4, the
-/// dataset's id at +0x10, the model's hash at +0x18). Definitions without one are left out.
+/// dataset's id at +0x10, the model's hash at +0x18, a pointer at +0 to a record that starts
+/// with a name hash). Definitions without one are left out.
 pub fn object_resources(img: &Image) -> BTreeMap<u32, ObjResources> {
     img.rows("ObjDefinition")
         .filter_map(|r| {
             let res = img.ptr(r + 0xc0)?;
-            Some((img.u32(r + 0x1c)?, ObjResources { dataset: img.u32(res + 0x10)?, model: img.u32(res + 0x18)?, flags: img.u32(res + 4)? }))
+            Some((img.u32(r + 0x1c)?, ObjResources { dataset: img.u32(res + 0x10)?, model: img.u32(res + 0x18)?, flags: img.u32(res + 4)?, key: img.ptr(res).and_then(|k| img.u32(k)).unwrap_or(0) }))
         })
         .collect()
 }

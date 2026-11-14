@@ -496,7 +496,7 @@ pub struct Log {
     /// 't': the lights rebuilt.
     pub light_rebuilds: Vec<LightRebuildRec>,
     /// 'y': the window light objects (the object, side, reach, two colour fields, the game
-    /// object, its kind (+0xC), then its first 64 words).
+    /// object, its kind (+0xC), then its first 64 words and its kind's key, +0x138).
     pub window_lights: Vec<(Vec<u32>, Vec<u32>)>,
     /// 'n': rooms' floors relit, each after the 'i' record of its own light grid (its index there
     /// is `light_grids.len()` less one when read).
@@ -665,12 +665,12 @@ pub fn read_log(path: &str) -> Option<Log> {
                     break;
                 }
                 let count = r.u32() as usize;
-                if !r.has(count * 4 * (7 + 64)) {
+                if !r.has(count * 4 * (7 + 65)) {
                     break;
                 }
                 for _ in 0..count {
                     let head = (0..7).map(|_| r.u32()).collect();
-                    let words = (0..64).map(|_| r.u32()).collect();
+                    let words = (0..65).map(|_| r.u32()).collect();
                     log.window_lights.push((head, words));
                 }
             }

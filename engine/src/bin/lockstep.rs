@@ -702,6 +702,15 @@ fn main() -> ExitCode {
         .and_then(|e| housefire::quickdata::Image::read(housefire::arc::bytes(&quick, &e)))
         .map(|img| (housefire::quickdata::fence_styles(&img), housefire::quickdata::wall_patterns(&img), housefire::quickdata::floor_patterns(&img)))
         .unwrap_or_default();
+    // (and the objects' models, SimsObjects: for the window lights' kinds)
+    let objects = housefire::arc::entries(&quick)
+        .unwrap_or_default()
+        .into_iter()
+        .find(|e| e.name == "SimsObjects")
+        .and_then(|e| housefire::quickdata::Image::read(housefire::arc::bytes(&quick, &e)))
+        .map(|img| housefire::quickdata::object_resources(&img))
+        .unwrap_or_default();
+    let tiles = (tiles.0, tiles.1, tiles.2, objects);
     set_to_next_check(&lib, &ngh, &disc_ngh, &tiles, &log, &step_object, &mut notes);
 
     for (k, v) in &notes.out {
@@ -1155,7 +1164,11 @@ fn pick_lot(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log) -> LotPic
 }
 
 #[allow(clippy::too_many_arguments)]
-fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &(Vec<u32>, Vec<u32>, Vec<housefire::quickdata::FloorPattern>), log: &housefire::tree_log::Log, step_object: &[Option<FileId>], notes: &mut Notes) {
+/// The disc's tables lockstep's checks use: the fence styles, the wall patterns, the floor
+/// patterns (SimsTiles) and the objects' resources by GUID (SimsObjects).
+type DiscTables = (Vec<u32>, Vec<u32>, Vec<housefire::quickdata::FloorPattern>, std::collections::BTreeMap<u32, housefire::quickdata::ObjResources>);
+
+fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &DiscTables, log: &housefire::tree_log::Log, step_object: &[Option<FileId>], notes: &mut Notes) {
     let (lots, lot_ids, walk, best, best_n) = pick_lot(lib, ngh, log);
     let raw_of = |s: &StepRec| -> Option<&[u8]> {
         let t = log.tree_of(s)?;
@@ -1456,6 +1469,30 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &(Vec<u3
                     theirs.sort_unstable();
                     let same = mine.iter().filter(|p| theirs.contains(p)).count();
                     println!("window lights: the engine's {}, the log's {}, places the same {same}{}", mine.len(), theirs.len(), if mine == theirs { " (all)" } else { "" });
+                    // (each window's kind from its model, against the log's 'y' kind of the light
+                    // at the engine's place)
+                    if let Some(b) = log.light_rebuilds.iter().rev().find(|b| b.rooms > 0) {
+                        let (mut n, mut same_kind) = (0, 0);
+                        for o in lw.objects().filter(|o| o.window && o.on_lot() && o.leader == o.id()) {
+                            let Some(places) = housefire::light::window_light_places((o.x16 >> 4, o.y16 >> 4), o.facing() as u8) else { continue };
+                            // (the group's model: a multi-tile object's resources are on one of its
+                            // tiles' definitions, not the leader's)
+                            let model = lw.objects().filter(|p| p.leader == o.id()).find_map(|p| tiles.3.get(&p.guid)).map(|r| r.key);
+                            let kind = model.map_or(0, housefire::light::window_kind);
+                            if std::env::var_os("LOCKSTEP_WINDOW_FIELDS").is_some() {
+                                println!("  window {} guid {:08x}: key {model:08x?}", o.id(), o.guid);
+                            }
+                            for (x, y) in places {
+                                let Some(light) = b.lights.iter().find(|l| l[0] == x.to_bits() && l[1] == y.to_bits()) else { continue };
+                                let Some((h, _)) = log.window_lights.iter().find(|(h, _)| h[0] == light[7]) else { continue };
+                                n += 1;
+                                if h[6] == kind {
+                                    same_kind += 1;
+                                }
+                            }
+                        }
+                        println!("window lights' kinds: {n} found, the engine's (by its resources' key) {same_kind}");
+                    }
                 }
                 // (and the rooms the light grid is given at the load, LOCKSTEP_CELL_ROOMS=LOG: the
                 // engine's adds against the log's 'f' records, add for add)

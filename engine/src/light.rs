@@ -138,6 +138,18 @@ pub fn window_light_places(tile: (i32, i32), facing: u8) -> Option<[(f32, f32); 
     Some([at(1.0), at(-1.0)])
 }
 
+/// A window's kind by its resources' key (`quickdata::ObjResources::key`; the original's table
+/// in 0x801679CC, called by 0x80078A68 on the window object's +0x138; 0 for a key not listed). Home's storm windows are 0xD02B5C12
+/// (1) and its small rectangle ones 0x92751A1A (2).
+pub fn window_kind(key: u32) -> u32 {
+    match key {
+        0x08FD_5188 | 0x27B3_7C8F | 0x437C_7240 | 0xCDDD_1EDE | 0xD02B_5C12 | 0xD491_D417 => 1,
+        0x9275_1A1A => 2,
+        0x61B5_D7D6 | 0x040E_93A9 | 0x63BE_954C => 3,
+        _ => 0,
+    }
+}
+
 /// A window light's reach, base colour and height by the window's kind (1 to 3) and whether
 /// the light's room is inside (the original's window light update: reach tables at r13 less
 /// 29644, 29636 and 29652, colours at r13 less 29620, 29612 and 29628, the heights at
@@ -347,6 +359,14 @@ mod tests {
         assert_eq!(entry_points(0x0005_0203), vec![(2, 5), (2, 6), (3, 5), (3, 6), (4, 5), (4, 6)]);
         // a leading half (0x40: on the row) and a trailing half (0x80: the row after)
         assert_eq!(entry_points(0x0005_4283), vec![(2, 5), (3, 5), (3, 6), (4, 6)]);
+    }
+
+    #[test]
+    fn a_windows_kind_follows_its_key() {
+        assert_eq!(window_kind(0xD02B_5C12), 1);
+        assert_eq!(window_kind(0x9275_1A1A), 2);
+        assert_eq!(window_kind(0x61B5_D7D6), 3);
+        assert_eq!(window_kind(0), 0);
     }
 
     #[test]
