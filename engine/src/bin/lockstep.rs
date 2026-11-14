@@ -1155,7 +1155,7 @@ fn pick_lot(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log) -> LotPic
 }
 
 #[allow(clippy::too_many_arguments)]
-fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &(Vec<u32>, Vec<u32>, Vec<u32>), log: &housefire::tree_log::Log, step_object: &[Option<FileId>], notes: &mut Notes) {
+fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &(Vec<u32>, Vec<u32>, Vec<housefire::quickdata::FloorPattern>), log: &housefire::tree_log::Log, step_object: &[Option<FileId>], notes: &mut Notes) {
     let (lots, lot_ids, walk, best, best_n) = pick_lot(lib, ngh, log);
     let raw_of = |s: &StepRec| -> Option<&[u8]> {
         let t = log.tree_of(s)?;
@@ -1422,10 +1422,18 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &(Vec<u3
                         for x in 0..64 {
                             let v = walls.floor(x, y);
                             if v != 0 {
-                                let shader = tiles.2.get(usize::from(v)).copied().unwrap_or(0);
+                                let shader = tiles.2.get(usize::from(v)).map_or(0, |p| p.shader);
                                 out += &format!("{x} {y} {v} {shader:08x}\n");
                             }
                         }
+                    }
+                    let _ = std::fs::write(&at, out);
+                }
+                // (and the floor runs the engine draws, LOCKSTEP_DUMP_RUNS: x y n shader)
+                if let Ok(at) = std::env::var("LOCKSTEP_DUMP_RUNS") {
+                    let mut out = String::new();
+                    for r in housefire::scene::floor_runs(walls, 64, &tiles.2) {
+                        out += &format!("{} {} {} {:08x}\n", r.x, r.y, r.n, tiles.2[usize::from(r.value)].shader);
                     }
                     let _ = std::fs::write(&at, out);
                 }

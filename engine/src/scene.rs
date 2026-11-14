@@ -140,6 +140,40 @@ pub fn wall_pieces(walls: &crate::routing::Walls, size: i32, fences: &[u32]) -> 
     out
 }
 
+/// A run of floor along a row, as the original draws it (one strip a run): tiles x .. x + n - 1
+/// of row y, with pattern `value`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub struct FloorRun {
+    pub y: i32,
+    pub x: i32,
+    pub n: i32,
+    pub value: u8,
+}
+
+/// A lot's floor runs: along each row, each stretch of tiles of one pattern (not the road's, which
+/// the lot's meshes draw, nor a value past the list); a tile of 255 (half a tile, cut by a
+/// diagonal wall) just before a stretch is drawn as its first tile.
+pub fn floor_runs(walls: &crate::routing::Walls, size: i32, patterns: &[crate::quickdata::FloorPattern]) -> Vec<FloorRun> {
+    let mut out = Vec::new();
+    for y in 0..size {
+        let mut x = 0;
+        while x < size {
+            let v = walls.floor(x, y);
+            if v == 0 || patterns.get(usize::from(v)).is_none_or(|p| p.road()) {
+                x += 1;
+                continue;
+            }
+            let start = x;
+            while x < size && walls.floor(x, y) == v {
+                x += 1;
+            }
+            let first = if start > 0 && walls.floor(start - 1, y) == 255 { start - 1 } else { start };
+            out.push(FloorRun { y, x: first, n: x - first, value: v });
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

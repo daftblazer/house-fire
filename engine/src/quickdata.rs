@@ -145,16 +145,30 @@ pub fn wall_patterns(img: &Image) -> Vec<u32> {
         .collect()
 }
 
+/// A floor pattern: its shader's archive id and its kind (6: the road, drawn with the lot's
+/// meshes, not as floor runs).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FloorPattern {
+    pub shader: u32,
+    pub kind: u32,
+}
+
+impl FloorPattern {
+    pub fn road(&self) -> bool {
+        self.kind == 6
+    }
+}
+
 /// The floor patterns, from `SimsTiles`: its one `FloorSet` row points at a list of `FloorTile`
-/// rows (24 bytes: a value, a name, two values, the shader's archive id at +12, ...), a tile's
-/// floor (the lot's first array) an index into it; each pattern's shader id.
-pub fn floor_patterns(img: &Image) -> Vec<u32> {
+/// rows (24 bytes: a value, a name, a value, the shader's archive id at +12, the kind at +16, a
+/// last word), a tile's floor (the lot's first array) an index into it.
+pub fn floor_patterns(img: &Image) -> Vec<FloorPattern> {
     let Some(t) = img.tables.get("FloorTile").copied() else { return Vec::new() };
     let Some(list) = img.rows("FloorSet").next().and_then(|r| img.ptr(r)) else { return Vec::new() };
     (0..)
         .map_while(|k| img.ptr(list + 4 * k))
         .take_while(|&row| row >= t.rows && row < t.rows + t.count * t.row_size)
-        .filter_map(|row| img.u32(row + 12))
+        .filter_map(|row| Some(FloorPattern { shader: img.u32(row + 12)?, kind: img.u32(row + 16)? }))
         .collect()
 }
 

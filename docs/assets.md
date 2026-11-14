@@ -575,3 +575,13 @@ so, 363 with the engine's tile's texture; the one other, (16, 14), holds 255 (no
 drawn as part of the rough wood run beside it. The engine's floored tiles not so drawn: the road
 (`sim_road`, 37, drawn as one of the lot's display lists, 'w'), its stripes (5, never loaded),
 6 sidewalk tiles at the lot's corners and 4 porch tiles (14-15 and 23-24, 14).
+
+The runs (`scene::floor_runs`): along each row, each stretch of tiles of one pattern is one strip;
+a tile of 255 (half a tile, cut by a diagonal wall) just before a stretch is drawn as its first
+tile (its strip starting with the diagonal or the half's top edge, so a run's row and first tile
+are the least of its first edge's corners); the road's patterns (FloorTile +16 = 6: `sim_road`
+and its stripes) are not runs, the lot's meshes drawing the road. A 255 tile after a stretch is not
+drawn (home: (25, 14), (20, 28)). Home, tick 1,000 (`assets floorcheck LOG FLOORS TICK RUNS`,
+lockstep's LOCKSTEP_DUMP_RUNS): the original's 42 runs are all the engine's (place, length and
+texture); the engine's 4 others are exactly its runs out of the logged view (the sidewalk's ends
+at (10, 39-41) and (39-41, 10)), which the original culls.

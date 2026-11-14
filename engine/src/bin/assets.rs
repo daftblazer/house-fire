@@ -1499,7 +1499,7 @@ fn main() -> ExitCode {
                 .map(|img| housefire::quickdata::floor_patterns(&img))
                 .unwrap_or_default()
                 .into_iter()
-                .filter_map(&texture_of)
+                .filter_map(|p| texture_of(p.shader))
                 .collect();
             let mut want: BTreeMap<String, usize> = BTreeMap::new();
             for l in floors.lines() {
@@ -1530,6 +1530,9 @@ fn main() -> ExitCode {
                 }
             }
             let (mut drawn, mut same, mut other, mut nowhere) = (0, 0, BTreeMap::<String, usize>::new(), 0);
+            // (the runs: the original's, its row and first tile the least of its first edge's two
+            // corners' (an edge along x or a diagonal starts at a half tile))
+            let mut orig_runs: BTreeSet<(i32, i32, i32, String)> = BTreeSet::new();
             let mut seen: BTreeSet<(i32, i32)> = BTreeSet::new();
             for (st, _, loads) in log.other_draws.iter().filter(|g| g.0.tick == tick && g.0.words[0] >> 24 == 42) {
                 let Some(t) = log.tex_loads[..*loads].iter().rev().find(|t| t.map == 0) else { continue };
@@ -1538,6 +1541,10 @@ fn main() -> ExitCode {
                 // (the strip runs along x whichever way its first edge goes: a run of a row)
                 let (x0, y0) = (f(0), f(1));
                 let n = (st.words[1] as i32 - 2) / 2;
+                orig_runs.insert((f(1).min(f(5)) as i32, f(0).min(f(4)) as i32, n, name.clone()));
+                if std::env::var_os("ASSETS_SHOW_RUNS").is_some() {
+                    println!("  run {} {} {n} {name} v1 {} {} v2 {} {}", x0 as i32, y0 as i32, f(4), f(5), 0, 0);
+                }
                 for i in 0..n {
                     let tile = (x0 as i32 + i, y0 as i32);
                     drawn += 1;
@@ -1562,6 +1569,24 @@ fn main() -> ExitCode {
                 for (k, c) in other.iter().take(8) {
                     println!("  {k} ({c})");
                 }
+            }
+            // against the engine's runs (lockstep's LOCKSTEP_DUMP_RUNS: x y n shader), if given
+            if let Some(runs) = args.get(6).and_then(|p| std::fs::read_to_string(p).ok()) {
+                let mine: BTreeSet<(i32, i32, i32, String)> = runs
+                    .lines()
+                    .filter_map(|l| {
+                        let f: Vec<&str> = l.split(' ').collect();
+                        Some((f.get(1)?.parse().ok()?, f.first()?.parse().ok()?, f.get(2)?.parse().ok()?, texture_of(u32::from_str_radix(f.get(3)?, 16).ok()?)?))
+                    })
+                    .collect();
+                println!(
+                    "floor runs: the original's {}, the engine's {}, the same {}; the original's only {:?}; the engine's only {:?}",
+                    orig_runs.len(),
+                    mine.len(),
+                    orig_runs.intersection(&mine).count(),
+                    orig_runs.difference(&mine).collect::<Vec<_>>(),
+                    mine.difference(&orig_runs).collect::<Vec<_>>()
+                );
             }
             let want_set: BTreeSet<String> = want.keys().cloned().collect();
             println!("floor textures the lot's floors name: {want:?}");
