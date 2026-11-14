@@ -1729,6 +1729,21 @@ fn main() -> ExitCode {
                 if std::env::var_os("ASSETS_ALL").is_some() && (v[1].0[1] == v[0].0[1] || std::env::var_os("ASSETS_ANY").is_some()) {
                     println!("  all {:?}", v.iter().map(|q| (q.0[0], q.0[1])).collect::<Vec<_>>());
                 }
+                if std::env::var_os("ASSETS_COLOURS").is_some() {
+                    for (p, _, c) in v {
+                        println!("  colour {} {} {c:08x}", p[0], p[1]);
+                    }
+                }
+                if std::env::var_os("ASSETS_CORNER_KEY").is_some() {
+                    // each corner's colour with the strip's row and its first u (the pattern's run)
+                    for (p, uv, c) in v {
+                        println!("  ck {} {} row {} {c:08x} {}", p[0], p[1], v[0].0[1].min(v[1].0[1]), p[0] - uv[0]);
+                    }
+                }
+                if std::env::var_os("ASSETS_STRIP_COLOURS").is_some() {
+                    let cs: BTreeSet<u32> = v.iter().map(|q| q.2).collect();
+                    println!("  stripcol row {} x {}..{} distinct {} {:x?}", v[0].0[1].min(v[1].0[1]), v[0].0[0], v.last().map_or(0.0, |q| q.0[0]), cs.len(), cs.iter().take(6).collect::<Vec<_>>());
+                }
                 if std::env::var_os("ASSETS_RUNS").is_some() {
                     println!("  x {x0}..{x1} row {y0} c {c} v0 at y {} v {}", v[0].0[1], v[0].1[1]);
                 }

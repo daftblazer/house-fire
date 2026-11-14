@@ -670,3 +670,14 @@ middle (`on_screen`, `off_middle`: fn_80007470's box, 0.15-0.85 across, 0.3-0.75
 player cursor moves carry the camera exactly when the moved cursor is off it, through the live
 view and the projection (the club's cursor only follows the centring). The 2D overlay's
 projections (8.144, an orthographic one) are not the lot's.
+
+The floor's vertex colours (the 'v' records' colour, RGBA with A 0x80): lighting, per corner and
+per run. A corner shared by two runs can carry two colours, one each (home 210 of 1,444 corners,
+the club 186): each run lit as its own room (home: the street's corners 80 80 70, the sidewalk's
+beside them a0 a0 8d; the club: a dark room's 18 18 1e beside the outside's 4d 43 45), and within a
+run the colour changes smoothly corner by corner (lamps' and windows' falloff: home's indoor
+runs 67 67 60 to 6b 6b 69, outdoor a0 a0 8c to a3 a3 91). `assets floorverts` (ASSETS_COLOURS,
+ASSETS_STRIP_COLOURS, ASSETS_CORNER_KEY) lists them. The strips are not recorded through
+ERC_TriStripFloat (a hook on it never ran); the functions that store opcode 42 themselves are
+fn_800C76C0 (9.3 KB, twice: the likeliest floor builder), fn_8002FE20 (a CTile function),
+fn_8019754C, fn_8019788C, fn_80197A34, fn_80197D3C and some CAS ones, none decompiled yet.
