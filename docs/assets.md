@@ -681,3 +681,15 @@ ASSETS_STRIP_COLOURS, ASSETS_CORNER_KEY) lists them. The strips are not recorded
 ERC_TriStripFloat (a hook on it never ran); the functions that store opcode 42 themselves are
 fn_800C76C0 (9.3 KB, twice: the likeliest floor builder), fn_8002FE20 (a CTile function),
 fn_8019754C, fn_8019788C, fn_80197A34, fn_80197D3C and some CAS ones, none decompiled yet.
+
+Where the floor's colours come from (found with temporary call probes, removed): the floor's
+strips are recorded once, at the lot's load (tick 0), by fn_800751DC (called from fn_80075B60),
+which writes its ERC entries itself through fn_8019788C (an opcode 42 writer of its own; the
+entries are then played every frame, so ERC_TriStripFloat never runs for them). Next to it,
+LightGrid_Sum (0x80074B1C, the recomp's `src/light_grid.cpp`, called by fn_80074D88) lights a
+39 x 39 grid of points: each grid cell lists up to four lights for each of a few ids (rooms, so a
+corner between two rooms has a value for each: the two colours a shared corner carries), a light
+32 bytes (x, y, height, reach, colour RGB), and a point's light the sum over its cell's list of
+colour x max(height / distance, 0) x min((reach / distance)^2, 1). How the sums become the
+vertices' bytes, and where the lights and the lists come from (the lot's lights, its rooms,
+outside light), is next.
