@@ -650,3 +650,12 @@ the lot (outside 1 to size - 1) leaves the camera. `scene::Camera::centre_on`. T
 on the logged cursor by the look just before, and the target is 2 from the cursor on all 4,312
 records; home, its start's move, the rest (163) the player's cursor moving the camera at the
 screen's edge (fn_80007470's box, 0.15-0.85 across, 0.3-0.75 down), next.
+
+The player's cursor and the target (the decomp's CursorMoved, mode 0, and fn_80006C58): while the
+cursor is off the screen's middle (fn_80007470's box, 0.15-0.85 across and 0.3-0.75 down), its
+moves are added to the wanted target's x and y, and once a frame it is pulled back towards the
+target by the cursor's speed (`scene::Camera::cursor_speed`, from the wanted distance: 5 tiles a
+second at 8 to 15 at 35; `pull_cursor`). `assets camlog`, home's 164 target moves: 1 the start's
+centring, 144 the cursor's move carried over, 18 that and the pull; 1 at the lot's edge (the
+cursor held at x 1) not explained yet. The box test itself (the cursor projected through the
+window's view) is not checked yet.

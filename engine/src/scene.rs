@@ -205,6 +205,24 @@ impl Camera {
     /// The turn's speed at a full stick, degrees a second.
     pub const TURN_SPEED: f32 = 65.0;
 
+    /// The cursor's speed (tiles a second) at a zoom `distance`: 5 at the near end to 15 at the
+    /// far (the original's +0x390, set each frame from the wanted distance).
+    pub fn cursor_speed(distance: f32) -> f32 {
+        (distance - Self::NEAR) / (Self::FAR - Self::NEAR) * (15.0 - 5.0) + 5.0
+    }
+
+    /// A cursor off the screen's middle pulled back towards the wanted target (the original's
+    /// fn_80006C58, once a frame in the usual mode): by the cursor's speed for `dt` seconds.
+    pub fn pull_cursor(&self, cursor: [f32; 2], dt: f32) -> [f32; 2] {
+        let d = [self.target[0] - cursor[0], self.target[1] - cursor[1]];
+        let n = (d[0] * d[0] + d[1] * d[1]).sqrt();
+        if n == 0.0 {
+            return cursor;
+        }
+        let step = Self::cursor_speed(self.distance) * dt;
+        [cursor[0] + step * d[0] / n, cursor[1] + step * d[1] / n]
+    }
+
     /// The wanted camera zoomed by the stick's `input` (in, positive: nearer by `input`), the
     /// distance kept within the zoom (`far` its far end), the tilt following it in proportion.
     pub fn zoom(&mut self, input: f32, far: f32) {
@@ -379,6 +397,15 @@ mod tests {
         assert!((wanted.target[0] - 22.414_213).abs() < 1e-5 && (wanted.target[1] - 8.414_213).abs() < 1e-5);
         assert_eq!(live.target, wanted.target);
         assert!(!wanted.centre_on(&mut live, [0.5, 7.0], [0.0; 3], 64));
+    }
+
+    #[test]
+    fn the_cursor_is_pulled_back_as_the_originals() {
+        // 5 tiles a second at the near zoom (home's 0.165 a frame), 15 at the far
+        let c = Camera { target: [10.0, 0.0, 0.25], distance: 8.0, rotation: 0.0, tilt: 25.0 };
+        let got = c.pull_cursor([0.0, 0.0], 0.033);
+        assert!((got[0] - 0.165).abs() < 1e-6 && got[1] == 0.0, "{got:?}");
+        assert!((Camera::cursor_speed(35.0) - 15.0).abs() < 1e-6);
     }
 
     #[test]

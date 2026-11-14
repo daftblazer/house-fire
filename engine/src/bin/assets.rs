@@ -1591,7 +1591,7 @@ fn main() -> ExitCode {
             // the wanted target: when it moves, the engine's centring on the cursor (put on the
             // followed Sim) by the look just before (the last record's wanted target and eye);
             // at every record, 2 from the cursor along the level
-            let (mut moves, mut centred, mut two_off, mut records) = (0, 0, 0, 0);
+            let (mut moves, mut centred, mut two_off, mut records, mut with_cursor, mut with_pull) = (0, 0, 0, 0, 0, 0);
             for w in log.cams.windows(2) {
                 if w[1].cursor == 0 || w[0].camera != w[1].camera {
                     continue;
@@ -1609,11 +1609,24 @@ fn main() -> ExitCode {
                 let mut live = cam(&w[0].live);
                 let ok = wanted.centre_on(&mut live, [p[0], p[1]], w[0].eye, 64) && (wanted.target[0] - t[0]).abs() <= 1e-4 && (wanted.target[1] - t[1]).abs() <= 1e-4;
                 centred += usize::from(ok);
+                // or the cursor's move carried over (CursorMoved, the cursor off the screen's box)
+                let q = w[0].cursor_at;
+                let carried = !ok && ((t[0] - w[0].wanted[0]) - (p[0] - q[0])).abs() <= 1e-4 && ((t[1] - w[0].wanted[1]) - (p[1] - q[1])).abs() <= 1e-4;
+                // (and the cursor then pulled back towards the target, fn_80006C58: by the
+                // zoom's cursor speed a second, 5 at the near end to 15 at the far)
+                let pulled = !ok && !carried && {
+                    let mid = [q[0] + (t[0] - w[0].wanted[0]), q[1] + (t[1] - w[0].wanted[1])];
+                    let got = cam(&t).pull_cursor(mid, w[1].dt);
+                    (got[0] - p[0]).abs() <= 1e-3 && (got[1] - p[1]).abs() <= 1e-3
+                };
+                with_pull += usize::from(pulled);
+                with_cursor += usize::from(carried);
+                let ok = ok || carried || pulled;
                 if !ok && std::env::var_os("ASSETS_EACH").is_some() {
                     println!("  target tick {}: wanted {:?} -> {:?} cursor {:?} eye {:?}", w[1].tick, w[0].wanted, t, p, w[0].eye);
                 }
             }
-            println!("wanted target: moves {moves}, the engine's centring on the cursor gives it {centred}; records {records}, the target 2 from the cursor {two_off}");
+            println!("wanted target: moves {moves}, the engine's centring on the cursor gives it {centred}, the cursor's move carried over {with_cursor}, and the cursor pulled back {with_pull}; records {records}, the target 2 from the cursor {two_off}");
             println!("wanted: zooms {zooms}, the engine's zoom gives the logged distance and tilt {zoom_ok}; turns {turns}, by a stick within -1..1 {turn_ok}");
             println!("easing: {eased} records, the engine's live parameters against the log's: largest difference {worst:.6} (record {at}); {after_still} after a still stretch matched by its last steps; {placed} placed at once");
         }
