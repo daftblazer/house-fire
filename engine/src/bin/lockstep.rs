@@ -1389,7 +1389,7 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &(Vec<u3
                 println!("places at tick {} written to {at}", s.tick);
             }
             // and the walls' pieces as the engine draws them (LOCKSTEP_DUMP_WALLS: x y angle
-            // fence pattern cap opening), a lot whose save keeps no walls (the club) with its house's, the disc's
+            // fence pattern cap opening form), a lot whose save keeps no walls (the club) with its house's, the disc's
             // copy's (as replay builds them; lockstep's own world untouched)
             if let Ok(at) = std::env::var("LOCKSTEP_DUMP_WALLS") {
                 let house = (lw.walls.wall_edges() == 0)
@@ -1406,7 +1406,12 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &(Vec<u3
                         housefire::routing::Opening::Door => "door",
                         housefire::routing::Opening::Window => "window",
                     };
-                    out += &format!("{} {} {} {} {shader:08x} {} {opening}\n", p.x, p.y, p.angle, u8::from(p.fence), u8::from(p.cap));
+                    let form = match p.form {
+                        housefire::scene::Form::Straight => "straight",
+                        housefire::scene::Form::LeftExtends => "left_extends",
+                        housefire::scene::Form::RightExtends => "right_extends",
+                    };
+                    out += &format!("{} {} {} {} {shader:08x} {} {opening} {form}\n", p.x, p.y, p.angle, u8::from(p.fence), u8::from(p.cap));
                 }
                 let _ = std::fs::write(&at, out);
             }

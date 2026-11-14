@@ -72,6 +72,35 @@ pub struct WallPiece {
     pub cap: bool,
     /// The edge's door or window (its face drawn with the `_door` or `_window` model).
     pub opening: crate::routing::Opening,
+    /// The model's form at an outer corner (`_left_extends`, `_right_extends`).
+    pub form: Form,
+}
+
+/// A wall part's form: straight, or reaching past one end to meet the wall round an outer
+/// corner: `_left_extends` at its end towards +t, `_right_extends` towards -t, t = (cos a, sin a)
+/// for its turn a.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Form {
+    #[default]
+    Straight,
+    LeftExtends,
+    RightExtends,
+}
+
+/// The form of the part on tile (px, py) whose wall is towards (wx, wy): at an end e (along the
+/// wall), an outer corner is a wall on the far tile's edge towards e, with none on the part's own
+/// tile's edge towards e and the wall not going on past e.
+fn form(px: i32, py: i32, wx: i32, wy: i32, solid: &dyn Fn(i32, i32, i32, i32) -> bool) -> Form {
+    // t = (cos a, sin a) for the part's turn: its normal (-sin a, cos a) is (-wx, -wy), so t is
+    // (-wy, wx)
+    let corner = |ex: i32, ey: i32| solid(px + wx, py + wy, ex, ey) && !solid(px, py, ex, ey) && !solid(px + ex, py + ey, wx, wy);
+    if corner(-wy, wx) {
+        Form::LeftExtends
+    } else if corner(wy, -wx) {
+        Form::RightExtends
+    } else {
+        Form::Straight
+    }
 }
 
 impl WallPiece {
@@ -87,6 +116,7 @@ impl WallPiece {
 /// The pieces of the walls between the tiles of a `size`-tile lot: each edge with a wall once.
 pub fn wall_pieces(walls: &crate::routing::Walls, size: i32, fences: &[u32]) -> Vec<WallPiece> {
     let mut out = Vec::new();
+    let solid = |x: i32, y: i32, dx: i32, dy: i32| walls.wall_between(x, y, dx, dy) && !fences.contains(&u32::from(walls.style(x, y, dx, dy)));
     for y in 0..size {
         for x in 0..size {
             for (dx, dy) in [(1, 0), (0, 1)] {
@@ -97,12 +127,12 @@ pub fn wall_pieces(walls: &crate::routing::Walls, size: i32, fences: &[u32]) -> 
                 let style = walls.style(x, y, dx, dy);
                 if fences.contains(&u32::from(style)) {
                     let angle = if dx == 1 { 90.0 } else { 0.0 };
-                    out.push(WallPiece { x: cx + dx as f32 / 2.0, y: cy + dy as f32 / 2.0, angle, fence: true, pattern: style, cap: false, opening: walls.opening(x, y, dx, dy) });
+                    out.push(WallPiece { x: cx + dx as f32 / 2.0, y: cy + dy as f32 / 2.0, angle, fence: true, pattern: style, cap: false, opening: walls.opening(x, y, dx, dy), form: Form::Straight });
                 } else {
                     let (here, there) = if dx == 1 { (90.0, -90.0) } else { (180.0, 0.0) };
-                    out.push(WallPiece { x: cx, y: cy, angle: here, fence: false, pattern: walls.pattern(x, y, dx, dy), cap: !walls.indoors(x, y), opening: walls.opening(x, y, dx, dy) });
+                    out.push(WallPiece { x: cx, y: cy, angle: here, fence: false, pattern: walls.pattern(x, y, dx, dy), cap: !walls.indoors(x, y), opening: walls.opening(x, y, dx, dy), form: form(x, y, dx, dy, &solid) });
                     let (nx, ny) = (x + dx, y + dy);
-                    out.push(WallPiece { x: cx + dx as f32, y: cy + dy as f32, angle: there, fence: false, pattern: walls.pattern(nx, ny, -dx, -dy), cap: !walls.indoors(nx, ny), opening: walls.opening(x, y, dx, dy) });
+                    out.push(WallPiece { x: cx + dx as f32, y: cy + dy as f32, angle: there, fence: false, pattern: walls.pattern(nx, ny, -dx, -dy), cap: !walls.indoors(nx, ny), opening: walls.opening(x, y, dx, dy), form: form(nx, ny, -dx, -dy, &solid) });
                 }
             }
         }
@@ -119,7 +149,7 @@ mod tests {
         // home, tick 1,000: the eye at (32.29, -4.02); the west wall's inside face (13.5, 15.5)
         // turned -90 is seen, its outside (12.5, 15.5) turned 90 is not
         let eye = [32.29, -4.02];
-        let part = |x, y, angle| WallPiece { x, y, angle, fence: false, pattern: 0, cap: false, opening: Default::default() };
+        let part = |x, y, angle| WallPiece { x, y, angle, fence: false, pattern: 0, cap: false, opening: Default::default(), form: Form::Straight };
         assert!(part(13.5, 15.5, -90.0).faces(eye));
         assert!(!part(12.5, 15.5, 90.0).faces(eye));
         assert!(part(14.5, 13.5, 180.0).faces(eye));

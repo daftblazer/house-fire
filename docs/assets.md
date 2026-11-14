@@ -532,5 +532,14 @@ records share their lists' first bytes, so a draw names its family, not its reco
 follows the edge (`Walls::opening`, `WallPiece::opening`): a door's two parts on its two tiles
 make a door edge (as routing's openings), a window's (an OBJD type 8 with field 3 set,
 `Object::window`) a window edge. At tick 1,000 every face drawn is of the engine's family: home
-47 plain, 12 window, 5 door; the club 36 plain, 3 door. Which of the `_extends` and `_cap` forms
-a part takes (the wall's ends and corners) is next.
+47 plain, 12 window, 5 door; the club 36 plain, 3 door.
+
+A part's form (`scene::Form`, `WallPiece::form`): at an outer corner its model reaches past its
+end to meet the wall round the corner: `_left_extends` at its end towards +t, `_right_extends`
+towards -t (t = (cos a, sin a) for its turn a). An end is an outer corner when the tile across
+its wall has a wall towards that end, the part's own tile has none there and the wall does not go
+on (fences not counted). A draw shows its form by its positions (the strip's `at[2]`):
+`_right_extends` has its own, a 5-vertex cap is `_left_extends`'s, the rest are the straight
+models'. At tick 1,000 every draw so read agrees: home 111 straight, 2 left, 3 right; the club 90,
+4 and 6. A free end's `_left_cap`/`_right_cap` keep the straight model's first positions, so a
+draw cannot tell them apart from it: not decided yet (they end walls that stop in the open).

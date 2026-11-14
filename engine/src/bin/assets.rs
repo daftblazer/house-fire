@@ -1232,6 +1232,13 @@ fn main() -> ExitCode {
                             if let Some(k) = sm.list.as_ref().and_then(|l| l.2.get(..32)) {
                                 m.entry(k.try_into().unwrap()).or_default().insert(format!("{entry}/{} ({} vertices)", r.name, sm.count));
                             }
+                            // (and by its positions' first bytes, kept apart by a leading byte)
+                            if let Some(k) = sm.positions.get(..31)
+                            {
+                                let mut key = [0xffu8; 32];
+                                key[1..].copy_from_slice(k);
+                                m.entry(key).or_default().insert(format!("{entry}/{}", r.name));
+                            }
                         }
                     }
                 }
@@ -1241,6 +1248,7 @@ fn main() -> ExitCode {
             };
             let mut record_tally: BTreeMap<(String, String), usize> = BTreeMap::new();
             let mut by_opening: BTreeMap<(String, String), usize> = BTreeMap::new();
+            let mut by_form: BTreeMap<(String, String), usize> = BTreeMap::new();
             let (mut parts, mut same, mut undrawn, mut down) = (0, 0, 0, 0);
             let mut wrong: BTreeMap<String, usize> = BTreeMap::new();
             for l in walls.lines() {
@@ -1284,6 +1292,35 @@ fn main() -> ExitCode {
                         {
                             let kind = format!("{} vertices, {}", st.words[1], names[0].0.rsplit('/').next().unwrap_or(""));
                             let owners = list_owners.get(&st.at[6]).map_or("?".to_string(), |o| o.iter().cloned().collect::<Vec<_>>().join(" | "));
+                            // the form the draw shows: its positions' records (`_right_extends`
+                            // has its own; a 5-vertex cap is `_left_extends`'s; the rest straight's)
+                            {
+                                let mut key = [0xffu8; 32];
+                                key[1..].copy_from_slice(&st.at[2][..31]);
+                                let pos = list_owners.get(&key);
+                                let has = |n: &str| pos.is_some_and(|o| o.contains(n));
+                                let seen = if st.words[1] == 5 {
+                                    Some("left_extends")
+                                } else if has("House1Preload/wall_straight") || has("House1Preload/wall_straight_door") || has("housepre01/wall_straight_standard_window") {
+                                    Some("straight")
+                                } else if has("House1Preload/wall_straight_right_extends") {
+                                    Some("right_extends")
+                                } else {
+                                    None
+                                };
+                                if let Some(seen) = seen {
+                                    *by_form.entry((f.get(7).copied().unwrap_or("-").to_string(), seen.to_string())).or_default() += 1;
+                                }
+                            }
+                            if std::env::var_os("ASSETS_WALL_BY_POSITIONS").is_some() {
+                                for (k, a) in st.at.iter().enumerate() {
+                                    let mut key = [0xffu8; 32];
+                                    key[1..].copy_from_slice(&a[..31]);
+                                    if let Some(o) = list_owners.get(&key) {
+                                        println!("    bypos {x} {y} {angle} {} at[{k}]: {}", st.words[1], o.iter().cloned().collect::<Vec<_>>().join(" | "));
+                                    }
+                                }
+                            }
                             *record_tally.entry((kind, owners.clone())).or_default() += 1;
                             if std::env::var_os("ASSETS_SHOW_WALL_FAMILY").is_some() && (st.words[1] == 23 || st.words[1] == 18) {
                                 let fam = if st.words[1] == 18 { "plain" } else if owners.contains("_door") { "door" } else if owners.contains("window") { "window" } else { "?" };
@@ -1310,7 +1347,7 @@ fn main() -> ExitCode {
                     println!("    part {x} {y} {angle} {state} caps {caps:?}");
                 }
                 if let Some(eye) = eye {
-                    let piece = housefire::scene::WallPiece { x, y, angle, fence: false, pattern: 0, cap: false, opening: Default::default() };
+                    let piece = housefire::scene::WallPiece { x, y, angle, fence: false, pattern: 0, cap: false, opening: Default::default(), form: housefire::scene::Form::Straight };
                     *by_facing.entry((piece.faces(eye), want.is_some_and(|w| drawn.iter().any(|n| n.eq_ignore_ascii_case(w))))).or_default() += 1;
                 }
                 if want.is_some_and(|w| drawn.iter().any(|n| n.eq_ignore_ascii_case(w))) {
@@ -1370,6 +1407,9 @@ fn main() -> ExitCode {
                 by_facing.get(&(false, true)).unwrap_or(&0),
                 by_facing.get(&(false, false)).unwrap_or(&0)
             );
+            if !by_form.is_empty() {
+                println!("wall draws by (WallPiece::form, the form their positions show): {by_form:?}");
+            }
             if !by_opening.is_empty() {
                 println!("wall faces by (WallPiece::opening, the original's model family): {by_opening:?}");
             }
