@@ -475,13 +475,15 @@ place).
 
 ## Walls
 
-The original draws a lot's walls as static models too (SetOrient's 'o' records): for each tile
-side with a wall (`Walls::wall_between`, the doors' openings counted as wall), a wall part at
-that tile's centre turned with its back to the wall (90 degrees for the wall on the tile's +x
-side, -90 on -x, 180 on +y, 0 on -y; the same frame as an object hung on the wall), or, for the
-walls cut away toward the camera, one piece on the edge itself, along it ((14.5, 12.0) turned 0
-for the wall between rows 11 and 12 of the home lot). Every wall side is one or the other: home,
-tick 1,000, 162 sides, 134 at their tile's centre, 28 cut away; the club (its house's walls, the
-disc's copy, as replay builds them) 250 sides, 167 and 83 (`assets ISO wallcheck LOG WALLS
-TICK`, with lockstep's LOCKSTEP_DUMP_WALLS). Which walls are cut away follows the camera (to be
-read with it); the wall parts' models and their patterns are next.
+The original draws a lot's walls as static models too (SetOrient's 'o' records). For each edge
+with a wall (`Walls::wall_between`, doors' openings counted as wall), by its style: a wall has a
+part on each side, at that tile's centre turned with its back to the wall (90 degrees for the
+wall on the tile's +x side, -90 on -x, 180 on +y, 0 on -y: the frame of an object hung on that
+wall); a fence has one piece on the edge itself, along it ((14.5, 12.0) turned 0 for the home
+porch's railing between rows 11 and 12). An edge's style is kept by the tile on its +x or +y
+side, in the lot's second array: byte 2 for its -y edge, byte 3 for its -x edge
+(`Walls::style`); the fences are the styles `SimsTiles`' `FenceData` lists (2, 12 and 13;
+`quickdata::fence_styles`), the walls `WallTile`'s (home: 1, 3 and 22). `scene::wall_pieces`
+gives the pieces; every one is the original's (home, tick 1,000: 148 pieces, 14 of them fences;
+the club, its house's walls: 207, 43 fences; `assets ISO wallcheck LOG PIECES TICK` with
+lockstep's LOCKSTEP_DUMP_WALLS). The wall parts' models and patterns are next.

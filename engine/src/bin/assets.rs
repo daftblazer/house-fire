@@ -1124,7 +1124,7 @@ fn main() -> ExitCode {
                 args.get(4).and_then(|p| std::fs::read_to_string(p).ok()),
                 args.get(5).and_then(|t| t.parse::<u32>().ok()),
             ) else {
-                println!("usage: assets ISO wallcheck LOG WALLS TICK");
+                println!("usage: assets ISO wallcheck LOG PIECES TICK");
                 return ExitCode::from(2);
             };
             let mut last: BTreeMap<u32, &housefire::tree_log::OrientRec> = BTreeMap::new();
@@ -1136,31 +1136,27 @@ fn main() -> ExitCode {
                 let angle = m.m[1].atan2(m.m[0]).to_degrees().round() as i32;
                 *at.entry(((m.m[12] * 2.0).round() as i32, (m.m[13] * 2.0).round() as i32, angle.rem_euclid(360))).or_default() += 1;
             }
-            let (mut sides, mut found, mut cut) = (0, 0, 0);
-            let mut missing: Vec<String> = Vec::new();
+            // each piece the engine draws (lockstep's dump: x y angle fence) against the original's
+            // orientations: one at that place, turned so (a fence's either way along its edge)
+            let (mut pieces, mut found, mut fences, mut fences_found) = (0, 0, 0, 0);
+            let mut missing = Vec::new();
             for l in walls.lines() {
-                let f: Vec<i32> = l.split(' ').filter_map(|v| v.parse().ok()).collect();
-                let [x, y, dx, dy] = f[..] else { continue };
-                sides += 1;
-                let angle = match (dx, dy) {
-                    (1, 0) => 90,
-                    (-1, 0) => 270,
-                    (0, 1) => 180,
-                    _ => 0,
-                };
-                // or cut away (the walls toward the camera): one piece on the edge itself, along it
-                let edge = (2 * x + 1 + dx, 2 * y + 1 + dy);
-                let along = if dx != 0 { [90, 270] } else { [0, 180] };
-                if at.contains_key(&(2 * x + 1, 2 * y + 1, angle)) {
-                    found += 1;
-                } else if along.iter().any(|&a| at.contains_key(&(edge.0, edge.1, a))) {
-                    cut += 1;
-                } else if missing.len() < 20 {
-                    missing.push(format!("({x}, {y}) side ({dx}, {dy})"));
+                let f: Vec<f32> = l.split(' ').filter_map(|v| v.parse().ok()).collect();
+                let [x, y, angle, fence] = f[..] else { continue };
+                let key = |a: f32| ((x * 2.0).round() as i32, (y * 2.0).round() as i32, (a.round() as i32).rem_euclid(360));
+                let hit = at.contains_key(&key(angle)) || (fence == 1.0 && at.contains_key(&key(angle + 180.0)));
+                pieces += 1;
+                found += usize::from(hit);
+                if fence == 1.0 {
+                    fences += 1;
+                    fences_found += usize::from(hit);
+                }
+                if !hit && missing.len() < 12 {
+                    missing.push((x, y, angle, fence));
                 }
             }
-            println!("wall sides {sides}: a static model at the tile's centre turned with its back to the wall {found}; cut away (a piece on the edge, along it) {cut}; neither {}", sides - found - cut);
-            if std::env::var_os("ASSETS_SHOW_MISSING").is_some() {
+            println!("wall pieces (the engine's) {pieces}: the original's orientation there {found}; of them fences {fences}, found {fences_found}");
+            if !missing.is_empty() {
                 println!("  not found: {missing:?}");
             }
         }

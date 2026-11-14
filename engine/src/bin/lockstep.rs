@@ -694,7 +694,15 @@ fn main() -> ExitCode {
     };
     variables(&lib, &log, &step_object, &lot_world, &mut notes);
     let disc_ngh = d.read("Runtime/default.ngh").unwrap_or_default();
-    set_to_next_check(&lib, &ngh, &disc_ngh, &log, &step_object, &mut notes);
+    let quick = d.read("quickdat.arc").unwrap_or_default();
+    let fences = housefire::arc::entries(&quick)
+        .unwrap_or_default()
+        .into_iter()
+        .find(|e| e.name == "SimsTiles")
+        .and_then(|e| housefire::quickdata::Image::read(housefire::arc::bytes(&quick, &e)))
+        .map(|img| housefire::quickdata::fence_styles(&img))
+        .unwrap_or_default();
+    set_to_next_check(&lib, &ngh, &disc_ngh, &fences, &log, &step_object, &mut notes);
 
     for (k, v) in &notes.out {
         println!("  {k:<62} {v}");
@@ -1146,7 +1154,8 @@ fn pick_lot(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log) -> LotPic
     (lots, lot_ids, walk, best, best_n)
 }
 
-fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], log: &housefire::tree_log::Log, step_object: &[Option<FileId>], notes: &mut Notes) {
+#[allow(clippy::too_many_arguments)]
+fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], fences: &[u32], log: &housefire::tree_log::Log, step_object: &[Option<FileId>], notes: &mut Notes) {
     let (lots, lot_ids, walk, best, best_n) = pick_lot(lib, ngh, log);
     let raw_of = |s: &StepRec| -> Option<&[u8]> {
         let t = log.tree_of(s)?;
@@ -1379,8 +1388,9 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], log: &housefire
             if std::fs::write(&at, out).is_ok() {
                 println!("places at tick {} written to {at}", s.tick);
             }
-            // and each tile side with a wall (LOCKSTEP_DUMP_WALLS): x y dx dy; a lot whose save
-            // keeps no walls (the club) has its house's, the disc's copy's (as replay builds it)
+            // and the walls' pieces as the engine draws them (LOCKSTEP_DUMP_WALLS: x y angle
+            // fence), a lot whose save keeps no walls (the club) with its house's, the disc's
+            // copy's (as replay builds them; lockstep's own world untouched)
             if let Ok(at) = std::env::var("LOCKSTEP_DUMP_WALLS") {
                 let house = (lw.walls.wall_edges() == 0)
                     .then(|| read_lots(disc_ngh).ok().and_then(|l| l.get(best).and_then(|h| housefire::save::read_lot_arrays(h).ok())))
@@ -1388,14 +1398,8 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], log: &housefire
                     .map(|a| housefire::routing::Walls::new(&a, &lw));
                 let walls = house.as_ref().unwrap_or(&lw.walls);
                 let mut out = String::new();
-                for y in 0..64 {
-                    for x in 0..64 {
-                        for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-                            if walls.wall_between(x, y, dx, dy) {
-                                out += &format!("{x} {y} {dx} {dy}\n");
-                            }
-                        }
-                    }
+                for p in housefire::scene::wall_pieces(walls, 64, fences) {
+                    out += &format!("{} {} {} {}\n", p.x, p.y, p.angle, u8::from(p.fence));
                 }
                 let _ = std::fs::write(&at, out);
             }

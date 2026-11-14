@@ -56,6 +56,41 @@ pub fn placements(parts: &[Part]) -> Vec<Placement> {
         .collect()
 }
 
+/// A piece of a lot's walls as the original draws it: at (x, y) (tiles), turned `angle` degrees;
+/// a wall's part on one side (at the tile's centre, its back to the wall: the frame of an object
+/// hung on that wall) or a fence's one piece on the edge, along it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WallPiece {
+    pub x: f32,
+    pub y: f32,
+    pub angle: f32,
+    pub fence: bool,
+}
+
+/// The pieces of the walls between the tiles of a `size`-tile lot: each edge with a wall once.
+pub fn wall_pieces(walls: &crate::routing::Walls, size: i32, fences: &[u32]) -> Vec<WallPiece> {
+    let mut out = Vec::new();
+    for y in 0..size {
+        for x in 0..size {
+            for (dx, dy) in [(1, 0), (0, 1)] {
+                if !walls.wall_between(x, y, dx, dy) {
+                    continue;
+                }
+                let (cx, cy) = (x as f32 + 0.5, y as f32 + 0.5);
+                if fences.contains(&u32::from(walls.style(x, y, dx, dy))) {
+                    let angle = if dx == 1 { 90.0 } else { 0.0 };
+                    out.push(WallPiece { x: cx + dx as f32 / 2.0, y: cy + dy as f32 / 2.0, angle, fence: true });
+                } else {
+                    let (here, there) = if dx == 1 { (90.0, -90.0) } else { (180.0, 0.0) };
+                    out.push(WallPiece { x: cx, y: cy, angle: here, fence: false });
+                    out.push(WallPiece { x: cx + dx as f32, y: cy + dy as f32, angle: there, fence: false });
+                }
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

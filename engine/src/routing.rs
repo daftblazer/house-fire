@@ -485,6 +485,9 @@ pub struct Walls {
     /// and whether it is inside (the third array's 1).
     floors: Vec<u8>,
     inside: Vec<bool>,
+    /// Each tile's walls' styles: its -y edge's (the second array's byte 2) and its -x edge's
+    /// (byte 3), a `WallTile` or (a fence) a `FenceData` style (`docs/assets.md`, "Walls").
+    styles: Vec<[u8; 2]>,
 }
 
 impl Walls {
@@ -496,6 +499,7 @@ impl Walls {
         let es = a.element_size as usize;
         // The array is row after row of y, x across a row.
         w.edges = (0..(a.width * a.height) as usize).map(|i| a.bytes.get(i * es).copied().unwrap_or(0)).collect();
+        w.styles = (0..(a.width * a.height) as usize).map(|i| [2, 3].map(|k| if k < es { a.bytes.get(i * es + k).copied().unwrap_or(0) } else { 0 })).collect();
         let n = (a.width * a.height) as usize;
         w.floors = arrays.first().map_or(vec![0; n], |f| (0..n).map(|i| f.bytes.get(i * f.element_size as usize).copied().unwrap_or(0)).collect());
         w.inside = arrays.get(2).map_or(vec![false; n], |f| (0..n).map(|i| f.bytes.get(i * f.element_size as usize) == Some(&1)).collect());
@@ -529,6 +533,16 @@ impl Walls {
 
     fn at(&self, x: i32, y: i32) -> u8 {
         if self.inside(x, y) { self.edges[y as usize * self.width as usize + x as usize] } else { 0 }
+    }
+
+    /// The style of the wall between tile (x, y) and its neighbour (x + dx, y + dy) (one of dx
+    /// and dy ±1): kept by the tile on the edge's +x or +y side, 0 off the lot.
+    pub fn style(&self, x: i32, y: i32, dx: i32, dy: i32) -> u8 {
+        let (ox, oy) = (x + dx.max(0), y + dy.max(0));
+        if !self.inside(ox, oy) {
+            return 0;
+        }
+        self.styles.get(oy as usize * self.width as usize + ox as usize).map_or(0, |s| if dy != 0 { s[0] } else { s[1] })
     }
 
     /// Whether there is a wall between tile (x, y) and its neighbour (x + dx, y + dy), the

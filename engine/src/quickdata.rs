@@ -125,3 +125,9 @@ pub fn object_resources(img: &Image) -> BTreeMap<u32, ObjResources> {
         })
         .collect()
 }
+
+/// The wall styles that are fences, from `SimsTiles`: its `FenceData` rows (16 bytes: a hash, a
+/// price, a name, the style).
+pub fn fence_styles(img: &Image) -> Vec<u32> {
+    img.rows("FenceData").filter_map(|r| img.u32(r + 12)).collect()
+}
