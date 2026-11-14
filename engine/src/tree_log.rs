@@ -96,6 +96,9 @@ pub struct MatrixRec {
 
 /// An orientation the original gave a static model ('o': EIStaticModel::SetOrient): the tick,
 /// the model's address and the 4x4, rows (the translation in the last row).
+/// A logged strip vertex: its position (x, y, z, w), UV and colour.
+pub type StripVertex = ([f32; 4], [f32; 2], u32);
+
 /// 'c': the lot camera after its step a frame (logged when it changed): the wanted parameters
 /// (target x y z, distance, rotation, tilt), the live ones, the easing mode, the eye, the followed
 /// cursor's address and the camera's.
@@ -380,7 +383,7 @@ pub struct Log {
     pub other_draws: Vec<(StripRec, usize, usize)>,
     /// 'v': a floor strip's (op 42's) whole vertices, after its 'g' record: that record's index
     /// in `other_draws`, and each vertex's position (x, y, z, w), UV and colour.
-    pub strip_vertices: Vec<(usize, Vec<([f32; 4], [f32; 2], u32)>)>,
+    pub strip_vertices: Vec<(usize, Vec<StripVertex>)>,
     pub trees: Vec<TreeRec>,
     pub lists: Vec<ListRec>,
     /// Tick -> its pass over the objects (logs with 'Q' records).
