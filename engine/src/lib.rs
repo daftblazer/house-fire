@@ -16,6 +16,7 @@ pub mod primitives;
 pub mod rle_texture;
 pub mod quickdata;
 pub mod shader;
+pub mod skeleton;
 pub mod routing;
 pub mod interp;
 pub mod save;

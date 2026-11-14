@@ -408,3 +408,23 @@ object's tile centre (all turned 90 - 45 x facing): the rest are a node's matrix
 times the node's transform (a mulberry tree: 395 matrices, its branches and leaves about
 (9.0, 9.0) for a tree at (8.75, 8.75), each turned and scaled its own way), and outdoor objects
 stand at quarter tiles, not tile centres. Study ASSETS_SHOW_UNDRAWN, _MISPLACED=NAME, _FAR.
+
+## Skeletons
+
+`characte.arc`'s 238 entries (`skeleton.rs`, all read to their ends; 236 with the id their
+name's hash, so a model's record finds its skeleton by its name): the name, a bone count, then
+the bones, the first named by the entry's name and the others each by its own: the parent (-1
+for the root), a child count and the children, a translation (3 floats), a rotation (a
+quaternion, 4), a flag byte and two 4x4 matrices; then a plane's name (`Plane05`) and five
+floats. The objects' bones are at rest (no translation, no turn, identity matrices: the
+fridge's eight, the alarm clock's fourteen).
+
+A model record's node word (read before as a parent) is the bone its meshes hang from: the
+cradle's 14 nodes on bones 1 to 14, -1 for a skinned mesh (whose batches name their matrix
+slots). For all 211 records with a skeleton of their name every node's bone is one of its
+bones and every matrix slot is within them (`assets ISO skelcheck`).
+
+So the matrices a node is drawn with are the object's, times its bone's pose: at rest the
+object's own, but the original's draws show the poses its animations give (the fridge's body
+and doors drawn at their hinges, (25.39, 20.11), (25.64, 20.49), (25.39, 20.88) for a fridge on
+(25, 20), each turned and scaled its own way): the pose is stage 4.4's (animation).

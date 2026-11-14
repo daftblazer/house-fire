@@ -35,10 +35,10 @@ pub struct SubModel {
     pub hash: u32,
 }
 
-/// A node of a record's tree: its parent (-1 for the root) and its sub-models' batches.
+/// A node of a record: the bone of its skeleton (`skeleton.rs`, the record's name) its meshes hang from (-1: none, a skinned mesh, whose batches name their matrices) and its sub-models' batches.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Node {
-    pub parent: i32,
+    pub bone: i32,
     pub subs: Vec<(u32, SubModel)>,
 }
 
@@ -128,7 +128,7 @@ fn sub_model(b: &[u8], mut p: usize) -> Option<(Vec<(u32, SubModel)>, usize)> {
     Some((out, p + 1))
 }
 
-/// Reads a whole record: the head, the node count (+0x19 past the name), each node's parent,
+/// Reads a whole record: the head, the node count (+0x19 past the name), each node's bone,
 /// sub-model count and sub-models, and the 72 bytes of bounds that end it; `None` unless it reads
 /// so to its last byte (the kinds of sub-model known).
 pub fn read_record(b: &[u8]) -> Option<Record> {
@@ -159,7 +159,7 @@ pub fn read_record_prefix(b: &[u8]) -> Option<(Record, usize)> {
     let mut p = q + 0x1d;
     let mut nodes = Vec::with_capacity(count);
     for _ in 0..count {
-        let parent = be32(b, p)? as i32;
+        let bone = be32(b, p)? as i32;
         let n = be32(b, p + 4)? as usize;
         if n > 256 {
             return None;
@@ -171,7 +171,7 @@ pub fn read_record_prefix(b: &[u8]) -> Option<(Record, usize)> {
             subs.extend(batches);
             p = next;
         }
-        nodes.push(Node { parent, subs });
+        nodes.push(Node { bone, subs });
     }
     let bounds = b.get(p..p + 72)?.to_vec();
     Some((Record { name, scale, nodes, bounds }, p + 72))

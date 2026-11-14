@@ -28,6 +28,7 @@ use housefire::texture;
 use housefire::rle_texture;
 use housefire::quickdata;
 use housefire::shader;
+use housefire::skeleton;
 use housefire::tree_log::read_log;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1005,6 +1006,43 @@ fn main() -> ExitCode {
                     println!("  {g:08x} {:?} {:?}", guids.get(g), ids.iter().map(|&i| (format!("{i:08x}"), name(i))).collect::<Vec<_>>());
                 }
             }
+        }
+        "skelcheck" => {
+            // characte.arc's skeletons read to their ends, and each against the model record of
+            // its name: its node tree's parents the bones', its batches' matrix slots in range
+            let c = d.read("characte.arc").unwrap_or_default();
+            let entries = arc::entries(&c).unwrap_or_default();
+            let mut skels = BTreeMap::new();
+            let (mut read, mut hashed) = (0, 0);
+            for e in &entries {
+                if let Some(s) = skeleton::read(arc::bytes(&c, e)) {
+                    read += 1;
+                    hashed += usize::from(e.id == shader::name_hash(&e.name));
+                    skels.insert(e.id, s);
+                } else if std::env::var_os("ASSETS_SHOW_UNREAD").is_some() {
+                    println!("  not read: {}", e.name);
+                }
+            }
+            println!("skeletons {}: read to their ends {read}; id the name's hash {hashed}", entries.len());
+            let (mut with_record, mut same_tree, mut slots_in) = (0, 0, 0);
+            let mut seen = BTreeSet::new();
+            for (_, r) in all_records(&d) {
+                let Some(s) = skels.get(&shader::name_hash(&r.name)) else { continue };
+                if !seen.insert(r.name.clone()) {
+                    continue;
+                }
+                with_record += 1;
+                // a node's word: the bone its mesh hangs from (-1: none, a skinned mesh's)
+                let nodes: Vec<i32> = r.nodes.iter().map(|n| n.bone).collect();
+                if nodes.iter().all(|&b| b == -1 || (b as usize) < s.bones.len()) {
+                    same_tree += 1;
+                } else if std::env::var_os("ASSETS_SHOW_TREES").is_some() {
+                    println!("  {}: nodes' bones {nodes:?}, bones {}", r.name, s.bones.len());
+                }
+                let max = r.nodes.iter().flat_map(|n| n.subs.iter().flat_map(|(_, sm)| sm.matrices.iter().map(|m| m.0 as usize))).max();
+                slots_in += usize::from(max.is_none_or(|m| m < s.bones.len()));
+            }
+            println!("records with a skeleton of their name {with_record}: every node's bone a bone of it {same_tree}; matrix slots within the bones {slots_in}");
         }
         "scenecheck" => {
             // the original's world matrices (the observer's 0xF1 'p' records) at a tick against
