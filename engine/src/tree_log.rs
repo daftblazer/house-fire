@@ -96,6 +96,18 @@ pub struct MatrixRec {
 
 /// An orientation the original gave a static model ('o': EIStaticModel::SetOrient): the tick,
 /// the model's address and the 4x4, rows (the translation in the last row).
+/// A room's ambient and light triples ('a'): the tick, the room id, its 80-byte light record (as
+/// words), the triples and the constant they fall back to.
+#[derive(Clone, Copy, Debug)]
+pub struct RoomTriplesRec {
+    pub tick: u32,
+    pub id: u32,
+    pub record: [u32; 20],
+    pub ambient: [f32; 3],
+    pub light: [f32; 3],
+    pub fallback: f32,
+}
+
 /// A floor group's colour base and scale ('b'), with what they were made from: the material's two
 /// triples (+0x44, +0x54), the room's two and the constant.
 #[derive(Clone, Copy, Debug)]
@@ -431,6 +443,8 @@ pub struct Log {
     /// 'b': floor groups' colour bases and scales (tick, the word Light_GroupScale was given less
     /// 4, base, scale), one a group as its room's floor is relit.
     pub group_scales: Vec<GroupScaleRec>,
+    /// 'a': rooms' ambient and light triples, with the rooms' records they come from.
+    pub room_triples: Vec<RoomTriplesRec>,
     /// 'n': rooms' floors relit, each after the 'i' record of its own light grid (its index there
     /// is `light_grids.len()` less one when read).
     pub room_floors: Vec<RoomFloorRec>,
@@ -592,6 +606,17 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let room = [three(), three()];
                 let k = f32::from_bits(r.u32());
                 log.group_scales.push(GroupScaleRec { tick, group, base, scale, material, room, k });
+            }
+            b'a' => {
+                if !r.has(4 * 29) {
+                    break;
+                }
+                let (tick, id) = (r.u32(), r.u32());
+                let record = [0; 20].map(|_| r.u32());
+                let mut three = || [0; 3].map(|_| f32::from_bits(r.u32()));
+                let (ambient, light) = (three(), three());
+                let fallback = f32::from_bits(r.u32());
+                log.room_triples.push(RoomTriplesRec { tick, id, record, ambient, light, fallback });
             }
             b'n' => {
                 if !r.has(12) {

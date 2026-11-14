@@ -1844,6 +1844,29 @@ fn main() -> ExitCode {
             }
             println!("light grid calls {} (ticks {:?}..{:?}, ids {ids:?}): points {points}, the engine's sum bit for bit {exact}, the rest within {worst}", log.light_grids.len(), log.light_grids.first().map(|g| g.tick), log.light_grids.last().map(|g| g.tick));
         }
+        "roomlight" => {
+            // each room's logged ambient and light triples against the engine's, from the logged
+            // light records
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO roomlight LOG");
+                return ExitCode::FAILURE;
+            };
+            let (mut same, mut shown) = (0, 0);
+            let fallbacks: BTreeSet<u32> = log.room_triples.iter().map(|t| t.fallback.to_bits()).collect();
+            let records: BTreeSet<(u32, [u32; 20])> = log.room_triples.iter().map(|t| (t.id, t.record)).collect();
+            let unlit = log.room_triples.iter().filter(|t| t.record[7] == 0 || t.record[15] == 0).count();
+            for t in &log.room_triples {
+                let mine = housefire::light::room_triples(&t.record);
+                let bits = |a: [f32; 3]| a.map(f32::to_bits);
+                if (bits(mine.0), bits(mine.1)) == (bits(t.ambient), bits(t.light)) {
+                    same += 1;
+                } else if shown < 6 {
+                    shown += 1;
+                    println!("  tick {} id {}: mine {mine:?}, the log's {:?} {:?} (record {:08x?})", t.tick, t.id, t.ambient, t.light, t.record);
+                }
+            }
+            println!("room triples {} ({} distinct records, {unlit} without ambient or light): the engine's bit for bit {same}; the fallback {:?} (the engine's {})", log.room_triples.len(), records.len(), fallbacks.iter().map(|b| f32::from_bits(*b)).collect::<Vec<_>>(), housefire::light::NO_LIGHT);
+        }
         "groupscale" => {
             // each floor group's logged colour base and scale against the engine's, from the
             // logged material and room triples

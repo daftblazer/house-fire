@@ -725,3 +725,14 @@ diffuse's green (the original reads +0x48 twice), kept as is. The material holds
 materials) and club (4,000, 2) give the engine's base and scale bit for bit on all. No logged
 material has a diffuse green that differs from its blue, so the blue-from-green read is from the
 code only, not yet seen in a log.
+
+The rooms' ambient and light triples (`light::room_triples`, `NO_LIGHT` = 0, the original's
+Light_RoomTriples, 0x80074958). Each room id has an 80-byte light record (at the light state +
+id x 80 + 0x5018).
+- The ambient is its colour at +0x10 when the word at +0x1C is set (a pointer), else 0.
+- The light is its colour at +0x30 times the light direction's downward part, max(-z, 0), with z
+  at +0x28 (the direction at +0x20). That applies when the word at +0x3C is set, else 0.
+Checked through the observer's 'a' records (the record, the triples, the constant): home 4,000
+calls (734 distinct records, 3,000 rooms without the two) and club 4,000 (1,020, 3,333), every
+one bit for bit. Only room id 0 (outside) has the light, and its direction and colours change
+from tick to tick (the sun through the day).

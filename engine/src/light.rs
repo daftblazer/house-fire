@@ -48,6 +48,27 @@ pub fn point_light(x: f32, y: f32, lights: &[Light]) -> [f32; 3] {
     sum
 }
 
+/// What a room's light falls back to when its record has none (the original's 0x802A1240).
+pub const NO_LIGHT: f32 = 0.0;
+
+/// A room's ambient and light triples from its 80-byte light record (big-endian words; the
+/// original's Light_RoomTriples): the ambient colour (words 4-6) when word 7 is set, and the
+/// light's colour (words 12-14) times its downward part (the direction's z, word 10, negated, at
+/// least `NO_LIGHT`) when word 15 is set; `NO_LIGHT` in each channel otherwise.
+pub fn room_triples(record: &[u32; 20]) -> ([f32; 3], [f32; 3]) {
+    let f = |i: usize| f32::from_bits(record[i]);
+    let ambient = if record[7] != 0 { [f(4), f(5), f(6)] } else { [NO_LIGHT; 3] };
+    let light = if record[15] != 0 {
+        let down = -f(10);
+        // (only a lesser value is raised: NaN stays, as the original's compare)
+        let down = if down < NO_LIGHT { NO_LIGHT } else { down };
+        [f(12), f(13), f(14)].map(|c| (f64::from(down) * f64::from(c)) as f32)
+    } else {
+        [NO_LIGHT; 3]
+    };
+    (ambient, light)
+}
+
 /// The constant a floor group's colours are scaled by (the original's 0x802A1244).
 pub const GROUP_K: f32 = 128.0;
 
@@ -122,6 +143,21 @@ mod tests {
         assert_eq!(entry_points(0x0005_0203), vec![(2, 5), (2, 6), (3, 5), (3, 6), (4, 5), (4, 6)]);
         // a leading half (0x40: on the row) and a trailing half (0x80: the row after)
         assert_eq!(entry_points(0x0005_4283), vec![(2, 5), (3, 5), (3, 6), (4, 6)]);
+    }
+
+    #[test]
+    fn a_rooms_light_is_its_colour_times_the_downward_part() {
+        let mut rec = [0u32; 20];
+        for (i, v) in [(4, 0.25f32), (5, 0.5), (6, 1.0), (10, -0.5), (12, 2.0), (13, 1.0), (14, 0.5)] {
+            rec[i] = v.to_bits();
+        }
+        assert_eq!(room_triples(&rec), ([0.0; 3], [0.0; 3]));
+        rec[7] = 1;
+        rec[15] = 1;
+        assert_eq!(room_triples(&rec), ([0.25, 0.5, 1.0], [1.0, 0.5, 0.25]));
+        // a light from below gives none
+        rec[10] = 0.5f32.to_bits();
+        assert_eq!(room_triples(&rec).1, [0.0; 3]);
     }
 
     #[test]
