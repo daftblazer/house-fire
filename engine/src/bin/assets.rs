@@ -1114,6 +1114,56 @@ fn main() -> ExitCode {
                 }
             }
         }
+        "wallcheck" => {
+            // the lot's walls (lockstep's LOCKSTEP_DUMP_WALLS: each tile side with a wall) against
+            // the original's static models' orientations: a wall part on each side, at the tile's
+            // centre, turned so its back is to the wall (90 for the wall on +x, -90 on -x, 180 on
+            // +y, 0 on -y)
+            let (Some(log), Some(walls), Some(tick)) = (
+                args.get(3).and_then(|p| read_log(p)),
+                args.get(4).and_then(|p| std::fs::read_to_string(p).ok()),
+                args.get(5).and_then(|t| t.parse::<u32>().ok()),
+            ) else {
+                println!("usage: assets ISO wallcheck LOG WALLS TICK");
+                return ExitCode::from(2);
+            };
+            let mut last: BTreeMap<u32, &housefire::tree_log::OrientRec> = BTreeMap::new();
+            for o in log.orients.iter().filter(|o| o.tick <= tick) {
+                last.insert(o.model, o);
+            }
+            let mut at: BTreeMap<(i32, i32, i32), usize> = BTreeMap::new();
+            for m in last.values() {
+                let angle = m.m[1].atan2(m.m[0]).to_degrees().round() as i32;
+                *at.entry(((m.m[12] * 2.0).round() as i32, (m.m[13] * 2.0).round() as i32, angle.rem_euclid(360))).or_default() += 1;
+            }
+            let (mut sides, mut found, mut cut) = (0, 0, 0);
+            let mut missing: Vec<String> = Vec::new();
+            for l in walls.lines() {
+                let f: Vec<i32> = l.split(' ').filter_map(|v| v.parse().ok()).collect();
+                let [x, y, dx, dy] = f[..] else { continue };
+                sides += 1;
+                let angle = match (dx, dy) {
+                    (1, 0) => 90,
+                    (-1, 0) => 270,
+                    (0, 1) => 180,
+                    _ => 0,
+                };
+                // or cut away (the walls toward the camera): one piece on the edge itself, along it
+                let edge = (2 * x + 1 + dx, 2 * y + 1 + dy);
+                let along = if dx != 0 { [90, 270] } else { [0, 180] };
+                if at.contains_key(&(2 * x + 1, 2 * y + 1, angle)) {
+                    found += 1;
+                } else if along.iter().any(|&a| at.contains_key(&(edge.0, edge.1, a))) {
+                    cut += 1;
+                } else if missing.len() < 20 {
+                    missing.push(format!("({x}, {y}) side ({dx}, {dy})"));
+                }
+            }
+            println!("wall sides {sides}: a static model at the tile's centre turned with its back to the wall {found}; cut away (a piece on the edge, along it) {cut}; neither {}", sides - found - cut);
+            if std::env::var_os("ASSETS_SHOW_MISSING").is_some() {
+                println!("  not found: {missing:?}");
+            }
+        }
         "skelcheck" => {
             // characte.arc's skeletons read to their ends, and each against the model record of
             // its name: its node tree's parents the bones', its batches' matrix slots in range

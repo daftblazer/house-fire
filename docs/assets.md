@@ -472,3 +472,16 @@ objects with a dataset of their own are drawn (a marker, `destination_gohereands
 ResData row with no dataset and no model). Every such object at the original's place and turn:
 home 90 of 90, club 79 of 79 (and the home lot's 7 drawn from the lot's data, also at their
 place).
+
+## Walls
+
+The original draws a lot's walls as static models too (SetOrient's 'o' records): for each tile
+side with a wall (`Walls::wall_between`, the doors' openings counted as wall), a wall part at
+that tile's centre turned with its back to the wall (90 degrees for the wall on the tile's +x
+side, -90 on -x, 180 on +y, 0 on -y; the same frame as an object hung on the wall), or, for the
+walls cut away toward the camera, one piece on the edge itself, along it ((14.5, 12.0) turned 0
+for the wall between rows 11 and 12 of the home lot). Every wall side is one or the other: home,
+tick 1,000, 162 sides, 134 at their tile's centre, 28 cut away; the club (its house's walls, the
+disc's copy, as replay builds them) 250 sides, 167 and 83 (`assets ISO wallcheck LOG WALLS
+TICK`, with lockstep's LOCKSTEP_DUMP_WALLS). Which walls are cut away follows the camera (to be
+read with it); the wall parts' models and their patterns are next.
