@@ -747,3 +747,20 @@ score. Its callers (0x8016906C, 0x80169418) build the lists the grid cells take 
 from. Checked through the observer's 'd' records (the point, the lights, the list before and
 after, the constants): home 5,512 rankings (40,328 lights) and club 20,000 (69,174), every list
 word for word.
+
+The light grid's cells (`light::cell_lights`, `GRID_Z` = 0, `SLOT_EMPTY` = -1, `SLOT_TAKEN` = -2;
+the original's Light_BuildGrid, 0x80169418). The grid's points are x, y from 2 to 37 at height 0.
+Each 36-byte cell lists up to 4 room ids (int8, -1 ends them), each with 4 light indices (u16).
+For each room:
+1. Four slots start empty (-1, score -1).
+2. The room's own lights (its record's words 18-19, a range of the light array) are ranked in
+   (`light::rank`).
+3. From the slot past the filled ones (at most the third, so two are kept for them), the room's
+   other lights (words 16-17) are ranked against what is left.
+4. The slots are taken strongest first: the first of equals, each taken one's score set to -2,
+   and with none above -2 the first slot again.
+An empty slot's index is 0xFFFF. Checked through the observer's 'e' records (the constants, room
+ids 0-15's ranges, the lights, every cell after the build): home 2 builds (2,728 cell rooms) and
+club 40 (55,440), every cell room's four lights the engine's. The other caller (0x8016906C)
+gives each object its 4 nearest lights the same way (one ranking over its room's own range,
+pointers at the manager + 0x4014 + 16 a slot); that one is not ported yet.

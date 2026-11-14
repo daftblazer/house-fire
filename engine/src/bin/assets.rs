@@ -1844,6 +1844,47 @@ fn main() -> ExitCode {
             }
             println!("light grid calls {} (ticks {:?}..{:?}, ids {ids:?}): points {points}, the engine's sum bit for bit {exact}, the rest within {worst}", log.light_grids.len(), log.light_grids.first().map(|g| g.tick), log.light_grids.last().map(|g| g.tick));
         }
+        "gridbuild" => {
+            // each built light grid cell's lights against the engine's, room by room
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO gridbuild LOG");
+                return ExitCode::FAILURE;
+            };
+            let (mut slots, mut same, mut no_range, mut shown) = (0, 0, 0, 0);
+            let consts: BTreeSet<[u32; 3]> = log.grid_builds.iter().map(|b| b.constants.map(f32::to_bits)).collect();
+            for b in &log.grid_builds {
+                for (ci, cell) in b.cells.iter().enumerate() {
+                    let (x, y) = (2 + ci / 36, 2 + ci % 36);
+                    let ids = cell[0].to_be_bytes();
+                    for (k, &id) in ids.iter().enumerate() {
+                        if id == 0xFF {
+                            break;
+                        }
+                        slots += 1;
+                        let logged: [u16; 4] = {
+                            let (a, c) = (cell[1 + 2 * k], cell[2 + 2 * k]);
+                            [(a >> 16) as u16, a as u16, (c >> 16) as u16, c as u16]
+                        };
+                        let Some(rg) = b.ranges.get(usize::from(id)) else {
+                            no_range += 1;
+                            continue;
+                        };
+                        let point = [x as f32, y as f32, b.constants[0]];
+                        let Some(mine) = housefire::light::cell_lights(point, (rg[2], rg[3]), (rg[0], rg[1]), &b.lights) else {
+                            no_range += 1;
+                            continue;
+                        };
+                        if mine == logged {
+                            same += 1;
+                        } else if shown < 6 {
+                            shown += 1;
+                            println!("  tick {} cell ({x}, {y}) room {id}: mine {mine:04x?} the log's {logged:04x?} (ranges {rg:?})", b.tick);
+                        }
+                    }
+                }
+            }
+            println!("grid builds {}: cell rooms {slots}, the engine's four lights {same}, without the lights logged {no_range}; constants {:?} (the engine's {} {} {})", log.grid_builds.len(), consts.iter().map(|c| c.map(f32::from_bits)).collect::<Vec<_>>(), housefire::light::GRID_Z, housefire::light::SLOT_EMPTY, housefire::light::SLOT_TAKEN);
+        }
         "lightrank" => {
             // each logged light ranking against the engine's, from the list before
             let Some(log) = args.get(3).and_then(|p| read_log(p)) else {

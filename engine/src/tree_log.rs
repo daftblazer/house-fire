@@ -96,6 +96,18 @@ pub struct MatrixRec {
 
 /// An orientation the original gave a static model ('o': EIStaticModel::SetOrient): the tick,
 /// the model's address and the 4x4, rows (the translation in the last row).
+/// The light grid's cells built ('e'): the three constants, room ids 0-15's light ranges (the
+/// other lights' first and end, the room's own first and end), the lights (position, reach) and
+/// cells x, y 2..37 (x outer, 9 words each: 4 room ids, then 4 light indices for each).
+#[derive(Clone, Debug)]
+pub struct GridBuildRec {
+    pub tick: u32,
+    pub constants: [f32; 3],
+    pub ranges: [[u32; 4]; 16],
+    pub lights: Vec<([f32; 3], f32)>,
+    pub cells: Vec<[u32; 9]>,
+}
+
 /// A light ranking ('d'): the point, the lights ranked (first..end, each one's position and
 /// reach as words), the list's words (two a slot) before and after, and the two constants.
 #[derive(Clone, Debug)]
@@ -460,6 +472,8 @@ pub struct Log {
     pub room_triples: Vec<RoomTriplesRec>,
     /// 'd': light rankings.
     pub light_ranks: Vec<LightRankRec>,
+    /// 'e': the light grid's cells built.
+    pub grid_builds: Vec<GridBuildRec>,
     /// 'n': rooms' floors relit, each after the 'i' record of its own light grid (its index there
     /// is `light_grids.len()` less one when read).
     pub room_floors: Vec<RoomFloorRec>,
@@ -621,6 +635,26 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let room = [three(), three()];
                 let k = f32::from_bits(r.u32());
                 log.group_scales.push(GroupScaleRec { tick, group, base, scale, material, room, k });
+            }
+            b'e' => {
+                if !r.has(4 * (4 + 64 + 1)) {
+                    break;
+                }
+                let tick = r.u32();
+                let constants = [0; 3].map(|_| f32::from_bits(r.u32()));
+                let ranges = [0; 16].map(|_| [0; 4].map(|_| r.u32()));
+                let count = r.u32() as usize;
+                if !r.has(16 * count + 36 * 36 * 36) {
+                    break;
+                }
+                let lights = (0..count)
+                    .map(|_| {
+                        let w = [0; 4].map(|_| f32::from_bits(r.u32()));
+                        ([w[0], w[1], w[2]], w[3])
+                    })
+                    .collect();
+                let cells = (0..36 * 36).map(|_| [0; 9].map(|_| r.u32())).collect();
+                log.grid_builds.push(GridBuildRec { tick, constants, ranges, lights, cells });
             }
             b'd' => {
                 if !r.has(24) {

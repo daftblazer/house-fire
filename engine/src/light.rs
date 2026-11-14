@@ -81,6 +81,38 @@ pub fn rank(point: [f32; 3], first: u32, lights: &[([f32; 3], f32)], list: &mut 
     }
 }
 
+/// The light grid's height, an empty slot's score and a taken one's (the original's 0x802BA7B8,
+/// 0x802BA7C8 and 0x802BA7CC).
+pub const GRID_Z: f32 = 0.0;
+pub const SLOT_EMPTY: f32 = -1.0;
+pub const SLOT_TAKEN: f32 = -2.0;
+
+/// A light grid cell's four lights for one of its rooms (the original's Light_BuildGrid): the
+/// room's own lights ranked into four slots, then, from the first slot past the filled ones (at
+/// most the third), its other lights against what is left, then the slots taken strongest first
+/// (the first of equals; with none above `SLOT_TAKEN`, the first slot again). An empty slot is
+/// 0xFFFF. `own` and `other` are index ranges into `lights` (position, reach).
+pub fn cell_lights(point: [f32; 3], own: (u32, u32), other: (u32, u32), lights: &[([f32; 3], f32)]) -> Option<[u16; 4]> {
+    let range = |r: (u32, u32)| lights.get(r.0 as usize..r.1.max(r.0) as usize);
+    let (own_l, other_l) = (range(own)?, range(other)?);
+    let mut list = [(0xFFFF_0000u32, SLOT_EMPTY); 4];
+    rank(point, own.0, own_l, &mut list);
+    let filled = list.iter().take_while(|s| s.0 >> 16 != 0xFFFF).count().min(2);
+    rank(point, other.0, other_l, &mut list[filled..]);
+    let mut out = [0u16; 4];
+    for o in &mut out {
+        let mut best = (0, SLOT_TAKEN);
+        for (k, s) in list.iter().enumerate() {
+            if s.1 > best.1 {
+                best = (k, s.1);
+            }
+        }
+        list[best.0].1 = SLOT_TAKEN;
+        *o = (list[best.0].0 >> 16) as u16;
+    }
+    Some(out)
+}
+
 /// What a room's light falls back to when its record has none (the original's 0x802A1240).
 pub const NO_LIGHT: f32 = 0.0;
 
@@ -176,6 +208,23 @@ mod tests {
         assert_eq!(entry_points(0x0005_0203), vec![(2, 5), (2, 6), (3, 5), (3, 6), (4, 5), (4, 6)]);
         // a leading half (0x40: on the row) and a trailing half (0x80: the row after)
         assert_eq!(entry_points(0x0005_4283), vec![(2, 5), (3, 5), (3, 6), (4, 6)]);
+    }
+
+    #[test]
+    fn a_cell_keeps_two_places_for_the_other_lights() {
+        // three strong own lights (0-2) and two weaker others (3-4): the third own light is
+        // ranked again with the others for the last two places; slots come out strongest first
+        let lights = [
+            ([0.0, 0.0, 1.0], 4.0),
+            ([0.0, 0.0, 1.0], 3.0),
+            ([0.0, 0.0, 1.0], 2.5),
+            ([0.0, 0.0, 1.0], 2.0),
+            ([0.0, 0.0, 1.0], 1.0),
+        ];
+        assert_eq!(cell_lights([0.0; 3], (0, 3), (3, 5), &lights), Some([0, 1, 2, 3]));
+        // no own lights: the others fill all four, the rest empty
+        assert_eq!(cell_lights([0.0; 3], (0, 0), (3, 5), &lights), Some([3, 4, 0xFFFF, 0xFFFF]));
+        assert_eq!(cell_lights([0.0; 3], (0, 9), (3, 5), &lights), None);
     }
 
     #[test]
