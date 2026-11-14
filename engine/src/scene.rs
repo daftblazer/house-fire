@@ -67,6 +67,9 @@ pub struct WallPiece {
     pub fence: bool,
     /// A wall part's pattern (`Walls::pattern`, the side it faces), a fence's style.
     pub pattern: u8,
+    /// A wall part on an outdoor tile draws a cap besides its face (6 vertices, the plain image;
+    /// drawn whichever way it faces).
+    pub cap: bool,
 }
 
 impl WallPiece {
@@ -92,11 +95,12 @@ pub fn wall_pieces(walls: &crate::routing::Walls, size: i32, fences: &[u32]) -> 
                 let style = walls.style(x, y, dx, dy);
                 if fences.contains(&u32::from(style)) {
                     let angle = if dx == 1 { 90.0 } else { 0.0 };
-                    out.push(WallPiece { x: cx + dx as f32 / 2.0, y: cy + dy as f32 / 2.0, angle, fence: true, pattern: style });
+                    out.push(WallPiece { x: cx + dx as f32 / 2.0, y: cy + dy as f32 / 2.0, angle, fence: true, pattern: style, cap: false });
                 } else {
                     let (here, there) = if dx == 1 { (90.0, -90.0) } else { (180.0, 0.0) };
-                    out.push(WallPiece { x: cx, y: cy, angle: here, fence: false, pattern: walls.pattern(x, y, dx, dy) });
-                    out.push(WallPiece { x: cx + dx as f32, y: cy + dy as f32, angle: there, fence: false, pattern: walls.pattern(x + dx, y + dy, -dx, -dy) });
+                    out.push(WallPiece { x: cx, y: cy, angle: here, fence: false, pattern: walls.pattern(x, y, dx, dy), cap: !walls.indoors(x, y) });
+                    let (nx, ny) = (x + dx, y + dy);
+                    out.push(WallPiece { x: cx + dx as f32, y: cy + dy as f32, angle: there, fence: false, pattern: walls.pattern(nx, ny, -dx, -dy), cap: !walls.indoors(nx, ny) });
                 }
             }
         }
@@ -113,7 +117,7 @@ mod tests {
         // home, tick 1,000: the eye at (32.29, -4.02); the west wall's inside face (13.5, 15.5)
         // turned -90 is seen, its outside (12.5, 15.5) turned 90 is not
         let eye = [32.29, -4.02];
-        let part = |x, y, angle| WallPiece { x, y, angle, fence: false, pattern: 0 };
+        let part = |x, y, angle| WallPiece { x, y, angle, fence: false, pattern: 0, cap: false };
         assert!(part(13.5, 15.5, -90.0).faces(eye));
         assert!(!part(12.5, 15.5, 90.0).faces(eye));
         assert!(part(14.5, 13.5, 180.0).faces(eye));

@@ -1221,6 +1221,7 @@ fn main() -> ExitCode {
                 [0, 1].map(|c| -(r[c] * r[3] + r[4 + c] * r[7] + r[8 + c] * r[11]))
             });
             let mut by_facing: BTreeMap<(bool, bool), usize> = BTreeMap::new();
+            let mut by_cap: BTreeMap<(bool, bool), usize> = BTreeMap::new();
             let (mut parts, mut same, mut undrawn, mut down) = (0, 0, 0, 0);
             let mut wrong: BTreeMap<String, usize> = BTreeMap::new();
             for l in walls.lines() {
@@ -1233,6 +1234,8 @@ fn main() -> ExitCode {
                 parts += 1;
                 let want = f.get(4).and_then(|h| u32::from_str_radix(h, 16).ok()).and_then(|h| shaders.get(&h)).and_then(|s| s.layers.first()).and_then(|l| tex_names.get(&l.texture));
                 let mut drawn = Vec::new();
+                // (a cap: a draw after a matrix at the part, a display list of 6 vertices with the plain image)
+                let mut caps = Vec::new();
                 for &i in &world {
                     let m = &log.matrices[i];
                     let a = m.values[4].atan2(m.values[0]).to_degrees();
@@ -1255,15 +1258,23 @@ fn main() -> ExitCode {
                             println!("      pass {x} {y} {angle} tex {} proj {pv:?} view {vv:?} material {ml:?} strip {st:?} col2 {:.4}/{:.4}/{:.4} z {:.2}", names[0].0, m.values[2], m.values[6], m.values[10], m.values[11]);
                         }
                         drawn.extend(names.iter().map(|n| n.0.rsplit('/').next().unwrap_or(&n.0).to_string()));
+                        if let Some(st) = log.strips.get(m.strips_before)
+                            && st.words[0] >> 24 == 0x42
+                            && names.iter().any(|n| n.0.ends_with("walls_down"))
+                        {
+                            caps.push((st.words[1], m.values[11]));
+                        }
                     }
                 }
+                // the cap the engine gives the part (the dump's sixth field) against the original's
+                *by_cap.entry((f.get(5) == Some(&"1"), !caps.iter().filter(|c| (c.0 == 5 || c.0 == 6) && c.1 == 0.0).collect::<Vec<_>>().is_empty())).or_default() += 1;
                 if std::env::var_os("ASSETS_SHOW_PARTS").is_some() {
                     let patterned = want.is_some_and(|w| drawn.iter().any(|n| n.eq_ignore_ascii_case(w)));
                     let state = if patterned { "patterned" } else if drawn.is_empty() { "none" } else { "plain" };
-                    println!("    part {x} {y} {angle} {state} {}", drawn.join(","));
+                    println!("    part {x} {y} {angle} {state} caps {caps:?}");
                 }
                 if let Some(eye) = eye {
-                    let piece = housefire::scene::WallPiece { x, y, angle, fence: false, pattern: 0 };
+                    let piece = housefire::scene::WallPiece { x, y, angle, fence: false, pattern: 0, cap: false };
                     *by_facing.entry((piece.faces(eye), want.is_some_and(|w| drawn.iter().any(|n| n.eq_ignore_ascii_case(w))))).or_default() += 1;
                 }
                 if want.is_some_and(|w| drawn.iter().any(|n| n.eq_ignore_ascii_case(w))) {
@@ -1322,6 +1333,13 @@ fn main() -> ExitCode {
                 by_facing.get(&(true, false)).unwrap_or(&0),
                 by_facing.get(&(false, true)).unwrap_or(&0),
                 by_facing.get(&(false, false)).unwrap_or(&0)
+            );
+            println!(
+                "wall parts' caps (WallPiece::cap / the original's): both {}, the engine's only {}, the original's only {}, neither {}",
+                by_cap.get(&(true, true)).unwrap_or(&0),
+                by_cap.get(&(true, false)).unwrap_or(&0),
+                by_cap.get(&(false, true)).unwrap_or(&0),
+                by_cap.get(&(false, false)).unwrap_or(&0)
             );
             // (`walls_down`, `wall_black`, `polyshadow` and `1st_final` are one image: a plain one)
             println!("wall parts {parts}: drawn with the pattern's texture {same}; not drawn this frame {undrawn}; drawn plain only (the walls_down / wall_black image) {down}; other {}", parts - same - undrawn - down);

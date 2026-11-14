@@ -516,3 +516,10 @@ in view: home 67 drawn of 67 facing, 0 of 67 facing away; the club 39 of 82 faci
 away. (Iteration 50's "outside faces lowered" was a misreading: objects standing at a part's place
 add plain draws, and the listing had named those parts plain first.) The renderer culls back faces
 to the same effect. No walls are lowered in either view; the walls-down view is still to be seen.
+
+A part's cap (a 6-vertex display list, 5 at a wall's end, at the floor, z 0, with the plain image)
+is drawn when the part's own tile is outdoors (the lot's third array not 1: `Walls::indoors`),
+whichever way the part faces and in view or not: `WallPiece::cap`. At tick 1,000 the engine's
+caps and the original's agree on every part (home 48 capped, 86 not; club 62 and 102). So an
+outside wall has a cap on its outside only, an inside wall none. What the cap looks like (its
+model and size) comes with the wall models.

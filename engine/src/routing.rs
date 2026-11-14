@@ -531,6 +531,11 @@ impl Walls {
         w
     }
 
+    /// Whether tile (x, y) is indoors (the lot's third array's 1; false off the lot).
+    pub fn indoors(&self, x: i32, y: i32) -> bool {
+        self.inside(x, y) && self.inside.get(y as usize * self.width as usize + x as usize).copied().unwrap_or(false)
+    }
+
     fn inside(&self, x: i32, y: i32) -> bool {
         x >= 0 && y >= 0 && (x as u32) < self.width && (y as u32) < self.height
     }
