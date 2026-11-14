@@ -693,3 +693,11 @@ corner between two rooms has a value for each: the two colours a shared corner c
 colour x max(height / distance, 0) x min((reach / distance)^2, 1). How the sums become the
 vertices' bytes, and where the lights and the lists come from (the lot's lights, its rooms,
 outside light), is next.
+
+The light grid's sum (`light::point_light`, `Light`): checked through the observer's 'i'
+records (each LightGrid_Sum call after it: the room id, each lit point with its cell's lights' 32
+bytes and the output; the recomp's `hle_LightGrid_Sum` calls `tree_log_light_grid`, read only):
+home (`home-l.log`, 400 calls, ticks 0-77, room ids 0-3) 152,200 points and the club
+(`club-l.log`, 400 calls, ticks 0-51, ids 0-5) 103,302, every one the engine's sum bit for bit.
+The grid is lit again and again, not only at the load (400 calls by tick 77): which room ids,
+spans and lights each call takes, and how the sums become the floor's vertex bytes, are next.

@@ -1818,6 +1818,32 @@ fn main() -> ExitCode {
                 println!("  the engine's others {}: {:?}", others.len(), others.iter().take(24).map(|r| (r.x, r.y, r.n, r.lead, r.trail)).collect::<Vec<_>>());
             }
         }
+        "lightgrid" => {
+            // each LightGrid_Sum call's points against the engine's sum of the same lights
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO lightgrid LOG");
+                return ExitCode::FAILURE;
+            };
+            let (mut points, mut exact, mut worst) = (0, 0, 0.0f32);
+            let ids: BTreeSet<u32> = log.light_grids.iter().map(|g| g.id).collect();
+            for g in &log.light_grids {
+                for (x, y, lights, out) in &g.points {
+                    let l: Vec<housefire::light::Light> = lights.iter().map(housefire::light::Light::from_words).collect();
+                    let mine = housefire::light::point_light(*x as f32, *y as f32, &l);
+                    points += 1;
+                    if mine.iter().zip(out).all(|(a, b)| a.to_bits() == b.to_bits()) {
+                        exact += 1;
+                    } else {
+                        let d = mine.iter().zip(out).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+                        if d > worst && std::env::var_os("ASSETS_EACH").is_some() {
+                            println!("  ({x}, {y}) id {}: mine {mine:?} the log's {out:?}", g.id);
+                        }
+                        worst = worst.max(d);
+                    }
+                }
+            }
+            println!("light grid calls {} (ticks {:?}..{:?}, ids {ids:?}): points {points}, the engine's sum bit for bit {exact}, the rest within {worst}", log.light_grids.len(), log.light_grids.first().map(|g| g.tick), log.light_grids.last().map(|g| g.tick));
+        }
         "camtrack" => {
             // the lot's camera at each tick of a log: its view (the last 0xF0 before the tick's
             // first world matrix), as an eye, a turn about the vertical, a pitch, and where its

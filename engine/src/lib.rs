@@ -20,6 +20,7 @@ pub mod shader;
 pub mod skeleton;
 pub mod routing;
 pub mod interp;
+pub mod light;
 pub mod save;
 pub mod simulator;
 pub mod texture;

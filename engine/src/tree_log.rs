@@ -96,6 +96,18 @@ pub struct MatrixRec {
 
 /// An orientation the original gave a static model ('o': EIStaticModel::SetOrient): the tick,
 /// the model's address and the 4x4, rows (the translation in the last row).
+/// A LightGrid_Sum call ('i'): the tick, the room id, and each lit point: its x and row, its
+/// cell's lights (each the original's 32 bytes as words) and the summed colour.
+#[derive(Clone, Debug)]
+pub struct LightGridRec {
+    pub tick: u32,
+    pub id: u32,
+    pub points: Vec<LitPoint>,
+}
+
+/// A lit point: its x, its row, its cell's lights (32 bytes each as words) and its summed colour.
+pub type LitPoint = (u32, u32, Vec<[u32; 8]>, [f32; 3]);
+
 /// A logged strip vertex: its position (x, y, z, w), UV and colour.
 pub type StripVertex = ([f32; 4], [f32; 2], u32);
 
@@ -384,6 +396,8 @@ pub struct Log {
     /// 'v': a floor strip's (op 42's) whole vertices, after its 'g' record: that record's index
     /// in `other_draws`, and each vertex's position (x, y, z, w), UV and colour.
     pub strip_vertices: Vec<(usize, Vec<StripVertex>)>,
+    /// 'i': each LightGrid_Sum call's lit points.
+    pub light_grids: Vec<LightGridRec>,
     pub trees: Vec<TreeRec>,
     pub lists: Vec<ListRec>,
     /// Tick -> its pass over the objects (logs with 'Q' records).
@@ -496,6 +510,40 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
                 let (before, loads) = (log.strips.len(), log.tex_loads.len());
                 log.other_draws.push((StripRec { tick, words, at }, before, loads));
+            }
+            b'i' => {
+                if !r.has(12) {
+                    break;
+                }
+                let (tick, id, spans) = (r.u32(), r.u32(), r.u32());
+                let mut points = Vec::new();
+                let mut ok = true;
+                'spans: for _ in 0..spans {
+                    if !r.has(12) {
+                        ok = false;
+                        break;
+                    }
+                    let (row, first, last) = (r.u32(), r.u32(), r.u32());
+                    for x in first..=last {
+                        if !r.has(8) {
+                            ok = false;
+                            break 'spans;
+                        }
+                        let idx: Vec<i16> = (0..4).map(|_| { let v = i16::from_le_bytes([r.b[r.p], r.b[r.p + 1]]); r.p += 2; v }).collect();
+                        let n = idx.iter().take_while(|&&i| i != -1).count();
+                        if !r.has(n * 32 + 12) {
+                            ok = false;
+                            break 'spans;
+                        }
+                        let lights = (0..n).map(|_| [0; 8].map(|_| r.u32())).collect();
+                        let out = [0; 3].map(|_| f32::from_bits(r.u32()));
+                        points.push((x, row, lights, out));
+                    }
+                }
+                if !ok {
+                    break;
+                }
+                log.light_grids.push(LightGridRec { tick, id, points });
             }
             b'v' => {
                 if !r.has(8) {
