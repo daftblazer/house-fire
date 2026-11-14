@@ -428,3 +428,17 @@ So the matrices a node is drawn with are the object's, times its bone's pose: at
 object's own, but the original's draws show the poses its animations give (the fridge's body
 and doors drawn at their hinges, (25.39, 20.11), (25.64, 20.49), (25.39, 20.88) for a fridge on
 (25, 20), each turned and scaled its own way): the pose is stage 4.4's (animation).
+
+An object's own matrix, as the original sets it. The Sims 2's map names
+`EIStaticModel::SetOrient(EMat4 &)` (its ELF, from the disc, matched against Bustin' Out's code:
+`fn_80167AD8`, 78 of its 91 instructions alike, the rest offsets): it copies the 4x4 it is given
+(rows, the translation last) into the model at +0x78 and +0xF8. The observer's 'o' records
+(a patch at its entry): the tick, the model's address, the 16 floats; 20,000 on the home
+replay, 4,472 by tick 1,000, 347 models. Against the lot's 172 objects at tick 1,000 (the last
+orientation of each model; `assets ISO orientcheck LOG PLACES TICK`): 110 have one at their
+tile's centre (floor + 0.5), and for 86 of them one turned 90 - 45 x facing (the rotation's
+first row, atan2); 11 others (quarter-tile places) have one at their place itself, all turned
+so. The 24 left are parts of objects of several tiles: a door's or window's two objects (one
+each side of the wall) are drawn one by the rule and the other half a turn more (the second
+object, the higher id), and the second tiles of beds and the bathtub carry their lead's
+orientation. Study ASSETS_SHOW_ORIENTS, ASSETS_SHOW_UNTURNED=RULE.

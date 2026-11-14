@@ -94,6 +94,15 @@ pub struct MatrixRec {
     pub strips_before: usize,
 }
 
+/// An orientation the original gave a static model ('o': EIStaticModel::SetOrient): the tick,
+/// the model's address and the 4x4, rows (the translation in the last row).
+#[derive(Clone, Debug)]
+pub struct OrientRec {
+    pub tick: u32,
+    pub model: u32,
+    pub m: [f32; 16],
+}
+
 /// An object whose resources the original's data manager collected ('s': collectResInfoForSel):
 /// the tick, the selector's address, its material's and its extra data's resource ids, its
 /// definition's kind, and the selector's and definition's bytes.
@@ -333,6 +342,8 @@ pub struct Log {
     pub tluts: Vec<TlutRec>,
     /// The objects whose resources were collected ('s', in newer logs, at most 2,000).
     pub selectors: Vec<SelectorRec>,
+    /// The static models' orientations ('o'), in newer logs.
+    pub orients: Vec<OrientRec>,
     /// The matrices loaded ('p', at most 20,000) and projections ('j', at most 2,000), in newer logs.
     pub matrices: Vec<MatrixRec>,
     /// The textures loaded for draws ('l', in newer logs, at most 16,000).
@@ -436,6 +447,17 @@ pub fn read_log(path: &str) -> Option<Log> {
                     at.push(b);
                 }
                 log.strips.push(StripRec { tick, words, at });
+            }
+            b'o' => {
+                if !r.has(4 * 18) {
+                    break;
+                }
+                let (tick, model) = (r.u32(), r.u32());
+                let mut m = [0.0; 16];
+                for v in &mut m {
+                    *v = f32::from_bits(r.u32());
+                }
+                log.orients.push(OrientRec { tick, model, m });
             }
             b's' => {
                 if !r.has(5 * 4 + 0x80 + 0xC4) {

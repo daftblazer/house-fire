@@ -1007,6 +1007,61 @@ fn main() -> ExitCode {
                 }
             }
         }
+        "orientcheck" => {
+            // the orientations the original gave its static models ('o', SetOrient), the last of
+            // each model by a tick, against this world's objects then: each object's place and
+            // facing, by the rule that fits
+            let (Some(log), Some(places), Some(tick)) = (
+                args.get(3).and_then(|p| read_log(p)),
+                args.get(4).and_then(|p| std::fs::read_to_string(p).ok()),
+                args.get(5).and_then(|t| t.parse::<u32>().ok()),
+            ) else {
+                println!("usage: assets ISO orientcheck LOG PLACES TICK");
+                return ExitCode::from(2);
+            };
+            let mut last: BTreeMap<u32, &housefire::tree_log::OrientRec> = BTreeMap::new();
+            for o in log.orients.iter().filter(|o| o.tick <= tick) {
+                last.insert(o.model, o);
+            }
+            println!("orientations {} ({} by tick {tick}), models {}", log.orients.len(), log.orients.iter().filter(|o| o.tick <= tick).count(), last.len());
+            let objects: Vec<(String, f32, f32, f32, i32, String)> = places
+                .lines()
+                .filter_map(|l| {
+                    let f: Vec<&str> = l.split(' ').collect();
+                    let (x, y): (i32, i32) = (f.get(2)?.parse().ok()?, f.get(3)?.parse().ok()?);
+                    (x > 0 && y > 0 && f.get(6)? == &"0" && f.get(7)? == &"0").then(|| (f[0].to_string(), x as f32 / 16.0, y as f32 / 16.0, f[4].parse().unwrap_or(0.0), f[5].parse().unwrap_or(0), f.get(8).unwrap_or(&"").to_string()))
+                })
+                .collect();
+            type Rule = (&'static str, fn(f32) -> f32);
+            let rules: [Rule; 3] = [("its place", |x| x), ("its tile's centre", |x| x.floor() + 0.5), ("corner to the lower tile's centre", |x| ((x * 16.0 - 1.0) / 16.0).floor() + 0.5)];
+            for (rule, r) in rules {
+                let (mut found, mut turned) = (0, 0);
+                let mut angles: BTreeMap<(i32, i32), usize> = BTreeMap::new();
+                let angle = |m: &housefire::tree_log::OrientRec| m.m[1].atan2(m.m[0]).to_degrees().round() as i32;
+                for o in &objects {
+                    let here: Vec<&&housefire::tree_log::OrientRec> = last.values().filter(|m| (m.m[12] - r(o.1)).abs() < 0.01 && (m.m[13] - r(o.2)).abs() < 0.01).collect();
+                    if here.is_empty() {
+                        continue;
+                    }
+                    found += 1;
+                    match here.iter().find(|m| (angle(m) - (90 - 45 * o.4)).rem_euclid(360) == 0) {
+                        Some(_) => turned += 1,
+                        None => {
+                            *angles.entry((o.4, angle(here[0]))).or_default() += 1;
+                            if std::env::var_os("ASSETS_SHOW_UNTURNED").is_some_and(|v| v == rule) {
+                                println!("    {} {} at ({}, {}) facing {}: angles there {:?}", o.0, o.5, o.1, o.2, o.4, here.iter().map(|m| angle(m)).collect::<Vec<_>>());
+                            }
+                        }
+                    }
+                }
+                println!("  objects ({}) with an orientation at {rule}: {found}; one there turned 90 - 45 x facing {turned}; the others' (facing, an angle there) {angles:?}", objects.len());
+            }
+            if std::env::var_os("ASSETS_SHOW_ORIENTS").is_some() {
+                for m in last.values() {
+                    println!("    model {:08x} tick {}: at ({:.4}, {:.4}, {:.4}) angle {:.1}", m.model, m.tick, m.m[12], m.m[13], m.m[14], m.m[1].atan2(m.m[0]).to_degrees());
+                }
+            }
+        }
         "skelcheck" => {
             // characte.arc's skeletons read to their ends, and each against the model record of
             // its name: its node tree's parents the bones', its batches' matrix slots in range
@@ -1260,6 +1315,43 @@ fn main() -> ExitCode {
                 }
             }
             println!("  objects with a model, by the nearest draw of it (half tiles, rounded up; -1 none drawn): {near_hist:?}");
+            // the object's own matrix: a draw of a node hanging from the root bone (0) of one of
+            // its model's records; where it is against the object's place
+            let mut bone_of: std::collections::HashMap<[u8; 32], i32> = std::collections::HashMap::new();
+            for (_, r) in &recs {
+                for n in &r.nodes {
+                    for (_, sm) in &n.subs {
+                        for k in [sm.positions.get(..32), sm.list.as_ref().and_then(|l| l.2.get(..32))].into_iter().flatten() {
+                            bone_of.entry(k.try_into().unwrap()).or_insert(n.bone);
+                        }
+                    }
+                }
+            }
+            let mut root_offsets: BTreeMap<(i32, i32), usize> = BTreeMap::new();
+            let (mut roots, mut at_place, mut at_centre, mut turned_root) = (0, 0, 0, 0);
+            let mut by_obj: BTreeSet<&str> = BTreeSet::new();
+            for m in log.matrices.iter().filter(|m| m.id == 0xF1 && m.tick == tick) {
+                let Some(st) = log.strips.get(m.strips_before) else { continue };
+                let key = if st.words[0] >> 24 == 0x42 { st.at[6] } else { st.at[2] };
+                let (Some(&(_, name)), Some(&bone)) = (owner.get(&key), bone_of.get(&key)) else { continue };
+                if bone != 0 {
+                    continue;
+                }
+                let h = shader::name_hash(name);
+                let v = &m.values;
+                let Some(o) = objects.iter().filter(|o| model_of(o) == Some(h)).min_by(|a, b| ((v[3] - a.1).powi(2) + (v[7] - a.2).powi(2)).total_cmp(&((v[3] - b.1).powi(2) + (v[7] - b.2).powi(2)))) else { continue };
+                roots += 1;
+                by_obj.insert(&o.0);
+                *root_offsets.entry((((v[3] - o.1) * 16.0).round() as i32, ((v[7] - o.2) * 16.0).round() as i32)).or_default() += 1;
+                at_place += usize::from((v[3] - o.1).abs() < 0.01 && (v[7] - o.2).abs() < 0.01);
+                at_centre += usize::from((v[3] - (o.1.floor() + 0.5)).abs() < 0.01 && (v[7] - (o.2.floor() + 0.5)).abs() < 0.01);
+                let angle = v[4].atan2(v[0]).to_degrees().round() as i32;
+                turned_root += usize::from((angle - (90 - 45 * o.3)).rem_euclid(360) == 0);
+                if std::env::var_os("ASSETS_SHOW_ROOTS").is_some() {
+                    println!("    root of {name} for {} at ({}, {}) facing {}: drawn at ({:.4}, {:.4}, {:.4}) angle {angle}", o.4, o.1, o.2, o.3, v[3], v[7], v[11]);
+                }
+            }
+            println!("  root-bone draws of a lot object's model {roots} ({} objects): at its place {at_place}, at its tile centre {at_centre}, turned 90 - 45 x facing {turned_root}; offsets from the place (sixteenths) {root_offsets:?}", by_obj.len());
             if std::env::var_os("ASSETS_SHOW_UNDRAWN").is_some() {
                 for o in objects.iter().filter(|o| model_of(o).is_some() && !drawn_objects.contains(o.0.as_str())) {
                     println!("    not drawn at its place: {} {} at ({}, {}) facing {} model {:08x}", o.0, o.4, o.1, o.2, o.3, model_of(o).unwrap());
