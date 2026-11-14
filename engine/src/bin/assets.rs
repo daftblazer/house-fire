@@ -1204,6 +1204,23 @@ fn main() -> ExitCode {
             let tx = d.read("textures.arc").unwrap_or_default();
             let tex_names: BTreeMap<u32, String> = arc::entries(&tx).unwrap_or_default().into_iter().map(|e| (e.id, e.name.rsplit('/').next().unwrap_or(&e.name).to_string())).collect();
             let world: Vec<usize> = (0..log.matrices.len()).filter(|&i| log.matrices[i].id == 0xF1 && log.matrices[i].tick == tick).collect();
+            // the view and projection the lot is drawn with (those in force at the first world
+            // matrix with a wall part's place: ASSETS_SHOW_CAMERA prints them whole)
+            if std::env::var_os("ASSETS_SHOW_CAMERA").is_some()
+                && let Some(&i) = world.first()
+            {
+                let v = log.matrices[..i].iter().rev().find(|p| p.id == 0xF0);
+                let p = log.matrices.iter().filter(|p| p.projection && p.tick == tick).collect::<Vec<_>>();
+                println!("view {:?}", v.map(|v| &v.values));
+                for p in p { println!("projection at {} {:?}", p.strips_before, p.values); }
+                println!("first world matrix at strips {}", log.matrices[i].strips_before);
+            }
+            // the eye: the view in force at the first world matrix of a wall part's place
+            let eye = world.first().and_then(|&i| log.matrices[..i].iter().rev().find(|p| p.id == 0xF0)).map(|v| {
+                let r = &v.values;
+                [0, 1].map(|c| -(r[c] * r[3] + r[4 + c] * r[7] + r[8 + c] * r[11]))
+            });
+            let mut by_facing: BTreeMap<(bool, bool), usize> = BTreeMap::new();
             let (mut parts, mut same, mut undrawn, mut down) = (0, 0, 0, 0);
             let mut wrong: BTreeMap<String, usize> = BTreeMap::new();
             for l in walls.lines() {
@@ -1241,8 +1258,13 @@ fn main() -> ExitCode {
                     }
                 }
                 if std::env::var_os("ASSETS_SHOW_PARTS").is_some() {
-                    let state = if drawn.is_empty() { "none" } else if drawn.iter().any(|n| n == "walls_down") { "plain" } else { "patterned" };
+                    let patterned = want.is_some_and(|w| drawn.iter().any(|n| n.eq_ignore_ascii_case(w)));
+                    let state = if patterned { "patterned" } else if drawn.is_empty() { "none" } else { "plain" };
                     println!("    part {x} {y} {angle} {state} {}", drawn.join(","));
+                }
+                if let Some(eye) = eye {
+                    let piece = housefire::scene::WallPiece { x, y, angle, fence: false, pattern: 0 };
+                    *by_facing.entry((piece.faces(eye), want.is_some_and(|w| drawn.iter().any(|n| n.eq_ignore_ascii_case(w))))).or_default() += 1;
                 }
                 if want.is_some_and(|w| drawn.iter().any(|n| n.eq_ignore_ascii_case(w))) {
                     same += 1;
@@ -1294,6 +1316,13 @@ fn main() -> ExitCode {
                 let at_tick = log.textures.iter().filter(|x| x.tick <= tick).count();
                 println!("  'x' records {} ({at_tick} by tick {tick}), images {}, reused with another texture {reused}", log.textures.len(), per.len());
             }
+            println!(
+                "wall parts by WallPiece::faces and face drawn: facing drawn {}, facing not drawn (out of view) {}, facing away drawn {}, facing away not drawn {}",
+                by_facing.get(&(true, true)).unwrap_or(&0),
+                by_facing.get(&(true, false)).unwrap_or(&0),
+                by_facing.get(&(false, true)).unwrap_or(&0),
+                by_facing.get(&(false, false)).unwrap_or(&0)
+            );
             // (`walls_down`, `wall_black`, `polyshadow` and `1st_final` are one image: a plain one)
             println!("wall parts {parts}: drawn with the pattern's texture {same}; not drawn this frame {undrawn}; drawn plain only (the walls_down / wall_black image) {down}; other {}", parts - same - undrawn - down);
             for (k, c) in wrong.iter().take(12) {

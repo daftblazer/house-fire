@@ -508,10 +508,11 @@ parts, it seems; which ones is next). One home part shares its place and turn wi
 A wall part draws in two pieces, each after its own world matrix at the part's place, both in
 the main pass (the same projection and view): its face, a display list of 18 vertices (23 at a
 door or window) in a one-layer material (flags 0x08, word 0x18) with its pattern; and its cap, a
-display list of 6 vertices in the material flags 0x148, word 4, with the plain image. At tick
-1,000 (`ASSETS_SHOW_PASS`): every face drawn faces the camera (its normal, (-sin a, cos a) for
-the part's turn a, towards the eye: home 31 of 31, the club 36 of 36, plus the counter's), and no
-face with an outside pattern (`exterior-tile--202` at home, `--203` at the club) is drawn: those
-parts show their cap only (home 48, club 62), the outside walls lowered. Inside faces towards
-the camera that are not drawn: home 14 (along the west wall and the y 23/24 wall), the club 46
-(most along its north and south walls, out of view it seems); what lowers them is open.
+display list of 6 vertices in the material flags 0x148, word 4, with the plain image. Faces are
+one-sided: at tick 1,000 a part's face is drawn exactly when it is turned towards the camera
+(its normal, (-sin a, cos a) for the part's turn a, pointing at the eye: `WallPiece::faces`) and
+in view: home 67 drawn of 67 facing, 0 of 67 facing away; the club 39 of 82 facing (the other
+43 out of the logged view and projection, 41 clearly, 2 at the frustum's edge), 0 of 82 facing
+away. (Iteration 50's "outside faces lowered" was a misreading: objects standing at a part's place
+add plain draws, and the listing had named those parts plain first.) The renderer culls back faces
+to the same effect. No walls are lowered in either view; the walls-down view is still to be seen.

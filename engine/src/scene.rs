@@ -69,6 +69,16 @@ pub struct WallPiece {
     pub pattern: u8,
 }
 
+impl WallPiece {
+    /// Whether a wall part's face is seen from `eye` (x, y in tiles): faces are one-sided, the
+    /// original drawing a part's face only when it is turned towards the camera (its normal,
+    /// (-sin a, cos a), pointing at the eye) and in view; the renderer culls back faces likewise.
+    pub fn faces(&self, eye: [f32; 2]) -> bool {
+        let (s, c) = self.angle.to_radians().sin_cos();
+        -s * (eye[0] - self.x) + c * (eye[1] - self.y) > 0.0
+    }
+}
+
 /// The pieces of the walls between the tiles of a `size`-tile lot: each edge with a wall once.
 pub fn wall_pieces(walls: &crate::routing::Walls, size: i32, fences: &[u32]) -> Vec<WallPiece> {
     let mut out = Vec::new();
@@ -97,6 +107,18 @@ pub fn wall_pieces(walls: &crate::routing::Walls, size: i32, fences: &[u32]) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_wall_face_is_seen_from_its_side() {
+        // home, tick 1,000: the eye at (32.29, -4.02); the west wall's inside face (13.5, 15.5)
+        // turned -90 is seen, its outside (12.5, 15.5) turned 90 is not
+        let eye = [32.29, -4.02];
+        let part = |x, y, angle| WallPiece { x, y, angle, fence: false, pattern: 0 };
+        assert!(part(13.5, 15.5, -90.0).faces(eye));
+        assert!(!part(12.5, 15.5, 90.0).faces(eye));
+        assert!(part(14.5, 13.5, 180.0).faces(eye));
+        assert!(!part(14.5, 14.5, 0.0).faces(eye));
+    }
 
     #[test]
     fn a_group_is_drawn_at_its_box_centre() {
