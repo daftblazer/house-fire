@@ -397,3 +397,14 @@ for the alarm clock). `quickdata::object_resources` reads them natively (the ima
 make the pointer an offset): 460 definitions with resources, 372 naming an archive entry; for
 all 139 GUIDs the original collected on the home replay, the same dataset id as its own (0
 different).
+
+The scene's draws by that link (scenecheck, home replay, tick 1,000). Of the lot's 172 objects
+(not held, not persons) 42 have a model by quick data (`model_of`: the GUID's ResData model
+hash, against a drawn record's `name_hash`); the rest have none (controllers, walls' and
+floors' objects, the ones drawn from the lot's dataset). 587 world matrices draw one of those
+42 models, and an object's model is drawn within 1.5 tiles of its place for 36 of them (6, the
+brass wall lamps, the bathtub, the scooter, not drawn that tick). Only 25 matrices sit at their
+object's tile centre (all turned 90 - 45 x facing): the rest are a node's matrix, the object's
+times the node's transform (a mulberry tree: 395 matrices, its branches and leaves about
+(9.0, 9.0) for a tree at (8.75, 8.75), each turned and scaled its own way), and outdoor objects
+stand at quarter tiles, not tile centres. Study ASSETS_SHOW_UNDRAWN, _MISPLACED=NAME, _FAR.

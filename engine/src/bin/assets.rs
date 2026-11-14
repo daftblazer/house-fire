@@ -1149,6 +1149,84 @@ fn main() -> ExitCode {
                 }
             }
             println!("  objects whose RD_ dataset (TTAB label) is on the disc {with_rd} of {}; world matrices of a model one of the lot's objects' datasets keeps {from_rd}: at the tile centre of such an object {placed}, turned 90 - 45 x facing {turned}", objects.len());
+            // the link the original uses: an object's GUID to its model (quick data's
+            // ObjDefinition::ResData); each drawn record by its name's hash
+            let q = d.read("quickdat.arc").unwrap_or_default();
+            let res = arc::entries(&q)
+                .unwrap_or_default()
+                .into_iter()
+                .find(|e| e.name == "SimsObjects")
+                .and_then(|e| quickdata::Image::read(arc::bytes(&q, &e)))
+                .map(|img| quickdata::object_resources(&img))
+                .unwrap_or_default();
+            let guid_of: BTreeMap<&str, u32> = places
+                .lines()
+                .filter_map(|l| {
+                    let mut f = l.split(' ');
+                    Some((f.next()?, u32::from_str_radix(f.next()?, 16).ok()?))
+                })
+                .collect();
+            let model_of = |o: &(String, f32, f32, i32, String)| guid_of.get(o.0.as_str()).and_then(|g| res.get(g)).map(|r| r.model).filter(|&m| m != 0);
+            let with_model_hash = objects.iter().filter(|o| model_of(o).is_some()).count();
+            let (mut of_lot, mut placed, mut turned) = (0, 0, 0);
+            let mut drawn_objects: BTreeSet<&str> = BTreeSet::new();
+            let mut misplaced: BTreeMap<String, usize> = BTreeMap::new();
+            for m in log.matrices.iter().filter(|m| m.id == 0xF1 && m.tick == tick) {
+                let Some(st) = log.strips.get(m.strips_before) else { continue };
+                let key = if st.words[0] >> 24 == 0x42 { st.at[6] } else { st.at[2] };
+                let Some(&(_, name)) = owner.get(&key) else { continue };
+                let h = shader::name_hash(name);
+                let mine: Vec<&(String, f32, f32, i32, String)> = objects.iter().filter(|o| model_of(o) == Some(h)).collect();
+                if mine.is_empty() {
+                    continue;
+                }
+                of_lot += 1;
+                let v = &m.values;
+                match mine.iter().find(|o| (v[3] - (o.1.floor() + 0.5)).abs() < 0.01 && (v[7] - (o.2.floor() + 0.5)).abs() < 0.01) {
+                    Some(o) => {
+                        placed += 1;
+                        drawn_objects.insert(&o.0);
+                        let angle = v[4].atan2(v[0]).to_degrees().round() as i32;
+                        turned += usize::from((angle - (90 - 45 * o.3)).rem_euclid(360) == 0);
+                    }
+                    None => {
+                        *misplaced.entry(name.to_string()).or_default() += 1;
+                        if std::env::var_os("ASSETS_SHOW_MISPLACED").is_some_and(|n| n == name) {
+                            let s = (v[0] * v[0] + v[4] * v[4] + v[8] * v[8]).sqrt();
+                            println!("    {name} drawn at ({:.4}, {:.4}, {:.4}) angle {:.1} scale {s:.5}", v[3], v[7], v[11], v[4].atan2(v[0]).to_degrees());
+                        }
+                    }
+                }
+            }
+            println!("  by the quick data link: lot objects with a model {with_model_hash} of {}; world matrices drawing one of their models {of_lot}: at its object's tile centre {placed} ({} objects), turned 90 - 45 x facing {turned}; elsewhere {misplaced:?}", objects.len(), drawn_objects.len());
+            // whether each object's model is drawn at all near its place (a node's matrix is the
+            // object's times the node's transform, so within a tile or two)
+            let worlds_of = |h: u32| -> Vec<[f32; 2]> {
+                log.matrices
+                    .iter()
+                    .filter(|m| m.id == 0xF1 && m.tick == tick)
+                    .filter(|m| {
+                        let Some(st) = log.strips.get(m.strips_before) else { return false };
+                        let key = if st.words[0] >> 24 == 0x42 { st.at[6] } else { st.at[2] };
+                        owner.get(&key).is_some_and(|&(_, n)| shader::name_hash(n) == h)
+                    })
+                    .map(|m| [m.values[3], m.values[7]])
+                    .collect()
+            };
+            let mut near_hist: BTreeMap<i32, usize> = BTreeMap::new();
+            for o in objects.iter().filter(|o| model_of(o).is_some()) {
+                let d = worlds_of(model_of(o).unwrap()).iter().map(|w| ((w[0] - o.1).powi(2) + (w[1] - o.2).powi(2)).sqrt()).fold(f32::MAX, f32::min);
+                *near_hist.entry(if d == f32::MAX { -1 } else { (d * 2.0).ceil() as i32 }).or_default() += 1;
+                if std::env::var_os("ASSETS_SHOW_FAR").is_some() && d > 1.5 {
+                    println!("    far: {} {} at ({}, {}) nearest draw of its model {d:.2}", o.0, o.4, o.1, o.2);
+                }
+            }
+            println!("  objects with a model, by the nearest draw of it (half tiles, rounded up; -1 none drawn): {near_hist:?}");
+            if std::env::var_os("ASSETS_SHOW_UNDRAWN").is_some() {
+                for o in objects.iter().filter(|o| model_of(o).is_some() && !drawn_objects.contains(o.0.as_str())) {
+                    println!("    not drawn at its place: {} {} at ({}, {}) facing {} model {:08x}", o.0, o.4, o.1, o.2, o.3, model_of(o).unwrap());
+                }
+            }
             if std::env::var_os("ASSETS_SHOW_UNNAMED").is_some() {
                 println!("  records drawn with no object of their name: {unnamed:?}");
             }
