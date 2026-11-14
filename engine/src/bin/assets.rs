@@ -1080,6 +1080,17 @@ fn main() -> ExitCode {
             let angle = |m: &housefire::tree_log::OrientRec| m.m[1].atan2(m.m[0]).to_degrees().round() as i32;
             let (mut placed, mut turned, mut missing) = (0, 0, 0);
             let groups = scene::placements(&parts);
+            // (only objects with a dataset of their own are drawn: markers and controllers not)
+            let has_res: BTreeSet<i16> = places
+                .lines()
+                .filter_map(|l| {
+                    let f: Vec<&str> = l.split(' ').collect();
+                    let id: i16 = f[0].parse().ok()?;
+                    let leader = f.get(9).and_then(|v| v.parse::<i16>().ok()).filter(|&v| v != 0).unwrap_or(id);
+                    res.get(&u32::from_str_radix(f.get(1)?, 16).ok()?).is_some_and(|r| r.dataset != 0).then_some(leader)
+                })
+                .collect();
+            let groups: Vec<scene::Placement> = groups.into_iter().filter(|g| has_res.contains(&g.leader)).collect();
             for g in &groups {
                 let here: Vec<&&housefire::tree_log::OrientRec> = last.values().filter(|m| (m.m[12] - g.x).abs() < 0.01 && (m.m[13] - g.y).abs() < 0.01).collect();
                 if here.is_empty() {
@@ -1096,7 +1107,7 @@ fn main() -> ExitCode {
                     println!("    not turned so: leader {} at ({}, {}) {}: {:?}", g.leader, g.x, g.y, g.angle, here.iter().map(|m| angle(m)).collect::<Vec<_>>());
                 }
             }
-            println!("  by group ({} objects drawn of the {} parts): an orientation at the engine's place {placed}, one turned as the engine turns it {turned}; none there {missing}", groups.len(), parts.len());
+            println!("  by group ({} objects with a dataset, drawn, of the {} parts): an orientation at the engine's place {placed}, one turned as the engine turns it {turned}; none there {missing}", groups.len(), parts.len());
             if std::env::var_os("ASSETS_SHOW_ORIENTS").is_some() {
                 for m in last.values() {
                     println!("    model {:08x} tick {}: at ({:.4}, {:.4}, {:.4}) angle {:.1}", m.model, m.tick, m.m[12], m.m[13], m.m[14], m.m[1].atan2(m.m[0]).to_degrees());

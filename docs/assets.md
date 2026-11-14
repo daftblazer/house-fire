@@ -462,3 +462,13 @@ wall, (0, -0.45) in their own frame (the brass lamps on (16.375, 28.375) facing 
 painting's lead has no ResData; its second part has). `quickdata::ObjResources::on_wall`; with
 it `scene::placements` places all 97 objects of the home lot at tick 1,000 where the original
 oriented them, turned as it turned them.
+
+The club (club-d.log: the club replay with the draw records, its steps the club log's, 324,072;
+places at tick 1,000 from lockstep). A group's parts may stand off the tile grid by a quarter
+(trees) or a sixteenth (the pool table at 14.0625, the dance floor at 20.25): it is drawn at the
+centre of the box of the tiles its parts stand on (`floor`), the pool table's at (15.5, 22.0),
+the dance floor's 16 parts at (22.0, 18.0); the trees' quarter-tile rule is the same rule. Only
+objects with a dataset of their own are drawn (a marker, `destination_gohereandshow`, has a
+ResData row with no dataset and no model). Every such object at the original's place and turn:
+home 90 of 90, club 79 of 79 (and the home lot's 7 drawn from the lot's data, also at their
+place).

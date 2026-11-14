@@ -1,8 +1,8 @@
 //! The scene: where the lot's objects are drawn (`docs/assets.md`, "An object's own matrix").
 //!
-//! An object of several tiles is drawn once, for its leader: at the centre of its parts' cells'
-//! bounding box (a cell is a tile, or a quarter tile for a group placed off the tile grid, as
-//! trees are; an object of one tile is drawn at its tile's centre), turned about the vertical
+//! An object of several tiles is drawn once, for its leader: at the centre of the bounding box of
+//! its parts' tiles (each part's tile the one its place is on, wherever on it: a tree's parts a
+//! quarter tile apart, a pool table's a sixteenth off the grid), turned about the vertical
 //! by 90 - 45 x the leader's facing (degrees). An object hung on a wall (any of its parts' quick
 //! data flagged so) is drawn 0.45 tile towards the wall: (0, -0.45) in its own frame.
 
@@ -40,11 +40,9 @@ pub fn placements(parts: &[Part]) -> Vec<Placement> {
         .into_iter()
         .map(|(leader, ps)| {
             let lead = ps.iter().find(|p| p.id == leader).unwrap_or(&ps[0]);
-            let on_grid = ps.len() == 1 || ps.iter().all(|p| p.x16 % 16 == 0 && p.y16 % 16 == 0);
-            let (cell, half) = if on_grid { (16, 0.5) } else { (1, 0.125) };
             let span = |v: fn(&&Part) -> i32| {
-                let (lo, hi) = ps.iter().map(|p| v(p).div_euclid(cell) * cell).fold((i32::MAX, i32::MIN), |(a, b), c| (a.min(c), b.max(c)));
-                (lo + hi) as f32 / 32.0 + half
+                let (lo, hi) = ps.iter().map(|p| v(p).div_euclid(16)).fold((i32::MAX, i32::MIN), |(a, b), c| (a.min(c), b.max(c)));
+                (lo + hi) as f32 / 2.0 + 0.5
             };
             let angle = (90 - 45 * lead.facing) as f32;
             let (mut x, mut y) = (span(|p| p.x16), span(|p| p.y16));
@@ -64,7 +62,7 @@ mod tests {
 
     #[test]
     fn a_group_is_drawn_at_its_box_centre() {
-        // a bed of six tiles (x 13-15, y 26-27) facing 2, and a tree on the quarter grid
+        // a bed of six tiles (x 13-15, y 26-27) facing 2, and a tree's parts a quarter tile apart
         let bed: Vec<Part> = [(29, 14, 26), (34, 14, 27), (35, 13, 27), (36, 13, 26), (37, 15, 26), (38, 15, 27)]
             .iter()
             .map(|&(id, x, y)| Part { id, leader: 29, x16: x * 16, y16: y * 16, facing: 2, wall: false })
