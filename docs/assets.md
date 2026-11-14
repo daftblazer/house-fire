@@ -541,5 +541,11 @@ its wall has a wall towards that end, the part's own tile has none there and the
 on (fences not counted). A draw shows its form by its positions (the strip's `at[2]`):
 `_right_extends` has its own, a 5-vertex cap is `_left_extends`'s, the rest are the straight
 models'. At tick 1,000 every draw so read agrees: home 111 straight, 2 left, 3 right; the club 90,
-4 and 6. A free end's `_left_cap`/`_right_cap` keep the straight model's first positions, so a
-draw cannot tell them apart from it: not decided yet (they end walls that stop in the open).
+4 and 6. A record is several sub-models drawn one after another at the part's place (each after
+its own world matrix): `wall_straight` [5, 6, 5, 18 vertices], the `_extends` forms the same
+counts with other positions, and the `_cap` / `_bothcap` forms add an end piece of 17 and 4
+vertices (`assets ISO recdiff DATASET/NAME ...` compares records). No part on either lot draws
+one: the parts whose wall ends in the open (home 14, mostly against the porch's fences; the
+club 4) draw the straight model's pieces, and no 17- or 4-vertex draw of a wall record's
+positions is at a wall part in either frame (`ASSETS_SHOW_PART_RECORDS`). So `Form::Straight` for
+them is the original's; when the `_cap` forms are used is not seen on these lots and not built.

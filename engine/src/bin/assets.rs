@@ -1263,11 +1263,31 @@ fn main() -> ExitCode {
                 let mut drawn = Vec::new();
                 // (a cap: a draw after a matrix at the part, a display list of 6 vertices with the plain image)
                 let mut caps = Vec::new();
+                // (the wall records consistent with every draw at the part: ASSETS_SHOW_PART_RECORDS)
+                let mut consistent: Option<BTreeSet<String>> = None;
+                let mut counts = Vec::new();
                 for &i in &world {
                     let m = &log.matrices[i];
                     let a = m.values[4].atan2(m.values[0]).to_degrees();
                     if (m.values[3] - x).abs() > 0.01 || (m.values[7] - y).abs() > 0.01 || (a - angle).rem_euclid(360.0).min((angle - a).rem_euclid(360.0)) > 0.5 {
                         continue;
+                    }
+                    if !list_owners.is_empty()
+                        && let Some(st) = log.strips.get(m.strips_before)
+                        && st.words[0] >> 24 == 0x42
+                    {
+                        let mut key = [0xffu8; 32];
+                        key[1..].copy_from_slice(&st.at[2][..31]);
+                        if let Some(o) = list_owners.get(&key) {
+                            let walls_only: BTreeSet<String> = o.iter().filter_map(|n| n.rsplit('/').next()).filter(|n| n.starts_with("wall_")).map(String::from).collect();
+                            if !walls_only.is_empty() {
+                                counts.push(st.words[1]);
+                                consistent = Some(match consistent.take() {
+                                    None => walls_only,
+                                    Some(c) => c.intersection(&walls_only).cloned().collect(),
+                                });
+                            }
+                        }
                     }
                     // its draw: the strip after the matrix, with the map-0 texture loaded last before it
                     if let Some(t) = log.tex_loads.iter().rev().find(|t| t.strips_before <= m.strips_before && t.map == 0)
@@ -1339,6 +1359,10 @@ fn main() -> ExitCode {
                         }
                     }
                 }
+                if std::env::var_os("ASSETS_SHOW_PART_RECORDS").is_some() {
+                    counts.sort();
+                    println!("    records {x} {y} {angle} {counts:?} {:?}", consistent.unwrap_or_default());
+                }
                 // the cap the engine gives the part (the dump's sixth field) against the original's
                 *by_cap.entry((f.get(5) == Some(&"1"), !caps.iter().filter(|c| (c.0 == 5 || c.0 == 6) && c.1 == 0.0).collect::<Vec<_>>().is_empty())).or_default() += 1;
                 if std::env::var_os("ASSETS_SHOW_PARTS").is_some() {
@@ -1407,6 +1431,26 @@ fn main() -> ExitCode {
                 by_facing.get(&(false, true)).unwrap_or(&0),
                 by_facing.get(&(false, false)).unwrap_or(&0)
             );
+            // (every display-list draw of the tick whose positions are a wall record's, by vertex
+            // count: whether any free-end piece, 17 or 4 vertices, is drawn at all)
+            if !list_owners.is_empty() {
+                let mut by_count: BTreeMap<u32, usize> = BTreeMap::new();
+                for &i in &world {
+                    let m = &log.matrices[i];
+                    if let Some(st) = log.strips.get(m.strips_before).filter(|st| st.words[0] >> 24 == 0x42) {
+                        let mut key = [0xffu8; 32];
+                        key[1..].copy_from_slice(&st.at[2][..31]);
+                        if list_owners.get(&key).is_some_and(|o| o.iter().any(|n| n.rsplit('/').next().is_some_and(|b| b.starts_with("wall_")))) {
+                            *by_count.entry(st.words[1]).or_default() += 1;
+                            if st.words[1] == 4 || st.words[1] == 17 || st.words[1] == 8 {
+                                let o = &list_owners[&key];
+                                println!("  {} vertices at ({:.2}, {:.2}, {:.2}) turned {:.0}: {}", st.words[1], m.values[3], m.values[7], m.values[11], m.values[4].atan2(m.values[0]).to_degrees(), o.iter().take(4).cloned().collect::<Vec<_>>().join(" | "));
+                            }
+                        }
+                    }
+                }
+                println!("wall records' draws in the frame by vertex count: {by_count:?}");
+            }
             if !by_form.is_empty() {
                 println!("wall draws by (WallPiece::form, the form their positions show): {by_form:?}");
             }
@@ -1431,6 +1475,37 @@ fn main() -> ExitCode {
             println!("wall pieces (the engine's) {pieces}: the original's orientation there {found}; of them fences {fences}, found {fences_found}");
             if !missing.is_empty() {
                 println!("  not found: {missing:?}");
+            }
+        }
+        "recdiff" => {
+            // two or more records (DATASET/NAME) side by side: per node and sub-model, where their
+            // arrays first differ (positions, texture coordinates, normals, the display list)
+            let want: Vec<&str> = args.iter().skip(3).map(|s| s.as_str()).collect();
+            let recs = all_records(&d);
+            let found: Vec<(&String, &model::Record)> = want.iter().filter_map(|w| recs.iter().find(|(e, r)| format!("{e}/{}", r.name) == *w).map(|(e, r)| (e, r))).collect();
+            let Some((_, first)) = found.first() else {
+                println!("none found");
+                return ExitCode::FAILURE;
+            };
+            for (e, r) in &found {
+                println!("{e}/{}: nodes {}, subs {:?}", r.name, r.nodes.len(), r.nodes.iter().map(|n| n.subs.iter().map(|(_, s)| s.count).collect::<Vec<_>>()).collect::<Vec<_>>());
+            }
+            let diff = |a: &[u8], b: &[u8]| if a == b { "same".to_string() } else { format!("differ at {} (sizes {} {})", a.iter().zip(b).position(|(x, y)| x != y).unwrap_or(a.len().min(b.len())), a.len(), b.len()) };
+            for (e, r) in found.iter().skip(1) {
+                for (ni, (na, nb)) in first.nodes.iter().zip(&r.nodes).enumerate() {
+                    for (si, ((_, a), (_, b))) in na.subs.iter().zip(&nb.subs).enumerate() {
+                        let la = a.list.as_ref().map(|l| l.2.clone()).unwrap_or_default();
+                        let lb = b.list.as_ref().map(|l| l.2.clone()).unwrap_or_default();
+                        println!(
+                            "  {e}/{} node {ni} sub {si}: positions {}, texcoords {}, normals {}, list {}",
+                            r.name,
+                            diff(&a.positions, &b.positions),
+                            diff(&a.texcoords, &b.texcoords),
+                            diff(&a.normals, &b.normals),
+                            diff(&la, &lb)
+                        );
+                    }
+                }
             }
         }
         "skelcheck" => {
