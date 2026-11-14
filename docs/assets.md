@@ -836,3 +836,16 @@ window lights' x and y, every one bit for bit at the engine's places (lockstep
 `LOCKSTEP_WINDOW_LIGHTS=LOG`, against the log's last 't' record); the club has none, and the
 engine gives none. The kind (to read from the object's definition), the reach's quarter and the
 colours are not ported yet.
+
+The window lights' reach, base colour and height (`light::window_light_params`). These depend
+on the window's kind and on whether the light's room is inside (index 1):
+- reach is the kind's table times 0.25 (the get-light, 0x8016645C, scales by 0x802B9F38): kind 1
+  (7, 14), kind 2 (6, 8), kind 3 (12, 24);
+- the base colour (+0x94) is kind 1 (0.24, 0.6), kind 2 (0.22, 0.4), kind 3 (0.28, 0.7);
+- the height is 2.0 for kind 1 and 2.5 for kind 2 (kind 3's not read).
+The kind is the window object's +0xC (the object of class 0x802A1E08, made by 0x8007C05C): 1
+for home's storm windows and 2 for the small rectangle ones. It is not in the definition's
+fields, nor the object's data or attributes; its writer is still to find. Checked through the
+observer's 'y' records (each window light: side, raw reach, base colour, its window object, the
+kind): home's 28, every reach, base colour and height the engine's from the logged kind and the
+light's room.

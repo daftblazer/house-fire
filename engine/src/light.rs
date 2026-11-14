@@ -138,6 +138,22 @@ pub fn window_light_places(tile: (i32, i32), facing: u8) -> Option<[(f32, f32); 
     Some([at(1.0), at(-1.0)])
 }
 
+/// A window light's reach, base colour and height by the window's kind (1 to 3) and whether
+/// the light's room is inside (the original's window light update: reach tables at r13 less
+/// 29644, 29636 and 29652, colours at r13 less 29620, 29612 and 29628, the heights at
+/// 0x802B9F50 and 0x802B9F58, a quarter of the table's reach given out). Kind 3's height is
+/// not read yet.
+pub fn window_light_params(kind: u32, inside: bool) -> Option<(f32, f32, Option<f32>)> {
+    let i = usize::from(inside);
+    let (reach, colour, height) = match kind {
+        1 => ([7.0f32, 14.0], [0.24f32, 0.6], Some(2.0f32)),
+        2 => ([6.0, 8.0], [0.22, 0.4], Some(2.5)),
+        3 => ([12.0, 24.0], [0.28, 0.7], None),
+        _ => return None,
+    };
+    Some((reach[i] * 0.25, colour[i], height))
+}
+
 /// A light object's kind (the original's light classes, by what they give a room).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LightKind {
@@ -331,6 +347,14 @@ mod tests {
         assert_eq!(entry_points(0x0005_0203), vec![(2, 5), (2, 6), (3, 5), (3, 6), (4, 5), (4, 6)]);
         // a leading half (0x40: on the row) and a trailing half (0x80: the row after)
         assert_eq!(entry_points(0x0005_4283), vec![(2, 5), (3, 5), (3, 6), (4, 6)]);
+    }
+
+    #[test]
+    fn a_window_lights_reach_is_a_quarter_of_its_kinds() {
+        assert_eq!(window_light_params(1, false), Some((1.75, 0.24, Some(2.0))));
+        assert_eq!(window_light_params(1, true), Some((3.5, 0.6, Some(2.0))));
+        assert_eq!(window_light_params(2, true), Some((2.0, 0.4, Some(2.5))));
+        assert_eq!(window_light_params(0, true), None);
     }
 
     #[test]

@@ -1886,6 +1886,39 @@ fn main() -> ExitCode {
             }
             println!("rebuilds {checked}: ranges the engine's {same_ranges}, own lights' objects in order {same_own}, other lights' {same_other}; objects of no known class {unknown}");
         }
+        "windowlights" => {
+            // the window light objects and their game objects, for study
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO windowlights LOG");
+                return ExitCode::FAILURE;
+            };
+            let f = |v: u32| f32::from_bits(v);
+            if std::env::var_os("ASSETS_EACH").is_some() {
+                for (h, w) in &log.window_lights {
+                    println!("light {:08x} side {} reach {} colours {} {} object {:08x} kind {}: {}", h[0], h[1], f(h[2]), f(h[3]), f(h[4]), h[5], h[6] as i32, w.iter().map(|v| format!("{v:08x}")).collect::<Vec<_>>().join(" "));
+                }
+            }
+            // each window light's reach, height and base colour against the engine's, by its
+            // logged kind and its room (from the first rebuild with lights)
+            let Some(b) = log.light_rebuilds.iter().find(|b| b.other > 0) else {
+                println!("no rebuild with window lights");
+                return ExitCode::SUCCESS;
+            };
+            let (mut n, mut same) = (0, 0);
+            for (h, _) in &log.window_lights {
+                let Some(room) = b.objects.iter().find(|o| o[0] == h[0]).map(|o| o[2] as i32) else { continue };
+                let Some(light) = b.lights.iter().find(|l| l[7] == h[0]) else { continue };
+                n += 1;
+                let Some((reach, colour, height)) = housefire::light::window_light_params(h[6], room != 0) else { continue };
+                let ok = reach.to_bits() == light[3] && colour.to_bits() == h[3] && height.is_none_or(|z| z.to_bits() == light[2]) && (f(h[2]) * 0.25).to_bits() == light[3];
+                if ok {
+                    same += 1;
+                } else {
+                    println!("  light {:08x} kind {} room {room}: mine reach {reach} colour {colour} height {height:?}, the log's reach {} colour {} height {}", h[0], h[6], f(light[3]), f(h[3]), f(light[2]));
+                }
+            }
+            println!("window lights {} (in the rebuild {n}): the engine's reach, base colour and height {same}", log.window_lights.len());
+        }
         "lightobjs" => {
             // what the lights are made from: each rebuild's light objects and lights
             let Some(log) = args.get(3).and_then(|p| read_log(p)) else {

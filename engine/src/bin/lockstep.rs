@@ -1441,6 +1441,17 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &(Vec<u3
                         .map(|(x, y)| (x.to_bits(), y.to_bits()))
                         .collect();
                     let mut theirs: Vec<(u32, u32)> = log.light_rebuilds.iter().rev().find(|b| b.rooms > 0).map_or(Vec::new(), |b| b.lights[..b.other as usize].iter().map(|l| (l[0], l[1])).collect());
+                    if std::env::var_os("LOCKSTEP_WINDOW_FIELDS").is_some() {
+                        let mut seen = std::collections::BTreeSet::new();
+                        for o in lw.objects().filter(|o| o.on_lot() && o.leader == o.id() && (o.window || o.file.is_some_and(|f| lib.file(f).path.contains("window")))) {
+                            let path = o.file.map_or("", |f| lib.file(f).path.as_str());
+                            if seen.insert(path.to_string()) {
+                                println!("  {path} window {}: fields {:?}", o.window, lw.definition(o).map(|d| d.fields.clone()));
+                                println!("    data {:?}", o.data);
+                                println!("    attributes {:?}", o.attributes);
+                            }
+                        }
+                    }
                     mine.sort_unstable();
                     theirs.sort_unstable();
                     let same = mine.iter().filter(|p| theirs.contains(p)).count();
