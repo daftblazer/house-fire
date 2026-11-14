@@ -452,4 +452,13 @@ its two parts) or, for a group placed off the tile grid, a quarter tile (a tree'
 stands (the end tables at 13.125). It is turned 90 - 45 x the leader's facing. On the home
 replay at tick 1,000: 97 objects drawn from the lot's 172 parts, 96 with an orientation of the
 original's at that place turned so; the one other, a painting of two panels, is drawn 0.45 of a
-tile towards its wall ((19.95, 23.0) for (19.5, 23.0): a wall object's offset, to be read).
+tile towards its wall ((19.95, 23.0) for (19.5, 23.0)).
+
+Objects hung on a wall. The ResData row's second word has bit 0x40000000 for them (the wall
+lamps, paintings, the wall mirror: 0x42000000 and 0x42800000; floor objects 0x02000000,
+0x02800000); no bit of the definition row tells them apart. They are drawn 0.45 tile towards the
+wall, (0, -0.45) in their own frame (the brass lamps on (16.375, 28.375) facing 0 at (16.95,
+28.5); on (22.375, 23.375) facing 6 at (22.5, 23.95)). The group takes it from any part (the
+painting's lead has no ResData; its second part has). `quickdata::ObjResources::on_wall`; with
+it `scene::placements` places all 97 objects of the home lot at tick 1,000 where the original
+oriented them, turned as it turned them.

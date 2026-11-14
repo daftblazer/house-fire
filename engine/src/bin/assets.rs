@@ -1059,6 +1059,14 @@ fn main() -> ExitCode {
             }
             // by group, as the engine places them (scene::placements: a multi-tile object drawn
             // once, at its cells' box centre, turned by its leader's facing)
+            let q = d.read("quickdat.arc").unwrap_or_default();
+            let res = arc::entries(&q)
+                .unwrap_or_default()
+                .into_iter()
+                .find(|e| e.name == "SimsObjects")
+                .and_then(|e| quickdata::Image::read(arc::bytes(&q, &e)))
+                .map(|img| quickdata::object_resources(&img))
+                .unwrap_or_default();
             let parts: Vec<scene::Part> = places
                 .lines()
                 .filter_map(|l| {
@@ -1066,7 +1074,7 @@ fn main() -> ExitCode {
                     let (x16, y16): (i32, i32) = (f.get(2)?.parse().ok()?, f.get(3)?.parse().ok()?);
                     let id: i16 = f[0].parse().ok()?;
                     let leader = f.get(9).and_then(|v| v.parse::<i16>().ok()).filter(|&v| v != 0).unwrap_or(id);
-                    (x16 > 0 && y16 > 0 && f.get(6)? == &"0" && f.get(7)? == &"0").then(|| scene::Part { id, leader, x16, y16, facing: f[5].parse().unwrap_or(0) })
+                    (x16 > 0 && y16 > 0 && f.get(6)? == &"0" && f.get(7)? == &"0").then(|| scene::Part { id, leader, x16, y16, facing: f[5].parse().unwrap_or(0), wall: u32::from_str_radix(f[1], 16).ok().and_then(|g| res.get(&g)).is_some_and(|r| r.on_wall()) })
                 })
                 .collect();
             let angle = |m: &housefire::tree_log::OrientRec| m.m[1].atan2(m.m[0]).to_degrees().round() as i32;

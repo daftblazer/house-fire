@@ -103,16 +103,25 @@ impl Image {
 pub struct ObjResources {
     pub dataset: u32,
     pub model: u32,
+    /// The row's second word: its bit 0x40000000 set for an object hung on a wall (drawn 0.45
+    /// tile towards the wall, `scene.rs`).
+    pub flags: u32,
+}
+
+impl ObjResources {
+    pub fn on_wall(&self) -> bool {
+        self.flags & 0x4000_0000 != 0
+    }
 }
 
 /// Each object's resources by GUID, from `SimsObjects`: an `ObjDefinition` row (196 bytes, the
-/// GUID at +0x1c) points (+0xc0) at an `ObjDefinition::ResData` row (48 bytes: the dataset's id
-/// at +0x10, the model's hash at +0x18). Definitions without one are left out.
+/// GUID at +0x1c) points (+0xc0) at an `ObjDefinition::ResData` row (48 bytes: flags at +4, the
+/// dataset's id at +0x10, the model's hash at +0x18). Definitions without one are left out.
 pub fn object_resources(img: &Image) -> BTreeMap<u32, ObjResources> {
     img.rows("ObjDefinition")
         .filter_map(|r| {
             let res = img.ptr(r + 0xc0)?;
-            Some((img.u32(r + 0x1c)?, ObjResources { dataset: img.u32(res + 0x10)?, model: img.u32(res + 0x18)? }))
+            Some((img.u32(r + 0x1c)?, ObjResources { dataset: img.u32(res + 0x10)?, model: img.u32(res + 0x18)?, flags: img.u32(res + 4)? }))
         })
         .collect()
 }
