@@ -11,6 +11,11 @@ pub struct Entry {
     pub name: String,
     pub offset: u32,
     pub size: u32,
+    /// The resource id the game asks for the entry by (the word before its offset; mostly the
+    /// upper-case name's CRC-32, `docs/assets.md`).
+    pub id: u32,
+    /// The two words after the name.
+    pub words: [u32; 2],
 }
 
 fn be32(b: &[u8], p: usize) -> Option<u32> {
@@ -28,7 +33,9 @@ fn entries_at(data: &[u8], mut p: usize, n: usize) -> Option<Vec<Entry>> {
         let rest = data.get(p + 8..)?;
         let len = rest.iter().position(|&c| c == 0)?;
         let name = rest[..len].iter().map(|&c| c as char).collect();
-        out.push(Entry { name, offset, size });
+        let q = p + 8 + len + 1;
+        let (id, words) = (be32(data, p - 4)?, [be32(data, q).unwrap_or(0), be32(data, q + 4).unwrap_or(0)]);
+        out.push(Entry { name, offset, size, id, words });
         p += 8 + len + 1 + 12;
     }
     Some(out)

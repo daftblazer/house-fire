@@ -368,7 +368,26 @@ an animation's, an index). The object files hold no model name, CRC or dataset n
 and the rest searched in every byte order). The decompilation's ESimsDataManager
 (`src/sims/ESimsDataManager.cpp`: collectResInfoForSel) loads an object's resources by id: its
 ObjSelector's material word +0x44 and its definition's extra word +0x10, ids the archive manager
-finds by (fn_80176F6C: an id to an offset and size). The datasets.arc index keeps three words a
-name: the jukebox's dataset's third (`5fa7103e`) is in `globals` in a row `00 00 00 0a 5f a7 10
-3e 48 93 93 7d` (kind 0x0a, the id, another word); the alarm clock's (`2a2af469`) far in. To
-read next: those rows (kind, id) and where an ObjSelector's material is made from.
+finds by (fn_80176F6C: an id to an offset and size). 
+
+
+An archive entry's id. An index entry is its id, offset, size, name (NUL-ended) and two words:
+the id is the word before the offset (the first entry's right after the count), not one of the
+words after the name, which an earlier reading took it as (one entry off). It is the CRC-32 of
+the name in capitals (`shader::name_hash`) for 15,404 of the 18,484 entries of every archive
+but audiostr.arc (`HOUSEPRE06`: `00189200`); the rest are named otherwise but found the same way,
+by id. `arc::Entry::id`.
+
+An object's dataset, as the original finds it. The observer's 's' records (a patch at
+collectResInfoForSel's entry, 0x8003E898, writing the ObjSelector and its definition: 177 on
+the home replay, all as the lot loads) show the chain: the selector's definition (+0x18, the
+object's definition data, its GUID at +0x1c) points at an extra record (+0xC0) whose word +0x10
+is a dataset's id; the selector's material (+0x34) has an id at +0x44, 0 for all but 2. The
+pointers lie in the game's 12 MB heap at 0x7E000000 (`vm.cpp`), so the observer reads them
+there too. Of 139 GUIDs, each has one extra id; 51 name a datasets.arc entry and they are the
+right ones (the jukebox `RD_Stereo - Jukebox`, the alarm clock `RD_Clock - Alarm`, the cactus
+`RD_Plant - Floor - Cactus`, the garden lamp `RD_Lamp - Garden`); the rest are 0 (controllers,
+portals, the newspaper: drawn from elsewhere or not at all). 73 of the home lot's 113 GUIDs are
+among them. `assets ISO selcheck LOG PLACES` (study ASSETS_SHOW_LINK, _SELECTORS,
+_SELECTOR_BYTES, _SELECTOR_WORDS). Next: where the definition's extra id comes from on the disc
+(`globals`' definitions, by GUID), so the engine finds it without the log.

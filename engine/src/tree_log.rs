@@ -94,6 +94,20 @@ pub struct MatrixRec {
     pub strips_before: usize,
 }
 
+/// An object whose resources the original's data manager collected ('s': collectResInfoForSel):
+/// the tick, the selector's address, its material's and its extra data's resource ids, its
+/// definition's kind, and the selector's and definition's bytes.
+#[derive(Clone, Debug)]
+pub struct SelectorRec {
+    pub tick: u32,
+    pub selector: u32,
+    pub material_id: u32,
+    pub kind: u32,
+    pub extra_id: u32,
+    pub bytes: Vec<u8>,
+    pub definition: Vec<u8>,
+}
+
 /// A tree as the original had it loaded: its nodes' address, id, file, and its nodes' raw bytes.
 #[derive(Clone, Debug, Default)]
 pub struct TreeRec {
@@ -317,6 +331,8 @@ pub struct Log {
     pub textures: Vec<TexObjRec>,
     /// The palettes the original set up ('u', in newer logs).
     pub tluts: Vec<TlutRec>,
+    /// The objects whose resources were collected ('s', in newer logs, at most 2,000).
+    pub selectors: Vec<SelectorRec>,
     /// The matrices loaded ('p', at most 20,000) and projections ('j', at most 2,000), in newer logs.
     pub matrices: Vec<MatrixRec>,
     /// The textures loaded for draws ('l', in newer logs, at most 16,000).
@@ -420,6 +436,17 @@ pub fn read_log(path: &str) -> Option<Log> {
                     at.push(b);
                 }
                 log.strips.push(StripRec { tick, words, at });
+            }
+            b's' => {
+                if !r.has(5 * 4 + 0x80 + 0xC4) {
+                    break;
+                }
+                let (tick, selector, material_id, kind, extra_id) = (r.u32(), r.u32(), r.u32(), r.u32(), r.u32());
+                let bytes = r.b[r.p..r.p + 0x80].to_vec();
+                r.p += 0x80;
+                let definition = r.b[r.p..r.p + 0xC4].to_vec();
+                r.p += 0xC4;
+                log.selectors.push(SelectorRec { tick, selector, material_id, kind, extra_id, bytes, definition });
             }
             b'p' | b'j' => {
                 if !r.has(4 + 2) {

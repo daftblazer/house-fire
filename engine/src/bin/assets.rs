@@ -910,6 +910,79 @@ fn main() -> ExitCode {
                 }
             }
         }
+        "selcheck" => {
+            // the objects whose resources the original collected ('s' records): their resource
+            // ids named by the archives' index words, and a lot object's GUID in their definition
+            let (Some(log), Some(places)) = (args.get(3).and_then(|p| read_log(p)), args.get(4).and_then(|p| std::fs::read_to_string(p).ok())) else {
+                println!("usage: assets ISO selcheck LOG PLACES");
+                return ExitCode::from(2);
+            };
+            let (mut by_id, mut hashed, mut all) = (BTreeMap::new(), 0, 0);
+            for a in d.files().keys().filter(|n| n.ends_with(".arc")).cloned().collect::<Vec<_>>() {
+                if a == "audiostr.arc" {
+                    continue;
+                }
+                for e in arc::entries(&d.read(&a).unwrap_or_default()).unwrap_or_default() {
+                    all += 1;
+                    hashed += usize::from(e.id == shader::name_hash(&e.name));
+                    by_id.entry(e.id).or_insert(format!("{a}:{}", e.name));
+                }
+            }
+            println!("archive entries {all}: id the upper-case name's CRC {hashed}");
+            let guids: BTreeMap<u32, String> = places
+                .lines()
+                .filter_map(|l| {
+                    let f: Vec<&str> = l.split(' ').collect();
+                    Some((u32::from_str_radix(f.get(1)?, 16).ok()?, f.get(8).unwrap_or(&"").to_string()))
+                })
+                .collect();
+            let name = |id: u32| by_id.get(&id).cloned();
+            let (mut named, mut with_guid) = (0, 0);
+            for s in &log.selectors {
+                let g = (0..s.definition.len().saturating_sub(3)).find_map(|i| {
+                    let w = u32::from_be_bytes(s.definition[i..i + 4].try_into().unwrap());
+                    guids.get(&w).map(|p| (i, p.clone()))
+                });
+                named += usize::from(name(s.material_id).is_some());
+                with_guid += usize::from(g.is_some());
+                if std::env::var_os("ASSETS_SHOW_SELECTOR_BYTES").is_some() {
+                    let hex = |b: &[u8]| b.chunks(4).map(|w| w.iter().map(|x| format!("{x:02x}")).collect::<String>()).collect::<Vec<_>>().join(" ");
+                    println!("  sel {:08x}\n    {}\n    def {}", s.selector, hex(&s.bytes), hex(&s.definition));
+                }
+                if std::env::var_os("ASSETS_SHOW_SELECTOR_WORDS").is_some() {
+                    for (what, b) in [("sel", &s.bytes), ("def", &s.definition)] {
+                        for o in (0..b.len() - 3).step_by(2) {
+                            let w = u32::from_be_bytes(b[o..o + 4].try_into().unwrap());
+                            if let Some(n) = name(w) {
+                                println!("  {what} {:08x} +{o:02x} {w:08x} {n}", s.selector);
+                            }
+                        }
+                    }
+                }
+                if std::env::var_os("ASSETS_SHOW_SELECTORS").is_some() {
+                    println!("  sel {:08x} tick {} kind {} material {:08x} {:?} extra {:08x} {:?} guid {g:?}", s.selector, s.tick, s.kind, s.material_id, name(s.material_id), s.extra_id, name(s.extra_id));
+                }
+            }
+            println!("selectors {}: material id named by an index word {named}; a lot object's GUID in the definition {with_guid}", log.selectors.len());
+            // the link: an object's GUID (its definition's word +0x1c) to the dataset its
+            // definition's extra names
+            let mut link: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
+            for s in &log.selectors {
+                let guid = u32::from_be_bytes(s.definition[0x1c..0x20].try_into().unwrap());
+                if guid != 0 {
+                    link.entry(guid).or_default().insert(s.extra_id);
+                }
+            }
+            let one = link.values().filter(|v| v.len() == 1).count();
+            let to_dataset = link.values().filter(|v| v.iter().any(|&i| name(i).is_some_and(|n| n.contains("datasets.arc")))).count();
+            let placed = guids.keys().filter(|g| link.contains_key(g)).count();
+            println!("GUIDs {}: one extra id each {one}; naming a dataset {to_dataset}; lot objects' GUIDs among them {placed} of {}", link.len(), guids.len());
+            if std::env::var_os("ASSETS_SHOW_LINK").is_some() {
+                for (g, ids) in &link {
+                    println!("  {g:08x} {:?} {:?}", guids.get(g), ids.iter().map(|&i| (format!("{i:08x}"), name(i))).collect::<Vec<_>>());
+                }
+            }
+        }
         "scenecheck" => {
             // the original's world matrices (the observer's 0xF1 'p' records) at a tick against
             // this world's objects then (lockstep's LOCKSTEP_DUMP_PLACES file): each object's place
