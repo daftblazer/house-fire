@@ -1688,6 +1688,121 @@ fn main() -> ExitCode {
                 }
             }
         }
+        "gdump" => {
+            // a tick's first few draws of one opcode ('g'): the command's words and the 32 bytes at
+            // each pointer
+            let (Some(log), Some(tick), Some(op)) = (args.get(3).and_then(|p| read_log(p)), args.get(4).and_then(|t| t.parse::<u32>().ok()), args.get(5).and_then(|t| t.parse::<u32>().ok())) else {
+                println!("usage: assets ISO gdump LOG TICK OP");
+                return ExitCode::FAILURE;
+            };
+            for (st, _, _) in log.other_draws.iter().filter(|g| g.0.tick == tick && g.0.words[0] >> 24 == op).take(2) {
+                for (k, w) in st.words.iter().enumerate() {
+                    let fl: Vec<f32> = (0..8).map(|i| f32::from_be_bytes(st.at[k][4 * i..4 * i + 4].try_into().unwrap_or([0; 4]))).collect();
+                    println!("  w{k} {w:08x} {fl:?}");
+                }
+                println!();
+            }
+        }
+        "floorverts" => {
+            // a tick's floor strips' vertices ('F'): per strip its count, its position pattern
+            // against the run's grid, and u - x, v - y
+            let (Some(log), Some(tick)) = (args.get(3).and_then(|p| read_log(p)), args.get(4).and_then(|t| t.parse::<u32>().ok())) else {
+                println!("usage: assets ISO floorverts LOG TICK");
+                return ExitCode::FAILURE;
+            };
+            let mut offsets: BTreeMap<String, usize> = BTreeMap::new();
+            for (gi, v) in &log.strip_vertices {
+                if log.other_draws.get(*gi).is_none_or(|g| g.0.tick != tick) || v.is_empty() {
+                    continue;
+                }
+                let du: BTreeSet<String> = v.iter().map(|(p, uv, _)| format!("{}", uv[0] - p[0])).collect();
+                let dv: BTreeSet<String> = v.iter().map(|(p, uv, _)| format!("{}", uv[1] - p[1])).collect();
+                let zs: BTreeSet<String> = v.iter().map(|(p, _, _)| format!("{} {}", p[2], p[3])).collect();
+                *offsets.entry(format!("u-x {du:?} v-y {dv:?} z,w {zs:?}")).or_default() += 1;
+                if std::env::var_os("ASSETS_EACH").is_some() {
+                    println!("  strip n {} first {:?} {:?} last {:?}", v.len(), v[0], v.get(1), v.last());
+                }
+                let x0 = v.iter().map(|q| q.0[0]).fold(f32::MAX, f32::min);
+                let x1 = v.iter().map(|q| q.0[0]).fold(f32::MIN, f32::max);
+                let y0 = v.iter().map(|q| q.0[1]).fold(f32::MAX, f32::min);
+                let c = v[0].0[0] - v[0].1[0];
+                if std::env::var_os("ASSETS_ALL").is_some() && (v[1].0[1] == v[0].0[1] || std::env::var_os("ASSETS_ANY").is_some()) {
+                    println!("  all {:?}", v.iter().map(|q| (q.0[0], q.0[1])).collect::<Vec<_>>());
+                }
+                if std::env::var_os("ASSETS_RUNS").is_some() {
+                    println!("  x {x0}..{x1} row {y0} c {c} v0 at y {} v {}", v[0].0[1], v[0].1[1]);
+                }
+            }
+            for (k, c) in &offsets {
+                println!("{c} strips: {k}");
+            }
+            // against the engine's runs' strips (lockstep's LOCKSTEP_DUMP_RUNS), vertex for vertex
+            // (position and UV, in order); the engine's others, and whether each is in the view
+            if let Some(runs) = args.get(5).and_then(|p| std::fs::read_to_string(p).ok()) {
+                type Strip = Vec<[i64; 5]>;
+                let key = |v: &[([f32; 3], [f32; 2])]| -> Strip { v.iter().map(|(p, uv)| [p[0], p[1], p[2], uv[0], uv[1]].map(|f| (f * 1000.0).round() as i64)).collect() };
+                // (the floors' strips: drawn with a floor pattern's texture, as `floorcheck`)
+                let sh = d.read("shaders.arc").unwrap_or_default();
+                let shaders: BTreeMap<u32, shader::Shader> = arc::entries(&sh).unwrap_or_default().iter().filter_map(|e| Some((e.id, shader::read(arc::bytes(&sh, e))?))).collect();
+                let tx = d.read("textures.arc").unwrap_or_default();
+                let tex_names: BTreeMap<u32, String> = arc::entries(&tx).unwrap_or_default().into_iter().map(|e| (e.id, e.name.rsplit('/').next().unwrap_or(&e.name).to_string())).collect();
+                let texture_of = |s: u32| shaders.get(&s).and_then(|s| s.layers.first()).and_then(|l| tex_names.get(&l.texture)).cloned();
+                let quick = d.read("quickdat.arc").unwrap_or_default();
+                let all: BTreeSet<String> = arc::entries(&quick)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .find(|e| e.name == "SimsTiles")
+                    .and_then(|e| housefire::quickdata::Image::read(arc::bytes(&quick, &e)))
+                    .map(|img| housefire::quickdata::floor_patterns(&img))
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|p| texture_of(p.shader))
+                    .collect();
+                let (tex_hash, _) = texture_hashes(&d);
+                let mut by_image: BTreeMap<u32, Vec<(u32, u64)>> = BTreeMap::new();
+                for x in &log.textures {
+                    by_image.entry(x.image).or_default().push((x.tick, x.hash));
+                }
+                let floor_draw = |gi: usize| -> bool {
+                    let Some((_, _, loads)) = log.other_draws.get(gi) else { return false };
+                    let Some(t) = log.tex_loads[..*loads].iter().rev().find(|t| t.map == 0) else { return false };
+                    by_image
+                        .get(&t.image())
+                        .and_then(|v| v.iter().rev().find(|x| x.0 <= t.tick).or(v.first()))
+                        .and_then(|x| tex_hash.get(&x.1))
+                        .is_some_and(|v| v.iter().any(|n| all.contains(n.0.rsplit('/').next().unwrap_or(""))))
+                };
+                let orig: BTreeSet<Strip> = log
+                    .strip_vertices
+                    .iter()
+                    .filter(|(gi, v)| log.other_draws.get(*gi).is_some_and(|g| g.0.tick == tick) && !v.is_empty() && floor_draw(*gi))
+                    .map(|(_, v)| key(&v.iter().map(|(p, uv, _)| ([p[0], p[1], p[2]], *uv)).collect::<Vec<_>>()))
+                    .collect();
+                let mine: Vec<(housefire::scene::FloorRun, Strip)> = runs
+                    .lines()
+                    .filter_map(|l| {
+                        let f: Vec<&str> = l.split(' ').collect();
+                        let r = housefire::scene::FloorRun {
+                            x: f.first()?.parse().ok()?,
+                            y: f.get(1)?.parse().ok()?,
+                            n: f.get(2)?.parse().ok()?,
+                            lead: u8::from_str_radix(f.get(4)?, 16).ok()?,
+                            trail: u8::from_str_radix(f.get(5)?, 16).ok()?,
+                            value: f.get(6)?.parse().ok()?,
+                        };
+                        Some((r, key(&r.vertices())))
+                    })
+                    .collect();
+                let mine_set: BTreeSet<&Strip> = mine.iter().map(|m| &m.1).collect();
+                let same = orig.iter().filter(|s| mine_set.contains(s)).count();
+                println!("floor strips: the original's {}, the engine's {}, vertex for vertex the same {same}", orig.len(), mine.len());
+                for s in orig.iter().filter(|s| !mine_set.contains(s)).take(6) {
+                    println!("  the original's only: {:?}", s.iter().map(|v| (v[0] / 1000, v[1] / 1000, v[3] / 1000, v[4] / 1000)).collect::<Vec<_>>());
+                }
+                let others: Vec<&housefire::scene::FloorRun> = mine.iter().filter(|m| !orig.contains(&m.1)).map(|m| &m.0).collect();
+                println!("  the engine's others {}: {:?}", others.len(), others.iter().take(24).map(|r| (r.x, r.y, r.n, r.lead, r.trail)).collect::<Vec<_>>());
+            }
+        }
         "camtrack" => {
             // the lot's camera at each tick of a log: its view (the last 0xF0 before the tick's
             // first world matrix), as an eye, a turn about the vertical, a pitch, and where its
@@ -1773,9 +1888,6 @@ fn main() -> ExitCode {
                 }
             }
             let (mut drawn, mut same, mut other, mut nowhere) = (0, 0, BTreeMap::<String, usize>::new(), 0);
-            // (the runs: the original's, its row and first tile the least of its first edge's two
-            // corners' (an edge along x or a diagonal starts at a half tile))
-            let mut orig_runs: BTreeSet<(i32, i32, i32, String)> = BTreeSet::new();
             let mut seen: BTreeSet<(i32, i32)> = BTreeSet::new();
             for (st, _, loads) in log.other_draws.iter().filter(|g| g.0.tick == tick && g.0.words[0] >> 24 == 42) {
                 let Some(t) = log.tex_loads[..*loads].iter().rev().find(|t| t.map == 0) else { continue };
@@ -1784,7 +1896,6 @@ fn main() -> ExitCode {
                 // (the strip runs along x whichever way its first edge goes: a run of a row)
                 let (x0, y0) = (f(0), f(1));
                 let n = (st.words[1] as i32 - 2) / 2;
-                orig_runs.insert((f(1).min(f(5)) as i32, f(0).min(f(4)) as i32, n, name.clone()));
                 if std::env::var_os("ASSETS_SHOW_RUNS").is_some() {
                     println!("  run {} {} {n} {name} v1 {} {} v2 {} {}", x0 as i32, y0 as i32, f(4), f(5), 0, 0);
                 }
@@ -1812,24 +1923,6 @@ fn main() -> ExitCode {
                 for (k, c) in other.iter().take(8) {
                     println!("  {k} ({c})");
                 }
-            }
-            // against the engine's runs (lockstep's LOCKSTEP_DUMP_RUNS: x y n shader), if given
-            if let Some(runs) = args.get(6).and_then(|p| std::fs::read_to_string(p).ok()) {
-                let mine: BTreeSet<(i32, i32, i32, String)> = runs
-                    .lines()
-                    .filter_map(|l| {
-                        let f: Vec<&str> = l.split(' ').collect();
-                        Some((f.get(1)?.parse().ok()?, f.first()?.parse().ok()?, f.get(2)?.parse().ok()?, texture_of(u32::from_str_radix(f.get(3)?, 16).ok()?)?))
-                    })
-                    .collect();
-                println!(
-                    "floor runs: the original's {}, the engine's {}, the same {}; the original's only {:?}; the engine's only {:?}",
-                    orig_runs.len(),
-                    mine.len(),
-                    orig_runs.intersection(&mine).count(),
-                    orig_runs.difference(&mine).collect::<Vec<_>>(),
-                    mine.difference(&orig_runs).collect::<Vec<_>>()
-                );
             }
             let want_set: BTreeSet<String> = want.keys().cloned().collect();
             println!("floor textures the lot's floors name: {want:?}");

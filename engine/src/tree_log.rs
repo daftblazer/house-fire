@@ -378,6 +378,9 @@ pub struct Log {
     /// The list's other draws ('g', in newer logs: opcodes other than 56 and 66), each with how
     /// many 'w' strips and how many texture loads came before it.
     pub other_draws: Vec<(StripRec, usize, usize)>,
+    /// 'v': a floor strip's (op 42's) whole vertices, after its 'g' record: that record's index
+    /// in `other_draws`, and each vertex's position (x, y, z, w), UV and colour.
+    pub strip_vertices: Vec<(usize, Vec<([f32; 4], [f32; 2], u32)>)>,
     pub trees: Vec<TreeRec>,
     pub lists: Vec<ListRec>,
     /// Tick -> its pass over the objects (logs with 'Q' records).
@@ -490,6 +493,23 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
                 let (before, loads) = (log.strips.len(), log.tex_loads.len());
                 log.other_draws.push((StripRec { tick, words, at }, before, loads));
+            }
+            b'v' => {
+                if !r.has(8) {
+                    break;
+                }
+                let (_tick, n) = (r.u32(), r.u32() as usize);
+                if !r.has(n * 28) {
+                    break;
+                }
+                let v = (0..n)
+                    .map(|_| {
+                        let p = [0; 4].map(|_| f32::from_bits(r.u32()));
+                        let uv = [0; 2].map(|_| f32::from_bits(r.u32()));
+                        (p, uv, r.u32())
+                    })
+                    .collect();
+                log.strip_vertices.push((log.other_draws.len().saturating_sub(1), v));
             }
             b'c' => {
                 if !r.has(4 * 25) {

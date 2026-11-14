@@ -1423,17 +1423,18 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &(Vec<u3
                             let v = walls.floor(x, y);
                             if v != 0 {
                                 let shader = tiles.2.get(usize::from(v)).map_or(0, |p| p.shader);
-                                out += &format!("{x} {y} {v} {shader:08x}\n");
+                                out += &format!("{x} {y} {v} {shader:08x} {:x}\n", walls.diagonal_bits(x, y));
                             }
                         }
                     }
                     let _ = std::fs::write(&at, out);
                 }
-                // (and the floor runs the engine draws, LOCKSTEP_DUMP_RUNS: x y n shader)
+                // (and the floor runs the engine draws, LOCKSTEP_DUMP_RUNS: x y n shader lead trail
+                // value: the whole tiles, the half tiles' diagonal bits)
                 if let Ok(at) = std::env::var("LOCKSTEP_DUMP_RUNS") {
                     let mut out = String::new();
                     for r in housefire::scene::floor_runs(walls, 64, &tiles.2) {
-                        out += &format!("{} {} {} {:08x}\n", r.x, r.y, r.n, tiles.2[usize::from(r.value)].shader);
+                        out += &format!("{} {} {} {:08x} {:x} {:x} {}\n", r.x, r.y, r.n, tiles.2[usize::from(r.value)].shader, r.lead, r.trail, r.value);
                     }
                     let _ = std::fs::write(&at, out);
                 }

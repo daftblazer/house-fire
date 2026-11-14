@@ -654,6 +654,11 @@ impl Walls {
             || self.open.contains(&key(x + dx, y + dy, entering(dx, dy)))
     }
 
+    /// A tile's diagonal wall bits (0x10, 0x20; 0 for none).
+    pub fn diagonal_bits(&self, x: i32, y: i32) -> u8 {
+        self.at(x, y) & 0x30
+    }
+
     /// A tile split by a diagonal wall (0x10 or 0x20): closed to a Sim's steps.
     pub fn diagonal(&self, x: i32, y: i32) -> bool {
         self.at(x, y) & 0x30 != 0

@@ -576,19 +576,21 @@ drawn as part of the rough wood run beside it. The engine's floored tiles not so
 (`sim_road`, 37, drawn as one of the lot's display lists, 'w'), its stripes (5, never loaded),
 6 sidewalk tiles at the lot's corners and 4 porch tiles (14-15 and 23-24, 14).
 
-The runs (`scene::floor_runs`): along each row, each stretch of tiles of one pattern is one strip;
-a tile of 255 (half a tile, cut by a diagonal wall) just before a stretch is drawn as its first
-tile (its strip starting with the diagonal or the half's top edge, so a run's row and first tile
-are the least of its first edge's corners). A 255 tile after a stretch is not drawn (home: (25,
-14), (20, 28)). Tick 1,000 (`assets floorcheck LOG FLOORS TICK RUNS`, lockstep's
-LOCKSTEP_DUMP_RUNS): home, the original's 42 runs are all the engine's (place, length and
-texture); the club (`club-g.log`), 128 of its 132, the other 4 the engine's runs one tile shorter
-at their far end, the dropped tiles behind the camera (the original trims runs near the camera
-tile by tile; what it keeps behind the camera is not seen). Every engine run the original does not
-draw is wholly out of the logged view (home 18, club 18: the road's column at x 39-41, the
-sidewalk's ends, the stripes), so the original culls runs out of view, as the renderer's clipping
-will. (Iteration 58 left the road to the lot's meshes; the club draws its car park's road as runs,
-so it was only out of view at home.)
+The runs (`scene::floor_runs`, `FloorRun::vertices`): along each row, each stretch of tiles of
+one pattern is one TriStrip of floats (op 42), z 0, taking in a half tile (255, cut by a diagonal
+wall) at either end: a half before it adds the diagonal's far corner first (0x10, "/" from (x, y +
+1) to (x + 1, y): (x, y + 1); 0x20, "\\" from (x, y) to (x + 1, y + 1): (x, y)), then each tile
+edge's corners (y, then y + 1) along x, then a half after it its far corner (0x10 (x + 1, y),
+0x20 (x + 1, y + 1)); a shared half tile goes to both its neighbours. UVs: u the corner's x less
+the middle of the strip's x range (rounded down), v its y less the row's (the texture repeats a
+tile). Each vertex's colour (the lighting) is logged too, not built yet. Tick 1,000 (`assets
+floorverts LOG TICK RUNS`, the observer's 'v' records: every vertex of each op 42 strip;
+lockstep's LOCKSTEP_DUMP_RUNS): every floor strip the original draws is the engine's, vertex for
+vertex (position, UV, order): home 42 of 42, the club 132 of 132; the engine's others (18 each)
+are wholly out of the logged view (the road's column at x 39-41, the sidewalk's ends, the
+stripes), so the original culls runs out of view, as the renderer's clipping will. (Corrected: a
+half tile after a stretch is drawn, its last triangle; the club's 4 runs once taken for "one tile
+shorter" are these halves.)
 
 ## The camera
 

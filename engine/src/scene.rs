@@ -140,19 +140,51 @@ pub fn wall_pieces(walls: &crate::routing::Walls, size: i32, fences: &[u32]) -> 
     out
 }
 
-/// A run of floor along a row, as the original draws it (one strip a run): tiles x .. x + n - 1
-/// of row y, with pattern `value`.
+/// A run of floor along a row, as the original draws it (one strip a run): the `n` whole tiles
+/// from x along row y, with pattern `value`, and the half tiles it takes in at either end (`lead`
+/// the tile before, `trail` the one after: their diagonal wall's bits, 0x10 "/" from (x, y + 1) to
+/// (x + 1, y), 0x20 "\\" from (x, y) to (x + 1, y + 1); 0 for none).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FloorRun {
     pub y: i32,
     pub x: i32,
     pub n: i32,
     pub value: u8,
+    pub lead: u8,
+    pub trail: u8,
+}
+
+impl FloorRun {
+    /// The run's strip as the original draws it (a TriStrip, z 0): a half tile before it its
+    /// diagonal's far corner first, then each tile edge's two corners (y, then y + 1) along x, then
+    /// a half tile after it its diagonal's far corner. Each with its UV: u the corner's x less the
+    /// middle of the strip's x range (rounded down), v its y less the row's.
+    pub fn vertices(&self) -> Vec<([f32; 3], [f32; 2])> {
+        let (x, y) = (self.x, self.y);
+        let mut p: Vec<(i32, i32)> = Vec::with_capacity(2 * self.n as usize + 4);
+        match self.lead {
+            0x10 => p.push((x - 1, y + 1)),
+            0x20 => p.push((x - 1, y)),
+            _ => {}
+        }
+        for i in 0..=self.n {
+            p.push((x + i, y));
+            p.push((x + i, y + 1));
+        }
+        match self.trail {
+            0x10 => p.push((x + self.n + 1, y)),
+            0x20 => p.push((x + self.n + 1, y + 1)),
+            _ => {}
+        }
+        let lo = p.iter().map(|q| q.0).min().unwrap_or(0);
+        let hi = p.iter().map(|q| q.0).max().unwrap_or(0);
+        let c = (lo + hi).div_euclid(2);
+        p.iter().map(|&(px, py)| ([px as f32, py as f32, 0.0], [(px - c) as f32, (py - y) as f32])).collect()
+    }
 }
 
 /// A lot's floor runs: along each row, each stretch of tiles of one pattern (not a value past the
-/// list); a tile of 255 (half a tile, cut by a diagonal wall) just before a stretch is drawn as its
-/// first tile.
+/// list), with a half tile (255, cut by a diagonal wall) at either end taken in.
 pub fn floor_runs(walls: &crate::routing::Walls, size: i32, patterns: &[crate::quickdata::FloorPattern]) -> Vec<FloorRun> {
     let mut out = Vec::new();
     for y in 0..size {
@@ -167,8 +199,8 @@ pub fn floor_runs(walls: &crate::routing::Walls, size: i32, patterns: &[crate::q
             while x < size && walls.floor(x, y) == v {
                 x += 1;
             }
-            let first = if start > 0 && walls.floor(start - 1, y) == 255 { start - 1 } else { start };
-            out.push(FloorRun { y, x: first, n: x - first, value: v });
+            let half = |t: i32| if walls.floor(t, y) == 255 { walls.diagonal_bits(t, y) } else { 0 };
+            out.push(FloorRun { y, x: start, n: x - start, value: v, lead: if start > 0 { half(start - 1) } else { 0 }, trail: half(x) });
         }
     }
     out
@@ -459,6 +491,19 @@ mod tests {
         let s = Camera::on_screen(&c.view(), &Camera::projection(8.0), c.target).unwrap();
         assert!((s[0] - 0.5).abs() < 1e-4 && (s[1] - 0.5).abs() < 1e-4, "{s:?}");
         assert!(!Camera::off_middle(&c.view(), &Camera::projection(8.0), c.target));
+    }
+
+    #[test]
+    fn a_floor_strip_is_the_originals() {
+        // home's rough wood run on row 14: a half tile (0x20) at 16, whole tiles 17-21, a half
+        // (0x10) at 22; logged (16, 14), (17, 14), (17, 15), ..., (22, 15), (23, 14), u from -3
+        let r = FloorRun { y: 14, x: 17, n: 5, value: 51, lead: 0x20, trail: 0x10 };
+        let v = r.vertices();
+        assert_eq!(v.len(), 14);
+        assert_eq!(v[0], ([16.0, 14.0, 0.0], [-3.0, 0.0]));
+        assert_eq!(v[1], ([17.0, 14.0, 0.0], [-2.0, 0.0]));
+        assert_eq!(v[2], ([17.0, 15.0, 0.0], [-2.0, 1.0]));
+        assert_eq!(v[13].0, [23.0, 14.0, 0.0]);
     }
 
     #[test]
