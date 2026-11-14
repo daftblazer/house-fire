@@ -1518,6 +1518,51 @@ fn main() -> ExitCode {
                     loaded.extend(names.iter().map(|n| n.0.rsplit('/').next().unwrap_or("").to_string()).filter(|n| all.contains(n)));
                 }
             }
+            // the original's floor draws (the 'g' records, TriStrip of float vertices, op 42, with a
+            // floor's texture): a strip of n tiles is 2n + 2 vertices from a tile's corner (x, y),
+            // the tiles (x, y), (x + 1, y), ...; each tile's texture against the engine's (the
+            // dump: x y value shader)
+            let mut engine_tile: BTreeMap<(i32, i32), String> = BTreeMap::new();
+            for l in floors.lines() {
+                let f: Vec<&str> = l.split(' ').collect();
+                if let (Some(x), Some(y), Some(t)) = (f.first().and_then(|v| v.parse().ok()), f.get(1).and_then(|v| v.parse().ok()), f.get(3).and_then(|h| u32::from_str_radix(h, 16).ok()).and_then(texture_of)) {
+                    engine_tile.insert((x, y), t);
+                }
+            }
+            let (mut drawn, mut same, mut other, mut nowhere) = (0, 0, BTreeMap::<String, usize>::new(), 0);
+            let mut seen: BTreeSet<(i32, i32)> = BTreeSet::new();
+            for (st, _, loads) in log.other_draws.iter().filter(|g| g.0.tick == tick && g.0.words[0] >> 24 == 42) {
+                let Some(t) = log.tex_loads[..*loads].iter().rev().find(|t| t.map == 0) else { continue };
+                let Some(name) = by_image.get(&t.image()).and_then(|v| v.iter().rev().find(|x| x.0 <= t.tick).or(v.first())).and_then(|x| tex_hash.get(&x.1)).and_then(|v| v.iter().map(|n| n.0.rsplit('/').next().unwrap_or("").to_string()).find(|n| all.contains(n))) else { continue };
+                let f = |k: usize| f32::from_be_bytes([st.at[2][4 * k], st.at[2][4 * k + 1], st.at[2][4 * k + 2], st.at[2][4 * k + 3]]);
+                // (the strip runs along x whichever way its first edge goes: a run of a row)
+                let (x0, y0) = (f(0), f(1));
+                let n = (st.words[1] as i32 - 2) / 2;
+                for i in 0..n {
+                    let tile = (x0 as i32 + i, y0 as i32);
+                    drawn += 1;
+                    seen.insert(tile);
+                    match engine_tile.get(&tile) {
+                        Some(e) if *e == name => same += 1,
+                        Some(e) => *other.entry(format!("{tile:?} drawn {name}, the engine's {e}")).or_default() += 1,
+                        None => nowhere += 1,
+                    }
+                }
+            }
+            if drawn > 0 {
+                let not_drawn = engine_tile.keys().filter(|k| !seen.contains(k)).count();
+                let mut nd: BTreeMap<&String, Vec<(i32, i32)>> = BTreeMap::new();
+                for (k, t) in engine_tile.iter().filter(|(k, _)| !seen.contains(k)) {
+                    nd.entry(t).or_default().push(*k);
+                }
+                for (t, ks) in &nd {
+                    println!("  not drawn: {t} {} {:?}", ks.len(), &ks[..ks.len().min(6)]);
+                }
+                println!("floor tiles the original draws {drawn}: the engine's texture {same}, another {}, no floor in the engine {nowhere}; the engine's floored tiles not drawn {not_drawn}", other.values().sum::<usize>());
+                for (k, c) in other.iter().take(8) {
+                    println!("  {k} ({c})");
+                }
+            }
             let want_set: BTreeSet<String> = want.keys().cloned().collect();
             println!("floor textures the lot's floors name: {want:?}");
             println!("floor textures the original loads at tick {tick}: {loaded:?}");
@@ -1553,6 +1598,22 @@ fn main() -> ExitCode {
                 for ((map, n), c) in &loads {
                     println!("load map {map}: {n}: {c}");
                 }
+                // (and what follows each such load: the loads and strips up to 4 strips on)
+                for (li, t) in log.tex_loads.iter().enumerate().filter(|(_, t)| t.tick == tick) {
+                    let nm = |t: &housefire::tree_log::TexLoadRec| by_image.get(&t.image()).and_then(|v| v.iter().rev().find(|x| x.0 <= t.tick).or(v.first())).and_then(|x| tex_hash.get(&x.1)).map_or(format!("{:08x}", t.image()), |v| v[0].0.rsplit('/').next().unwrap_or("").to_string());
+                    if !nm(t).contains(text.as_str()) {
+                        continue;
+                    }
+                    println!("  load {li} map {} {} before strip {}", t.map, nm(t), t.strips_before);
+                    for u in log.tex_loads.iter().skip(li + 1).take_while(|u| u.strips_before <= t.strips_before + 1) {
+                        println!("    then load map {} {} before strip {}", u.map, nm(u), u.strips_before);
+                    }
+                    for (k, st) in log.strips.iter().enumerate().skip(t.strips_before).take(2) {
+                        println!("    strip {k} tick {} {:08x}/{}", st.tick, st.words[0], st.words[1]);
+                    }
+                    let mats: Vec<String> = log.materials.iter().filter(|m| m.strips_before >= t.strips_before && m.strips_before <= t.strips_before + 1).map(|m| format!("{} layers before {}", m.layers, m.strips_before)).collect();
+                    println!("    materials {mats:?}");
+                }
             }
             for (k, st) in log.strips.iter().enumerate().filter(|(_, st)| st.tick == tick) {
                 let Some(t) = log.tex_loads.iter().rev().find(|t| t.strips_before <= k && t.map == 0) else { continue };
@@ -1570,6 +1631,26 @@ fn main() -> ExitCode {
             }
             for (k, c) in &by {
                 println!("{k}: {c}");
+            }
+            // the other draws ('g') at the tick, by opcode and the map-0 texture loaded last
+            let mut others: BTreeMap<String, usize> = BTreeMap::new();
+            for (st, _, loads) in log.other_draws.iter().filter(|g| g.0.tick == tick) {
+                let name = log.tex_loads[..*loads].iter().rev().find(|t| t.map == 0).map_or("none".to_string(), |t| {
+                    by_image.get(&t.image()).and_then(|v| v.iter().rev().find(|x| x.0 <= t.tick).or(v.first())).and_then(|x| tex_hash.get(&x.1)).map_or(format!("(unnamed {:08x})", t.image()), |v| v[0].0.rsplit('/').next().unwrap_or("").to_string())
+                });
+                if name.contains(text.as_str()) {
+                    if std::env::var_os("ASSETS_EACH").is_some() {
+                        println!("  g {name} words {:08x?}", st.words);
+                        for (i, a) in st.at.iter().enumerate().filter(|(_, a)| a.iter().any(|&b| b != 0)) {
+                            let f: Vec<String> = a.chunks(4).map(|c| format!("{:.3}", f32::from_be_bytes([c[0], c[1], c[2], c[3]]))).collect();
+                            println!("    at[{i}] floats {}", f.join(" "));
+                        }
+                    }
+                    *others.entry(format!("op {} {name} count {}", st.words[0] >> 24, st.words[1])).or_default() += 1;
+                }
+            }
+            for (k, c) in &others {
+                println!("other draw {k}: {c}");
             }
         }
         "recdiff" => {

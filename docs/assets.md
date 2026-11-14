@@ -563,6 +563,15 @@ from lockstep's LOCKSTEP_DUMP_FLOORS): the floor textures the original loads are
 the lot's floors name (home 12, club 9) but for the road's stripes (`sim_road_stripe_north`,
 `_west`: home and club 2 and 3 tiles), never loaded, whose rows are the only ones with a last word
 of 0. The floors are drawn batched, one display list a texture (the sidewalk's 216 vertices for
-43 tiles: 5 a tile and 1, a strip), not a matrix a tile; the inside floors' draws are not among
-the observer's strips (their textures are loaded, their draws not caught), so their geometry is
-to be read another way.
+43 tiles: 5 a tile and 1, a strip), not a matrix a tile.
+
+The floors' own draws are the command list's `TriStrip(float)` (opcode 42), which the observer
+now keeps as 'g' records (the list's draws other than 56 and 66, apart from the 'w' strips so
+their count still places the other records; `Log::other_draws`). A strip's vertices are floats in
+the lot's frame (x, y, z, w, then texture coordinates), one row's run of n tiles in 2n + 2
+vertices from its first tile's corner (x, y): the tiles (x, y) ... (x + n - 1, y), whichever way
+its first edge goes. Home, tick 1,000 (`home-g.log`; `assets floorcheck`): 364 floor tiles drawn
+so, 363 with the engine's tile's texture; the one other, (16, 14), holds 255 (no pattern) and is
+drawn as part of the rough wood run beside it. The engine's floored tiles not so drawn: the road
+(`sim_road`, 37, drawn as one of the lot's display lists, 'w'), its stripes (5, never loaded),
+6 sidewalk tiles at the lot's corners and 4 porch tiles (14-15 and 23-24, 14).

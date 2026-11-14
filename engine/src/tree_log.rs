@@ -352,6 +352,9 @@ pub struct Log {
     pub materials: Vec<MaterialRec>,
     /// The strips of short arrays the device played ('w', in newer logs, at most 4,000).
     pub strips: Vec<StripRec>,
+    /// The list's other draws ('g', in newer logs: opcodes other than 56 and 66), each with how
+    /// many 'w' strips and how many texture loads came before it.
+    pub other_draws: Vec<(StripRec, usize, usize)>,
     pub trees: Vec<TreeRec>,
     pub lists: Vec<ListRec>,
     /// Tick -> its pass over the objects (logs with 'Q' records).
@@ -447,6 +450,23 @@ pub fn read_log(path: &str) -> Option<Log> {
                     at.push(b);
                 }
                 log.strips.push(StripRec { tick, words, at });
+            }
+            b'g' => {
+                if !r.has(4 + 16 * 36) {
+                    break;
+                }
+                let tick = r.u32();
+                let mut words = [0u32; 16];
+                let mut at = Vec::with_capacity(16);
+                for w in &mut words {
+                    *w = r.u32();
+                    let mut b = [0u8; 32];
+                    b.copy_from_slice(&r.b[r.p..r.p + 32]);
+                    r.p += 32;
+                    at.push(b);
+                }
+                let (before, loads) = (log.strips.len(), log.tex_loads.len());
+                log.other_draws.push((StripRec { tick, words, at }, before, loads));
             }
             b'o' => {
                 if !r.has(4 * 18) {
