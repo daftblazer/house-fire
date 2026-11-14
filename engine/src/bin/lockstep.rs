@@ -700,7 +700,7 @@ fn main() -> ExitCode {
         .into_iter()
         .find(|e| e.name == "SimsTiles")
         .and_then(|e| housefire::quickdata::Image::read(housefire::arc::bytes(&quick, &e)))
-        .map(|img| (housefire::quickdata::fence_styles(&img), housefire::quickdata::wall_patterns(&img)))
+        .map(|img| (housefire::quickdata::fence_styles(&img), housefire::quickdata::wall_patterns(&img), housefire::quickdata::floor_patterns(&img)))
         .unwrap_or_default();
     set_to_next_check(&lib, &ngh, &disc_ngh, &tiles, &log, &step_object, &mut notes);
 
@@ -1155,7 +1155,7 @@ fn pick_lot(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log) -> LotPic
 }
 
 #[allow(clippy::too_many_arguments)]
-fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &(Vec<u32>, Vec<u32>), log: &housefire::tree_log::Log, step_object: &[Option<FileId>], notes: &mut Notes) {
+fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &(Vec<u32>, Vec<u32>, Vec<u32>), log: &housefire::tree_log::Log, step_object: &[Option<FileId>], notes: &mut Notes) {
     let (lots, lot_ids, walk, best, best_n) = pick_lot(lib, ngh, log);
     let raw_of = |s: &StepRec| -> Option<&[u8]> {
         let t = log.tree_of(s)?;
@@ -1414,6 +1414,21 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &(Vec<u3
                     out += &format!("{} {} {} {} {shader:08x} {} {opening} {form}\n", p.x, p.y, p.angle, u8::from(p.fence), u8::from(p.cap));
                 }
                 let _ = std::fs::write(&at, out);
+                // (and each tile's floor, LOCKSTEP_DUMP_FLOORS: x y value shader, the non-zero
+                // ones; the shader FloorSet's, 0 for a value past its list)
+                if let Ok(at) = std::env::var("LOCKSTEP_DUMP_FLOORS") {
+                    let mut out = String::new();
+                    for y in 0..64 {
+                        for x in 0..64 {
+                            let v = walls.floor(x, y);
+                            if v != 0 {
+                                let shader = tiles.2.get(usize::from(v)).copied().unwrap_or(0);
+                                out += &format!("{x} {y} {v} {shader:08x}\n");
+                            }
+                        }
+                    }
+                    let _ = std::fs::write(&at, out);
+                }
             }
         }
         // The places the log has for the ticks before this step's (each the end of its tick),

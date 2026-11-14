@@ -549,3 +549,20 @@ one: the parts whose wall ends in the open (home 14, mostly against the porch's 
 club 4) draw the straight model's pieces, and no 17- or 4-vertex draw of a wall record's
 positions is at a wall part in either frame (`ASSETS_SHOW_PART_RECORDS`). So `Form::Straight` for
 them is the original's; when the `_cap` forms are used is not seen on these lots and not built.
+
+## Floors
+
+A tile's floor is the lot's first array's byte (`Walls::floor`): an index into `SimsTiles`'
+`FloorSet` list (its one row points at 54 `FloorTile` rows of 24 bytes: a value, a name, two
+values, the floor's shader's archive id at +12, a value, a last word, 0x01000000 for most;
+`quickdata::floor_patterns`). Home: 10 is `final-floor-tile-46` (the sidewalk), 7 `sim_road`,
+39-41 the street's edge and middles, 25 `final-floor-tile-19` (97 tiles), 45 linoleum, 51 rough
+wood; the club: 33 black marble, 18 `final-floor-tile-07`. Values past the list (255: home 5,
+club 4) name none. Checked at tick 1,000 (`assets ISO floorcheck LOG FLOORS TICK`, the floors
+from lockstep's LOCKSTEP_DUMP_FLOORS): the floor textures the original loads are exactly those
+the lot's floors name (home 12, club 9) but for the road's stripes (`sim_road_stripe_north`,
+`_west`: home and club 2 and 3 tiles), never loaded, whose rows are the only ones with a last word
+of 0. The floors are drawn batched, one display list a texture (the sidewalk's 216 vertices for
+43 tiles: 5 a tile and 1, a strip), not a matrix a tile; the inside floors' draws are not among
+the observer's strips (their textures are loaded, their draws not caught), so their geometry is
+to be read another way.

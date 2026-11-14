@@ -145,3 +145,16 @@ pub fn wall_patterns(img: &Image) -> Vec<u32> {
         .collect()
 }
 
+/// The floor patterns, from `SimsTiles`: its one `FloorSet` row points at a list of `FloorTile`
+/// rows (24 bytes: a value, a name, two values, the shader's archive id at +12, ...), a tile's
+/// floor (the lot's first array) an index into it; each pattern's shader id.
+pub fn floor_patterns(img: &Image) -> Vec<u32> {
+    let Some(t) = img.tables.get("FloorTile").copied() else { return Vec::new() };
+    let Some(list) = img.rows("FloorSet").next().and_then(|r| img.ptr(r)) else { return Vec::new() };
+    (0..)
+        .map_while(|k| img.ptr(list + 4 * k))
+        .take_while(|&row| row >= t.rows && row < t.rows + t.count * t.row_size)
+        .filter_map(|row| img.u32(row + 12))
+        .collect()
+}
+

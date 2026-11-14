@@ -569,6 +569,14 @@ impl Walls {
         }
     }
 
+    /// Tile (x, y)'s floor (the first array's byte, as `floors` keeps it; 0 off the lot).
+    pub fn floor(&self, x: i32, y: i32) -> u8 {
+        if !self.inside(x, y) {
+            return 0;
+        }
+        self.floors.get(y as usize * self.width as usize + x as usize).copied().unwrap_or(0)
+    }
+
     /// Whether tile (x, y) is indoors (the lot's third array's 1; false off the lot).
     pub fn indoors(&self, x: i32, y: i32) -> bool {
         self.inside(x, y) && self.inside.get(y as usize * self.width as usize + x as usize).copied().unwrap_or(false)

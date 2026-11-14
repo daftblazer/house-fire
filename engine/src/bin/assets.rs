@@ -1477,6 +1477,101 @@ fn main() -> ExitCode {
                 println!("  not found: {missing:?}");
             }
         }
+        "floorcheck" => {
+            // the floors' textures the original loads at a tick against the lot's: each floor
+            // value's FloorSet shader (lockstep's LOCKSTEP_DUMP_FLOORS), its first layer's texture
+            let (Some(log), Some(floors), Some(tick)) = (args.get(3).and_then(|p| read_log(p)), args.get(4).and_then(|p| std::fs::read_to_string(p).ok()), args.get(5).and_then(|t| t.parse::<u32>().ok())) else {
+                println!("usage: assets ISO floorcheck LOG FLOORS TICK");
+                return ExitCode::FAILURE;
+            };
+            let sh = d.read("shaders.arc").unwrap_or_default();
+            let shaders: BTreeMap<u32, shader::Shader> = arc::entries(&sh).unwrap_or_default().iter().filter_map(|e| Some((e.id, shader::read(arc::bytes(&sh, e))?))).collect();
+            let tx = d.read("textures.arc").unwrap_or_default();
+            let tex_names: BTreeMap<u32, String> = arc::entries(&tx).unwrap_or_default().into_iter().map(|e| (e.id, e.name.rsplit('/').next().unwrap_or(&e.name).to_string())).collect();
+            let texture_of = |s: u32| shaders.get(&s).and_then(|s| s.layers.first()).and_then(|l| tex_names.get(&l.texture)).cloned();
+            // every floor pattern's texture (to tell the floor loads from the others)
+            let quick = d.read("quickdat.arc").unwrap_or_default();
+            let all: BTreeSet<String> = arc::entries(&quick)
+                .unwrap_or_default()
+                .into_iter()
+                .find(|e| e.name == "SimsTiles")
+                .and_then(|e| housefire::quickdata::Image::read(arc::bytes(&quick, &e)))
+                .map(|img| housefire::quickdata::floor_patterns(&img))
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(&texture_of)
+                .collect();
+            let mut want: BTreeMap<String, usize> = BTreeMap::new();
+            for l in floors.lines() {
+                if let Some(t) = l.split(' ').nth(3).and_then(|h| u32::from_str_radix(h, 16).ok()).and_then(texture_of) {
+                    *want.entry(t).or_default() += 1;
+                }
+            }
+            let (tex_hash, _) = texture_hashes(&d);
+            let mut by_image: BTreeMap<u32, Vec<(u32, u64)>> = BTreeMap::new();
+            for x in &log.textures {
+                by_image.entry(x.image).or_default().push((x.tick, x.hash));
+            }
+            let mut loaded: BTreeSet<String> = BTreeSet::new();
+            for t in log.tex_loads.iter().filter(|t| t.tick == tick) {
+                if let Some(names) = by_image.get(&t.image()).and_then(|v| v.iter().rev().find(|x| x.0 <= t.tick).or(v.first())).and_then(|x| tex_hash.get(&x.1)) {
+                    loaded.extend(names.iter().map(|n| n.0.rsplit('/').next().unwrap_or("").to_string()).filter(|n| all.contains(n)));
+                }
+            }
+            let want_set: BTreeSet<String> = want.keys().cloned().collect();
+            println!("floor textures the lot's floors name: {want:?}");
+            println!("floor textures the original loads at tick {tick}: {loaded:?}");
+            println!(
+                "  both {}, the lot's only {:?}, loaded only {:?}",
+                want_set.intersection(&loaded).count(),
+                want_set.difference(&loaded).collect::<Vec<_>>(),
+                loaded.difference(&want_set).collect::<Vec<_>>()
+            );
+        }
+        "texdraws" => {
+            // every draw at a tick whose map-0 texture's name contains a text: the world matrix in
+            // force (its translation, turn and scale), the strip's kind and vertex count
+            let (Some(log), Some(tick), Some(text)) = (args.get(3).and_then(|p| read_log(p)), args.get(4).and_then(|t| t.parse::<u32>().ok()), args.get(5)) else {
+                println!("usage: assets ISO texdraws LOG TICK TEXT");
+                return ExitCode::FAILURE;
+            };
+            let (tex_hash, _) = texture_hashes(&d);
+            let mut by_image: BTreeMap<u32, Vec<(u32, u64)>> = BTreeMap::new();
+            for x in &log.textures {
+                by_image.entry(x.image).or_default().push((x.tick, x.hash));
+            }
+            let mut by: BTreeMap<String, usize> = BTreeMap::new();
+            // (ASSETS_ANY_MAP: the tick's texture loads on any map whose names match, by map)
+            if std::env::var_os("ASSETS_ANY_MAP").is_some() {
+                let mut loads: BTreeMap<(u8, String), usize> = BTreeMap::new();
+                for t in log.tex_loads.iter().filter(|t| t.tick == tick) {
+                    let names = by_image.get(&t.image()).and_then(|v| v.iter().rev().find(|x| x.0 <= t.tick).or(v.first())).and_then(|x| tex_hash.get(&x.1)).map_or(String::new(), |v| v.iter().map(|n| n.0.rsplit('/').next().unwrap_or("").to_string()).collect::<Vec<_>>().join(","));
+                    if names.contains(text.as_str()) {
+                        *loads.entry((t.map, names)).or_default() += 1;
+                    }
+                }
+                for ((map, n), c) in &loads {
+                    println!("load map {map}: {n}: {c}");
+                }
+            }
+            for (k, st) in log.strips.iter().enumerate().filter(|(_, st)| st.tick == tick) {
+                let Some(t) = log.tex_loads.iter().rev().find(|t| t.strips_before <= k && t.map == 0) else { continue };
+                let name = by_image.get(&t.image()).and_then(|v| v.iter().rev().find(|x| x.0 <= t.tick).or(v.first())).and_then(|x| tex_hash.get(&x.1)).map_or(String::new(), |v| v.iter().map(|n| n.0.rsplit('/').next().unwrap_or("").to_string()).collect::<BTreeSet<_>>().into_iter().collect::<Vec<_>>().join(","));
+                let name = if name.is_empty() { format!("(unnamed image {:08x})", t.image()) } else { name };
+                if !name.contains(text.as_str()) {
+                    continue;
+                }
+                let m = log.matrices.iter().rev().find(|m| m.id == 0xF1 && m.strips_before <= k);
+                let place = m.map_or("no matrix".to_string(), |m| format!("({:.2}, {:.2}, {:.2}) turned {:.0} scale {:.4}", m.values[3], m.values[7], m.values[11], m.values[4].atan2(m.values[0]).to_degrees(), (m.values[0] * m.values[0] + m.values[4] * m.values[4]).sqrt()));
+                if std::env::var_os("ASSETS_EACH").is_some() {
+                    println!("  {name} strip {k} {:08x}/{} at {place}", st.words[0], st.words[1]);
+                }
+                *by.entry(format!("{name} {:02x}/{}", st.words[0] >> 24, st.words[1])).or_default() += 1;
+            }
+            for (k, c) in &by {
+                println!("{k}: {c}");
+            }
+        }
         "recdiff" => {
             // two or more records (DATASET/NAME) side by side: per node and sub-model, where their
             // arrays first differ (positions, texture coordinates, normals, the display list)
