@@ -1844,6 +1844,29 @@ fn main() -> ExitCode {
             }
             println!("light grid calls {} (ticks {:?}..{:?}, ids {ids:?}): points {points}, the engine's sum bit for bit {exact}, the rest within {worst}", log.light_grids.len(), log.light_grids.first().map(|g| g.tick), log.light_grids.last().map(|g| g.tick));
         }
+        "groupscale" => {
+            // each floor group's logged colour base and scale against the engine's, from the
+            // logged material and room triples
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO groupscale LOG");
+                return ExitCode::FAILURE;
+            };
+            let (mut same, mut shown) = (0, 0);
+            let ks: BTreeSet<u32> = log.group_scales.iter().map(|g| g.k.to_bits()).collect();
+            for g in &log.group_scales {
+                let mine = housefire::light::group_colour(g.material[0], g.material[1], g.room[0], g.room[1]);
+                if mine == (g.base, g.scale) {
+                    same += 1;
+                } else if shown < 6 {
+                    shown += 1;
+                    println!("  tick {} group {:08x}: mine {mine:?}, the log's {:?} {:?} (from {:?} {:?})", g.tick, g.group, g.base, g.scale, g.material, g.room);
+                }
+            }
+            let materials: BTreeSet<[u32; 6]> = log.group_scales.iter().map(|g| [0, 1, 2, 3, 4, 5].map(|i| g.material[i / 3][i % 3].to_bits())).collect();
+            let slip = log.group_scales.iter().filter(|g| g.material[0][1].to_bits() != g.material[0][2].to_bits()).count();
+            println!("materials {} distinct; groups whose diffuse green and blue differ (the blue scale taking the green) {slip}", materials.len());
+            println!("group scales {}: the engine's base and scale bit for bit {same}; the constant {:?} (the engine's {})", log.group_scales.len(), ks.iter().map(|b| f32::from_bits(*b)).collect::<Vec<_>>(), housefire::light::GROUP_K);
+        }
         "floorlight" => {
             // each relit room's floor colours against the engine's, from the room's own light
             // grid record and the groups' logged bases and scales
@@ -1860,7 +1883,7 @@ fn main() -> ExitCode {
                 let sums: BTreeMap<(u32, u32), [f32; 3]> = g.points.iter().map(|p| ((p.0, p.1), p.3)).collect();
                 let first = rf.scales_before.checked_sub(rf.groups.len());
                 for (gi, (_group, entries)) in rf.groups.iter().enumerate() {
-                    let Some(&(_, _, base, scale)) = first.and_then(|f| log.group_scales.get(f + gi)) else { continue };
+                    let Some(&housefire::tree_log::GroupScaleRec { base, scale, .. }) = first.and_then(|f| log.group_scales.get(f + gi)) else { continue };
                     for (word, colours) in entries {
                         let pts = housefire::light::entry_points(*word);
                         for (k, c) in colours.iter().enumerate() {

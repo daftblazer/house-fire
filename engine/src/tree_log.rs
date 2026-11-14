@@ -96,6 +96,19 @@ pub struct MatrixRec {
 
 /// An orientation the original gave a static model ('o': EIStaticModel::SetOrient): the tick,
 /// the model's address and the 4x4, rows (the translation in the last row).
+/// A floor group's colour base and scale ('b'), with what they were made from: the material's two
+/// triples (+0x44, +0x54), the room's two and the constant.
+#[derive(Clone, Copy, Debug)]
+pub struct GroupScaleRec {
+    pub tick: u32,
+    pub group: u32,
+    pub base: [f32; 3],
+    pub scale: [f32; 3],
+    pub material: [[f32; 3]; 2],
+    pub room: [[f32; 3]; 2],
+    pub k: f32,
+}
+
 /// A room's floor relit ('n'): the tick, the room's id, the light grid record just before, and
 /// each group's entries: the group, then each entry's word (its row, its first and last x with
 /// the half tiles' flags in their top two bits) and its vertices' colours.
@@ -417,7 +430,7 @@ pub struct Log {
     pub light_grids: Vec<LightGridRec>,
     /// 'b': floor groups' colour bases and scales (tick, the word Light_GroupScale was given less
     /// 4, base, scale), one a group as its room's floor is relit.
-    pub group_scales: Vec<(u32, u32, [f32; 3], [f32; 3])>,
+    pub group_scales: Vec<GroupScaleRec>,
     /// 'n': rooms' floors relit, each after the 'i' record of its own light grid (its index there
     /// is `light_grids.len()` less one when read).
     pub room_floors: Vec<RoomFloorRec>,
@@ -569,13 +582,16 @@ pub fn read_log(path: &str) -> Option<Log> {
                 log.light_grids.push(LightGridRec { tick, id, points });
             }
             b'b' => {
-                if !r.has(32) {
+                if !r.has(84) {
                     break;
                 }
                 let (tick, group) = (r.u32(), r.u32());
-                let base = [0; 3].map(|_| f32::from_bits(r.u32()));
-                let scale = [0; 3].map(|_| f32::from_bits(r.u32()));
-                log.group_scales.push((tick, group, base, scale));
+                let mut three = || [0; 3].map(|_| f32::from_bits(r.u32()));
+                let (base, scale) = (three(), three());
+                let material = [three(), three()];
+                let room = [three(), three()];
+                let k = f32::from_bits(r.u32());
+                log.group_scales.push(GroupScaleRec { tick, group, base, scale, material, room, k });
             }
             b'n' => {
                 if !r.has(12) {

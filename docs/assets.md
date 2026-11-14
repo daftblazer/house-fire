@@ -715,3 +715,13 @@ entries) gave 293,400 vertices, and the club 400 (869 groups, 10,249 entries) ga
 Every one is the engine's colour.
 The room objects sit in the game's heap at 0x7E7Axxxx, so the observer accepts addresses from
 0x7E000000.
+
+The floor groups' colour bases and scales (`light::group_colour`, `GROUP_K` = 128, the
+original's Light_GroupScale): base = (diffuse x the room's light + the material's ambient
+triple x the room's ambient) x 128, fused; scale = diffuse x 128. The blue scale takes the
+diffuse's green (the original reads +0x48 twice), kept as is. The material holds the diffuse at
++0x44 and the ambient triple at +0x54; the room's triples are at +0x28 (ambient) and +0x3C
+(light). The 'b' records now carry these inputs and the constant: home (4,000 groups, 3
+materials) and club (4,000, 2) give the engine's base and scale bit for bit on all. No logged
+material has a diffuse green that differs from its blue, so the blue-from-green read is from the
+code only, not yet seen in a log.

@@ -48,6 +48,23 @@ pub fn point_light(x: f32, y: f32, lights: &[Light]) -> [f32; 3] {
     sum
 }
 
+/// The constant a floor group's colours are scaled by (the original's 0x802A1244).
+pub const GROUP_K: f32 = 128.0;
+
+/// A floor group's colour base and scale (the original's Light_GroupScale) from its material's two
+/// triples (diffuse at +0x44, the ambient's at +0x54) and the room's ambient and light: base =
+/// (diffuse x light + ambient's x ambient) x K, fused; scale = diffuse x K, its blue taking the
+/// diffuse's green as the original does.
+pub fn group_colour(diffuse: [f32; 3], ambient_k: [f32; 3], ambient: [f32; 3], light: [f32; 3]) -> ([f32; 3], [f32; 3]) {
+    let m = |a: f32, b: f32| (f64::from(a) * f64::from(b)) as f32;
+    let base = [0, 1, 2].map(|i| {
+        let a = m(ambient_k[i], ambient[i]);
+        m(f64::from(diffuse[i]).mul_add(f64::from(light[i]), f64::from(a)) as f32, GROUP_K)
+    });
+    let scale = [m(diffuse[0], GROUP_K), m(diffuse[1], GROUP_K), m(diffuse[1], GROUP_K)];
+    (base, scale)
+}
+
 /// A floor vertex's colour from its point's light: each channel min(255, the light times the
 /// group's scale plus its base, truncated; fused), alpha 0x80 (the original's Light_RoomFloor).
 pub fn vertex_colour(sum: [f32; 3], base: [f32; 3], scale: [f32; 3]) -> [u8; 4] {
@@ -105,6 +122,14 @@ mod tests {
         assert_eq!(entry_points(0x0005_0203), vec![(2, 5), (2, 6), (3, 5), (3, 6), (4, 5), (4, 6)]);
         // a leading half (0x40: on the row) and a trailing half (0x80: the row after)
         assert_eq!(entry_points(0x0005_4283), vec![(2, 5), (3, 5), (3, 6), (4, 6)]);
+    }
+
+    #[test]
+    fn a_group_colour_is_the_originals_blue_scale_included() {
+        let (base, scale) = group_colour([1.0, 0.5, 0.25], [1.0; 3], [0.25, 0.5, 1.0], [0.5; 3]);
+        assert_eq!(base, [96.0, 96.0, 144.0]);
+        // the blue scale takes the diffuse's green, as the original
+        assert_eq!(scale, [128.0, 64.0, 64.0]);
     }
 
     #[test]
