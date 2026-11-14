@@ -1477,6 +1477,26 @@ fn main() -> ExitCode {
                 println!("  not found: {missing:?}");
             }
         }
+        "camlog" => {
+            // the camera's records ('c'): each, and the engine's eye from its live parameters
+            // against the logged eye
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO camlog LOG");
+                return ExitCode::FAILURE;
+            };
+            let mut worst = 0.0f32;
+            for c in &log.cams {
+                let l = c.live;
+                let cam = housefire::scene::Camera { target: [l[0], l[1], l[2]], distance: l[3], rotation: l[4], tilt: l[5] };
+                let e = cam.eye();
+                let d = (0..3).map(|k| (e[k] - c.eye[k]).abs()).fold(0.0f32, f32::max);
+                worst = worst.max(d);
+                if std::env::var_os("ASSETS_EACH").is_some() {
+                    println!("tick {} mode {} wanted {:?} live {:?} eye {:?} cursor {:08x} cam {:08x} eye diff {d:.6}", c.tick, c.mode, c.wanted, c.live, c.eye, c.cursor, c.camera);
+                }
+            }
+            println!("camera records {}, the engine's eye from the live parameters against the logged eye: largest difference {worst:.6}", log.cams.len());
+        }
         "camtrack" => {
             // the lot's camera at each tick of a log: its view (the last 0xF0 before the tick's
             // first world matrix), as an eye, a turn about the vertical, a pitch, and where its

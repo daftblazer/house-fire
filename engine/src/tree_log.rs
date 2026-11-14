@@ -96,6 +96,20 @@ pub struct MatrixRec {
 
 /// An orientation the original gave a static model ('o': EIStaticModel::SetOrient): the tick,
 /// the model's address and the 4x4, rows (the translation in the last row).
+/// 'c': the lot camera after its step a frame (logged when it changed): the wanted parameters
+/// (target x y z, distance, rotation, tilt), the live ones, the easing mode, the eye, the followed
+/// cursor's address and the camera's.
+#[derive(Clone, Debug)]
+pub struct CamRec {
+    pub tick: u32,
+    pub wanted: [f32; 6],
+    pub live: [f32; 6],
+    pub mode: u32,
+    pub eye: [f32; 3],
+    pub cursor: u32,
+    pub camera: u32,
+}
+
 #[derive(Clone, Debug)]
 pub struct OrientRec {
     pub tick: u32,
@@ -344,6 +358,7 @@ pub struct Log {
     pub selectors: Vec<SelectorRec>,
     /// The static models' orientations ('o'), in newer logs.
     pub orients: Vec<OrientRec>,
+    pub cams: Vec<CamRec>,
     /// The matrices loaded ('p', at most 20,000) and projections ('j', at most 2,000), in newer logs.
     pub matrices: Vec<MatrixRec>,
     /// The textures loaded for draws ('l', in newer logs, at most 16,000).
@@ -467,6 +482,23 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
                 let (before, loads) = (log.strips.len(), log.tex_loads.len());
                 log.other_draws.push((StripRec { tick, words, at }, before, loads));
+            }
+            b'c' => {
+                if !r.has(4 * 19) {
+                    break;
+                }
+                let tick = r.u32();
+                let mut f = [0.0f32; 12];
+                for v in &mut f {
+                    *v = f32::from_bits(r.u32());
+                }
+                let mode = r.u32();
+                let eye = [0; 3].map(|_| f32::from_bits(r.u32()));
+                let (cursor, camera) = (r.u32(), r.u32());
+                let (mut wanted, mut live) = ([0.0; 6], [0.0; 6]);
+                wanted.copy_from_slice(&f[..6]);
+                live.copy_from_slice(&f[6..]);
+                log.cams.push(CamRec { tick, wanted, live, mode, eye, cursor, camera });
             }
             b'o' => {
                 if !r.has(4 * 18) {

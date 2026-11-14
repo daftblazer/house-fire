@@ -604,3 +604,13 @@ view is the log's to 4e-6. The club's parameters come out round (distance 8, til
 151.97), home's not (17.667, 36.10, 81.23: a zoom level's or easing). The camera held still over the
 logs' drawn ticks. Where the wanted parameters come from (the followed Sim, the zoom levels, the
 player's turns) is next.
+
+The camera's records (the observer's 'c', on `ESimsCam_Ease` = the decomp's
+`fn_8000698C__8ESimsCam`, after each frame's step, when it changed: the wanted parameters at
++0x398, the live ones at +0x3B0, the mode +0x3C8, the eye +0x378, the cursor +0x324; the decomp's
+header has "current" and "wanted" the other way round, but its code eases +0x3B0 towards +0x398 and
+takes the eye from +0x3B0). Home (`home-c.log`, ticks 0-424, 407 records: rotation 0-125, tilt
+25-36, distance 8-17.7, the target over the lot): `scene::Camera::eye` from the live parameters is
+the logged eye to 4e-6 on every record (`assets ISO camlog LOG`). The wanted distance and tilt step
+together (8 to 17.667 and 25 to 36.1 in 11 even steps: a zoom), the rotation by 2.145 a frame
+(a held turn); the live z eases from 0.04 to the target's 0.25 at the start.
