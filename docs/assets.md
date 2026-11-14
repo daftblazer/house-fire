@@ -389,5 +389,11 @@ right ones (the jukebox `RD_Stereo - Jukebox`, the alarm clock `RD_Clock - Alarm
 `RD_Plant - Floor - Cactus`, the garden lamp `RD_Lamp - Garden`); the rest are 0 (controllers,
 portals, the newspaper: drawn from elsewhere or not at all). 73 of the home lot's 113 GUIDs are
 among them. `assets ISO selcheck LOG PLACES` (study ASSETS_SHOW_LINK, _SELECTORS,
-_SELECTOR_BYTES, _SELECTOR_WORDS). Next: where the definition's extra id comes from on the disc
-(`globals`' definitions, by GUID), so the engine finds it without the log.
+_SELECTOR_BYTES, _SELECTOR_WORDS). The definition and its extra are
+quick data: `quickdat.arc`'s `SimsObjects` image, tables `ObjDefinition` (1,778 rows of 196
+bytes, the GUID at +0x1c, a pointer at +0xc0) and `ObjDefinition::ResData` (433 rows of 48 bytes:
+the dataset's id at +0x10, the model's name hash at +0x18: `36b9fdd5`, `SNOOZEMORE_ALARM_CLOCK`,
+for the alarm clock). `quickdata::object_resources` reads them natively (the image's fix-ups
+make the pointer an offset): 460 definitions with resources, 372 naming an archive entry; for
+all 139 GUIDs the original collected on the home replay, the same dataset id as its own (0
+different).

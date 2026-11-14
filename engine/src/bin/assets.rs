@@ -26,6 +26,7 @@ use housefire::disc::Disc;
 use housefire::model;
 use housefire::texture;
 use housefire::rle_texture;
+use housefire::quickdata;
 use housefire::shader;
 use housefire::tree_log::read_log;
 use std::collections::{BTreeMap, BTreeSet};
@@ -977,6 +978,28 @@ fn main() -> ExitCode {
             let to_dataset = link.values().filter(|v| v.iter().any(|&i| name(i).is_some_and(|n| n.contains("datasets.arc")))).count();
             let placed = guids.keys().filter(|g| link.contains_key(g)).count();
             println!("GUIDs {}: one extra id each {one}; naming a dataset {to_dataset}; lot objects' GUIDs among them {placed} of {}", link.len(), guids.len());
+            // the same link read from the disc: quickdat.arc's SimsObjects
+            let q = d.read("quickdat.arc").unwrap_or_default();
+            let img = arc::entries(&q)
+                .unwrap_or_default()
+                .into_iter()
+                .find(|e| e.name == "SimsObjects")
+                .and_then(|e| quickdata::Image::read(arc::bytes(&q, &e)));
+            let res = img.as_ref().map(quickdata::object_resources).unwrap_or_default();
+            let (mut same, mut differ, mut none_both) = (0, 0, 0);
+            for (g, ids) in &link {
+                let want = *ids.iter().next().unwrap();
+                match res.get(g).map(|r| r.dataset) {
+                    Some(id) if id == want => same += 1,
+                    None if want == 0 => none_both += 1,
+                    got => {
+                        differ += 1;
+                        println!("  DIFFERENT {g:08x}: the original's {want:08x}, the disc's {got:08x?}");
+                    }
+                }
+            }
+            let named = res.values().filter(|r| name(r.dataset).is_some()).count();
+            println!("disc: {} definitions with resources ({named} naming an archive entry); against the original's {}: the same {same}, none in both {none_both}, different {differ}", res.len(), link.len());
             if std::env::var_os("ASSETS_SHOW_LINK").is_some() {
                 for (g, ids) in &link {
                     println!("  {g:08x} {:?} {:?}", guids.get(g), ids.iter().map(|&i| (format!("{i:08x}"), name(i))).collect::<Vec<_>>());
