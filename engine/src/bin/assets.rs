@@ -1550,6 +1550,45 @@ fn main() -> ExitCode {
                     (worst, at) = (d, k + 1);
                 }
             }
+            // the wanted parameters' changes: a zoom (the distance changed: the tilt is the zoom's
+            // for it), a turn (the rotation alone changed: a stick within -1..1 gives it)
+            let (mut zooms, mut zoom_ok, mut turns, mut turn_ok) = (0, 0, 0, 0);
+            for w in log.cams.windows(2) {
+                if w[0].camera != w[1].camera {
+                    continue;
+                }
+                let (a, b) = (w[0].wanted, w[1].wanted);
+                if a[3] != b[3] {
+                    zooms += 1;
+                    let ok = [housefire::scene::Camera::FAR, housefire::scene::Camera::FAR * 0.65].iter().any(|&far| {
+                        let mut c = cam(&a);
+                        c.zoom(a[3] - b[3], far);
+                        c.distance == b[3] && (c.tilt - b[5]).abs() <= 1e-4
+                    });
+                    zoom_ok += usize::from(ok);
+                    if !ok && std::env::var_os("ASSETS_EACH").is_some() {
+                        println!("  zoom tick {}: {:?} -> {:?}", w[1].tick, a, b);
+                    }
+                } else if a[4] != b[4] && a[..4] == b[..4] && a[5] == b[5] {
+                    turns += 1;
+                    // the stick that turn needs (each frame's turn is one step: the record
+                    // after the frame's own easing step), and the engine's turn by it
+                    let mut d = b[4] - a[4];
+                    if d.abs() > 180.0 {
+                        d -= 360.0 * d.signum();
+                    }
+                    let s2 = d / (w[1].dt * housefire::scene::Camera::TURN_SPEED);
+                    let s = s2.signum() * s2.abs().sqrt();
+                    let mut c = cam(&a);
+                    c.turn(s, w[1].dt);
+                    let ok = s.abs() <= 1.0 + 1e-4 && ((c.rotation - b[4]).abs() <= 1e-3 || (b[4] == 0.0 || b[4] == 360.0) && (c.rotation == 0.0 || c.rotation == 360.0));
+                    turn_ok += usize::from(ok);
+                    if !ok && std::env::var_os("ASSETS_EACH").is_some() {
+                        println!("  turn tick {}: {} -> {} (stick {s})", w[1].tick, a[4], b[4]);
+                    }
+                }
+            }
+            println!("wanted: zooms {zooms}, the engine's zoom gives the logged distance and tilt {zoom_ok}; turns {turns}, by a stick within -1..1 {turn_ok}");
             println!("easing: {eased} records, the engine's live parameters against the log's: largest difference {worst:.6} (record {at}); {after_still} after a still stretch matched by its last steps; {placed} placed at once");
         }
         "camtrack" => {

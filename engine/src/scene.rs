@@ -196,6 +196,40 @@ impl Camera {
         [self.target[0] + self.distance * x, self.target[1] + self.distance * y, self.target[2] + self.distance * st]
     }
 
+    /// The zoom's nearest distance and its tilt there; the farthest distance (0.65 of it in the
+    /// original's other case, `fn_800655C4`) and its tilt.
+    pub const NEAR: f32 = 8.0;
+    pub const FAR: f32 = 35.0;
+    pub const NEAR_TILT: f32 = 25.0;
+    pub const FAR_TILT: f32 = 56.0;
+    /// The turn's speed at a full stick, degrees a second.
+    pub const TURN_SPEED: f32 = 65.0;
+
+    /// The wanted camera zoomed by the stick's `input` (in, positive: nearer by `input`), the
+    /// distance kept within the zoom (`far` its far end), the tilt following it in proportion.
+    pub fn zoom(&mut self, input: f32, far: f32) {
+        self.distance -= input;
+        self.distance = if self.distance < Self::NEAR { Self::NEAR } else if self.distance > far { far } else { self.distance };
+        self.tilt = (self.distance - Self::NEAR) / (far - Self::NEAR) * (Self::FAR_TILT - Self::NEAR_TILT) + Self::NEAR_TILT;
+    }
+
+    /// The wanted camera turned by the stick `s` (-1..1, squared keeping its sign) for `dt`
+    /// seconds; past 360 it goes to 0, below 0 to 360 (not wrapped by the excess).
+    pub fn turn(&mut self, s: f32, dt: f32) {
+        let input = if s < 0.0 { s * -s } else { s * s } * dt * Self::TURN_SPEED;
+        if input == 0.0 {
+            return;
+        }
+        self.rotation += input;
+        self.rotation = if self.rotation < 0.0 {
+            360.0
+        } else if self.rotation > 360.0 {
+            0.0
+        } else {
+            self.rotation
+        };
+    }
+
     /// One frame's easing of the live camera (`self`) towards the wanted one, by the frame's time
     /// step `dt` (seconds), as the original's usual mode (0): the target moves straight towards
     /// the wanted target at 5 times the distance a second (2.5 times within 1.5), the distance at
@@ -299,6 +333,19 @@ mod tests {
         let mut live = Camera { target: [22.867_266, 21.888_386, 0.25], distance: 8.0, rotation: 0.0, tilt: 25.0 };
         live.ease(&Camera { rotation: 360.0, distance: 8.024_692, tilt: 25.028_349, ..live }, 0.033);
         assert_eq!(live.rotation, 360.0);
+    }
+
+    #[test]
+    fn the_camera_zooms_and_turns_as_the_originals() {
+        // home: a zoom out by 1 from 16.519 to the far end's side (logged 17.519, tilt 35.929);
+        // the club: a turn below 0 goes to 360
+        let mut c = Camera { target: [0.0; 3], distance: 16.519, rotation: 0.0, tilt: 34.781 };
+        c.zoom(-1.0, Camera::FAR);
+        assert!((c.distance - 17.519).abs() < 1e-3 && (c.tilt - 35.929).abs() < 1e-3, "{c:?}");
+        c.turn(-0.5, 0.033);
+        assert_eq!(c.rotation, 360.0);
+        c.turn(1.0, 0.033);
+        assert_eq!(c.rotation, 0.0);
     }
 
     #[test]

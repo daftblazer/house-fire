@@ -629,3 +629,13 @@ club (`club-c.log`) 4,311, each the last eased by its step count towards its wan
 a float's step short of them) whose wanted values changed somewhere in it is matched by its last
 k steps (home 3, club 16); the lot's start places the target's x and y on the Sim at once (1 each,
 not built yet).
+
+The wanted parameters from the stick (the decomp's fn_80005EE4, fn_800060A8):
+`scene::Camera::turn` adds the stick squared (keeping its sign) times the time step times 65
+degrees a second to the rotation, which past 360 goes to 0 and below 0 to 360 (so the club's
+wanted 360); `zoom` takes the input off the distance, kept within 8 and 35 (0.65 of 35 in the
+original's other case), and sets the tilt in proportion, 25 at 8 to 56 at the far end (home's
+17.667 gives 36.099). `assets camlog` over the wanted values' changes: zooms home 11 and club 26,
+each the engine's zoom's distance and tilt; turns home 83 and club 303, each the engine's turn by a
+stick within -1..1 (a full stick 2.145 a frame). Still to come: the tilt's own stick (fn_80005FC8,
+20 to 88, a control mode the logs never use) and the target from the followed Sim.
