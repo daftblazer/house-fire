@@ -1188,7 +1188,12 @@ fn main() -> ExitCode {
             // among those the original loads (map 0) for the piece's draw: the last before its
             // world matrix's strips up to the next world matrix's
             let (tex_hash, _) = texture_hashes(&d);
-            let images: BTreeMap<u32, u64> = log.textures.iter().map(|x| (x.image, x.hash)).collect();
+            // (an image's address is reused for other textures: the 'x' record last made by the load's tick)
+            let mut by_image: BTreeMap<u32, Vec<(u32, u64)>> = BTreeMap::new();
+            for x in &log.textures {
+                by_image.entry(x.image).or_default().push((x.tick, x.hash));
+            }
+            let image_at = |t: &housefire::tree_log::TexLoadRec| by_image.get(&t.image()).and_then(|v| v.iter().rev().find(|x| x.0 <= t.tick).or(v.first())).map(|x| x.1);
             let sh = d.read("shaders.arc").unwrap_or_default();
             let shaders: BTreeMap<u32, shader::Shader> = arc::entries(&sh)
                 .unwrap_or_default()
@@ -1211,19 +1216,22 @@ fn main() -> ExitCode {
                 parts += 1;
                 let want = f.get(4).and_then(|h| u32::from_str_radix(h, 16).ok()).and_then(|h| shaders.get(&h)).and_then(|s| s.layers.first()).and_then(|l| tex_names.get(&l.texture));
                 let mut drawn = Vec::new();
-                for (k, &i) in world.iter().enumerate() {
+                for &i in &world {
                     let m = &log.matrices[i];
                     let a = m.values[4].atan2(m.values[0]).to_degrees();
                     if (m.values[3] - x).abs() > 0.01 || (m.values[7] - y).abs() > 0.01 || (a - angle).rem_euclid(360.0).min((angle - a).rem_euclid(360.0)) > 0.5 {
                         continue;
                     }
-                    let end = world.get(k + 1).map_or(usize::MAX, |&j| log.matrices[j].strips_before);
-                    let first = log.tex_loads.iter().rposition(|t| t.strips_before <= m.strips_before && t.map == 0).unwrap_or(0);
-                    for t in log.tex_loads[first..].iter().take_while(|t| t.strips_before < end).filter(|t| t.map == 0) {
-                        if let Some(names) = images.get(&t.image()).and_then(|h| tex_hash.get(h)) {
-                            drawn.extend(names.iter().map(|n| n.0.rsplit('/').next().unwrap_or(&n.0).to_string()));
-                        }
+                    // its draw: the strip after the matrix, with the map-0 texture loaded last before it
+                    if let Some(t) = log.tex_loads.iter().rev().find(|t| t.strips_before <= m.strips_before && t.map == 0)
+                        && let Some(names) = image_at(t).and_then(|h| tex_hash.get(&h))
+                    {
+                        drawn.extend(names.iter().map(|n| n.0.rsplit('/').next().unwrap_or(&n.0).to_string()));
                     }
+                }
+                if std::env::var_os("ASSETS_SHOW_PARTS").is_some() {
+                    let state = if drawn.is_empty() { "none" } else if drawn.iter().any(|n| n == "walls_down") { "plain" } else { "patterned" };
+                    println!("    part {x} {y} {angle} {state} {}", drawn.join(","));
                 }
                 if want.is_some_and(|w| drawn.iter().any(|n| n.eq_ignore_ascii_case(w))) {
                     same += 1;
@@ -1242,7 +1250,41 @@ fn main() -> ExitCode {
                     }
                 }
             }
-            println!("wall parts {parts}: the pattern's texture among the draw's {same}; not drawn this frame {undrawn}; drawn down (walls_down) {down}; other {}", parts - same - undrawn - down);
+            // the event stream after the world matrix at a place (ASSETS_SEQ_AT=x,y): matrices,
+            // strips and texture loads, in the order the original made them
+            if let Some((sx, sy)) = std::env::var("ASSETS_SEQ_AT").ok().and_then(|v| v.split_once(',').and_then(|(a, b)| Some((a.parse::<f32>().ok()?, b.parse::<f32>().ok()?)))) {
+                for &i in world.iter().filter(|&&i| (log.matrices[i].values[3] - sx).abs() < 0.01 && (log.matrices[i].values[7] - sy).abs() < 0.01) {
+                    let m = &log.matrices[i];
+                    println!("  matrix {i} at strips {} angle {:.0}", m.strips_before, m.values[4].atan2(m.values[0]).to_degrees());
+                    let s0 = m.strips_before;
+                    let mut ev: Vec<(usize, u8, String)> = Vec::new();
+                    for (j, mm) in log.matrices.iter().enumerate().skip(i + 1).take_while(|(_, mm)| mm.strips_before < s0 + 12) {
+                        ev.push((mm.strips_before, 0, format!("matrix {j} id {:02x} t ({:.2}, {:.2}, {:.2})", mm.id, mm.values.get(3).unwrap_or(&0.0), mm.values.get(7).unwrap_or(&0.0), mm.values.get(11).unwrap_or(&0.0))));
+                    }
+                    for t in log.tex_loads.iter().filter(|t| t.strips_before >= s0 && t.strips_before < s0 + 12) {
+                        let n = image_at(t).and_then(|h| tex_hash.get(&h)).map_or("?".to_string(), |v| v[0].0.clone());
+                        ev.push((t.strips_before, 1, format!("tex map {} {n}", t.map)));
+                    }
+                    for (k, st) in log.strips.iter().enumerate().skip(s0).take(12) {
+                        ev.push((k, 2, format!("strip {k} {:08x} {:08x}", st.words[0], st.words[1])));
+                    }
+                    ev.sort();
+                    for e in ev {
+                        println!("    {}", e.2);
+                    }
+                }
+            }
+            if std::env::var_os("ASSETS_SHOW_IMAGE_REUSE").is_some() {
+                let mut per: BTreeMap<u32, BTreeSet<u64>> = BTreeMap::new();
+                for x in &log.textures {
+                    per.entry(x.image).or_default().insert(x.hash);
+                }
+                let reused = per.values().filter(|v| v.len() > 1).count();
+                let at_tick = log.textures.iter().filter(|x| x.tick <= tick).count();
+                println!("  'x' records {} ({at_tick} by tick {tick}), images {}, reused with another texture {reused}", log.textures.len(), per.len());
+            }
+            // (`walls_down`, `wall_black`, `polyshadow` and `1st_final` are one image: a plain one)
+            println!("wall parts {parts}: drawn with the pattern's texture {same}; not drawn this frame {undrawn}; drawn plain only (the walls_down / wall_black image) {down}; other {}", parts - same - undrawn - down);
             for (k, c) in wrong.iter().take(12) {
                 println!("  not: {k} ({c})");
             }

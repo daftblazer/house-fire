@@ -497,7 +497,10 @@ value, a name, the pattern's shader's archive id, two more; `quickdata::wall_pat
 the plain `sims_wall_paper_000`. At home, 17 is `sims_wall_paper_024`, 21 `_031`, 5 `_205`,
 24 `_014` and 8 the outside `exterior-tile--202`. A shader's layer names its texture by the
 texture's archive id, which is not always its name's hash (`exterior-tile--202`: 7a397517).
-Checked (`assets wallcheck`, tick 1,000): every wall part the original draws upright is drawn
-with its pattern's texture (home 67 of 67, the club 39 of 39); the rest are not drawn that frame
-(home 38, club 57) or drawn lowered with `walls_down` and `wall_black` (home 28, club 68: the
-walls-down view, which is next). One home part shares its place and turn with a counter.
+Checked (`assets wallcheck`, tick 1,000; a part's draw is the strip after its world matrix, with
+the map-0 texture loaded last before it, named by the 'x' record last made for that address by
+the load's tick, as addresses are reused: 18 of 215 at home): every wall part the original draws
+with a wallpaper draws its own pattern's (home 67, the club 39). The rest are not drawn that
+frame (home 38, club 57) or drawn only with a plain image whose pixels `walls_down`,
+`wall_black`, `polyshadow` and `1st_final` share (home 28, club 68: the walls-down view's lowered
+parts, it seems; which ones is next). One home part shares its place and turn with a counter.
