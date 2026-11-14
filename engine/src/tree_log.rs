@@ -96,6 +96,19 @@ pub struct MatrixRec {
 
 /// An orientation the original gave a static model ('o': EIStaticModel::SetOrient): the tick,
 /// the model's address and the 4x4, rows (the translation in the last row).
+/// A light ranking ('d'): the point, the lights ranked (first..end, each one's position and
+/// reach as words), the list's words (two a slot) before and after, and the two constants.
+#[derive(Clone, Debug)]
+pub struct LightRankRec {
+    pub tick: u32,
+    pub point: [f32; 3],
+    pub first: u32,
+    pub lights: Vec<[u32; 4]>,
+    pub before: Vec<u32>,
+    pub after: Vec<u32>,
+    pub constants: [f32; 2],
+}
+
 /// A room's ambient and light triples ('a'): the tick, the room id, its 80-byte light record (as
 /// words), the triples and the constant they fall back to.
 #[derive(Clone, Copy, Debug)]
@@ -445,6 +458,8 @@ pub struct Log {
     pub group_scales: Vec<GroupScaleRec>,
     /// 'a': rooms' ambient and light triples, with the rooms' records they come from.
     pub room_triples: Vec<RoomTriplesRec>,
+    /// 'd': light rankings.
+    pub light_ranks: Vec<LightRankRec>,
     /// 'n': rooms' floors relit, each after the 'i' record of its own light grid (its index there
     /// is `light_grids.len()` less one when read).
     pub room_floors: Vec<RoomFloorRec>,
@@ -606,6 +621,23 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let room = [three(), three()];
                 let k = f32::from_bits(r.u32());
                 log.group_scales.push(GroupScaleRec { tick, group, base, scale, material, room, k });
+            }
+            b'd' => {
+                if !r.has(24) {
+                    break;
+                }
+                let tick = r.u32();
+                let point = [0; 3].map(|_| f32::from_bits(r.u32()));
+                let (first, end, slots) = (r.u32(), r.u32(), r.u32() as usize);
+                let count = end.saturating_sub(first) as usize;
+                if !r.has(16 * count + 16 * slots + 8) {
+                    break;
+                }
+                let lights = (0..count).map(|_| [0; 4].map(|_| r.u32())).collect();
+                let before = (0..2 * slots).map(|_| r.u32()).collect();
+                let after = (0..2 * slots).map(|_| r.u32()).collect();
+                let constants = [0; 2].map(|_| f32::from_bits(r.u32()));
+                log.light_ranks.push(LightRankRec { tick, point, first, lights, before, after, constants });
             }
             b'a' => {
                 if !r.has(4 * 29) {

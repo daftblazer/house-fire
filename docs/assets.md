@@ -736,3 +736,14 @@ Checked through the observer's 'a' records (the record, the triples, the constan
 calls (734 distinct records, 3,000 rooms without the two) and club 4,000 (1,020, 3,333), every
 one bit for bit. Only room id 0 (outside) has the light, and its direction and colours change
 from tick to tick (the sun through the day).
+
+The light ranking (`light::rank`, `distance2`, `RANK_AT` = 0 and `RANK_INSTEAD` = 0.0001; the
+original's Light_Rank, 0x801691BC). Each light in a range of the 32-byte light array scores
+reach^2 / its squared distance from a point. The squared distance is the paired dot product,
+rounded as `point_light`'s; a distance of exactly 0 is taken as 0.0001. The light goes into a
+list kept strongest first, before the first slot it beats: the later slots move down one and
+the last drops off. A slot is 8 bytes: the light's index (u16, the rest of the word kept) and its
+score. Its callers (0x8016906C, 0x80169418) build the lists the grid cells take their lights
+from. Checked through the observer's 'd' records (the point, the lights, the list before and
+after, the constants): home 5,512 rankings (40,328 lights) and club 20,000 (69,174), every list
+word for word.

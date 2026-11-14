@@ -48,6 +48,39 @@ pub fn point_light(x: f32, y: f32, lights: &[Light]) -> [f32; 3] {
     sum
 }
 
+/// The squared distance a light's ranking takes when it is exactly this (the original's
+/// 0x802BA7A8), and what it takes instead (0x802BA7AC).
+pub const RANK_AT: f32 = 0.0;
+pub const RANK_INSTEAD: f32 = 0.0001;
+
+/// The squared distance between two points, rounded as the original's paired dot product.
+pub fn distance2(a: [f32; 3], b: [f32; 3]) -> f32 {
+    let d = [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    let yy = (f64::from(d[1]) * f64::from(d[1])) as f32;
+    let zz = (f64::from(d[2]) * f64::from(d[2])) as f32;
+    (f64::from(d[0]).mul_add(f64::from(d[0]), f64::from(yy)) as f32) + zz
+}
+
+/// Ranks lights into a list kept strongest first (the original's Light_Rank). Each light (its
+/// index from `first`, its position and reach) scores reach^2 / its squared distance from the
+/// point, and goes in before the first slot it beats, the slots after moving down one and the
+/// last dropping off. A slot is its index (the top 16 bits of its first word, the rest kept) and
+/// its score.
+pub fn rank(point: [f32; 3], first: u32, lights: &[([f32; 3], f32)], list: &mut [(u32, f32)]) {
+    for (k, (at, reach)) in lights.iter().enumerate() {
+        let mut d2 = distance2(*at, point);
+        if d2 == RANK_AT {
+            d2 = RANK_INSTEAD;
+        }
+        let r2 = (f64::from(*reach) * f64::from(*reach)) as f32;
+        let score = r2 / d2;
+        let Some(j) = list.iter().position(|s| score > s.1) else { continue };
+        list.copy_within(j..list.len() - 1, j + 1);
+        let index = (first + k as u32) & 0xFFFF;
+        list[j] = ((index << 16) | (list[j].0 & 0xFFFF), score);
+    }
+}
+
 /// What a room's light falls back to when its record has none (the original's 0x802A1240).
 pub const NO_LIGHT: f32 = 0.0;
 
@@ -143,6 +176,19 @@ mod tests {
         assert_eq!(entry_points(0x0005_0203), vec![(2, 5), (2, 6), (3, 5), (3, 6), (4, 5), (4, 6)]);
         // a leading half (0x40: on the row) and a trailing half (0x80: the row after)
         assert_eq!(entry_points(0x0005_4283), vec![(2, 5), (3, 5), (3, 6), (4, 6)]);
+    }
+
+    #[test]
+    fn lights_are_ranked_strongest_first_and_the_weakest_drop_off() {
+        let mut list = vec![(0x0000_ABCD, 0.0f32); 2];
+        // scores 1/4 (index 5), 4/1 (6) and 1/1 (7, displacing 5 off the end)
+        let lights = [([2.0, 0.0, 0.0], 1.0), ([1.0, 0.0, 0.0], 2.0), ([0.0, 1.0, 0.0], 1.0)];
+        rank([0.0; 3], 5, &lights, &mut list);
+        assert_eq!(list, vec![(0x0006_ABCD, 4.0), (0x0007_ABCD, 1.0)]);
+        // a light on the point scores by the guard distance
+        let mut one = vec![(0, 0.0f32)];
+        rank([0.0; 3], 0, &[([0.0; 3], 1.0)], &mut one);
+        assert_eq!(one[0].1, 1.0 / 0.0001);
     }
 
     #[test]

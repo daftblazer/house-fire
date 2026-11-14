@@ -1844,6 +1844,29 @@ fn main() -> ExitCode {
             }
             println!("light grid calls {} (ticks {:?}..{:?}, ids {ids:?}): points {points}, the engine's sum bit for bit {exact}, the rest within {worst}", log.light_grids.len(), log.light_grids.first().map(|g| g.tick), log.light_grids.last().map(|g| g.tick));
         }
+        "lightrank" => {
+            // each logged light ranking against the engine's, from the list before
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO lightrank LOG");
+                return ExitCode::FAILURE;
+            };
+            let (mut same, mut shown, mut lights) = (0, 0, 0);
+            let consts: BTreeSet<[u32; 2]> = log.light_ranks.iter().map(|r| r.constants.map(f32::to_bits)).collect();
+            for r in &log.light_ranks {
+                let ls: Vec<([f32; 3], f32)> = r.lights.iter().map(|w| ([w[0], w[1], w[2]].map(f32::from_bits), f32::from_bits(w[3]))).collect();
+                lights += ls.len();
+                let mut list: Vec<(u32, f32)> = r.before.chunks(2).map(|c| (c[0], f32::from_bits(c[1]))).collect();
+                housefire::light::rank(r.point, r.first, &ls, &mut list);
+                let mine: Vec<u32> = list.iter().flat_map(|s| [s.0, s.1.to_bits()]).collect();
+                if mine == r.after {
+                    same += 1;
+                } else if shown < 4 {
+                    shown += 1;
+                    println!("  tick {} point {:?} lights {}: mine {mine:08x?} the log's {:08x?}", r.tick, r.point, ls.len(), r.after);
+                }
+            }
+            println!("light rankings {} ({lights} lights): the engine's list word for word {same}; constants {:?} (the engine's {} {})", log.light_ranks.len(), consts.iter().map(|c| c.map(f32::from_bits)).collect::<Vec<_>>(), housefire::light::RANK_AT, housefire::light::RANK_INSTEAD);
+        }
         "roomlight" => {
             // each room's logged ambient and light triples against the engine's, from the logged
             // light records
