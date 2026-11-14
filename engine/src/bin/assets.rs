@@ -1588,6 +1588,32 @@ fn main() -> ExitCode {
                     }
                 }
             }
+            // the wanted target: when it moves, the engine's centring on the cursor (put on the
+            // followed Sim) by the look just before (the last record's wanted target and eye);
+            // at every record, 2 from the cursor along the level
+            let (mut moves, mut centred, mut two_off, mut records) = (0, 0, 0, 0);
+            for w in log.cams.windows(2) {
+                if w[1].cursor == 0 || w[0].camera != w[1].camera {
+                    continue;
+                }
+                records += 1;
+                let (t, p) = (w[1].wanted, w[1].cursor_at);
+                if (((t[0] - p[0]).powi(2) + (t[1] - p[1]).powi(2)).sqrt() - 2.0).abs() <= 1e-4 {
+                    two_off += 1;
+                }
+                if w[0].wanted[..2] == t[..2] {
+                    continue;
+                }
+                moves += 1;
+                let mut wanted = cam(&w[0].wanted);
+                let mut live = cam(&w[0].live);
+                let ok = wanted.centre_on(&mut live, [p[0], p[1]], w[0].eye, 64) && (wanted.target[0] - t[0]).abs() <= 1e-4 && (wanted.target[1] - t[1]).abs() <= 1e-4;
+                centred += usize::from(ok);
+                if !ok && std::env::var_os("ASSETS_EACH").is_some() {
+                    println!("  target tick {}: wanted {:?} -> {:?} cursor {:?} eye {:?}", w[1].tick, w[0].wanted, t, p, w[0].eye);
+                }
+            }
+            println!("wanted target: moves {moves}, the engine's centring on the cursor gives it {centred}; records {records}, the target 2 from the cursor {two_off}");
             println!("wanted: zooms {zooms}, the engine's zoom gives the logged distance and tilt {zoom_ok}; turns {turns}, by a stick within -1..1 {turn_ok}");
             println!("easing: {eased} records, the engine's live parameters against the log's: largest difference {worst:.6} (record {at}); {after_still} after a still stretch matched by its last steps; {placed} placed at once");
         }

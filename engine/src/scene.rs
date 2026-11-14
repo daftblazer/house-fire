@@ -230,6 +230,27 @@ impl Camera {
         };
     }
 
+    /// The wanted camera centred on a Sim at `at` (the original's fn_80006E6C, the followed Sim's
+    /// place): the target 2 ahead of it along the look's level direction (from the eye `eye` to the
+    /// wanted target); if that puts the target more than 10 from the live one, the live target is
+    /// placed there at once (`live`). False when the place is off the lot (`size` tiles; within
+    /// 1 and size - 1), the camera then left as it is.
+    pub fn centre_on(&mut self, live: &mut Camera, at: [f32; 2], eye: [f32; 3], size: i32) -> bool {
+        let limit = (size - 1) as f32;
+        if !(at[0] >= 1.0 && at[0] <= limit && at[1] >= 1.0 && at[1] <= limit) {
+            return false;
+        }
+        let d = [self.target[0] - eye[0], self.target[1] - eye[1]];
+        let n = (d[0] * d[0] + d[1] * d[1]).sqrt();
+        let d = if n > 0.0 { [d[0] / n, d[1] / n] } else { d };
+        self.target = [at[0] + d[0] * 2.0, at[1] + d[1] * 2.0, 0.0];
+        let m = [0, 1, 2].map(|k| self.target[k] - live.target[k]);
+        if m[0] * m[0] + m[1] * m[1] + m[2] * m[2] > 100.0 {
+            live.target = self.target;
+        }
+        true
+    }
+
     /// One frame's easing of the live camera (`self`) towards the wanted one, by the frame's time
     /// step `dt` (seconds), as the original's usual mode (0): the target moves straight towards
     /// the wanted target at 5 times the distance a second (2.5 times within 1.5), the distance at
@@ -346,6 +367,18 @@ mod tests {
         assert_eq!(c.rotation, 360.0);
         c.turn(1.0, 0.033);
         assert_eq!(c.rotation, 0.0);
+    }
+
+    #[test]
+    fn the_camera_centres_on_a_sim_as_the_originals() {
+        // home's start: the wanted target (10, 10) from the eye at (4.87, 4.87), Mom at (21, 7):
+        // the target 2 beyond her along the look, the live one placed there (more than 10 away)
+        let mut wanted = Camera { target: [10.0, 10.0, 0.25], distance: 8.0, rotation: 0.0, tilt: 25.0 };
+        let mut live = Camera { target: [10.0, 10.0, 0.039_548_434], ..wanted };
+        assert!(wanted.centre_on(&mut live, [21.0, 7.0], [4.873_148_4, 4.873_148_4, 3.420_494_8], 64));
+        assert!((wanted.target[0] - 22.414_213).abs() < 1e-5 && (wanted.target[1] - 8.414_213).abs() < 1e-5);
+        assert_eq!(live.target, wanted.target);
+        assert!(!wanted.centre_on(&mut live, [0.5, 7.0], [0.0; 3], 64));
     }
 
     #[test]

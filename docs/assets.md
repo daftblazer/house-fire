@@ -639,3 +639,14 @@ original's other case), and sets the tilt in proportion, 25 at 8 to 56 at the fa
 each the engine's zoom's distance and tilt; turns home 83 and club 303, each the engine's turn by a
 stick within -1..1 (a full stick 2.145 a frame). Still to come: the tilt's own stick (fn_80005FC8,
 20 to 88, a control mode the logs never use) and the target from the followed Sim.
+
+The target (the decomp's fn_80006E6C, centring on the followed Sim): the cursor is put on the
+Sim's place (z 0), and the wanted target 2 beyond it along the look's level direction (from the
+eye to the wanted target at that moment; so after a turn the target stays where it was); a target
+more than 10 from the live one places the live one there at once (the lot's start); a place off
+the lot (outside 1 to size - 1) leaves the camera. `scene::Camera::centre_on`. The observer's
+'c' records now carry the cursor's place (+0xA0 of the cursor, `Unk80026864::fn_8002D2C8`).
+`assets camlog`: the club, every one of the wanted target's 1,062 moves is the engine's centring
+on the logged cursor by the look just before, and the target is 2 from the cursor on all 4,312
+records; home, its start's move, the rest (163) the player's cursor moving the camera at the
+screen's edge (fn_80007470's box, 0.15-0.85 across, 0.3-0.75 down), next.
