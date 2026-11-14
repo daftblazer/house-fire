@@ -1226,6 +1226,17 @@ fn main() -> ExitCode {
                     if let Some(t) = log.tex_loads.iter().rev().find(|t| t.strips_before <= m.strips_before && t.map == 0)
                         && let Some(names) = image_at(t).and_then(|h| tex_hash.get(&h))
                     {
+                        // (for study: the pass it is in: the projection and view in force, the material's layers)
+                        if std::env::var_os("ASSETS_SHOW_PASS").is_some() {
+                            let proj = log.matrices[..i].iter().rposition(|p| p.projection);
+                            let view = log.matrices[..i].iter().rposition(|p| p.id == 0xF0);
+                            let mat = log.materials.iter().rposition(|q| q.strips_before <= m.strips_before);
+                            let pv = proj.map(|j| format!("{j}:{}", log.matrices[j].values.iter().take(6).map(|v| format!("{v:.2}")).collect::<Vec<_>>().join("/")));
+                            let vv = view.map(|j| format!("{j}:{:.1}/{:.1}/{:.1}", log.matrices[j].values[3], log.matrices[j].values[7], log.matrices[j].values[11]));
+                            let ml = mat.map(|q| (log.materials[q].layers, log.materials[q].layer[0][4..12].iter().map(|b| format!("{b:02x}")).collect::<String>()));
+                            let st = log.strips.get(m.strips_before).map(|st| format!("{:08x}/{}", st.words[0], st.words[1]));
+                            println!("      pass {x} {y} {angle} tex {} proj {pv:?} view {vv:?} material {ml:?} strip {st:?} col2 {:.4}/{:.4}/{:.4} z {:.2}", names[0].0, m.values[2], m.values[6], m.values[10], m.values[11]);
+                        }
                         drawn.extend(names.iter().map(|n| n.0.rsplit('/').next().unwrap_or(&n.0).to_string()));
                     }
                 }
