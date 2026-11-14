@@ -174,9 +174,61 @@ pub fn floor_runs(walls: &crate::routing::Walls, size: i32, patterns: &[crate::q
     out
 }
 
+/// The lot's camera as the original keeps it (`ESimsCam`'s parameters): where it looks (the target,
+/// its z 0.25 above the floor), from how far, turned how far about the vertical and tilted how far
+/// up (degrees).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Camera {
+    pub target: [f32; 3],
+    pub distance: f32,
+    pub rotation: f32,
+    pub tilt: f32,
+}
+
+impl Camera {
+    /// The eye: from the target, along (-1, -1, 0) / sqrt 2 tilted up by `tilt` (about the
+    /// horizontal axis across it) and turned by `rotation` about the vertical, `distance` away.
+    pub fn eye(&self) -> [f32; 3] {
+        let (st, ct) = self.tilt.to_radians().sin_cos();
+        let (sr, cr) = self.rotation.to_radians().sin_cos();
+        let h = -ct / std::f32::consts::SQRT_2;
+        let (x, y) = (h * cr - h * sr, h * sr + h * cr);
+        [self.target[0] + self.distance * x, self.target[1] + self.distance * y, self.target[2] + self.distance * st]
+    }
+
+    /// The view (world to eye) as 3 rows of 4 (the rotation's row and its translation): a look
+    /// from the eye at the target with z up, row 0 across (level), row 2 back towards the eye.
+    pub fn view(&self) -> [f32; 12] {
+        let e = self.eye();
+        let b = [e[0] - self.target[0], e[1] - self.target[1], e[2] - self.target[2]];
+        let n = (b[0] * b[0] + b[1] * b[1] + b[2] * b[2]).sqrt();
+        let back = [b[0] / n, b[1] / n, b[2] / n];
+        let h = (back[0] * back[0] + back[1] * back[1]).sqrt();
+        let across = [-back[1] / h, back[0] / h, 0.0];
+        let up = [back[1] * across[2] - back[2] * across[1], back[2] * across[0] - back[0] * across[2], back[0] * across[1] - back[1] * across[0]];
+        let mut v = [0.0; 12];
+        for (r, row) in [across, up, back].iter().enumerate() {
+            v[4 * r..4 * r + 3].copy_from_slice(row);
+            v[4 * r + 3] = -(row[0] * e[0] + row[1] * e[1] + row[2] * e[2]);
+        }
+        v
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_camera_view_is_the_originals() {
+        // the club log's view at tick 1,000 (3 rows of 4), from its parameters: target (19.545,
+        // 19.901, 0.25), distance 8, rotation 151.97, tilt 25
+        let logged = [-0.291_842_3, 0.956_466_3, 0.0, -13.330_891, -0.404_220_2, -0.123_337_89, 0.906_307_8, 10.128_328, 0.866_852_9, 0.264_498_92, 0.422_618_27, -30.311_815];
+        let cam = Camera { target: [19.545, 19.901, 0.25], distance: 8.0, rotation: 151.97, tilt: 25.0 };
+        for (a, b) in cam.view().iter().zip(logged) {
+            assert!((a - b).abs() < 0.01, "{:?}", cam.view());
+        }
+    }
 
     #[test]
     fn a_wall_face_is_seen_from_its_side() {

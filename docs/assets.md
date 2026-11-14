@@ -589,3 +589,18 @@ draw is wholly out of the logged view (home 18, club 18: the road's column at x 
 sidewalk's ends, the stripes), so the original culls runs out of view, as the renderer's clipping
 will. (Iteration 58 left the road to the lot's meshes; the club draws its car park's road as runs,
 so it was only out of view at home.)
+
+## The camera
+
+The lot's camera is `ESimsCam`'s parameters (the decomp's `CameraParameters`: a target, a
+distance, a rotation and a tilt in degrees; the live ones ease towards the wanted ones each frame,
+the target's z kept at 0.25). `CalcEyePosition`: from the base vectors (0, 0, 0) and (10, 10, 0),
+the eye is the target plus the distance along (-1, -1, 0) / sqrt 2 tilted up by the tilt and turned
+by the rotation about the vertical. The view (the 0xF0 matrix) is a look from the eye at the target
+with z up: row 0 level across, row 2 back towards the eye, the translation -R eye
+(`scene::Camera`, `eye`, `view`). Checked (`assets ISO camtrack LOG`: each tick's view, the
+parameters it is, and the engine's view from them): home and the club at tick 1,000, the engine's
+view is the log's to 4e-6. The club's parameters come out round (distance 8, tilt 25; rotation
+151.97), home's not (17.667, 36.10, 81.23: a zoom level's or easing). The camera held still over the
+logs' drawn ticks. Where the wanted parameters come from (the followed Sim, the zoom levels, the
+player's turns) is next.

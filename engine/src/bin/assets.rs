@@ -1477,6 +1477,38 @@ fn main() -> ExitCode {
                 println!("  not found: {missing:?}");
             }
         }
+        "camtrack" => {
+            // the lot's camera at each tick of a log: its view (the last 0xF0 before the tick's
+            // first world matrix), as an eye, a turn about the vertical, a pitch, and where its
+            // look meets the floor (z 0) and how far that is
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO camtrack LOG");
+                return ExitCode::FAILURE;
+            };
+            let mut ticks: Vec<u32> = log.matrices.iter().filter(|m| m.id == 0xF1).map(|m| m.tick).collect();
+            ticks.dedup();
+            for t in ticks {
+                let Some(first) = log.matrices.iter().position(|m| m.id == 0xF1 && m.tick == t) else { continue };
+                let Some(v) = log.matrices[..first].iter().rev().find(|m| m.id == 0xF0 && m.values.len() >= 12) else { continue };
+                let r = &v.values;
+                let eye = [0, 1, 2].map(|c| -(r[c] * r[3] + r[4 + c] * r[7] + r[8 + c] * r[11]));
+                let dir = [-r[8], -r[9], -r[10]];
+                let yaw = dir[1].atan2(dir[0]).to_degrees();
+                let pitch = (-dir[2]).asin().to_degrees();
+                let k = -eye[2] / dir[2];
+                let focus = [eye[0] + k * dir[0], eye[1] + k * dir[1]];
+                println!("tick {t}: eye ({:.2}, {:.2}, {:.2}) yaw {yaw:.1} pitch {pitch:.1} roll-row0z {:.4} focus ({:.2}, {:.2}) distance {:.2}", eye[0], eye[1], eye[2], r[2], focus[0], focus[1], k);
+                // the parameters that view is (the target where the look is 0.25 above the floor,
+                // the turn from the base (-1, -1) back direction), and the engine's view from them
+                let kt = (0.25 - eye[2]) / dir[2];
+                let target = [eye[0] + kt * dir[0], eye[1] + kt * dir[1], 0.25];
+                let back_yaw = (-dir[1]).atan2(-dir[0]).to_degrees();
+                let cam = housefire::scene::Camera { target, distance: kt, rotation: back_yaw + 135.0, tilt: pitch };
+                let mine = cam.view();
+                let worst = mine.iter().zip(r.iter()).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+                println!("  parameters: target ({:.3}, {:.3}) distance {:.3} rotation {:.2} tilt {:.2}; the engine's view against the log's: largest difference {worst:.6}", target[0], target[1], kt, (back_yaw + 135.0).rem_euclid(360.0), pitch);
+            }
+        }
         "floorcheck" => {
             // the floors' textures the original loads at a tick against the lot's: each floor
             // value's FloorSet shader (lockstep's LOCKSTEP_DUMP_FLOORS), its first layer's texture
