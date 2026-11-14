@@ -486,4 +486,18 @@ side, in the lot's second array: byte 2 for its -y edge, byte 3 for its -x edge
 `quickdata::fence_styles`), the walls `WallTile`'s (home: 1, 3 and 22). `scene::wall_pieces`
 gives the pieces; every one is the original's (home, tick 1,000: 148 pieces, 14 of them fences;
 the club, its house's walls: 207, 43 fences; `assets ISO wallcheck LOG PIECES TICK` with
-lockstep's LOCKSTEP_DUMP_WALLS). The wall parts' models and patterns are next.
+lockstep's LOCKSTEP_DUMP_WALLS).
+
+## Wall patterns
+
+Each side of a wall has its own pattern, kept by the tile it faces: the lot's second array's
+bytes 4 to 7 are a tile's -y, -x, +x and +y sides (`Walls::pattern`). A pattern indexes
+`SimsTiles`' `WallSet` list (its one row points at a list of `WallTile` rows, 20 bytes each: a
+value, a name, the pattern's shader's archive id, two more; `quickdata::wall_patterns`); 0 is
+the plain `sims_wall_paper_000`. At home, 17 is `sims_wall_paper_024`, 21 `_031`, 5 `_205`,
+24 `_014` and 8 the outside `exterior-tile--202`. A shader's layer names its texture by the
+texture's archive id, which is not always its name's hash (`exterior-tile--202`: 7a397517).
+Checked (`assets wallcheck`, tick 1,000): every wall part the original draws upright is drawn
+with its pattern's texture (home 67 of 67, the club 39 of 39); the rest are not drawn that frame
+(home 38, club 57) or drawn lowered with `walls_down` and `wall_black` (home 28, club 68: the
+walls-down view, which is next). One home part shares its place and turn with a counter.

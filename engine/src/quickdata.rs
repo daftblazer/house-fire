@@ -131,3 +131,17 @@ pub fn object_resources(img: &Image) -> BTreeMap<u32, ObjResources> {
 pub fn fence_styles(img: &Image) -> Vec<u32> {
     img.rows("FenceData").filter_map(|r| img.u32(r + 12)).collect()
 }
+
+/// The wall patterns, from `SimsTiles`: its one `WallSet` row points at a list of `WallTile` rows
+/// (20 bytes: a value, a name, the pattern's shader's name hash, two more), a pattern's index
+/// into it; each pattern's shader hash.
+pub fn wall_patterns(img: &Image) -> Vec<u32> {
+    let Some(t) = img.tables.get("WallTile").copied() else { return Vec::new() };
+    let Some(list) = img.rows("WallSet").next().and_then(|r| img.ptr(r)) else { return Vec::new() };
+    (0..)
+        .map_while(|k| img.ptr(list + 4 * k))
+        .take_while(|&row| row >= t.rows && row < t.rows + t.count * t.row_size)
+        .filter_map(|row| img.u32(row + 8))
+        .collect()
+}
+

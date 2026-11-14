@@ -65,6 +65,8 @@ pub struct WallPiece {
     pub y: f32,
     pub angle: f32,
     pub fence: bool,
+    /// A wall part's pattern (`Walls::pattern`, the side it faces), a fence's style.
+    pub pattern: u8,
 }
 
 /// The pieces of the walls between the tiles of a `size`-tile lot: each edge with a wall once.
@@ -77,13 +79,14 @@ pub fn wall_pieces(walls: &crate::routing::Walls, size: i32, fences: &[u32]) -> 
                     continue;
                 }
                 let (cx, cy) = (x as f32 + 0.5, y as f32 + 0.5);
-                if fences.contains(&u32::from(walls.style(x, y, dx, dy))) {
+                let style = walls.style(x, y, dx, dy);
+                if fences.contains(&u32::from(style)) {
                     let angle = if dx == 1 { 90.0 } else { 0.0 };
-                    out.push(WallPiece { x: cx + dx as f32 / 2.0, y: cy + dy as f32 / 2.0, angle, fence: true });
+                    out.push(WallPiece { x: cx + dx as f32 / 2.0, y: cy + dy as f32 / 2.0, angle, fence: true, pattern: style });
                 } else {
                     let (here, there) = if dx == 1 { (90.0, -90.0) } else { (180.0, 0.0) };
-                    out.push(WallPiece { x: cx, y: cy, angle: here, fence: false });
-                    out.push(WallPiece { x: cx + dx as f32, y: cy + dy as f32, angle: there, fence: false });
+                    out.push(WallPiece { x: cx, y: cy, angle: here, fence: false, pattern: walls.pattern(x, y, dx, dy) });
+                    out.push(WallPiece { x: cx + dx as f32, y: cy + dy as f32, angle: there, fence: false, pattern: walls.pattern(x + dx, y + dy, -dx, -dy) });
                 }
             }
         }

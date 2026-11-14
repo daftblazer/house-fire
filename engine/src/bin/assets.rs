@@ -1141,7 +1141,7 @@ fn main() -> ExitCode {
             let (mut pieces, mut found, mut fences, mut fences_found) = (0, 0, 0, 0);
             let mut missing = Vec::new();
             for l in walls.lines() {
-                let f: Vec<f32> = l.split(' ').filter_map(|v| v.parse().ok()).collect();
+                let f: Vec<f32> = l.split(' ').take(4).filter_map(|v| v.parse().ok()).collect();
                 let [x, y, angle, fence] = f[..] else { continue };
                 let key = |a: f32| ((x * 2.0).round() as i32, (y * 2.0).round() as i32, (a.round() as i32).rem_euclid(360));
                 let hit = at.contains_key(&key(angle)) || (fence == 1.0 && at.contains_key(&key(angle + 180.0)));
@@ -1154,6 +1154,97 @@ fn main() -> ExitCode {
                 if !hit && missing.len() < 12 {
                     missing.push((x, y, angle, fence));
                 }
+            }
+            // which record each piece draws: the world matrices at the tick at the piece's place
+            // (the draw after each: its batch or display list names its record)
+            if std::env::var_os("ASSETS_SHOW_WALL_MODELS").is_some() {
+                let recs = all_records(&d);
+                let mut owner: std::collections::HashMap<[u8; 32], (&str, &str)> = std::collections::HashMap::new();
+                for (entry, r) in &recs {
+                    for n in &r.nodes {
+                        for (_, sm) in &n.subs {
+                            for k in [sm.positions.get(..32), sm.list.as_ref().and_then(|l| l.2.get(..32))].into_iter().flatten() {
+                                owner.entry(k.try_into().unwrap()).or_insert((entry, &r.name));
+                            }
+                        }
+                    }
+                }
+                let mut seen: BTreeMap<(String, bool), usize> = BTreeMap::new();
+                for l in walls.lines() {
+                    let f: Vec<f32> = l.split(' ').filter_map(|v| v.parse().ok()).collect();
+                    let [x, y, _, fence] = f[..] else { continue };
+                    for m in log.matrices.iter().filter(|m| m.id == 0xF1 && m.tick == tick && (m.values[3] - x).abs() < 0.01 && (m.values[7] - y).abs() < 0.01) {
+                        let Some(st) = log.strips.get(m.strips_before) else { continue };
+                        let key = if st.words[0] >> 24 == 0x42 { st.at[6] } else { st.at[2] };
+                        let name = owner.get(&key).map_or("?".to_string(), |(e, n)| format!("{e}/{n}"));
+                        *seen.entry((name, fence == 1.0)).or_default() += 1;
+                    }
+                }
+                for ((n, fence), c) in &seen {
+                    println!("  {} draws at wall pieces' places: {n} {c}", if *fence { "fence" } else { "wall" });
+                }
+            }
+            // each wall part's pattern (the dump's shader hash): its shader's first layer's texture
+            // among those the original loads (map 0) for the piece's draw: the last before its
+            // world matrix's strips up to the next world matrix's
+            let (tex_hash, _) = texture_hashes(&d);
+            let images: BTreeMap<u32, u64> = log.textures.iter().map(|x| (x.image, x.hash)).collect();
+            let sh = d.read("shaders.arc").unwrap_or_default();
+            let shaders: BTreeMap<u32, shader::Shader> = arc::entries(&sh)
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|e| Some((e.id, shader::read(arc::bytes(&sh, e))?)))
+                .collect();
+            // (a layer names its texture by the texture's archive id, not always its name's hash)
+            let tx = d.read("textures.arc").unwrap_or_default();
+            let tex_names: BTreeMap<u32, String> = arc::entries(&tx).unwrap_or_default().into_iter().map(|e| (e.id, e.name.rsplit('/').next().unwrap_or(&e.name).to_string())).collect();
+            let world: Vec<usize> = (0..log.matrices.len()).filter(|&i| log.matrices[i].id == 0xF1 && log.matrices[i].tick == tick).collect();
+            let (mut parts, mut same, mut undrawn, mut down) = (0, 0, 0, 0);
+            let mut wrong: BTreeMap<String, usize> = BTreeMap::new();
+            for l in walls.lines() {
+                let f: Vec<&str> = l.split(' ').collect();
+                let v: Vec<f32> = f.iter().take(4).filter_map(|v| v.parse().ok()).collect();
+                let [x, y, angle, fence] = v[..] else { continue };
+                if fence == 1.0 {
+                    continue;
+                }
+                parts += 1;
+                let want = f.get(4).and_then(|h| u32::from_str_radix(h, 16).ok()).and_then(|h| shaders.get(&h)).and_then(|s| s.layers.first()).and_then(|l| tex_names.get(&l.texture));
+                let mut drawn = Vec::new();
+                for (k, &i) in world.iter().enumerate() {
+                    let m = &log.matrices[i];
+                    let a = m.values[4].atan2(m.values[0]).to_degrees();
+                    if (m.values[3] - x).abs() > 0.01 || (m.values[7] - y).abs() > 0.01 || (a - angle).rem_euclid(360.0).min((angle - a).rem_euclid(360.0)) > 0.5 {
+                        continue;
+                    }
+                    let end = world.get(k + 1).map_or(usize::MAX, |&j| log.matrices[j].strips_before);
+                    let first = log.tex_loads.iter().rposition(|t| t.strips_before <= m.strips_before && t.map == 0).unwrap_or(0);
+                    for t in log.tex_loads[first..].iter().take_while(|t| t.strips_before < end).filter(|t| t.map == 0) {
+                        if let Some(names) = images.get(&t.image()).and_then(|h| tex_hash.get(h)) {
+                            drawn.extend(names.iter().map(|n| n.0.rsplit('/').next().unwrap_or(&n.0).to_string()));
+                        }
+                    }
+                }
+                if want.is_some_and(|w| drawn.iter().any(|n| n.eq_ignore_ascii_case(w))) {
+                    same += 1;
+                } else if drawn.is_empty() {
+                    undrawn += 1;
+                } else if drawn.iter().any(|n| n == "walls_down") {
+                    down += 1;
+                } else {
+                    *wrong.entry(format!("{} drawn {:?}", f.get(4).unwrap_or(&""), drawn.iter().collect::<BTreeSet<_>>())).or_default() += 1;
+                }
+            }
+            if std::env::var_os("ASSETS_SHOW_PATTERN_SHADERS").is_some() {
+                for h in [0x7a39_7517u32, 0x402c_df3f, 0x0d3e_4581, 0x30e8_87b4, 0x16cf_77ec] {
+                    if let Some(s) = shaders.get(&h) {
+                        println!("  shader {h:08x} {}: layers {:?}", s.name, s.layers.iter().map(|l| format!("{:08x}", l.texture)).collect::<Vec<_>>());
+                    }
+                }
+            }
+            println!("wall parts {parts}: the pattern's texture among the draw's {same}; not drawn this frame {undrawn}; drawn down (walls_down) {down}; other {}", parts - same - undrawn - down);
+            for (k, c) in wrong.iter().take(12) {
+                println!("  not: {k} ({c})");
             }
             println!("wall pieces (the engine's) {pieces}: the original's orientation there {found}; of them fences {fences}, found {fences_found}");
             if !missing.is_empty() {
