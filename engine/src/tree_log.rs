@@ -96,6 +96,23 @@ pub struct MatrixRec {
 
 /// An orientation the original gave a static model ('o': EIStaticModel::SetOrient): the tick,
 /// the model's address and the 4x4, rows (the translation in the last row).
+/// A room's floor relit ('n'): the tick, the room's id, the light grid record just before, and
+/// each group's entries: the group, then each entry's word (its row, its first and last x with
+/// the half tiles' flags in their top two bits) and its vertices' colours.
+#[derive(Clone, Debug)]
+pub struct RoomFloorRec {
+    pub tick: u32,
+    pub id: u32,
+    pub grid: Option<usize>,
+    /// How many group scale records ('b') came before it: its groups' are the last of those,
+    /// one a group in order.
+    pub scales_before: usize,
+    pub groups: Vec<(u32, Vec<FloorEntry>)>,
+}
+
+/// A floor entry: its word (row, first and last x with the half tiles' flags) and its colours.
+pub type FloorEntry = (u32, Vec<u32>);
+
 /// A LightGrid_Sum call ('i'): the tick, the room id, and each lit point: its x and row, its
 /// cell's lights (each the original's 32 bytes as words) and the summed colour.
 #[derive(Clone, Debug)]
@@ -398,6 +415,12 @@ pub struct Log {
     pub strip_vertices: Vec<(usize, Vec<StripVertex>)>,
     /// 'i': each LightGrid_Sum call's lit points.
     pub light_grids: Vec<LightGridRec>,
+    /// 'b': floor groups' colour bases and scales (tick, the word Light_GroupScale was given less
+    /// 4, base, scale), one a group as its room's floor is relit.
+    pub group_scales: Vec<(u32, u32, [f32; 3], [f32; 3])>,
+    /// 'n': rooms' floors relit, each after the 'i' record of its own light grid (its index there
+    /// is `light_grids.len()` less one when read).
+    pub room_floors: Vec<RoomFloorRec>,
     pub trees: Vec<TreeRec>,
     pub lists: Vec<ListRec>,
     /// Tick -> its pass over the objects (logs with 'Q' records).
@@ -544,6 +567,59 @@ pub fn read_log(path: &str) -> Option<Log> {
                     break;
                 }
                 log.light_grids.push(LightGridRec { tick, id, points });
+            }
+            b'b' => {
+                if !r.has(32) {
+                    break;
+                }
+                let (tick, group) = (r.u32(), r.u32());
+                let base = [0; 3].map(|_| f32::from_bits(r.u32()));
+                let scale = [0; 3].map(|_| f32::from_bits(r.u32()));
+                log.group_scales.push((tick, group, base, scale));
+            }
+            b'n' => {
+                if !r.has(12) {
+                    break;
+                }
+                let (tick, _room, id) = (r.u32(), r.u32(), r.u32());
+                let mut groups = Vec::new();
+                let mut ok = true;
+                loop {
+                    if !r.has(4) {
+                        ok = false;
+                        break;
+                    }
+                    let g = r.u32();
+                    if g == 0 {
+                        break;
+                    }
+                    if !r.has(4) {
+                        ok = false;
+                        break;
+                    }
+                    let count = r.u32();
+                    let mut entries = Vec::new();
+                    for _ in 0..count {
+                        if !r.has(8) {
+                            ok = false;
+                            break;
+                        }
+                        let (word, verts) = (r.u32(), r.u32() as usize);
+                        if !r.has(4 * verts) {
+                            ok = false;
+                            break;
+                        }
+                        entries.push((word, (0..verts).map(|_| r.u32()).collect()));
+                    }
+                    if !ok {
+                        break;
+                    }
+                    groups.push((g, entries));
+                }
+                if !ok {
+                    break;
+                }
+                log.room_floors.push(RoomFloorRec { tick, id, grid: log.light_grids.len().checked_sub(1), scales_before: log.group_scales.len(), groups });
             }
             b'v' => {
                 if !r.has(8) {

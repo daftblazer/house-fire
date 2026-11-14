@@ -701,3 +701,17 @@ home (`home-l.log`, 400 calls, ticks 0-77, room ids 0-3) 152,200 points and the 
 (`club-l.log`, 400 calls, ticks 0-51, ids 0-5) 103,302, every one the engine's sum bit for bit.
 The grid is lit again and again, not only at the load (400 calls by tick 77): which room ids,
 spans and lights each call takes, and how the sums become the floor's vertex bytes, are next.
+
+The floor's vertex colours (`light::vertex_colour`, `light::entry_points`): when a room's floor is
+relit (the original's Light_RoomFloor, 0x80074D88: LightGrid_Sum over the room's spans, then each
+floor group's colour base and scale from Light_GroupScale, 0x80074A70), each vertex of each floor
+entry takes the light-grid sum at its corner. Each channel is the sum times the group's scale plus
+its base (fused), truncated, then only the top clamped (255; the low byte is stored). Alpha is
+0x80. The corners follow the strip's order: a leading half tile's one corner (flag 0x40 on the
+row, 0x80 the row after), then two a column, then a trailing half's. Checked through the
+observer's new 'b' (each group's base and scale) and 'n' (each relit room: every group's
+entries, each one's word and its vertex colours) records: home 400 relits (1,200 groups, 9,800
+entries) gave 293,400 vertices, and the club 400 (869 groups, 10,249 entries) gave 203,936.
+Every one is the engine's colour.
+The room objects sit in the game's heap at 0x7E7Axxxx, so the observer accepts addresses from
+0x7E000000.

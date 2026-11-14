@@ -1844,6 +1844,48 @@ fn main() -> ExitCode {
             }
             println!("light grid calls {} (ticks {:?}..{:?}, ids {ids:?}): points {points}, the engine's sum bit for bit {exact}, the rest within {worst}", log.light_grids.len(), log.light_grids.first().map(|g| g.tick), log.light_grids.last().map(|g| g.tick));
         }
+        "floorlight" => {
+            // each relit room's floor colours against the engine's, from the room's own light
+            // grid record and the groups' logged bases and scales
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO floorlight LOG");
+                return ExitCode::FAILURE;
+            };
+            let (mut verts, mut same, mut no_sum, mut shown) = (0, 0, 0, 0);
+            let (mut rooms, mut checked_rooms) = (0, 0);
+            for rf in &log.room_floors {
+                rooms += 1;
+                let Some(g) = rf.grid.and_then(|i| log.light_grids.get(i)).filter(|g| g.id == rf.id) else { continue };
+                checked_rooms += 1;
+                let sums: BTreeMap<(u32, u32), [f32; 3]> = g.points.iter().map(|p| ((p.0, p.1), p.3)).collect();
+                let first = rf.scales_before.checked_sub(rf.groups.len());
+                for (gi, (_group, entries)) in rf.groups.iter().enumerate() {
+                    let Some(&(_, _, base, scale)) = first.and_then(|f| log.group_scales.get(f + gi)) else { continue };
+                    for (word, colours) in entries {
+                        let pts = housefire::light::entry_points(*word);
+                        for (k, c) in colours.iter().enumerate() {
+                            verts += 1;
+                            let Some(sum) = pts.get(k).and_then(|p| sums.get(p)) else {
+                                no_sum += 1;
+                                continue;
+                            };
+                            let mine = u32::from_be_bytes(housefire::light::vertex_colour(*sum, base, scale));
+                            if mine == *c {
+                                same += 1;
+                            } else if shown < 8 && std::env::var_os("ASSETS_EACH").is_some() {
+                                shown += 1;
+                                println!("  tick {} id {} word {word:08x} vertex {k} at {:?}: mine {mine:08x} the log's {c:08x} (sum {sum:?} base {base:?} scale {scale:?})", rf.tick, rf.id, pts.get(k));
+                            }
+                        }
+                    }
+                }
+            }
+            let groups: usize = log.room_floors.iter().map(|r| r.groups.len()).sum();
+            let entries: usize = log.room_floors.iter().flat_map(|r| &r.groups).map(|g| g.1.len()).sum();
+            let ids: BTreeSet<u32> = log.room_floors.iter().map(|r| r.id).collect();
+            println!("room floors: groups {groups}, entries {entries}, room ids {ids:?}");
+            println!("relit rooms {rooms} ({checked_rooms} with their light grid): vertices {verts}, the engine's colour {same}, without a logged sum {no_sum}");
+        }
         "camtrack" => {
             // the lot's camera at each tick of a log: its view (the last 0xF0 before the tick's
             // first world matrix), as an eye, a turn about the vertical, a pitch, and where its
