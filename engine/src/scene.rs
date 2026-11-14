@@ -196,6 +196,65 @@ impl Camera {
         [self.target[0] + self.distance * x, self.target[1] + self.distance * y, self.target[2] + self.distance * st]
     }
 
+    /// One frame's easing of the live camera (`self`) towards the wanted one, by the frame's time
+    /// step `dt` (seconds), as the original's usual mode (0): the target moves straight towards
+    /// the wanted target at 5 times the distance a second (2.5 times within 1.5), the distance at
+    /// twice its difference, the rotation (the short way round, kept in 0..360) at 3 times and
+    /// the tilt at 2.5 times; each lands on the wanted value when the step would pass it or the
+    /// difference is 0.0001 or less (an angle then not wrapped: a wanted 360 stays 360).
+    pub fn ease(&mut self, wanted: &Camera, dt: f32) {
+        let d = [0, 1, 2].map(|k| wanted.target[k] - self.target[k]);
+        let len = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        if len <= 0.0001 {
+            self.target = wanted.target;
+        } else {
+            let rate = if len > 1.5 { 5.0 } else { 2.5 } * len;
+            let step = (rate * dt).min(len);
+            for (t, dk) in self.target.iter_mut().zip(d) {
+                *t += dk * (1.0 / len) * step;
+            }
+        }
+        // (false when the difference was 0.0001 or less: the value set, an angle not wrapped)
+        fn towards(v: &mut f32, diff: f32, target: f32, speed: f32, dt: f32) -> bool {
+            if diff.abs() <= 0.0001 {
+                *v = target;
+                return false;
+            }
+            let rate = diff * speed;
+            if (rate * dt).abs() >= diff.abs() {
+                *v = target;
+            } else {
+                *v += rate * dt;
+            }
+            true
+        }
+        let diff = wanted.distance - self.distance;
+        let _ = towards(&mut self.distance, diff, wanted.distance, 2.0, dt);
+        for (v, target, speed) in [(&mut self.rotation, wanted.rotation, 3.0), (&mut self.tilt, wanted.tilt, 2.5)] {
+            let mut diff = target - *v;
+            if target > *v {
+                let other = 360.0 - target + *v;
+                if other < diff {
+                    diff = -other;
+                }
+            } else {
+                let other = 360.0 - *v + target;
+                if other < -diff {
+                    diff = other;
+                }
+            }
+            if !towards(v, diff, target, speed, dt) {
+                continue;
+            }
+            while *v >= 360.0 {
+                *v -= 360.0;
+            }
+            while *v < 0.0 {
+                *v += 360.0;
+            }
+        }
+    }
+
     /// The view (world to eye) as 3 rows of 4 (the rotation's row and its translation): a look
     /// from the eye at the target with z up, row 0 across (level), row 2 back towards the eye.
     pub fn view(&self) -> [f32; 12] {
@@ -228,6 +287,18 @@ mod tests {
         for (a, b) in cam.view().iter().zip(logged) {
             assert!((a - b).abs() < 0.01, "{:?}", cam.view());
         }
+    }
+
+    #[test]
+    fn the_camera_eases_as_the_originals() {
+        // home's first frames (z towards the target's 0.25) and the club's wanted 360, logged
+        let mut live = Camera { target: [22.414_213, 8.414_213, 0.039_548_434], distance: 8.0, rotation: 0.0, tilt: 25.0 };
+        let wanted = Camera { target: [22.414_213, 8.414_213, 0.25], ..live };
+        live.ease(&wanted, 0.033);
+        assert!((live.target[2] - 0.056_910_69).abs() < 1e-6, "{live:?}");
+        let mut live = Camera { target: [22.867_266, 21.888_386, 0.25], distance: 8.0, rotation: 0.0, tilt: 25.0 };
+        live.ease(&Camera { rotation: 360.0, distance: 8.024_692, tilt: 25.028_349, ..live }, 0.033);
+        assert_eq!(live.rotation, 360.0);
     }
 
     #[test]

@@ -108,6 +108,12 @@ pub struct CamRec {
     pub eye: [f32; 3],
     pub cursor: u32,
     pub camera: u32,
+    /// The frame's time step (seconds) the step eased by.
+    pub dt: f32,
+    /// How many steps ran since the last record (this one's included).
+    pub steps: u32,
+    /// Which step logged it: 0 the frame's (ESimsCam_Ease), 1 SetWinPos (which eases once more).
+    pub which: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -484,7 +490,7 @@ pub fn read_log(path: &str) -> Option<Log> {
                 log.other_draws.push((StripRec { tick, words, at }, before, loads));
             }
             b'c' => {
-                if !r.has(4 * 19) {
+                if !r.has(4 * 22) {
                     break;
                 }
                 let tick = r.u32();
@@ -494,11 +500,12 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
                 let mode = r.u32();
                 let eye = [0; 3].map(|_| f32::from_bits(r.u32()));
-                let (cursor, camera) = (r.u32(), r.u32());
+                let (cursor, camera, dt, steps) = (r.u32(), r.u32(), f32::from_bits(r.u32()), r.u32());
+                let which = r.u32();
                 let (mut wanted, mut live) = ([0.0; 6], [0.0; 6]);
                 wanted.copy_from_slice(&f[..6]);
                 live.copy_from_slice(&f[6..]);
-                log.cams.push(CamRec { tick, wanted, live, mode, eye, cursor, camera });
+                log.cams.push(CamRec { tick, wanted, live, mode, eye, cursor, camera, dt, steps, which });
             }
             b'o' => {
                 if !r.has(4 * 18) {

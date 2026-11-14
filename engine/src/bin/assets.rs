@@ -1492,10 +1492,65 @@ fn main() -> ExitCode {
                 let d = (0..3).map(|k| (e[k] - c.eye[k]).abs()).fold(0.0f32, f32::max);
                 worst = worst.max(d);
                 if std::env::var_os("ASSETS_EACH").is_some() {
-                    println!("tick {} mode {} wanted {:?} live {:?} eye {:?} cursor {:08x} cam {:08x} eye diff {d:.6}", c.tick, c.mode, c.wanted, c.live, c.eye, c.cursor, c.camera);
+                    println!("tick {} mode {} wanted {:?} live {:?} eye {:?} cursor {:08x} cam {:08x} steps {} which {} eye diff {d:.6}", c.tick, c.mode, c.wanted, c.live, c.eye, c.cursor, c.camera, c.steps, c.which);
                 }
             }
             println!("camera records {}, the engine's eye from the live parameters against the logged eye: largest difference {worst:.6}", log.cams.len());
+            // the easing: each record's live parameters from the last's, eased towards its wanted
+            // ones by its time step (mode 0 records after a mode 0 one)
+            let cam = |p: &[f32; 6]| housefire::scene::Camera { target: [p[0], p[1], p[2]], distance: p[3], rotation: p[4], tilt: p[5] };
+            let (mut eased, mut worst, mut at, mut after_still, mut placed) = (0, 0.0f32, 0, 0, 0);
+            for (k, w) in log.cams.windows(2).enumerate() {
+                if w[0].mode != 0 || w[1].mode != 0 || w[0].camera != w[1].camera {
+                    continue;
+                }
+                // (the lot's start: the target's x and y placed on the wanted ones at once, not eased)
+                if w[1].live[..2] == w[1].wanted[..2] && (w[0].live[0] - w[1].live[0]).abs() + (w[0].live[1] - w[1].live[1]).abs() > 1.0 && w[0].live[2] == w[1].live[2] {
+                    placed += 1;
+                    continue;
+                }
+                let mut live = cam(&w[0].live);
+                for _ in 0..w[1].steps {
+                    live.ease(&cam(&w[1].wanted), w[1].dt);
+                }
+                let got = [live.target[0], live.target[1], live.target[2], live.distance, live.rotation, live.tilt];
+                let d = got.iter().zip(w[1].live).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+                eased += 1;
+                // after a still stretch (several steps, the camera settled: easing leaves it as it
+                // is, on what it wanted or stuck a float's step short),
+                // the wanted values changed somewhere in it: the last k steps eased towards them
+                let still = {
+                    let mut c = cam(&w[0].live);
+                    c.ease(&cam(&w[0].wanted), w[0].dt);
+                    c == cam(&w[0].live)
+                };
+                let d = if d > 1e-4 && w[1].steps > 2 && still {
+                    let found = (1..=w[1].steps).find_map(|k| {
+                        let mut live = cam(&w[0].live);
+                        for _ in 0..k {
+                            live.ease(&cam(&w[1].wanted), w[1].dt);
+                        }
+                        let got = [live.target[0], live.target[1], live.target[2], live.distance, live.rotation, live.tilt];
+                        let d = got.iter().zip(w[1].live).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+                        (d <= 1e-4).then_some(d)
+                    });
+                    if let Some(f) = found {
+                        after_still += 1;
+                        f
+                    } else {
+                        d
+                    }
+                } else {
+                    d
+                };
+                if d > 1e-4 && std::env::var_os("ASSETS_EACH").is_some() {
+                    println!("  record {} tick {} dt {} differs {d:.6}: wanted {:?} live before {:?} after {:?} engine {got:?}", k + 1, w[1].tick, w[1].dt, w[1].wanted, w[0].live, w[1].live);
+                }
+                if d > worst {
+                    (worst, at) = (d, k + 1);
+                }
+            }
+            println!("easing: {eased} records, the engine's live parameters against the log's: largest difference {worst:.6} (record {at}); {after_still} after a still stretch matched by its last steps; {placed} placed at once");
         }
         "camtrack" => {
             // the lot's camera at each tick of a log: its view (the last 0xF0 before the tick's

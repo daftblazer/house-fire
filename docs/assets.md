@@ -614,3 +614,18 @@ takes the eye from +0x3B0). Home (`home-c.log`, ticks 0-424, 407 records: rotati
 the logged eye to 4e-6 on every record (`assets ISO camlog LOG`). The wanted distance and tilt step
 together (8 to 17.667 and 25 to 36.1 in 11 even steps: a zoom), the rotation by 2.145 a frame
 (a held turn); the live z eases from 0.04 to the target's 0.25 at the start.
+
+The easing (`scene::Camera::ease`, the decomp's fn_80007714, fn_800078BC and fn_800079C0 as the
+usual mode 0 calls them): the target moves straight at 5 times its distance a second (2.5 within
+1.5), the distance at 2 times its difference, the rotation (the short way round) at 3 and the tilt
+at 2.5, by the time step at 0x8037BFC8 (0.033 s); each lands on the wanted value when the step
+would pass it or the difference is 0.0001 or less (then an angle is not wrapped: a wanted 360
+stays 360). Not once a frame: the frame's step (`ESimsCam_Ease`) eases once and calls `SetWinPos`,
+which eases again, and a second `SetWinPos` a frame eases a third time (6 callers; the lot view
+alternates 2 and 1 steps between records). The observer logs each easing ('c' records on both,
+with the steps entered since the last); `assets camlog`: home (`home-c.log`) 809 records and the
+club (`club-c.log`) 4,311, each the last eased by its step count towards its wanted values, to
+4.4e-5 (home exactly); a still stretch (easing leaves the camera as it is, on its wanted values or
+a float's step short of them) whose wanted values changed somewhere in it is matched by its last
+k steps (home 3, club 16); the lot's start places the target's x and y on the Sim at once (1 each,
+not built yet).
