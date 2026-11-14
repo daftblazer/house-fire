@@ -442,3 +442,14 @@ so. The 24 left are parts of objects of several tiles: a door's or window's two 
 each side of the wall) are drawn one by the rule and the other half a turn more (the second
 object, the higher id), and the second tiles of beds and the bathtub carry their lead's
 orientation. Study ASSETS_SHOW_ORIENTS, ASSETS_SHOW_UNTURNED=RULE.
+
+Where an object is drawn (`scene::placements`). An object of several tiles is drawn once, for
+its leader (the world's `leader`; lockstep's places dump now gives it): at the centre of its
+parts' cells' bounding box, a cell being a tile (the table's 2x2 at (24.0, 16.0), the rug's
+3x3 at (15.5, 19.5), the bed's six tiles at (14.5, 27.0), a door or window on the wall between
+its two parts) or, for a group placed off the tile grid, a quarter tile (a tree's four parts at
+8.75 and 9.0: (9.0, 9.0)); an object of one tile at its tile's centre, wherever on the tile it
+stands (the end tables at 13.125). It is turned 90 - 45 x the leader's facing. On the home
+replay at tick 1,000: 97 objects drawn from the lot's 172 parts, 96 with an orientation of the
+original's at that place turned so; the one other, a painting of two panels, is drawn 0.45 of a
+tile towards its wall ((19.95, 23.0) for (19.5, 23.0): a wall object's offset, to be read).

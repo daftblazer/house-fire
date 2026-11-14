@@ -1348,7 +1348,7 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
     let mut place_at = log.places.iter().position(|p| p.tick > 0).unwrap_or(log.places.len()); // the next 'P' after the lot's
     // study (LOCKSTEP_DUMP_PLACES=TICK, LOCKSTEP_DUMP_OUT=PATH): this world's objects as the
     // step loop reaches the tick (id, GUID, place in sixteenths, level, facing, container, file),
-    // one a line, for the assets tool's check of the original's world matrices
+    // one a line, then its multi-tile leader (0: none), for the assets tool's check of the original's world matrices
     let dump_at = std::env::var("LOCKSTEP_DUMP_PLACES").ok().and_then(|v| v.parse::<u32>().ok());
     let mut dumped = false;
     for (i, s) in log.steps.iter().enumerate() {
@@ -1361,7 +1361,7 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
             for o in lw.objects() {
                 let path = o.file.map_or("", |f| lib.file(f).path.as_str());
                 out += &format!(
-                    "{} {:08x} {} {} {} {} {} {} {}\n",
+                    "{} {:08x} {} {} {} {} {} {} {} {}\n",
                     o.id(),
                     o.guid,
                     o.x16,
@@ -1370,7 +1370,8 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log, 
                     o.data.get(DATA_FACING).copied().unwrap_or(0),
                     o.data.get(DATA_CONTAINER).copied().unwrap_or(0),
                     u8::from(o.person),
-                    path
+                    path,
+                    o.leader
                 );
             }
             let at = std::env::var("LOCKSTEP_DUMP_OUT").unwrap_or_else(|_| "work/logs/places.txt".into());

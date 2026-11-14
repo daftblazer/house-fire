@@ -27,6 +27,7 @@ use housefire::model;
 use housefire::texture;
 use housefire::rle_texture;
 use housefire::quickdata;
+use housefire::scene;
 use housefire::shader;
 use housefire::skeleton;
 use housefire::tree_log::read_log;
@@ -1056,6 +1057,38 @@ fn main() -> ExitCode {
                 }
                 println!("  objects ({}) with an orientation at {rule}: {found}; one there turned 90 - 45 x facing {turned}; the others' (facing, an angle there) {angles:?}", objects.len());
             }
+            // by group, as the engine places them (scene::placements: a multi-tile object drawn
+            // once, at its cells' box centre, turned by its leader's facing)
+            let parts: Vec<scene::Part> = places
+                .lines()
+                .filter_map(|l| {
+                    let f: Vec<&str> = l.split(' ').collect();
+                    let (x16, y16): (i32, i32) = (f.get(2)?.parse().ok()?, f.get(3)?.parse().ok()?);
+                    let id: i16 = f[0].parse().ok()?;
+                    let leader = f.get(9).and_then(|v| v.parse::<i16>().ok()).filter(|&v| v != 0).unwrap_or(id);
+                    (x16 > 0 && y16 > 0 && f.get(6)? == &"0" && f.get(7)? == &"0").then(|| scene::Part { id, leader, x16, y16, facing: f[5].parse().unwrap_or(0) })
+                })
+                .collect();
+            let angle = |m: &housefire::tree_log::OrientRec| m.m[1].atan2(m.m[0]).to_degrees().round() as i32;
+            let (mut placed, mut turned, mut missing) = (0, 0, 0);
+            let groups = scene::placements(&parts);
+            for g in &groups {
+                let here: Vec<&&housefire::tree_log::OrientRec> = last.values().filter(|m| (m.m[12] - g.x).abs() < 0.01 && (m.m[13] - g.y).abs() < 0.01).collect();
+                if here.is_empty() {
+                    missing += 1;
+                    if std::env::var_os("ASSETS_SHOW_GROUPLESS").is_some() {
+                        println!("    no orientation at ({}, {}): leader {}", g.x, g.y, g.leader);
+                    }
+                    continue;
+                }
+                placed += 1;
+                if here.iter().any(|m| (angle(m) - g.angle as i32).rem_euclid(360) == 0) {
+                    turned += 1;
+                } else if std::env::var_os("ASSETS_SHOW_GROUPLESS").is_some() {
+                    println!("    not turned so: leader {} at ({}, {}) {}: {:?}", g.leader, g.x, g.y, g.angle, here.iter().map(|m| angle(m)).collect::<Vec<_>>());
+                }
+            }
+            println!("  by group ({} objects drawn of the {} parts): an orientation at the engine's place {placed}, one turned as the engine turns it {turned}; none there {missing}", groups.len(), parts.len());
             if std::env::var_os("ASSETS_SHOW_ORIENTS").is_some() {
                 for m in last.values() {
                     println!("    model {:08x} tick {}: at ({:.4}, {:.4}, {:.4}) angle {:.1}", m.model, m.tick, m.m[12], m.m[13], m.m[14], m.m[1].atan2(m.m[0]).to_degrees());
