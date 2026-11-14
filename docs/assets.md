@@ -764,3 +764,15 @@ ids 0-15's ranges, the lights, every cell after the build): home 2 builds (2,728
 club 40 (55,440), every cell room's four lights the engine's. The other caller (0x8016906C)
 gives each object its 4 nearest lights the same way (one ranking over its room's own range,
 pointers at the manager + 0x4014 + 16 a slot); that one is not ported yet.
+
+The light grid's room lists (`light::CellRooms`, the original's Light_AddCellRoom, 0x80168D70).
+Each grid point (0..=38 each way) lists up to four room ids. Adding a room puts it in the first
+empty slot, or does nothing when it is listed already. A full point, or one off the grid, is
+left alone. The add also clears that slot's lights and marks the grid to build. The adds all
+come at the load (tick 0) from one function, 0x800741D8, the lot's tiles walked. Each tile adds
+its room to its corners through a corner table (0x802A1220), and diagonal tiles split their
+corners between their two half rooms; that rule is still to port. Checked through the
+observer's 'f' records (each add: x, y, the room, the caller): home 5,486 adds and club 5,484.
+Replayed in order through `CellRooms::add`, they give every build's room lists: home 2 builds
+(2,592 cells) and club 40 (51,840), all the original's. `light::cell_lights`' cell rooms are
+these lists.

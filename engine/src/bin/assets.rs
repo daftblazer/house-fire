@@ -1844,6 +1844,37 @@ fn main() -> ExitCode {
             }
             println!("light grid calls {} (ticks {:?}..{:?}, ids {ids:?}): points {points}, the engine's sum bit for bit {exact}, the rest within {worst}", log.light_grids.len(), log.light_grids.first().map(|g| g.tick), log.light_grids.last().map(|g| g.tick));
         }
+        "cellrooms" => {
+            // the logged rooms added to the light grid, in order, against each build's cells
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO cellrooms LOG");
+                return ExitCode::FAILURE;
+            };
+            let callers: BTreeSet<u32> = log.cell_adds.iter().map(|a| a[4]).collect();
+            let ticks: BTreeSet<u32> = log.cell_adds.iter().map(|a| a[0]).collect();
+            println!("rooms added {} (ticks {:?}..{:?}, callers {callers:08x?})", log.cell_adds.len(), ticks.first(), ticks.last());
+            let (mut cells, mut same_all) = (0, 0);
+            for b in &log.grid_builds {
+                let mut rooms = housefire::light::CellRooms::default();
+                for a in &log.cell_adds[..b.adds_before] {
+                    rooms.add(a[1] as i32, a[2] as i32, a[3] as u8);
+                }
+                let (mut same, mut shown) = (0, 0);
+                for (ci, cell) in b.cells.iter().enumerate() {
+                    let (x, y) = (2 + ci / 36, 2 + ci % 36);
+                    let logged = cell[0].to_be_bytes();
+                    if rooms.at(x as i32, y as i32) == Some(logged) {
+                        same += 1;
+                    } else if shown < 4 {
+                        shown += 1;
+                        println!("  build at tick {}: ({x}, {y}) mine {:?} the log's {logged:?}", b.tick, rooms.at(x as i32, y as i32));
+                    }
+                }
+                cells += b.cells.len();
+                same_all += same;
+            }
+            println!("builds {}: cells {cells}, the engine's rooms (from the adds before each) {same_all}", log.grid_builds.len());
+        }
         "gridbuild" => {
             // each built light grid cell's lights against the engine's, room by room
             let Some(log) = args.get(3).and_then(|p| read_log(p)) else {

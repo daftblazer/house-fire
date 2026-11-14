@@ -106,6 +106,8 @@ pub struct GridBuildRec {
     pub ranges: [[u32; 4]; 16],
     pub lights: Vec<([f32; 3], f32)>,
     pub cells: Vec<[u32; 9]>,
+    /// How many 'f' records (rooms added to cells) came before it.
+    pub adds_before: usize,
 }
 
 /// A light ranking ('d'): the point, the lights ranked (first..end, each one's position and
@@ -474,6 +476,8 @@ pub struct Log {
     pub light_ranks: Vec<LightRankRec>,
     /// 'e': the light grid's cells built.
     pub grid_builds: Vec<GridBuildRec>,
+    /// 'f': rooms added to light grid cells (tick, x, y, room id, caller).
+    pub cell_adds: Vec<[u32; 5]>,
     /// 'n': rooms' floors relit, each after the 'i' record of its own light grid (its index there
     /// is `light_grids.len()` less one when read).
     pub room_floors: Vec<RoomFloorRec>,
@@ -636,6 +640,12 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let k = f32::from_bits(r.u32());
                 log.group_scales.push(GroupScaleRec { tick, group, base, scale, material, room, k });
             }
+            b'f' => {
+                if !r.has(20) {
+                    break;
+                }
+                log.cell_adds.push([0; 5].map(|_| r.u32()));
+            }
             b'e' => {
                 if !r.has(4 * (4 + 64 + 1)) {
                     break;
@@ -654,7 +664,7 @@ pub fn read_log(path: &str) -> Option<Log> {
                     })
                     .collect();
                 let cells = (0..36 * 36).map(|_| [0; 9].map(|_| r.u32())).collect();
-                log.grid_builds.push(GridBuildRec { tick, constants, ranges, lights, cells });
+                log.grid_builds.push(GridBuildRec { tick, constants, ranges, lights, cells, adds_before: log.cell_adds.len() });
             }
             b'd' => {
                 if !r.has(24) {

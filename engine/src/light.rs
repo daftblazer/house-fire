@@ -81,6 +81,42 @@ pub fn rank(point: [f32; 3], first: u32, lights: &[([f32; 3], f32)], list: &mut 
     }
 }
 
+/// The light grid's points a row (and rows): 0..=38 each way.
+pub const GRID_SIZE: usize = 39;
+
+/// The rooms each light grid point lists: up to four room ids, 0xFF ending them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CellRooms {
+    cells: Vec<[u8; 4]>,
+}
+
+impl Default for CellRooms {
+    fn default() -> Self {
+        CellRooms { cells: vec![[0xFF; 4]; GRID_SIZE * GRID_SIZE] }
+    }
+}
+
+impl CellRooms {
+    /// A point's rooms (`None` off the grid).
+    pub fn at(&self, x: i32, y: i32) -> Option<[u8; 4]> {
+        let ok = |v: i32| (0..GRID_SIZE as i32).contains(&v);
+        (ok(x) && ok(y)).then(|| self.cells[x as usize * GRID_SIZE + y as usize])
+    }
+
+    /// Adds a room to a point (the original's Light_AddCellRoom): into its first empty slot, or
+    /// none when it is listed already; a full point and one off the grid are left alone.
+    pub fn add(&mut self, x: i32, y: i32, room: u8) {
+        let ok = |v: i32| (0..GRID_SIZE as i32).contains(&v);
+        if !(ok(x) && ok(y)) {
+            return;
+        }
+        let cell = &mut self.cells[x as usize * GRID_SIZE + y as usize];
+        if let Some(slot) = cell.iter_mut().find(|s| **s == 0xFF || **s == room) {
+            *slot = room;
+        }
+    }
+}
+
 /// The light grid's height, an empty slot's score and a taken one's (the original's 0x802BA7B8,
 /// 0x802BA7C8 and 0x802BA7CC).
 pub const GRID_Z: f32 = 0.0;
@@ -208,6 +244,19 @@ mod tests {
         assert_eq!(entry_points(0x0005_0203), vec![(2, 5), (2, 6), (3, 5), (3, 6), (4, 5), (4, 6)]);
         // a leading half (0x40: on the row) and a trailing half (0x80: the row after)
         assert_eq!(entry_points(0x0005_4283), vec![(2, 5), (3, 5), (3, 6), (4, 6)]);
+    }
+
+    #[test]
+    fn a_cell_lists_each_room_once_and_at_most_four() {
+        let mut rooms = CellRooms::default();
+        for r in [3, 1, 3, 2, 4, 5] {
+            rooms.add(5, 6, r);
+        }
+        assert_eq!(rooms.at(5, 6), Some([3, 1, 2, 4]));
+        rooms.add(39, 0, 1);
+        rooms.add(-1, 0, 1);
+        assert_eq!(rooms.at(39, 0), None);
+        assert_eq!(rooms.at(38, 38), Some([0xFF; 4]));
     }
 
     #[test]
