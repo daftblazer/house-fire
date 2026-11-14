@@ -561,8 +561,8 @@ wood; the club: 33 black marble, 18 `final-floor-tile-07`. Values past the list 
 club 4) name none. Checked at tick 1,000 (`assets ISO floorcheck LOG FLOORS TICK`, the floors
 from lockstep's LOCKSTEP_DUMP_FLOORS): the floor textures the original loads are exactly those
 the lot's floors name (home 12, club 9) but for the road's stripes (`sim_road_stripe_north`,
-`_west`: home and club 2 and 3 tiles), never loaded, whose rows are the only ones with a last word
-of 0. The floors are drawn batched, one display list a texture (the sidewalk's 216 vertices for
+`_west`: home and club 2 and 3 tiles), never loaded: they are out of view on both lots (not their
+rows' last word of 0, which the street's rows share and are drawn). The floors are drawn batched, one display list a texture (the sidewalk's 216 vertices for
 43 tiles: 5 a tile and 1, a strip), not a matrix a tile.
 
 The floors' own draws are the command list's `TriStrip(float)` (opcode 42), which the observer
@@ -579,9 +579,13 @@ drawn as part of the rough wood run beside it. The engine's floored tiles not so
 The runs (`scene::floor_runs`): along each row, each stretch of tiles of one pattern is one strip;
 a tile of 255 (half a tile, cut by a diagonal wall) just before a stretch is drawn as its first
 tile (its strip starting with the diagonal or the half's top edge, so a run's row and first tile
-are the least of its first edge's corners); the road's patterns (FloorTile +16 = 6: `sim_road`
-and its stripes) are not runs, the lot's meshes drawing the road. A 255 tile after a stretch is not
-drawn (home: (25, 14), (20, 28)). Home, tick 1,000 (`assets floorcheck LOG FLOORS TICK RUNS`,
-lockstep's LOCKSTEP_DUMP_RUNS): the original's 42 runs are all the engine's (place, length and
-texture); the engine's 4 others are exactly its runs out of the logged view (the sidewalk's ends
-at (10, 39-41) and (39-41, 10)), which the original culls.
+are the least of its first edge's corners). A 255 tile after a stretch is not drawn (home: (25,
+14), (20, 28)). Tick 1,000 (`assets floorcheck LOG FLOORS TICK RUNS`, lockstep's
+LOCKSTEP_DUMP_RUNS): home, the original's 42 runs are all the engine's (place, length and
+texture); the club (`club-g.log`), 128 of its 132, the other 4 the engine's runs one tile shorter
+at their far end, the dropped tiles behind the camera (the original trims runs near the camera
+tile by tile; what it keeps behind the camera is not seen). Every engine run the original does not
+draw is wholly out of the logged view (home 18, club 18: the road's column at x 39-41, the
+sidewalk's ends, the stripes), so the original culls runs out of view, as the renderer's clipping
+will. (Iteration 58 left the road to the lot's meshes; the club draws its car park's road as runs,
+so it was only out of view at home.)

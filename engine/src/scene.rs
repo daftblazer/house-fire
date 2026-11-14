@@ -150,16 +150,16 @@ pub struct FloorRun {
     pub value: u8,
 }
 
-/// A lot's floor runs: along each row, each stretch of tiles of one pattern (not the road's, which
-/// the lot's meshes draw, nor a value past the list); a tile of 255 (half a tile, cut by a
-/// diagonal wall) just before a stretch is drawn as its first tile.
+/// A lot's floor runs: along each row, each stretch of tiles of one pattern (not a value past the
+/// list); a tile of 255 (half a tile, cut by a diagonal wall) just before a stretch is drawn as its
+/// first tile.
 pub fn floor_runs(walls: &crate::routing::Walls, size: i32, patterns: &[crate::quickdata::FloorPattern]) -> Vec<FloorRun> {
     let mut out = Vec::new();
     for y in 0..size {
         let mut x = 0;
         while x < size {
             let v = walls.floor(x, y);
-            if v == 0 || patterns.get(usize::from(v)).is_none_or(|p| p.road()) {
+            if v == 0 || patterns.get(usize::from(v)).is_none() {
                 x += 1;
                 continue;
             }

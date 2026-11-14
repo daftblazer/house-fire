@@ -145,18 +145,12 @@ pub fn wall_patterns(img: &Image) -> Vec<u32> {
         .collect()
 }
 
-/// A floor pattern: its shader's archive id and its kind (6: the road, drawn with the lot's
-/// meshes, not as floor runs).
+/// A floor pattern: its shader's archive id and its kind (+16: 6 for the road's, 7 the sidewalk's
+/// and street's, 3 or 4 for most inside floors; what it is used for is not known yet).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FloorPattern {
     pub shader: u32,
     pub kind: u32,
-}
-
-impl FloorPattern {
-    pub fn road(&self) -> bool {
-        self.kind == 6
-    }
 }
 
 /// The floor patterns, from `SimsTiles`: its one `FloorSet` row points at a list of `FloorTile`
