@@ -205,6 +205,42 @@ impl Camera {
     /// The turn's speed at a full stick, degrees a second.
     pub const TURN_SPEED: f32 = 65.0;
 
+    /// How far out the zoom is, 0 at the near end to 1 at the far (from the distance).
+    pub fn zoom_ratio(distance: f32) -> f32 {
+        (distance - Self::NEAR) / (Self::FAR - Self::NEAR)
+    }
+
+    /// The perspective projection for a zoom `distance` (the wanted one, as the original sets it
+    /// each frame), in GX's 6 values (m00, m02, m11, m12, m22, m23): the vertical field of view
+    /// 55 degrees at the near end to 62 at the far, times 448 / 640 (the frame's height over its
+    /// width), aspect 4:3, the near plane 2 to 10, the far 200.
+    pub fn projection(distance: f32) -> [f32; 6] {
+        let r = Self::zoom_ratio(distance);
+        let fov = (62.0 * r + 55.0 * (1.0 - r)) * 448.0 / 640.0;
+        let (near, far) = (10.0 * r + 2.0 * (1.0 - r), 200.0);
+        let cot = 1.0 / (fov.to_radians() * 0.5).tan();
+        [cot / (4.0 / 3.0), 0.0, cot, 0.0, -near / (far - near), -(far * near) / (far - near)]
+    }
+
+    /// Where a point is on the screen (0 to 1 across and down) seen by the camera with view `view`
+    /// (3 rows of 4) and `projection` (GX's 6 values); `None` behind the eye.
+    pub fn on_screen(view: &[f32; 12], projection: &[f32; 6], p: [f32; 3]) -> Option<[f32; 2]> {
+        let e = [0, 1, 2].map(|r| view[4 * r] * p[0] + view[4 * r + 1] * p[1] + view[4 * r + 2] * p[2] + view[4 * r + 3]);
+        let w = -e[2];
+        if w <= 0.0 {
+            return None;
+        }
+        let x = (projection[0] * e[0] + projection[1] * e[2]) / w;
+        let y = (projection[2] * e[1] + projection[3] * e[2]) / w;
+        Some([(x + 1.0) * 0.5, (1.0 - y) * 0.5])
+    }
+
+    /// Whether a point is off the screen's middle (the original's fn_80007470 with its box 0.15 to
+    /// 0.85 across, 0.3 to 0.75 down), where the cursor's moves carry the camera.
+    pub fn off_middle(view: &[f32; 12], projection: &[f32; 6], p: [f32; 3]) -> bool {
+        Self::on_screen(view, projection, p).is_none_or(|s| s[0] < 0.15 || s[0] > 0.85 || s[1] < 0.3 || s[1] > 0.75)
+    }
+
     /// The cursor's speed (tiles a second) at a zoom `distance`: 5 at the near end to 15 at the
     /// far (the original's +0x390, set each frame from the wanted distance).
     pub fn cursor_speed(distance: f32) -> f32 {
@@ -406,6 +442,23 @@ mod tests {
         let got = c.pull_cursor([0.0, 0.0], 0.033);
         assert!((got[0] - 0.165).abs() < 1e-6 && got[1] == 0.0, "{got:?}");
         assert!((Camera::cursor_speed(35.0) - 15.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_projection_is_the_originals() {
+        // the club's (distance 8) and home's (17.667) lot projections, logged
+        let club = [2.147_67, 0.0, 2.863_560_2, 0.0, -0.010_101_01, -2.020_202];
+        let home = [2.046_464_7, 0.0, 2.728_619_8, 0.0, -0.024_927_242, -4.985_448_4];
+        for (d, want) in [(8.0, club), (17.666_666, home)] {
+            for (a, b) in Camera::projection(d).iter().zip(want) {
+                assert!((a - b).abs() < 1e-4, "{d}: {:?}", Camera::projection(d));
+            }
+        }
+        // the camera's own target is the screen's middle
+        let c = Camera { target: [19.5, 19.9, 0.25], distance: 8.0, rotation: 151.97, tilt: 25.0 };
+        let s = Camera::on_screen(&c.view(), &Camera::projection(8.0), c.target).unwrap();
+        assert!((s[0] - 0.5).abs() < 1e-4 && (s[1] - 0.5).abs() < 1e-4, "{s:?}");
+        assert!(!Camera::off_middle(&c.view(), &Camera::projection(8.0), c.target));
     }
 
     #[test]

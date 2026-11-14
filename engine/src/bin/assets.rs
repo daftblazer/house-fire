@@ -1626,9 +1626,67 @@ fn main() -> ExitCode {
                     println!("  target tick {}: wanted {:?} -> {:?} cursor {:?} eye {:?}", w[1].tick, w[0].wanted, t, p, w[0].eye);
                 }
             }
+            // the projection: the engine's for each tick's wanted distance against the lot's
+            // projection the log loaded (the first 'j' of a tick, id 0)
+            let (mut projs, mut proj_worst) = (0, 0.0f32);
+            for m in log.matrices.iter().filter(|m| m.projection && m.id == 0 && m.values.len() >= 6) {
+                if m.values[0] > 5.0 {
+                    continue; // (the 2D overlay's)
+                }
+                let Some(c) = log.cams.iter().rev().find(|c| c.tick <= m.tick) else { continue };
+                let mine = housefire::scene::Camera::projection(c.wanted[3]);
+                let d = mine.iter().zip(&m.values).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+                projs += 1;
+                proj_worst = proj_worst.max(d);
+            }
+            println!("projections {projs}: the engine's for the wanted distance against the log's, largest difference {proj_worst:.6}");
+            // the screen's middle: the cursor's moves carried to the target exactly when the
+            // cursor was off it (the view and projection of the record before)
+            let (mut cursor_moves, mut box_ok) = (0, 0);
+            for w in log.cams.windows(2) {
+                let (q, p) = (w[0].cursor_at, w[1].cursor_at);
+                if w[1].cursor == 0 || w[0].camera != w[1].camera || (q[0] == p[0] && q[1] == p[1]) {
+                    continue;
+                }
+                let (a, b) = (w[0].wanted, w[1].wanted);
+                let d = [b[0] - a[0], b[1] - a[1]];
+                let carried_now = (d[0] - (p[0] - q[0])).abs() <= 1e-4 && (d[1] - (p[1] - q[1])).abs() <= 1e-4 && (d[0] != 0.0 || d[1] != 0.0);
+                let still = d[0] == 0.0 && d[1] == 0.0;
+                let two = |c: &housefire::tree_log::CamRec| ((c.wanted[0] - c.cursor_at[0]).powi(2) + (c.wanted[1] - c.cursor_at[1]).powi(2)).sqrt();
+                if (!carried_now && !still) || ((two(&w[0]) - 2.0).abs() <= 1e-3 && (two(&w[1]) - 2.0).abs() <= 1e-3) {
+                    continue; // (or centred: the target kept 2 from the cursor)
+                }
+                cursor_moves += 1;
+                let l = w[0].live;
+                let view = housefire::scene::Camera { target: [l[0], l[1], l[2]], distance: l[3], rotation: l[4], tilt: l[5] }.view();
+                let at = if std::env::var_os("ASSETS_BEFORE").is_some() { q } else { p };
+                let off = housefire::scene::Camera::off_middle(&view, &housefire::scene::Camera::projection(a[3]), [at[0], at[1], 0.25]);
+                let ok = off == carried_now;
+                box_ok += usize::from(ok);
+                if !ok && std::env::var_os("ASSETS_EACH").is_some() {
+                    let s = housefire::scene::Camera::on_screen(&view, &housefire::scene::Camera::projection(a[3]), [at[0], at[1], 0.25]);
+                    println!("  box tick {}: carried {carried_now} screen {s:?}", w[1].tick);
+                }
+            }
+            println!("cursor moves {cursor_moves}: carried exactly when off the screen's middle {box_ok}");
             println!("wanted target: moves {moves}, the engine's centring on the cursor gives it {centred}, the cursor's move carried over {with_cursor}, and the cursor pulled back {with_pull}; records {records}, the target 2 from the cursor {two_off}");
             println!("wanted: zooms {zooms}, the engine's zoom gives the logged distance and tilt {zoom_ok}; turns {turns}, by a stick within -1..1 {turn_ok}");
             println!("easing: {eased} records, the engine's live parameters against the log's: largest difference {worst:.6} (record {at}); {after_still} after a still stretch matched by its last steps; {placed} placed at once");
+        }
+        "projections" => {
+            // each distinct projection a log loaded ('j'), with its first tick
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO projections LOG");
+                return ExitCode::FAILURE;
+            };
+            let mut seen: Vec<Vec<u32>> = Vec::new();
+            for m in log.matrices.iter().filter(|m| m.projection) {
+                let key: Vec<u32> = m.values.iter().map(|v| v.to_bits()).collect();
+                if !seen.contains(&key) {
+                    println!("tick {} id {:x}: {:?}", m.tick, m.id, m.values);
+                    seen.push(key);
+                }
+            }
         }
         "camtrack" => {
             // the lot's camera at each tick of a log: its view (the last 0xF0 before the tick's

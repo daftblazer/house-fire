@@ -659,3 +659,12 @@ second at 8 to 15 at 35; `pull_cursor`). `assets camlog`, home's 164 target move
 centring, 144 the cursor's move carried over, 18 that and the pull; 1 at the lot's edge (the
 cursor held at x 1) not explained yet. The box test itself (the cursor projected through the
 window's view) is not checked yet.
+
+The projection (`scene::Camera::projection`, from the decomp's GetFov / GetNearPlane /
+GetFarPlane and the window's 640 x 448 frame): the vertical field of view 55 degrees at the near
+zoom to 62 at the far, times 448 / 640; aspect 4:3; near plane 2 to 10, far 200; from the wanted
+distance. Against every lot projection the logs loaded (home 546, club 592): exact. The screen's
+middle (`on_screen`, `off_middle`: fn_80007470's box, 0.15-0.85 across, 0.3-0.75 down): home's 331
+player cursor moves carry the camera exactly when the moved cursor is off it, through the live
+view and the projection (the club's cursor only follows the centring). The 2D overlay's
+projections (8.144, an orthographic one) are not the lot's.
