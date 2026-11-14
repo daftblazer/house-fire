@@ -117,6 +117,33 @@ impl CellRooms {
     }
 }
 
+/// The rooms added to the light grid at a lot's load, in the original's order: tiles x, y from 1
+/// to the size less 1 (x inner), each adding its room to its corners (x, y), (x, y + 1),
+/// (x + 1, y + 1), (x + 1, y). A diagonal's tile (`diagonal` its bits) splits them: its west
+/// half (the room across its x - 1 edge) takes (x, y), (x, y + 1) and the far corner of its side
+/// (0x10: (x + 1, y); 0x20: (x + 1, y + 1)), its east half (across x + 1) the near corner of the
+/// other line end ((x, y + 1) for 0x10, (x, y) for 0x20), then (x + 1, y + 1) and (x + 1, y).
+/// `room` gives a whole tile's room id (the original's numbering: the engine's rooms less one).
+/// `size` is the lot's, as the original takes it from the lot (a virtual call not yet read): 39
+/// on both logged lots (the wall arrays are 64 square), the light grid's points.
+pub fn cell_room_adds(size: (u32, u32), room: impl Fn(i32, i32) -> u8, diagonal: impl Fn(i32, i32) -> u8) -> Vec<(i32, i32, u8)> {
+    let mut adds = Vec::new();
+    for y in 1..size.1 as i32 - 1 {
+        for x in 1..size.0 as i32 - 1 {
+            let bits = diagonal(x, y);
+            if bits == 0 {
+                let r = room(x, y);
+                adds.extend([(x, y, r), (x, y + 1, r), (x + 1, y + 1, r), (x + 1, y, r)]);
+                continue;
+            }
+            let (west, east) = (room(x - 1, y), room(x + 1, y));
+            let (far, near) = if bits & 0x10 != 0 { ((x + 1, y), (x, y + 1)) } else { ((x + 1, y + 1), (x, y)) };
+            adds.extend([(x, y, west), (x, y + 1, west), (far.0, far.1, west), (near.0, near.1, east), (x + 1, y + 1, east), (x + 1, y, east)]);
+        }
+    }
+    adds
+}
+
 /// The light grid's height, an empty slot's score and a taken one's (the original's 0x802BA7B8,
 /// 0x802BA7C8 and 0x802BA7CC).
 pub const GRID_Z: f32 = 0.0;
@@ -244,6 +271,17 @@ mod tests {
         assert_eq!(entry_points(0x0005_0203), vec![(2, 5), (2, 6), (3, 5), (3, 6), (4, 5), (4, 6)]);
         // a leading half (0x40: on the row) and a trailing half (0x80: the row after)
         assert_eq!(entry_points(0x0005_4283), vec![(2, 5), (3, 5), (3, 6), (4, 6)]);
+    }
+
+    #[test]
+    fn a_diagonal_tile_splits_its_corners_between_its_halves() {
+        // a 4 x 4 lot: tiles 1..=2 each way; (2, 1) a "/" diagonal between room 5 (west) and 7
+        let room = |x: i32, _: i32| if x < 2 { 5 } else if x > 2 { 7 } else { 9 };
+        let diag = |x: i32, y: i32| if (x, y) == (2, 1) { 0x10 } else { 0 };
+        let adds = cell_room_adds((4, 4), room, diag);
+        assert_eq!(&adds[..4], &[(1, 1, 5), (1, 2, 5), (2, 2, 5), (2, 1, 5)]);
+        assert_eq!(&adds[4..10], &[(2, 1, 5), (2, 2, 5), (3, 1, 5), (2, 2, 7), (3, 2, 7), (3, 1, 7)]);
+        assert_eq!(adds.len(), 4 * 3 + 6);
     }
 
     #[test]

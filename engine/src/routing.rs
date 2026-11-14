@@ -654,6 +654,11 @@ impl Walls {
             || self.open.contains(&key(x + dx, y + dy, entering(dx, dy)))
     }
 
+    /// The grid's tiles across and down.
+    pub fn size(&self) -> (u32, u32) {
+        (self.width, self.height)
+    }
+
     /// A tile's diagonal wall bits (0x10, 0x20; 0 for none).
     pub fn diagonal_bits(&self, x: i32, y: i32) -> u8 {
         self.at(x, y) & 0x30

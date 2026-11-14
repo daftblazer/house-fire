@@ -1429,6 +1429,26 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &(Vec<u3
                     }
                     let _ = std::fs::write(&at, out);
                 }
+                // (and the rooms the light grid is given at the load, LOCKSTEP_CELL_ROOMS=LOG: the
+                // engine's adds against the log's 'f' records, add for add)
+                if let Some(log) = std::env::var("LOCKSTEP_CELL_ROOMS").ok().and_then(|p| read_log(&p)) {
+                    let mine = housefire::light::cell_room_adds((walls.size().0.min(39), walls.size().1.min(39)), |x, y| walls.room(x, y).wrapping_sub(1) as u8, |x, y| walls.diagonal_bits(x, y));
+                    let theirs: Vec<(i32, i32, u8)> = log.cell_adds.iter().map(|a| (a[1] as i32, a[2] as i32, a[3] as u8)).collect();
+                    let same = mine.iter().zip(&theirs).filter(|(a, b)| a == b).count();
+                    let first = mine.iter().zip(&theirs).position(|(a, b)| a != b);
+                    println!("light grid rooms: the engine's adds {}, the log's {}, the same in order {same} (first differing {first:?})", mine.len(), theirs.len());
+                }
+                // (and each tile's room, LOCKSTEP_DUMP_ROOMS: x y room diagonal bits, the whole
+                // grid; the engine's rooms, 0 on a diagonal's tile and off the grid)
+                if let Ok(at) = std::env::var("LOCKSTEP_DUMP_ROOMS") {
+                    let mut out = String::new();
+                    for y in 0..64 {
+                        for x in 0..64 {
+                            out += &format!("{x} {y} {} {:x}\n", walls.room(x, y), walls.diagonal_bits(x, y));
+                        }
+                    }
+                    let _ = std::fs::write(&at, out);
+                }
                 // (and the floor runs the engine draws, LOCKSTEP_DUMP_RUNS: x y n shader lead trail
                 // value: the whole tiles, the half tiles' diagonal bits)
                 if let Ok(at) = std::env::var("LOCKSTEP_DUMP_RUNS") {

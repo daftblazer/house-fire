@@ -776,3 +776,20 @@ observer's 'f' records (each add: x, y, the room, the caller): home 5,486 adds a
 Replayed in order through `CellRooms::add`, they give every build's room lists: home 2 builds
 (2,592 cells) and club 40 (51,840), all the original's. `light::cell_lights`' cell rooms are
 these lists.
+
+The light grid's rooms at the load (`light::cell_room_adds`; the original's tile walk,
+0x800741D8). Tiles x and y run from 1 to the lot's size less 2 (x inner). The size is 39 on
+both logged lots, taken from the lot by a virtual call not yet read; the engine's wall arrays
+are 64 square. Each tile adds its room to its corners (x, y), (x, y+1), (x+1, y+1), (x+1, y).
+A diagonal's tile adds six:
+- its west half (the room across x - 1) to (x, y), (x, y+1) and its side's far corner (0x10:
+  (x+1, y); 0x20: (x+1, y+1));
+- its east half (across x + 1) to the other line end's corner ((x, y+1) for 0x10, (x, y) for
+  0x20), then (x+1, y+1) and (x+1, y).
+The original's room ids are the engine's rooms less one: outside 0, and the same order. That
+holds on every whole tile of both lots. Checked add for add in order (`LOCKSTEP_CELL_ROOMS=LOG`
+with `LOCKSTEP_DUMP_PLACES`/`LOCKSTEP_DUMP_WALLS`, against the log's 'f' records): home
+5,486 and club 5,484 (the club with its house's walls), 9 diagonal tiles among them, all the
+same. The halves' rooms come from the original's half-tile lookup (0x80234774). The neighbours
+across x give the same on these 9 tiles, but a diagonal next to another diagonal, or a wall on
+that edge, is not seen in the logs. `LOCKSTEP_DUMP_ROOMS` writes the engine's rooms per tile.

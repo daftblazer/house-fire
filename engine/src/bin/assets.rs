@@ -1853,6 +1853,10 @@ fn main() -> ExitCode {
             let callers: BTreeSet<u32> = log.cell_adds.iter().map(|a| a[4]).collect();
             let ticks: BTreeSet<u32> = log.cell_adds.iter().map(|a| a[0]).collect();
             println!("rooms added {} (ticks {:?}..{:?}, callers {callers:08x?})", log.cell_adds.len(), ticks.first(), ticks.last());
+            if let Ok(path) = std::env::var("ASSETS_ADDS") {
+                let text: String = log.cell_adds.iter().map(|a| format!("{} {} {} {:x}\n", a[1], a[2], a[3], a[4])).collect();
+                let _ = std::fs::write(path, text);
+            }
             let (mut cells, mut same_all) = (0, 0);
             for b in &log.grid_builds {
                 let mut rooms = housefire::light::CellRooms::default();
