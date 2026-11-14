@@ -815,3 +815,24 @@ changed flag, and the lights with their objects) against the ranges of the grid 
 home and club 38 records each, every room's ranges and both ranges' objects in order the
 engine's. The records include calls that did not rebuild (home has 2 builds), and a window's
 other room is not logged: it is taken as another room than its own, true of every window here.
+
+The window lights (`light::window_light_places`). Objects the original counts as windows (the
+engine's `Object::window`: a door-class object whose definition's field 3 is set; windowed
+doors are not) get two window lights from their creator (0x8007F8CC: one each side, 0xE0
+bytes, at the object's +996 and +1000, set up by 0x801660BC). Only a window's leading object
+has them. Each light's update (0x801666D4, the class's vtable +0x54) does the following:
+- **Place:** the window's transform applied to (0, +-0.8, 0) (the 0.8 at r13 - 29604, r13 =
+  0x803833E0). The transform sits on the wall: the leading tile's centre moved half a tile the
+  way it faces (0: +x, 2: -y, 4: -x, 6: +y).
+- **Height:** set by the window's kind (the object's +12): 2.0 for kind 1, 2.5 for kind 2.
+- **Reach and colour:** from per-kind tables indexed by whether the light's room is inside.
+  Reach tables: kind 1 (7, 14), kind 2 (6, 8), kind 3 (12, 24); the logged reaches are a
+  quarter of these. Colour tables: kind 1 (0.24, 0.6), kind 2 (0.22, 0.4), kind 3 (0.28, 0.7).
+- **The colour then filled** (0x801697F0): the outside's sun colour when its other side is
+  outside, plus up to three of the window's nearest lights by reach^2/distance^2, normalised
+  by the largest channel against a cap.
+On home the storm windows are kind 1 and the small rectangle ones kind 2. Checked: home's 28
+window lights' x and y, every one bit for bit at the engine's places (lockstep
+`LOCKSTEP_WINDOW_LIGHTS=LOG`, against the log's last 't' record); the club has none, and the
+engine gives none. The kind (to read from the object's definition), the reach's quarter and the
+colours are not ported yet.

@@ -117,6 +117,27 @@ impl CellRooms {
     }
 }
 
+/// How far a window's two lights sit from its wall (the original's local offset, 0.8 across).
+pub const WINDOW_LIGHT_OFFSET: f32 = 0.8;
+
+/// A window's two lights' places on the floor plan (the original's window light update: the
+/// window's transform applied to (0, +-0.8, 0)). The transform sits on the window's wall: its
+/// leading tile's centre moved half a tile the way it faces (facing 0: +x, 2: -y, 4: -x, 6:
+/// +y; 2 not seen in the logs). The lights are 0.8 either side of that, along the facing: the
+/// first in front, the second behind.
+pub fn window_light_places(tile: (i32, i32), facing: u8) -> Option<[(f32, f32); 2]> {
+    let (dx, dy) = match facing {
+        0 => (1.0f32, 0.0f32),
+        2 => (0.0, -1.0),
+        4 => (-1.0, 0.0),
+        6 => (0.0, 1.0),
+        _ => return None,
+    };
+    let c = (tile.0 as f32 + 0.5 + 0.5 * dx, tile.1 as f32 + 0.5 + 0.5 * dy);
+    let at = |s: f32| (c.0 + s * WINDOW_LIGHT_OFFSET * dx, c.1 + s * WINDOW_LIGHT_OFFSET * dy);
+    Some([at(1.0), at(-1.0)])
+}
+
 /// A light object's kind (the original's light classes, by what they give a room).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LightKind {
@@ -310,6 +331,15 @@ mod tests {
         assert_eq!(entry_points(0x0005_0203), vec![(2, 5), (2, 6), (3, 5), (3, 6), (4, 5), (4, 6)]);
         // a leading half (0x40: on the row) and a trailing half (0x80: the row after)
         assert_eq!(entry_points(0x0005_4283), vec![(2, 5), (3, 5), (3, 6), (4, 6)]);
+    }
+
+    #[test]
+    fn a_windows_lights_sit_either_side_of_its_wall() {
+        // facing 4 (-x) from tile (26, 16): the wall at x = 26
+        assert_eq!(window_light_places((26, 16), 4), Some([(26.0 - 0.8, 16.5), (26.0 + 0.8, 16.5)]));
+        // facing 6 (+y) from tile (23, 23): the wall at y = 24
+        assert_eq!(window_light_places((23, 23), 6), Some([(23.5, 24.0 + 0.8), (23.5, 24.0 - 0.8)]));
+        assert_eq!(window_light_places((1, 1), 1), None);
     }
 
     #[test]

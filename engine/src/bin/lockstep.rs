@@ -1429,6 +1429,23 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &(Vec<u3
                     }
                     let _ = std::fs::write(&at, out);
                 }
+                // (and the windows' lights, LOCKSTEP_WINDOW_LIGHTS=LOG: the engine's places for each
+                // window's leading object against the other lights of the log's last 't' record,
+                // x and y bit for bit, as sets)
+                if let Some(log) = std::env::var("LOCKSTEP_WINDOW_LIGHTS").ok().and_then(|p| read_log(&p)) {
+                    let mut mine: Vec<(u32, u32)> = lw
+                        .objects()
+                        .filter(|o| o.window && o.on_lot() && o.leader == o.id())
+                        .filter_map(|o| housefire::light::window_light_places((o.x16 >> 4, o.y16 >> 4), o.facing() as u8))
+                        .flatten()
+                        .map(|(x, y)| (x.to_bits(), y.to_bits()))
+                        .collect();
+                    let mut theirs: Vec<(u32, u32)> = log.light_rebuilds.iter().rev().find(|b| b.rooms > 0).map_or(Vec::new(), |b| b.lights[..b.other as usize].iter().map(|l| (l[0], l[1])).collect());
+                    mine.sort_unstable();
+                    theirs.sort_unstable();
+                    let same = mine.iter().filter(|p| theirs.contains(p)).count();
+                    println!("window lights: the engine's {}, the log's {}, places the same {same}{}", mine.len(), theirs.len(), if mine == theirs { " (all)" } else { "" });
+                }
                 // (and the rooms the light grid is given at the load, LOCKSTEP_CELL_ROOMS=LOG: the
                 // engine's adds against the log's 'f' records, add for add)
                 if let Some(log) = std::env::var("LOCKSTEP_CELL_ROOMS").ok().and_then(|p| read_log(&p)) {
