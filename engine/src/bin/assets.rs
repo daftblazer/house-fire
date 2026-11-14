@@ -1222,6 +1222,25 @@ fn main() -> ExitCode {
             });
             let mut by_facing: BTreeMap<(bool, bool), usize> = BTreeMap::new();
             let mut by_cap: BTreeMap<(bool, bool), usize> = BTreeMap::new();
+            // (ASSETS_SHOW_WALL_RECORDS: the records whose display list starts as each wall part's
+            // face or cap draw does, all of them: one list may be kept by several records)
+            let list_owners: BTreeMap<[u8; 32], BTreeSet<String>> = if std::env::var_os("ASSETS_SHOW_WALL_RECORDS").is_some() {
+                let mut m: BTreeMap<[u8; 32], BTreeSet<String>> = BTreeMap::new();
+                for (entry, r) in all_records(&d) {
+                    for n in &r.nodes {
+                        for (_, sm) in &n.subs {
+                            if let Some(k) = sm.list.as_ref().and_then(|l| l.2.get(..32)) {
+                                m.entry(k.try_into().unwrap()).or_default().insert(format!("{entry}/{} ({} vertices)", r.name, sm.count));
+                            }
+                        }
+                    }
+                }
+                m
+            } else {
+                BTreeMap::new()
+            };
+            let mut record_tally: BTreeMap<(String, String), usize> = BTreeMap::new();
+            let mut by_opening: BTreeMap<(String, String), usize> = BTreeMap::new();
             let (mut parts, mut same, mut undrawn, mut down) = (0, 0, 0, 0);
             let mut wrong: BTreeMap<String, usize> = BTreeMap::new();
             for l in walls.lines() {
@@ -1258,6 +1277,23 @@ fn main() -> ExitCode {
                             println!("      pass {x} {y} {angle} tex {} proj {pv:?} view {vv:?} material {ml:?} strip {st:?} col2 {:.4}/{:.4}/{:.4} z {:.2}", names[0].0, m.values[2], m.values[6], m.values[10], m.values[11]);
                         }
                         drawn.extend(names.iter().map(|n| n.0.rsplit('/').next().unwrap_or(&n.0).to_string()));
+                        if !list_owners.is_empty()
+                            && let Some(st) = log.strips.get(m.strips_before)
+                            && st.words[0] >> 24 == 0x42
+                            && (st.words[1] == 5 || st.words[1] == 6 || st.words[1] == 18 || st.words[1] == 23)
+                        {
+                            let kind = format!("{} vertices, {}", st.words[1], names[0].0.rsplit('/').next().unwrap_or(""));
+                            let owners = list_owners.get(&st.at[6]).map_or("?".to_string(), |o| o.iter().cloned().collect::<Vec<_>>().join(" | "));
+                            *record_tally.entry((kind, owners.clone())).or_default() += 1;
+                            if std::env::var_os("ASSETS_SHOW_WALL_FAMILY").is_some() && (st.words[1] == 23 || st.words[1] == 18) {
+                                let fam = if st.words[1] == 18 { "plain" } else if owners.contains("_door") { "door" } else if owners.contains("window") { "window" } else { "?" };
+                                println!("    family {x} {y} {angle} {fam}");
+                            }
+                            if st.words[1] == 23 || st.words[1] == 18 {
+                                let fam = if st.words[1] == 18 { "plain" } else if owners.contains("_door") { "door" } else if owners.contains("window") { "window" } else { "?" };
+                                *by_opening.entry((f.get(6).copied().unwrap_or("-").to_string(), fam.to_string())).or_default() += 1;
+                            }
+                        }
                         if let Some(st) = log.strips.get(m.strips_before)
                             && st.words[0] >> 24 == 0x42
                             && names.iter().any(|n| n.0.ends_with("walls_down"))
@@ -1274,7 +1310,7 @@ fn main() -> ExitCode {
                     println!("    part {x} {y} {angle} {state} caps {caps:?}");
                 }
                 if let Some(eye) = eye {
-                    let piece = housefire::scene::WallPiece { x, y, angle, fence: false, pattern: 0, cap: false };
+                    let piece = housefire::scene::WallPiece { x, y, angle, fence: false, pattern: 0, cap: false, opening: Default::default() };
                     *by_facing.entry((piece.faces(eye), want.is_some_and(|w| drawn.iter().any(|n| n.eq_ignore_ascii_case(w))))).or_default() += 1;
                 }
                 if want.is_some_and(|w| drawn.iter().any(|n| n.eq_ignore_ascii_case(w))) {
@@ -1334,6 +1370,12 @@ fn main() -> ExitCode {
                 by_facing.get(&(false, true)).unwrap_or(&0),
                 by_facing.get(&(false, false)).unwrap_or(&0)
             );
+            if !by_opening.is_empty() {
+                println!("wall faces by (WallPiece::opening, the original's model family): {by_opening:?}");
+            }
+            for ((k, o), c) in record_tally.iter().filter(|_| std::env::var_os("ASSETS_SHOW_RECORD_TALLY").is_some()) {
+                println!("  draw {k}: {c}: {o}");
+            }
             println!(
                 "wall parts' caps (WallPiece::cap / the original's): both {}, the engine's only {}, the original's only {}, neither {}",
                 by_cap.get(&(true, true)).unwrap_or(&0),

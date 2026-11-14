@@ -523,3 +523,14 @@ whichever way the part faces and in view or not: `WallPiece::cap`. At tick 1,000
 caps and the original's agree on every part (home 48 capped, 86 not; club 62 and 102). So an
 outside wall has a cap on its outside only, an inside wall none. What the cap looks like (its
 model and size) comes with the wall models.
+
+The wall models are records of the lot's datasets (`House1Preload`, `housepreNN`) and of
+`models.arc`: `wall_straight`, `wall_straight_door`, `wall_straight_standard_window` and
+`_privacy_window`, each also `_left_extends`, `_right_extends` and `_cap` forms; a record's face
+is a display list of 18 vertices (23 with a door or window's hole) and its cap one of 6 (5). Many
+records share their lists' first bytes, so a draw names its family, not its record. The family
+follows the edge (`Walls::opening`, `WallPiece::opening`): a door's two parts on its two tiles
+make a door edge (as routing's openings), a window's (an OBJD type 8 with field 3 set,
+`Object::window`) a window edge. At tick 1,000 every face drawn is of the engine's family: home
+47 plain, 12 window, 5 door; the club 36 plain, 3 door. Which of the `_extends` and `_cap` forms
+a part takes (the wall's ends and corners) is next.

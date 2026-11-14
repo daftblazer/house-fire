@@ -1389,7 +1389,7 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &(Vec<u3
                 println!("places at tick {} written to {at}", s.tick);
             }
             // and the walls' pieces as the engine draws them (LOCKSTEP_DUMP_WALLS: x y angle
-            // fence pattern cap), a lot whose save keeps no walls (the club) with its house's, the disc's
+            // fence pattern cap opening), a lot whose save keeps no walls (the club) with its house's, the disc's
             // copy's (as replay builds them; lockstep's own world untouched)
             if let Ok(at) = std::env::var("LOCKSTEP_DUMP_WALLS") {
                 let house = (lw.walls.wall_edges() == 0)
@@ -1401,7 +1401,12 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &(Vec<u3
                 // (a wall part's pattern as its shader's name hash, a fence's style)
                 for p in housefire::scene::wall_pieces(walls, 64, &tiles.0) {
                     let shader = if p.fence { u32::from(p.pattern) } else { tiles.1.get(usize::from(p.pattern)).copied().unwrap_or(0) };
-                    out += &format!("{} {} {} {} {shader:08x} {}\n", p.x, p.y, p.angle, u8::from(p.fence), u8::from(p.cap));
+                    let opening = match p.opening {
+                        housefire::routing::Opening::None => "plain",
+                        housefire::routing::Opening::Door => "door",
+                        housefire::routing::Opening::Window => "window",
+                    };
+                    out += &format!("{} {} {} {} {shader:08x} {} {opening}\n", p.x, p.y, p.angle, u8::from(p.fence), u8::from(p.cap));
                 }
                 let _ = std::fs::write(&at, out);
             }

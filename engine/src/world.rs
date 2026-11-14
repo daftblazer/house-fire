@@ -89,6 +89,8 @@ pub struct Object {
     pub leader: i16,
     /// A door's part (OBJD type 8, field 3 zero: a window has it set).
     pub door: bool,
+    /// A window's part (OBJD type 8, field 3 set).
+    pub window: bool,
     /// Scope 18.
     pub person_data: Vec<i16>,
     /// Scope 14, kept between -100 and 100.
@@ -467,6 +469,7 @@ impl<'lib> World<'lib> {
             // A door's part (type 8, field 3 zero); windows are type 8 too, with field 3 set
             // (measured: all 30 doors and 30 windows on the disc).
             o.door = lo.saved_class == SavedClass::Door && self.definition(&o).is_some_and(|d| d.field(3) == 0);
+            o.window = lo.saved_class == SavedClass::Door && self.definition(&o).is_some_and(|d| d.field(3) != 0);
             if lo.saved_class == SavedClass::Sim {
                 o.person = true; // an NPC with a definition keeps its own file
                 o.person_data = lo.person_data;

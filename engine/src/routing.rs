@@ -455,6 +455,15 @@ pub fn along_line(points: &[(f32, f32)], mut i: usize, mut t: f32, mut s: f32) -
 /// A tile, (x, y).
 pub type Tile = (i32, i32);
 
+/// What a wall's edge holds (a wall part's model: `wall_straight`, `_door`, `_..._window`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Opening {
+    #[default]
+    None,
+    Door,
+    Window,
+}
+
 /// A door: an opening, the tile it is left from (x + dx, y + dy beyond) and the two rooms.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Door {
@@ -491,6 +500,8 @@ pub struct Walls {
     /// Each tile's wall patterns, one a side: -y, -x, +x, +y (the second array's bytes 4 to 7),
     /// an index into `SimsTiles`' `WallSet` (`docs/assets.md`, "Wall patterns").
     patterns: Vec<[u8; 4]>,
+    /// The windows' edges (`key` from the lower tile), as doors' are in `open`.
+    windows: Vec<u32>,
 }
 
 impl Walls {
@@ -527,8 +538,35 @@ impl Walls {
                 }
             }
         }
+        // The windows: an edge between two parts of one, as a door's (the wall stays shut).
+        let windows: Vec<_> = world.objects().filter(|o| o.window && o.on_lot()).collect();
+        for p in &windows {
+            for q in &windows {
+                if std::ptr::eq(*p, *q) || q.leader != p.leader {
+                    continue;
+                }
+                let (x, y) = (p.x16 >> 4, p.y16 >> 4);
+                let (dx, dy) = ((q.x16 >> 4) - x, (q.y16 >> 4) - y);
+                if dx.abs() + dy.abs() == 1 && dx >= 0 && dy >= 0 && !w.windows.contains(&key(x, y, leaving(dx, dy))) {
+                    w.windows.push(key(x, y, leaving(dx, dy)));
+                }
+            }
+        }
         w.find_rooms();
         w
+    }
+
+    /// What the edge from tile (x, y) to (x + dx, y + dy) holds: a door, a window or neither.
+    pub fn opening(&self, x: i32, y: i32, dx: i32, dy: i32) -> Opening {
+        let (lx, ly, ldx, ldy) = if dx < 0 || dy < 0 { (x + dx, y + dy, -dx, -dy) } else { (x, y, dx, dy) };
+        let k = key(lx, ly, leaving(ldx, ldy));
+        if self.doors.iter().any(|d| d.x == lx && d.y == ly && d.dx == ldx && d.dy == ldy) {
+            Opening::Door
+        } else if self.windows.contains(&k) {
+            Opening::Window
+        } else {
+            Opening::None
+        }
     }
 
     /// Whether tile (x, y) is indoors (the lot's third array's 1; false off the lot).
