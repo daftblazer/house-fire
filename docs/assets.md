@@ -793,3 +793,25 @@ with `LOCKSTEP_DUMP_PLACES`/`LOCKSTEP_DUMP_WALLS`, against the log's 'f' records
 same. The halves' rooms come from the original's half-tile lookup (0x80234774). The neighbours
 across x give the same on these 9 tiles, but a diagonal next to another diagonal, or a wall on
 that edge, is not seen in the logs. `LOCKSTEP_DUMP_ROOMS` writes the engine's rooms per tile.
+
+The lights' sorting (`light::sort_lights`, `LightKind`; the original's Light_Rebuild,
+0x80168E08). When the grid is marked, the light objects are walked room by room, in list
+order:
+- a lamp in the room takes the next own light (from 256, at most 511);
+- a window in it whose other side is another room takes the next other light (from 0, at most
+  255);
+- a room's ambient object goes to its record's +0x1C, the sun to +0x3C.
+The lights' data are then filled from the objects (0x801692F8 for the own lights, clamping the
+colour between the constants at 0x802BA7B0 and 0x802BA7B4; 0x80169780 for the others), the
+record's ambient and sun from theirs (0x801696F0), each object's 4 nearest (0x8016906C), and
+the grid built.
+The four classes, by vtable: 802b9318 a room's ambient (one a room), 802b94b0 the sun (one),
+802b9d70 a lamp (home 11, club 15) and 802b9f60 a window (home 28, club none). Windows come in
+pairs at a window: an inner one (reach 3.5, colour (0.6, 0.6, 0.545)) and a dimmer outer one
+(reach 1.75 or 1.5). The lamps' positions in the light array read near 0 (object-relative) at
+the load.
+Checked through the observer's 't' records (each call: the objects, their vtable, room and
+changed flag, and the lights with their objects) against the ranges of the grid build before:
+home and club 38 records each, every room's ranges and both ranges' objects in order the
+engine's. The records include calls that did not rebuild (home has 2 builds), and a window's
+other room is not logged: it is taken as another room than its own, true of every window here.

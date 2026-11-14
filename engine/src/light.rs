@@ -117,6 +117,45 @@ impl CellRooms {
     }
 }
 
+/// A light object's kind (the original's light classes, by what they give a room).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LightKind {
+    /// A room's ambient (its record's +0x1C).
+    Ambient,
+    /// The sun (a record's +0x3C).
+    Sun,
+    /// A lamp: a light of its own room's (the own range, from 256).
+    Lamp,
+    /// A window's light, shining into the room it is in from another (the other range, from 0).
+    Window,
+}
+
+/// The rooms' light ranges as the original's Light_Rebuild sorts the light objects: room by
+/// room, the list walked in order, each lamp in the room taking the next own light (from 256,
+/// at most 511) and each window in it whose other side is another room the next other light
+/// (at most 255). `objects` gives each one's kind, room and (a window's) other room. Returns
+/// each room's (other first, other end, own first, own end) and the lights' objects in order:
+/// the other lights', then the own.
+pub fn sort_lights(rooms: usize, objects: &[(LightKind, i32, i32)]) -> (Vec<[u32; 4]>, Vec<usize>, Vec<usize>) {
+    let (mut other, mut own) = (Vec::new(), Vec::new());
+    let mut ranges = Vec::new();
+    for r in 0..rooms as i32 {
+        let (o0, w0) = (other.len() as u32, 256 + own.len() as u32);
+        for (k, &(kind, room, to)) in objects.iter().enumerate() {
+            if room != r {
+                continue;
+            }
+            match kind {
+                LightKind::Lamp if own.len() < 256 => own.push(k),
+                LightKind::Window if to != r && to >= 0 && to < rooms as i32 && other.len() < 256 => other.push(k),
+                _ => {}
+            }
+        }
+        ranges.push([o0, other.len() as u32, w0, 256 + own.len() as u32]);
+    }
+    (ranges, other, own)
+}
+
 /// The rooms added to the light grid at a lot's load, in the original's order: tiles x, y from 1
 /// to the size less 1 (x inner), each adding its room to its corners (x, y), (x, y + 1),
 /// (x + 1, y + 1), (x + 1, y). A diagonal's tile (`diagonal` its bits) splits them: its west
@@ -271,6 +310,18 @@ mod tests {
         assert_eq!(entry_points(0x0005_0203), vec![(2, 5), (2, 6), (3, 5), (3, 6), (4, 5), (4, 6)]);
         // a leading half (0x40: on the row) and a trailing half (0x80: the row after)
         assert_eq!(entry_points(0x0005_4283), vec![(2, 5), (3, 5), (3, 6), (4, 6)]);
+    }
+
+    #[test]
+    fn lights_are_sorted_room_by_room_in_list_order() {
+        use LightKind::*;
+        let objects = [(Lamp, 1, 0), (Window, 0, 1), (Ambient, 0, 0), (Lamp, 0, 0), (Window, 1, 1), (Window, 1, 0), (Lamp, 1, 0)];
+        let (ranges, other, own) = sort_lights(2, &objects);
+        // room 0: the window (1) and the lamp (3); room 1: the window to room 0 (5; 4 looks into
+        // its own room) and the lamps (0, 6)
+        assert_eq!(ranges, vec![[0, 1, 256, 257], [1, 2, 257, 259]]);
+        assert_eq!(other, vec![1, 5]);
+        assert_eq!(own, vec![3, 0, 6]);
     }
 
     #[test]

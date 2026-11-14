@@ -96,6 +96,21 @@ pub struct MatrixRec {
 
 /// An orientation the original gave a static model ('o': EIStaticModel::SetOrient): the tick,
 /// the model's address and the 4x4, rows (the translation in the last row).
+/// The lights rebuilt ('t'): the room count, the other and own lights' counts (own from 256),
+/// each light object (the object, its vtable, its room, its changed flag) and the lights (0 to
+/// the other count, then 256 to the own: position, reach, colour as words, then the object).
+#[derive(Clone, Debug)]
+pub struct LightRebuildRec {
+    pub tick: u32,
+    pub rooms: u32,
+    pub other: u32,
+    pub own: u32,
+    pub objects: Vec<[u32; 4]>,
+    pub lights: Vec<[u32; 8]>,
+    /// How many grid builds ('e') came before it (its own build is the last of those).
+    pub builds_before: usize,
+}
+
 /// The light grid's cells built ('e'): the three constants, room ids 0-15's light ranges (the
 /// other lights' first and end, the room's own first and end), the lights (position, reach) and
 /// cells x, y 2..37 (x outer, 9 words each: 4 room ids, then 4 light indices for each).
@@ -478,6 +493,8 @@ pub struct Log {
     pub grid_builds: Vec<GridBuildRec>,
     /// 'f': rooms added to light grid cells (tick, x, y, room id, caller).
     pub cell_adds: Vec<[u32; 5]>,
+    /// 't': the lights rebuilt.
+    pub light_rebuilds: Vec<LightRebuildRec>,
     /// 'n': rooms' floors relit, each after the 'i' record of its own light grid (its index there
     /// is `light_grids.len()` less one when read).
     pub room_floors: Vec<RoomFloorRec>,
@@ -639,6 +656,19 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let room = [three(), three()];
                 let k = f32::from_bits(r.u32());
                 log.group_scales.push(GroupScaleRec { tick, group, base, scale, material, room, k });
+            }
+            b't' => {
+                if !r.has(20) {
+                    break;
+                }
+                let (tick, rooms, other, own, count) = (r.u32(), r.u32(), r.u32(), r.u32(), r.u32() as usize);
+                let lights_n = other as usize + own.saturating_sub(256) as usize;
+                if !r.has(16 * count + 32 * lights_n) {
+                    break;
+                }
+                let objects = (0..count).map(|_| [0; 4].map(|_| r.u32())).collect();
+                let lights = (0..lights_n).map(|_| [0; 8].map(|_| r.u32())).collect();
+                log.light_rebuilds.push(LightRebuildRec { tick, rooms, other, own, objects, lights, builds_before: log.grid_builds.len() });
             }
             b'f' => {
                 if !r.has(20) {

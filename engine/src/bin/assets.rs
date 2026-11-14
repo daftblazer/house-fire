@@ -1844,6 +1844,70 @@ fn main() -> ExitCode {
             }
             println!("light grid calls {} (ticks {:?}..{:?}, ids {ids:?}): points {points}, the engine's sum bit for bit {exact}, the rest within {worst}", log.light_grids.len(), log.light_grids.first().map(|g| g.tick), log.light_grids.last().map(|g| g.tick));
         }
+        "lightsort" => {
+            // each rebuild's ranges and lights' objects against the engine's sorting (the
+            // classes by vtable: 802b9318 a room's ambient, 802b94b0 the sun, 802b9d70 a lamp,
+            // 802b9f60 a window; a window's other room taken from the grid build's ranges)
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO lightsort LOG");
+                return ExitCode::FAILURE;
+            };
+            use housefire::light::LightKind;
+            let kind = |vt: u32| match vt {
+                0x802b9318 => Some(LightKind::Ambient),
+                0x802b94b0 => Some(LightKind::Sun),
+                0x802b9d70 => Some(LightKind::Lamp),
+                0x802b9f60 => Some(LightKind::Window),
+                _ => None,
+            };
+            let (mut checked, mut same_ranges, mut same_own, mut same_other, mut unknown) = (0, 0, 0, 0, 0);
+            for b in log.light_rebuilds.iter().filter(|b| b.rooms > 0) {
+                let Some(build) = b.builds_before.checked_sub(1).and_then(|i| log.grid_builds.get(i)) else { continue };
+                checked += 1;
+                unknown += b.objects.iter().filter(|o| kind(o[1]).is_none()).count();
+                // (a window's other room is not logged: taken as another room than its own, true
+                // of every window here)
+                let objs: Vec<(LightKind, i32, i32)> = b.objects.iter().map(|o| (kind(o[1]).unwrap_or(LightKind::Ambient), o[2] as i32, if o[2] == 0 { 1 } else { 0 })).collect();
+                let (ranges, other, own) = housefire::light::sort_lights(b.rooms as usize, &objs);
+                let logged: Vec<[u32; 4]> = build.ranges[..b.rooms as usize].to_vec();
+                if ranges == logged {
+                    same_ranges += 1;
+                } else {
+                    println!("  tick {}: ranges mine {ranges:?} the log's {logged:?}", b.tick);
+                }
+                let light_objs: Vec<u32> = b.lights.iter().map(|l| l[7]).collect();
+                let (lo, lw) = light_objs.split_at(b.other as usize);
+                if own.iter().map(|&k| b.objects[k][0]).eq(lw.iter().copied()) {
+                    same_own += 1;
+                }
+                if other.iter().map(|&k| b.objects[k][0]).eq(lo.iter().copied()) {
+                    same_other += 1;
+                }
+            }
+            println!("rebuilds {checked}: ranges the engine's {same_ranges}, own lights' objects in order {same_own}, other lights' {same_other}; objects of no known class {unknown}");
+        }
+        "lightobjs" => {
+            // what the lights are made from: each rebuild's light objects and lights
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO lightobjs LOG");
+                return ExitCode::FAILURE;
+            };
+            for b in log.light_rebuilds.iter().take(args.get(4).and_then(|v| v.parse().ok()).unwrap_or(2)) {
+                let vt: BTreeMap<u32, usize> = b.objects.iter().fold(BTreeMap::new(), |mut m, o| {
+                    *m.entry(o[1]).or_insert(0) += 1;
+                    m
+                });
+                println!("rebuild at tick {}: rooms {}, other lights {}, own {} ({}), objects {} by vtable {vt:08x?}", b.tick, b.rooms, b.other, b.own, b.own - 256, b.objects.len());
+                for o in &b.objects {
+                    println!("  object {:08x} vtable {:08x} room {} changed {}", o[0], o[1], o[2] as i32, o[3]);
+                }
+                for (k, l) in b.lights.iter().enumerate() {
+                    let f = |i: usize| f32::from_bits(l[i]);
+                    let index = if k < b.other as usize { k } else { 256 + k - b.other as usize };
+                    println!("  light {index}: at ({}, {}, {}) reach {} colour ({}, {}, {}) object {:08x}", f(0), f(1), f(2), f(3), f(4), f(5), f(6), l[7]);
+                }
+            }
+        }
         "cellrooms" => {
             // the logged rooms added to the light grid, in order, against each build's cells
             let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
