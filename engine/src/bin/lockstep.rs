@@ -1620,6 +1620,61 @@ fn main() -> ExitCode {
                     *back.entry(format!("{} set {}: first step {}", if x.caller2 == 0x800b_0bb4 { "backward" } else { "forward" }, x.speed, if at_end { "from the last frame" } else if t.place[0] == 0.0 { "from 0" } else { "elsewhere" })).or_default() += 1;
                 }
                 println!("new actions' sets: {back:?}");
+                // the Sims' track speeds from the engine's animator alone (the game speed and
+                // each play's start and direction): every Sim track record's +72
+                let mut anim_of: HashMap<u32, housefire::anim::SimAnimator> = HashMap::new();
+                let mut spd: HashMap<(u32, u32), f32> = HashMap::new(); // (controller, track)
+                let mut seen: HashMap<(u32, u32), (u32, u32)> = HashMap::new(); // -> (anim id, last frame)
+                let mut model: BTreeMap<String, usize> = BTreeMap::new();
+                let mut cur_frame = u32::MAX;
+                let mut g_now = 1.0f32;
+                for t in log.tracks.iter().filter(|t| t.tick != 0) {
+                    if t.frame != cur_frame {
+                        cur_frame = t.frame;
+                        if let Some(g) = game.get(&t.frame).filter(|g| g.len() == 1) {
+                            g_now = f32::from_bits(*g.iter().next().unwrap());
+                        }
+                        for (c, a) in anim_of.iter_mut() {
+                            if a.follow(g_now) {
+                                // the slot tracks: the Sim's tracks stepped in the last frames, but the face
+                                for (k, (id, f)) in &seen {
+                                    let face = by_id.get(id).is_some_and(|x| x.name == "happyFace");
+                                    if k.0 == *c && !face && *f <= cur_frame {
+                                        spd.insert(*k, a.speed);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if !sim_of.contains_key(&t.controller) {
+                        continue;
+                    }
+                    let a = *anim_of.entry(t.controller).or_insert_with(|| housefire::anim::SimAnimator { speed: g_now });
+                    let key = (t.controller, t.track);
+                    let Some(info) = by_id.get(&t.head[1]) else { continue };
+                    let new_play = seen.get(&key).is_none_or(|(id, f)| *id != t.head[1] || f + 3 < t.frame);
+                    if new_play {
+                        // (the Animate's operand: flags bit 2 backward, by the run's start tick)
+                        // (the latest Animate run of the animation started at or before the play)
+                        let backward = operand_of.range((info.name.clone(), 0)..=(info.name.clone(), t.tick)).next_back().is_some_and(|(_, o)| o[5] & 2 != 0);
+                        let v = if info.name == "happyFace" { housefire::anim::FACE_SPEED } else { a.action_speed(backward) };
+                        spd.insert(key, v);
+                    }
+                    seen.insert(key, (t.head[1], t.frame));
+                    let v = spd[&key];
+                    let near_change = (t.frame.saturating_sub(3)..=t.frame + 3).any(|f| game.get(&f).is_some_and(|g| g.len() != 1 || g.iter().next().is_some_and(|b| f32::from_bits(*b) != g_now)));
+                    let k = if v == t.speeds[1] {
+                        "the same".to_string()
+                    } else if near_change || t.tick < 3 {
+                        "DIFFERENT within 3 frames of a game speed change (or loading)".to_string()
+                    } else if v == -t.speeds[1] {
+                        format!("DIFFERENT direction ({}, an Animate run: {})", info.name, operand_of.range((info.name.clone(), 0)..=(info.name.clone(), t.tick)).next_back().is_some())
+                    } else {
+                        format!("DIFFERENT (engine {v}, log {}, {})", t.speeds[1], info.name)
+                    };
+                    *model.entry(k).or_default() += 1;
+                }
+                println!("Sims' track speeds from the engine's animator: {model:?}");
                 // the Sims' still tracks against the game speed that frame (the objects' +80)
                 let mut still: BTreeMap<String, usize> = BTreeMap::new();
                 for t in log.tracks.iter().filter(|t| t.tick != 0 && sim_of.contains_key(&t.controller)) {

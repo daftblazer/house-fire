@@ -1506,3 +1506,14 @@ action at speed 1 makes no set, and the 14 forward sets are 0 (13, paused) and 5
 backward sets (-1) are the 12 plays whose first step is from the last frame. fn_800AF06C
 starts the face (slot +800) with a constant speed, the 802A8E44 single: 0 on all 3 of its
 sets, so happyFace is held at its first frame.
+The engine's Sim animator (iteration 169). `anim::SimAnimator` follows the game speed, and on a
+change it sets that speed on the Sim's tracks other than the face. A new action gets the speed,
+or minus it when its Animate operand is backward (flags bit 2), and the face gets
+`FACE_SPEED` (0). It is checked on home-a19.log, with the game speed taken from the objects'
+controllers. Of the 58,944 Sim track records:
+- 58,253 are the same.
+- 441 are within 3 frames of a game speed change or at loading: the Sims' tracks take the new
+  speed a frame before the objects' controllers show it.
+- 225 are backward idle transitions (a2o-idle-neutral-trans-*). They come from the idle code,
+  not an Animate, so they have no operand.
+- 3 are an eat loop's direction, and 22 are short holds at 0 (standing, carry, sit, stove).

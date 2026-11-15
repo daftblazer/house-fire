@@ -509,6 +509,38 @@ pub fn wrap_back(mut place: f32, last: f32) -> f32 {
 /// (a loop) comes back by the last frame (`wrap_back`), and the others stop at the last frame.
 /// Before 0, mode 0 goes on by the last frame until it is not below 0 (at most the last frame),
 /// and the others stop at 0. Gives the new place and whether an end was passed (+160 set).
+/// A Sim's animator speeds (EA's fn_800ABE20, fn_800B0ADC, fn_800AF06C): the animator runs at
+/// the game speed (0 paused, 1, 5 fast-forward). On a change it sets the new speed on its slot
+/// tracks: the base idle, walk, turn, the current action, the action blending out, the carry.
+/// A new action starts at the speed, or at minus it backward. The face is held at 0.
+#[derive(Clone, Copy, Debug)]
+pub struct SimAnimator {
+    pub speed: f32,
+}
+
+/// The face track's speed (the 802A8E44 constant).
+pub const FACE_SPEED: f32 = 0.0;
+
+impl Default for SimAnimator {
+    fn default() -> Self {
+        SimAnimator { speed: 1.0 }
+    }
+}
+
+impl SimAnimator {
+    /// The game speed for this frame; true when it changed (the slot tracks are then set to it).
+    pub fn follow(&mut self, game_speed: f32) -> bool {
+        let changed = self.speed != game_speed;
+        self.speed = game_speed;
+        changed
+    }
+
+    /// A new action's track speed.
+    pub fn action_speed(&self, backward: bool) -> f32 {
+        if backward { -self.speed } else { self.speed }
+    }
+}
+
 pub fn track_step(place: f32, frame_time: f32, controller_speed: f32, track_speed: f32, rate: f32, last: f32, end_mode: u8) -> (f32, bool) {
     let next = track_advance(place, frame_time, controller_speed, track_speed, rate);
     if next > last {
@@ -943,6 +975,16 @@ mod tests {
         // back near the start: from the first window again
         s.read(&w, 0.5);
         assert_eq!((s.key, s.first, s.last), (0, 0, 3));
+    }
+
+    #[test]
+    fn a_sim_animator_follows_the_game_speed_and_sets_its_actions() {
+        let mut a = SimAnimator::default();
+        assert!(!a.follow(1.0));
+        assert!(a.follow(0.0));
+        assert_eq!(a.action_speed(true), -0.0);
+        assert!(a.follow(5.0));
+        assert_eq!((a.action_speed(false), a.action_speed(true)), (5.0, -5.0));
     }
 
     #[test]
