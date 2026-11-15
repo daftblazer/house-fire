@@ -4,6 +4,8 @@
 //! (three floats), a rotation (a quaternion, four), a flag byte and two 4x4 matrices; then a
 //! plane's name and five floats.
 
+use crate::anim::fma32 as madd;
+
 fn be32(b: &[u8], p: usize) -> Option<u32> {
     Some(u32::from_be_bytes(b.get(p..p + 4)?.try_into().ok()?))
 }
@@ -88,11 +90,6 @@ pub type Mat4 = [f32; 16];
 /// The identity.
 pub const IDENTITY: Mat4 = [1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1.];
 
-/// `a * b + c` as the original's fmadds do it: the product exact, the sum rounded in double and
-/// then to single.
-fn madd(a: f32, b: f32, c: f32) -> f32 {
-    f64::from(a).mul_add(f64::from(b), f64::from(c)) as f32
-}
 
 /// The bit of a node state's flag word that says the node is posed at all (0x80158C5C); without
 /// it the node's matrix is its parent's.

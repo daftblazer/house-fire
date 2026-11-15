@@ -3,6 +3,8 @@
 //! the same fields behind a chunk header), here behind the animation's name. Big-endian and
 //! packed: nothing is aligned after the name.
 
+use std::sync::{Arc, OnceLock};
+
 /// A node (a bone's track): seven words, read as they are (what each means is read with the
 /// evaluator; the pool table's give the third word 3k + 1 and the fourth -1 - 66k).
 pub type Node = [u32; 7];
@@ -35,12 +37,73 @@ pub struct Anim {
     pub words: [u32; 4],
     pub flags: [u8; 2],
     pub events: Vec<Event>,
+    /// The nodes' streams decoded key by key, made on first use (`Anim::node_keys`).
+    compiled: Compiled,
 }
 
 impl Anim {
     /// How long it runs, in seconds (frames over the rate).
     pub fn seconds(&self) -> f32 {
         self.frames as f32 / self.rate
+    }
+
+    /// The end mode a play of it gets (a track's +13): 0 loops, 1 stops at its end. The
+    /// animation's second flag byte.
+    pub fn end_mode(&self) -> u8 {
+        self.flags[1]
+    }
+
+    /// Every node's scale, translation, vector and rotation streams with their keys decoded,
+    /// made once per animation and shared by every play of it.
+    pub(crate) fn node_keys(&self) -> &[NodeKeys] {
+        self.compiled.0.get_or_init(|| {
+            let words = &self.bit_words;
+            let stream = |word: u32| match Channel::of(word) {
+                Channel::Stream(at) => {
+                    let header = stream_header(words, at);
+                    Some((header, Arc::new(KeyTable3::decode(words, &header))))
+                }
+                _ => None,
+            };
+            self.nodes
+                .iter()
+                .map(|n| NodeKeys {
+                    rotation: match Channel::of(n[0]) {
+                        Channel::Stream(at) => {
+                            let header = rotation_header(words, at);
+                            Some((header, Arc::new(RotTable::decode(words, &header))))
+                        }
+                        _ => None,
+                    },
+                    vectors: [n[1], n[2], n[4]].map(stream),
+                })
+                .collect()
+        })
+    }
+}
+
+/// One node's streams as `Anim::node_keys` holds them: the rotation (word 0) and the vectors of
+/// words 1, 2 and 4, each its header and its decoded keys.
+#[derive(Debug)]
+pub(crate) struct NodeKeys {
+    pub rotation: Option<(RotHeader, Arc<RotTable>)>,
+    pub vectors: [Option<(StreamHeader, Arc<KeyTable3>)>; 3],
+}
+
+/// The decoded streams of an animation, kept beside it: never part of what an animation is, so
+/// it compares equal and a copy starts empty.
+#[derive(Debug, Default)]
+struct Compiled(OnceLock<Vec<NodeKeys>>);
+
+impl Clone for Compiled {
+    fn clone(&self) -> Compiled {
+        Compiled::default()
+    }
+}
+
+impl PartialEq for Compiled {
+    fn eq(&self, _: &Compiled) -> bool {
+        true
     }
 }
 
@@ -102,7 +165,7 @@ pub fn read(e: &[u8]) -> Option<Anim> {
             Some(Event { name, words: [r.u32()?, r.u32()?, r.u32()?, r.u32()?] })
         })
         .collect::<Option<Vec<_>>>()?;
-    (r.at == e.len()).then_some(Anim { name, frames, first, second, nodes, word, constants, bits, bit_words, rate, floats, byte, words, flags, events })
+    (r.at == e.len()).then_some(Anim { name, frames, first, second, nodes, word, constants, bits, bit_words, rate, floats, byte, words, flags, events, compiled: Compiled::default() })
 }
 
 /// The animations in memory, as the original's resource manager has them for the Animate
@@ -347,11 +410,112 @@ pub struct StreamHeader {
     pub record_bits: u32,
 }
 
-impl Anim {
-    /// The end mode a play of it gets (a track's +13): 0 loops, 1 stops at its end. The
-    /// animation's second flag byte.
-    pub fn end_mode(&self) -> u8 {
-        self.flags[1]
+/// Key `k`'s frame read from the bits: the gaps of keys 1..=k, each + 1 (key 0's gap is not
+/// used; 801BCD2C, 801B6A1C).
+fn frame_of_key(words: &[u32], first_record: u32, record_bits: u32, gap_bits: u32, k: u32) -> i32 {
+    (1..=k).map(|j| bits(words, first_record + j * record_bits, gap_bits) as i32 + 1).sum()
+}
+
+/// A stream's key frames summed once, so that a key's frame is a lookup.
+#[derive(Debug)]
+struct Timeline {
+    /// Key `k`'s frame, for each key.
+    times: Vec<i32>,
+    /// The frames the keys span (the sum of all their gaps + 1).
+    frames: u32,
+}
+
+impl Timeline {
+    fn decode(words: &[u32], keys: u32, first_record: u32, record_bits: u32, gap_bits: u32) -> Timeline {
+        let mut times = Vec::with_capacity(keys as usize);
+        let (mut at, mut frames) = (0i32, 0u32);
+        for k in 0..keys {
+            let gap = bits(words, first_record + k * record_bits, gap_bits);
+            frames = frames.wrapping_add(gap).wrapping_add(1);
+            if k > 0 {
+                at = at.wrapping_add(gap as i32).wrapping_add(1);
+            }
+            times.push(at);
+        }
+        Timeline { times, frames }
+    }
+}
+
+/// A scale or translation stream's keys decoded once (`Anim::node_keys`): what the bit fields
+/// give per key, in flat arrays. A key not in them (the evaluator can step past the last)
+/// is read from the bits as before.
+#[derive(Debug)]
+pub(crate) struct KeyTable3 {
+    timeline: Timeline,
+    points: Vec<[f32; 3]>,
+    /// Empty for a stream without scalars (they read 0).
+    scalars: Vec<f32>,
+}
+
+impl KeyTable3 {
+    fn decode(words: &[u32], h: &StreamHeader) -> KeyTable3 {
+        let timeline = Timeline::decode(words, h.keys, h.first_record, h.record_bits, h.gap_bits);
+        let points = (0..h.keys).map(|k| h.point(words, k)).collect();
+        let scalars = if h.scalar_bits == 0 { Vec::new() } else { (0..h.keys).map(|k| h.scalar(words, k)).collect() };
+        KeyTable3 { timeline, points, scalars }
+    }
+}
+
+/// A stream's keys as the tangents and windows read them: from its decoded keys when it has
+/// them, else from the bits.
+#[derive(Clone, Copy)]
+struct Keys3<'a> {
+    header: &'a StreamHeader,
+    words: &'a [u32],
+    table: Option<&'a KeyTable3>,
+}
+
+impl Keys3<'_> {
+    fn time(&self, k: u32) -> i32 {
+        self.table.and_then(|t| t.timeline.times.get(k as usize)).map_or_else(|| self.header.time(self.words, k), |&t| t)
+    }
+
+    fn scalar(&self, k: u32) -> f32 {
+        self.table.and_then(|t| t.scalars.get(k as usize)).map_or_else(|| self.header.scalar(self.words, k), |&s| s)
+    }
+
+    fn point(&self, k: u32) -> [f32; 3] {
+        self.table.and_then(|t| t.points.get(k as usize)).map_or_else(|| self.header.point(self.words, k), |&p| p)
+    }
+
+    /// Key `k`'s tangent (801BCEF4): `outgoing` towards key k + 1 (kind 1, a window's T0) or
+    /// incoming from key k - 1 (kind 0, its T1). Inside, the two differences weighted by
+    /// 1 + and 1 - the key's bias, times this side's frames over both sides'. At an end, the
+    /// one difference (two keys) or 1.5 x it - 0.5 x the next key's tangent.
+    fn tangent(&self, outgoing: bool, k: u32) -> [f32; 3] {
+        let sub = |a: [f32; 3], b: [f32; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+        let end = |d: [f32; 3], next: [f32; 3]| [0, 1, 2].map(|i| d[i] * 1.5 - next[i] * 0.5);
+        let keys = self.header.keys;
+        let b = self.point(k);
+        if k == 0 {
+            let d = sub(self.point(1), b);
+            return if keys == 2 { d } else { end(d, self.tangent(false, 1)) };
+        }
+        if k + 1 == keys {
+            let d = sub(b, self.point(k - 1));
+            return if keys == 2 { d } else { end(d, self.tangent(true, k - 1)) };
+        }
+        let (a, c) = (self.point(k - 1), self.point(k + 1));
+        let (ta, tb, tc) = (self.time(k - 1), self.time(k), self.time(k + 1));
+        let side = if outgoing { tc - tb } else { tb - ta };
+        let ratio = side as f32 / ((tb - ta) + (tc - tb)) as f32;
+        let s = self.scalar(k);
+        let (din, dout) = (sub(b, a), sub(c, b));
+        [0, 1, 2].map(|i| (din[i] * (s + 1.0) + dout[i] * (1.0 - s)) * ratio)
+    }
+
+    fn window(&self, k: u32) -> (i32, i32, [f32; 12]) {
+        let mut w = [0.0; 12];
+        w[0..3].copy_from_slice(&self.point(k));
+        w[3..6].copy_from_slice(&self.tangent(true, k));
+        w[6..9].copy_from_slice(&self.tangent(false, k + 1));
+        w[9..12].copy_from_slice(&self.point(k + 1));
+        (self.time(k), self.time(k + 1), w)
     }
 }
 
@@ -372,18 +536,15 @@ impl StreamHeader {
 
     /// Key `k`'s frame: the gaps of keys 1..=k, each + 1 (key 0's gap is not used; 801BCD2C).
     pub fn time(&self, words: &[u32], k: u32) -> i32 {
-        (1..=k).map(|j| bits(words, self.record(j), self.gap_bits) as i32 + 1).sum()
+        frame_of_key(words, self.first_record, self.record_bits, self.gap_bits, k)
     }
 
     /// Key `k`'s scalar (a bias): its signed field times the header's factor (801ADB4C).
     pub fn scalar(&self, words: &[u32], k: u32) -> f32 {
-        let w = self.scalar_bits;
-        if w == 0 {
+        if self.scalar_bits == 0 {
             return 0.0;
         }
-        let v = bits(words, self.record(k) + self.gap_bits, w);
-        let v = if v >> (w - 1) & 1 != 0 && w < 32 { v | !0u32 << (w - 1) } else { v };
-        (v as i32 as f32) * self.scalar_scale
+        signed_bits(words, self.record(k) + self.gap_bits, self.scalar_bits) as f32 * self.scalar_scale
     }
 
     /// Key `k`'s three values (801BCE50, kind 2).
@@ -391,40 +552,15 @@ impl StreamHeader {
         key3(words, self.record(k) + self.gap_bits + self.scalar_bits, self.value_bits, self.scale, self.offset)
     }
 
-    /// Key `k`'s tangent (801BCEF4): `outgoing` towards key k + 1 (kind 1, a window's T0) or
-    /// incoming from key k - 1 (kind 0, its T1). Inside, the two differences weighted by
-    /// 1 + and 1 - the key's bias, times this side's frames over both sides'. At an end, the
-    /// one difference (two keys) or 1.5 x it - 0.5 x the next key's tangent.
+    /// Key `k`'s tangent (801BCEF4), read from the bits; see `Keys3::tangent`.
     pub fn tangent(&self, words: &[u32], outgoing: bool, k: u32) -> [f32; 3] {
-        let sub = |a: [f32; 3], b: [f32; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-        let end = |d: [f32; 3], next: [f32; 3]| [0, 1, 2].map(|i| d[i] * 1.5 - next[i] * 0.5);
-        let b = self.point(words, k);
-        if k == 0 {
-            let d = sub(self.point(words, 1), b);
-            return if self.keys == 2 { d } else { end(d, self.tangent(words, false, 1)) };
-        }
-        if k + 1 == self.keys {
-            let d = sub(b, self.point(words, k - 1));
-            return if self.keys == 2 { d } else { end(d, self.tangent(words, true, k - 1)) };
-        }
-        let (a, c) = (self.point(words, k - 1), self.point(words, k + 1));
-        let (ta, tb, tc) = (self.time(words, k - 1), self.time(words, k), self.time(words, k + 1));
-        let side = if outgoing { tc - tb } else { tb - ta };
-        let ratio = side as f32 / ((tb - ta) + (tc - tb)) as f32;
-        let s = self.scalar(words, k);
-        let (din, dout) = (sub(b, a), sub(c, b));
-        [0, 1, 2].map(|i| (din[i] * (s + 1.0) + dout[i] * (1.0 - s)) * ratio)
+        Keys3 { header: self, words, table: None }.tangent(outgoing, k)
     }
 
     /// The window between keys `k` and k + 1 as the evaluator holds it: first and last frames
     /// and P0, T0, T1, P1 (801BCBBC / 801BCCB0 at the start, 801BC958 stepping forward).
     pub fn window(&self, words: &[u32], k: u32) -> (i32, i32, [f32; 12]) {
-        let mut w = [0.0; 12];
-        w[0..3].copy_from_slice(&self.point(words, k));
-        w[3..6].copy_from_slice(&self.tangent(words, true, k));
-        w[6..9].copy_from_slice(&self.tangent(words, false, k + 1));
-        w[9..12].copy_from_slice(&self.point(words, k + 1));
-        (self.time(words, k), self.time(words, k + 1), w)
+        Keys3 { header: self, words, table: None }.window(k)
     }
 }
 
@@ -504,14 +640,9 @@ pub fn wrap_back(mut place: f32, last: f32) -> f32 {
     place
 }
 
-/// A track's frame (Anim_UpdateTrack 80157318 to 801575F4): the place moved by
-/// `track_advance`, then at the ends by the track's end mode (+13). Past the last frame, mode 0
-/// (a loop) comes back by the last frame (`wrap_back`), and the others stop at the last frame.
-/// Before 0, mode 0 goes on by the last frame until it is not below 0 (at most the last frame),
-/// and the others stop at 0. Gives the new place and whether an end was passed (+160 set).
 /// A rotation stream's window evaluated at `t` (fn_801B5F48, mode 0): four quaternions w0..w3,
-/// m = lerp(w1, w2), then lerp(lerp(w0, m), lerp(m, w3)), normalized. The length is the game's:
-/// y*y, then x, z and w fused in, each rounded to single; then 1/length times each component.
+/// m = lerp(w1, w2), then lerp(lerp(w0, m), lerp(m, w3)), normalized (`reciprocal_length`, then
+/// each component times it).
 pub fn rotation_window(w: [[f32; 4]; 4], t: f32) -> [f32; 4] {
     let lerp = |a: [f32; 4], b: [f32; 4]| quat_lerp(a, b, t);
     let m = lerp(w[1], w[2]);
@@ -528,14 +659,26 @@ fn quat_lerp(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
     core::array::from_fn(|i| a[i] + (b[i] - a[i]) * t)
 }
 
+/// `a * b + c` as the original's fmadds do it: the product exact, the sum rounded in double and
+/// then to single.
+pub fn fma32(a: f32, b: f32, c: f32) -> f32 {
+    f64::from(a).mul_add(f64::from(b), f64::from(c)) as f32
+}
+
+/// `a * a + acc` fused (`fma32`).
+fn fused_square(a: f32, acc: f32) -> f32 {
+    fma32(a, a, acc)
+}
+
+/// A quaternion's reciprocal length as the game computes it: y*y, then x, z and w fused in, each
+/// rounded to single; `None` for length 0.
+fn reciprocal_length(v: [f32; 4]) -> Option<f32> {
+    let length = fused_square(v[3], fused_square(v[2], fused_square(v[0], v[1] * v[1]))).sqrt();
+    (length != 0.0).then(|| 1.0 / length)
+}
+
 fn normalize_quat(v: [f32; 4]) -> [f32; 4] {
-    let fused = |a: f32, acc: f32| (a as f64).mul_add(a as f64, acc as f64) as f32;
-    let length = fused(v[3], fused(v[2], fused(v[0], v[1] * v[1]))).sqrt();
-    if length == 0.0 {
-        return v;
-    }
-    let k = 1.0 / length;
-    v.map(|x| x * k)
+    reciprocal_length(v).map_or(v, |k| v.map(|x| x * k))
 }
 
 /// A rotation stream's header, as Bustin' Out's 801B5DC8 reads it from the animation's bits:
@@ -627,13 +770,77 @@ fn quat_scale(a: [f32; 4], s: f32) -> [f32; 4] {
 /// A quaternion made unit length as 801B6C44 does it (the length and division of
 /// `normalize_quat`); a zero length gives the identity (801B52F8).
 pub fn unit_or_identity(v: [f32; 4]) -> [f32; 4] {
-    let fused = |a: f32, acc: f32| (a as f64).mul_add(a as f64, acc as f64) as f32;
-    let length = fused(v[3], fused(v[2], fused(v[0], v[1] * v[1]))).sqrt();
-    if length == 0.0 {
-        return [0.0, 0.0, 0.0, 1.0];
+    reciprocal_length(v).map_or([0.0, 0.0, 0.0, 1.0], |k| v.map(|x| x * k))
+}
+
+/// A rotation stream's keys decoded once (`Anim::node_keys`); see `KeyTable3`.
+#[derive(Debug)]
+pub(crate) struct RotTable {
+    timeline: Timeline,
+    points: Vec<[f32; 4]>,
+    /// Empty for a stream without biases (they read 0).
+    biases: Vec<f32>,
+}
+
+impl RotTable {
+    fn decode(words: &[u32], h: &RotHeader) -> RotTable {
+        let timeline = Timeline::decode(words, h.keys, h.first_record, h.record_bits, h.gap_bits);
+        let points = (0..h.keys).map(|k| h.point(words, k)).collect();
+        let biases = if h.bias_bits == 0 { Vec::new() } else { (0..h.keys).map(|k| h.bias(words, k)).collect() };
+        RotTable { timeline, points, biases }
     }
-    let k = 1.0 / length;
-    v.map(|x| x * k)
+}
+
+/// A rotation stream's keys as the control points and windows read them; see `Keys3`.
+#[derive(Clone, Copy)]
+struct RotKeys<'a> {
+    header: &'a RotHeader,
+    words: &'a [u32],
+    table: Option<&'a RotTable>,
+}
+
+impl RotKeys<'_> {
+    fn time(&self, k: u32) -> i32 {
+        self.table.and_then(|t| t.timeline.times.get(k as usize)).map_or_else(|| self.header.time(self.words, k), |&t| t)
+    }
+
+    fn bias(&self, k: u32) -> f32 {
+        self.table.and_then(|t| t.biases.get(k as usize)).map_or_else(|| self.header.bias(self.words, k), |&b| b)
+    }
+
+    fn point(&self, k: u32) -> [f32; 4] {
+        self.table.and_then(|t| t.points.get(k as usize)).map_or_else(|| self.header.point(self.words, k), |&p| p)
+    }
+
+    /// The control point of key `k` (801B6C44, slots 1 and 0): `outgoing` towards key k + 1 (a
+    /// window's w1) or incoming from key k - 1 (the w2 of the window before). At the first key
+    /// the key moves (1 + its bias) / 2 of the way to key 1, at the last (1 - its bias) / 2 of
+    /// the way to the one before. Between them it moves that way to each neighbour (X, Y), M
+    /// is the unit mean of the two, and the control point is the key moved from M by 2 x
+    /// this side's frames over both sides'. Each result is made unit length.
+    fn control(&self, k: u32, outgoing: bool) -> [f32; 4] {
+        let a = self.point(k);
+        let bias = self.bias(k);
+        let moved = |to: [f32; 4], weight: f32| unit_or_identity(quat_add(a, quat_scale(quat_sub(to, a), weight)));
+        if k == 0 {
+            return moved(self.point(1), (bias + 1.0) * 0.5);
+        }
+        if k + 1 == self.header.keys {
+            return moved(self.point(k - 1), (1.0 - bias) * 0.5);
+        }
+        let (before, after) = (self.time(k) - self.time(k - 1), self.time(k + 1) - self.time(k));
+        let (side, sign) = if outgoing { (after, -1.0f32) } else { (before, 1.0f32) };
+        let ratio = side as f32 / (before + after) as f32;
+        let x = moved(self.point(k - 1), -((bias + 1.0) * 0.5));
+        let y = moved(self.point(k + 1), (1.0 - bias) * 0.5);
+        let m = unit_or_identity(quat_add(x, quat_scale(quat_sub(y, x), 0.5)));
+        moved(m, (sign * ratio) * -2.0)
+    }
+
+    fn window(&self, k: u32) -> (i32, i32, [[f32; 4]; 4]) {
+        let w = [self.point(k), self.control(k, true), self.control(k + 1, false), self.point(k + 1)];
+        (self.time(k), self.time(k + 1), w)
+    }
 }
 
 impl RotHeader {
@@ -653,7 +860,7 @@ impl RotHeader {
 
     /// Key `k`'s frame: the gaps of keys 1..=k, each + 1 (801B6A1C).
     pub fn time(&self, words: &[u32], k: u32) -> i32 {
-        (1..=k).map(|j| bits(words, self.record(j), self.gap_bits) as i32 + 1).sum()
+        frame_of_key(words, self.first_record, self.record_bits, self.gap_bits, k)
     }
 
     /// Key `k`'s bias: its signed field times the header's factor (801B6A1C).
@@ -669,8 +876,7 @@ impl RotHeader {
         let at = self.record(k) + self.gap_bits + self.bias_bits;
         let field = |i: u32| self.point_scale * (signed_bits(words, at + i * self.point_bits, self.point_bits) as f32);
         let (y, z, w) = (field(0), field(1), field(2));
-        let fused = |a: f32, acc: f32| (a as f64).mul_add(a as f64, acc as f64) as f32;
-        let left = 1.0 - fused(w, fused(y, z * z));
+        let left = 1.0 - fused_square(w, fused_square(y, z * z));
         let x = if left <= 0.0 {
             0.0
         } else if bits(words, at + 3 * self.point_bits, 1) != 0 {
@@ -681,37 +887,16 @@ impl RotHeader {
         [x, y, z, w]
     }
 
-    /// The control point of key `k` (801B6C44, slots 1 and 0): `outgoing` towards key k + 1 (a
-    /// window's w1) or incoming from key k - 1 (the w2 of the window before). At the first key
-    /// the key moves (1 + its bias) / 2 of the way to key 1, at the last (1 - its bias) / 2 of
-    /// the way to the one before. Between them it moves that way to each neighbour (X, Y), M
-    /// is the unit mean of the two, and the control point is the key moved from M by 2 x
-    /// this side's frames over both sides'. Each result is made unit length.
+    /// The control point of key `k`, read from the bits; see `RotKeys::control`.
     pub fn control(&self, words: &[u32], k: u32, outgoing: bool) -> [f32; 4] {
-        let a = self.point(words, k);
-        let bias = self.bias(words, k);
-        let moved = |to: [f32; 4], weight: f32| unit_or_identity(quat_add(a, quat_scale(quat_sub(to, a), weight)));
-        if k == 0 {
-            return moved(self.point(words, 1), (bias + 1.0) * 0.5);
-        }
-        if k + 1 == self.keys {
-            return moved(self.point(words, k - 1), (1.0 - bias) * 0.5);
-        }
-        let (before, after) = (self.time(words, k) - self.time(words, k - 1), self.time(words, k + 1) - self.time(words, k));
-        let (side, sign) = if outgoing { (after, -1.0f32) } else { (before, 1.0f32) };
-        let ratio = side as f32 / (before + after) as f32;
-        let x = moved(self.point(words, k - 1), -((bias + 1.0) * 0.5));
-        let y = moved(self.point(words, k + 1), (1.0 - bias) * 0.5);
-        let m = unit_or_identity(quat_add(x, quat_scale(quat_sub(y, x), 0.5)));
-        moved(m, (sign * ratio) * -2.0)
+        RotKeys { header: self, words, table: None }.control(k, outgoing)
     }
 
     /// The window between keys `k` and k + 1 as the evaluator holds it: first and last frames
     /// and the quaternions w0 (key k), w1 (its outgoing control point), w2 (key k + 1's
     /// incoming control point) and w3 (key k + 1) (801B69A0).
     pub fn window(&self, words: &[u32], k: u32) -> (i32, i32, [[f32; 4]; 4]) {
-        let w = [self.point(words, k), self.control(words, k, true), self.control(words, k + 1, false), self.point(words, k + 1)];
-        (self.time(words, k), self.time(words, k + 1), w)
+        RotKeys { header: self, words, table: None }.window(k)
     }
 }
 
@@ -731,25 +916,36 @@ pub struct RotStream {
     pub mode_set: bool,
     pub last_place: f32,
     pub window: [[f32; 4]; 4],
+    table: Arc<RotTable>,
 }
 
 impl RotStream {
     /// A stream at its start (801B68AC): the first window.
     pub fn new(words: &[u32], header: RotHeader) -> RotStream {
-        let mut s = RotStream { header, key: 0, first: 0, last: 0, mode: 0, mode_set: false, last_place: 0.0, window: [[0.0; 4]; 4] };
+        let table = Arc::new(RotTable::decode(words, &header));
+        RotStream::with_table(words, header, table)
+    }
+
+    /// A stream at its start on keys decoded already (`Anim::node_keys`).
+    pub(crate) fn with_table(words: &[u32], header: RotHeader, table: Arc<RotTable>) -> RotStream {
+        let mut s = RotStream { header, key: 0, first: 0, last: 0, mode: 0, mode_set: false, last_place: 0.0, window: [[0.0; 4]; 4], table };
         s.reset(words);
         s
     }
 
+    fn keys<'a>(&'a self, words: &'a [u32]) -> RotKeys<'a> {
+        RotKeys { header: &self.header, words, table: Some(&self.table) }
+    }
+
     fn fill(&mut self, words: &[u32]) {
-        self.window = self.header.window(words, self.key).2;
+        self.window = self.keys(words).window(self.key).2;
     }
 
     /// Back to the first window (801B68AC); the last place is FLT_MAX, the flag is kept.
     fn reset(&mut self, words: &[u32]) {
         self.key = 0;
         self.first = 0;
-        self.last = self.header.time(words, 1);
+        self.last = self.keys(words).time(1);
         self.last_place = f32::MAX;
         self.fill(words);
     }
@@ -757,10 +953,11 @@ impl RotStream {
     /// To the last window (801B6918): it ends at the stream's frames - 1; the last place is
     /// -FLT_MAX.
     fn jump_to_end(&mut self, words: &[u32]) {
-        let h = &self.header;
-        self.key = h.keys - 2;
-        self.last = h.frames(words) as i32 - 1;
-        self.first = self.last - (h.time(words, h.keys - 1) - h.time(words, h.keys - 2));
+        let (keys, frames) = (self.header.keys, self.table.timeline.frames);
+        self.key = keys - 2;
+        self.last = frames as i32 - 1;
+        let k = self.keys(words);
+        self.first = self.last - (k.time(keys - 1) - k.time(keys - 2));
         self.last_place = -f32::MAX;
         self.fill(words);
     }
@@ -770,30 +967,32 @@ impl RotStream {
     fn forward(&mut self, words: &[u32], place: f32) {
         self.key += 1;
         self.first = self.last;
-        self.last = self.header.time(words, self.key + 1);
+        self.last = self.keys(words).time(self.key + 1);
         self.mode_set = true;
         self.mode = ((place - self.last_place) >= (self.last - self.first) as f32 * (1.0 / 3.0)) as u8;
         if self.mode == 0 {
-            self.window[1] = self.header.control(words, self.key, true);
-            self.window[2] = self.header.control(words, self.key + 1, false);
+            let (outgoing, incoming) = (self.keys(words).control(self.key, true), self.keys(words).control(self.key + 1, false));
+            self.window[1] = outgoing;
+            self.window[2] = incoming;
         }
         self.window[0] = self.window[3];
-        self.window[3] = self.header.point(words, self.key + 1);
+        self.window[3] = self.keys(words).point(self.key + 1);
     }
 
     /// One window back (801B6774), the same rule the other way.
     fn back(&mut self, words: &[u32], place: f32) {
         self.key -= 1;
         self.last = self.first;
-        self.first = self.header.time(words, self.key);
+        self.first = self.keys(words).time(self.key);
         self.mode_set = true;
         self.mode = ((self.last_place - place) >= (self.last - self.first) as f32 * (1.0 / 3.0)) as u8;
         if self.mode == 0 {
-            self.window[1] = self.header.control(words, self.key, true);
-            self.window[2] = self.header.control(words, self.key + 1, false);
+            let (outgoing, incoming) = (self.keys(words).control(self.key, true), self.keys(words).control(self.key + 1, false));
+            self.window[1] = outgoing;
+            self.window[2] = incoming;
         }
         self.window[3] = self.window[0];
-        self.window[0] = self.header.point(words, self.key);
+        self.window[0] = self.keys(words).point(self.key);
     }
 
     /// The rotation at `place` (801B5F48): the window moved to hold it (stepping, or from the
@@ -801,7 +1000,7 @@ impl RotStream {
     pub fn read(&mut self, words: &[u32], place: f32) -> [f32; 4] {
         let (first, last) = (self.first as f32, self.last as f32);
         if place > last {
-            if place - last <= (self.header.frames(words) as i32 - 1) as f32 - place {
+            if place - last <= (self.table.timeline.frames as i32 - 1) as f32 - place {
                 while place > self.last as f32 {
                     self.forward(words, place);
                 }
@@ -868,6 +1067,11 @@ impl SimAnimator {
     }
 }
 
+/// A track's frame (Anim_UpdateTrack 80157318 to 801575F4): the place moved by
+/// `track_advance`, then at the ends by the track's end mode (+13). Past the last frame, mode 0
+/// (a loop) comes back by the last frame (`wrap_back`), and the others stop at the last frame.
+/// Before 0, mode 0 goes on by the last frame until it is not below 0 (at most the last frame),
+/// and the others stop at 0. Gives the new place and whether an end was passed (+160 set).
 pub fn track_step(place: f32, frame_time: f32, controller_speed: f32, track_speed: f32, rate: f32, last: f32, end_mode: u8) -> (f32, bool) {
     let next = track_advance(place, frame_time, controller_speed, track_speed, rate);
     if next > last {
@@ -902,25 +1106,36 @@ pub struct Stream {
     pub mode_set: bool,
     pub last_place: f32,
     pub window: [f32; 12],
+    table: Arc<KeyTable3>,
 }
 
 impl Stream {
     /// A stream at its start (801BC318 then 801BCBBC): the first window, curved.
     pub fn new(words: &[u32], header: StreamHeader) -> Stream {
-        let mut s = Stream { header, key: 0, first: 0, last: 0, mode: 0, mode_set: false, last_place: 0.0, window: [0.0; 12] };
+        let table = Arc::new(KeyTable3::decode(words, &header));
+        Stream::with_table(words, header, table)
+    }
+
+    /// A stream at its start on keys decoded already (`Anim::node_keys`).
+    pub(crate) fn with_table(words: &[u32], header: StreamHeader, table: Arc<KeyTable3>) -> Stream {
+        let mut s = Stream { header, key: 0, first: 0, last: 0, mode: 0, mode_set: false, last_place: 0.0, window: [0.0; 12], table };
         s.reset(words);
         s
     }
 
+    fn keys<'a>(&'a self, words: &'a [u32]) -> Keys3<'a> {
+        Keys3 { header: &self.header, words, table: Some(&self.table) }
+    }
+
     fn fill(&mut self, words: &[u32]) {
-        self.window = self.header.window(words, self.key).2;
+        self.window = self.keys(words).window(self.key).2;
     }
 
     /// Back to the first window (801BCBBC); the last place is FLT_MAX, the flag is kept.
     fn reset(&mut self, words: &[u32]) {
         self.key = 0;
         self.first = 0;
-        self.last = self.header.time(words, 1);
+        self.last = self.keys(words).time(1);
         self.last_place = f32::MAX;
         self.fill(words);
     }
@@ -928,10 +1143,11 @@ impl Stream {
     /// To the last window (801BCC28): it ends at the stream's frames - 1; the last place is
     /// -FLT_MAX.
     fn jump_to_end(&mut self, words: &[u32]) {
-        let h = &self.header;
-        self.key = h.keys - 2;
-        self.last = h.frames(words) as i32 - 1;
-        self.first = self.last - (h.time(words, h.keys - 1) - h.time(words, h.keys - 2));
+        let (keys, frames) = (self.header.keys, self.table.timeline.frames);
+        self.key = keys - 2;
+        self.last = frames as i32 - 1;
+        let k = self.keys(words);
+        self.first = self.last - (k.time(keys - 1) - k.time(keys - 2));
         self.last_place = -f32::MAX;
         self.fill(words);
     }
@@ -940,32 +1156,36 @@ impl Stream {
     fn forward(&mut self, words: &[u32], place: f32) {
         self.key += 1;
         self.first = self.last;
-        self.last = self.header.time(words, self.key + 1);
+        self.last = self.keys(words).time(self.key + 1);
         self.mode_set = true;
         self.mode = ((place - self.last_place) >= (self.last - self.first) as f32 * (1.0 / 3.0)) as u8;
         let p1 = [self.window[9], self.window[10], self.window[11]];
         self.window[0..3].copy_from_slice(&p1);
         if self.mode == 0 {
-            self.window[3..6].copy_from_slice(&self.header.tangent(words, true, self.key));
-            self.window[6..9].copy_from_slice(&self.header.tangent(words, false, self.key + 1));
+            let (outgoing, incoming) = (self.keys(words).tangent(true, self.key), self.keys(words).tangent(false, self.key + 1));
+            self.window[3..6].copy_from_slice(&outgoing);
+            self.window[6..9].copy_from_slice(&incoming);
         }
-        self.window[9..12].copy_from_slice(&self.header.point(words, self.key + 1));
+        let p1 = self.keys(words).point(self.key + 1);
+        self.window[9..12].copy_from_slice(&p1);
     }
 
     /// One window back (801BCA8C), the same rule the other way.
     fn back(&mut self, words: &[u32], place: f32) {
         self.key -= 1;
         self.last = self.first;
-        self.first = self.header.time(words, self.key);
+        self.first = self.keys(words).time(self.key);
         self.mode_set = true;
         self.mode = ((self.last_place - place) >= (self.last - self.first) as f32 * (1.0 / 3.0)) as u8;
         let p0 = [self.window[0], self.window[1], self.window[2]];
         self.window[9..12].copy_from_slice(&p0);
         if self.mode == 0 {
-            self.window[3..6].copy_from_slice(&self.header.tangent(words, true, self.key));
-            self.window[6..9].copy_from_slice(&self.header.tangent(words, false, self.key + 1));
+            let (outgoing, incoming) = (self.keys(words).tangent(true, self.key), self.keys(words).tangent(false, self.key + 1));
+            self.window[3..6].copy_from_slice(&outgoing);
+            self.window[6..9].copy_from_slice(&incoming);
         }
-        self.window[0..3].copy_from_slice(&self.header.point(words, self.key));
+        let p0 = self.keys(words).point(self.key);
+        self.window[0..3].copy_from_slice(&p0);
     }
 
     /// The value at `place` (801BC4E0): the window moved to hold it (stepping, or from the
@@ -973,7 +1193,7 @@ impl Stream {
     pub fn read(&mut self, words: &[u32], place: f32) -> [f32; 3] {
         let (first, last) = (self.first as f32, self.last as f32);
         if place > last {
-            if place - last <= (self.header.frames(words) as i32 - 1) as f32 - place {
+            if place - last <= (self.table.timeline.frames as i32 - 1) as f32 - place {
                 while place > self.last as f32 {
                     self.forward(words, place);
                 }
@@ -1159,7 +1379,7 @@ mod tests {
     }
 
     fn anim(frames: u32, rate: f32) -> Anim {
-        Anim { name: String::new(), frames, first: [0.0; 3], second: [0.0; 3], nodes: vec![], word: 0, constants: vec![], bits: 0, bit_words: vec![], rate, floats: [0.0; 2], byte: 0, words: [0; 4], flags: [0; 2], events: vec![] }
+        Anim { name: String::new(), frames, first: [0.0; 3], second: [0.0; 3], nodes: vec![], word: 0, constants: vec![], bits: 0, bit_words: vec![], rate, floats: [0.0; 2], byte: 0, words: [0; 4], flags: [0; 2], events: vec![], compiled: Compiled::default() }
     }
 
     #[test]

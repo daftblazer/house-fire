@@ -6,7 +6,7 @@
 //! channels".
 
 use crate::mathf;
-use crate::anim::{self, Anim, Channel, FlagStream, RotStream, Stream};
+use crate::anim::{self, Anim, Channel, FlagStream, RotStream, Stream, fma32};
 
 /// The node state flag whose set bit carries the state's 0x18 bits into the pose and stops the flag channel being read.
 pub const FLAGS_KEEP: u32 = 0x10;
@@ -97,29 +97,20 @@ pub struct TrackStreams {
 /// One node's readers (opaque: `TrackStreams::save` and `restore` hand it round).
 pub struct NodeStreams {
     rotation: Option<RotStream>,
-    /// Words 1, 2 and 4.
+    /// Words 1, 2 and 4 (`anim::NodeKeys::vectors`' order).
     vectors: [Option<Stream>; 3],
 }
-
-/// The words of the three vector channels, in `NodeStreams::vectors`' order.
-const VECTOR_WORDS: [usize; 3] = [1, 2, 4];
 
 impl TrackStreams {
     /// The streams a track starts with on `anim` (each at its first window).
     pub fn new(anim: &Anim) -> TrackStreams {
         let words = &anim.bit_words;
         let nodes = anim
-            .nodes
+            .node_keys()
             .iter()
             .map(|n| NodeStreams {
-                rotation: match Channel::of(n[0]) {
-                    Channel::Stream(at) => Some(RotStream::new(words, anim::rotation_header(words, at))),
-                    _ => None,
-                },
-                vectors: VECTOR_WORDS.map(|w| match Channel::of(n[w]) {
-                    Channel::Stream(at) => Some(Stream::new(words, anim::stream_header(words, at))),
-                    _ => None,
-                }),
+                rotation: n.rotation.as_ref().map(|(header, table)| RotStream::with_table(words, *header, table.clone())),
+                vectors: n.vectors.each_ref().map(|v| v.as_ref().map(|(header, table)| Stream::with_table(words, *header, table.clone()))),
             })
             .collect();
         TrackStreams { nodes }
@@ -135,7 +126,7 @@ impl TrackStreams {
         self.nodes[i] = saved;
     }
 
-    /// Which of node `i`'s streams (0 the rotation, 1 to 3 the vectors of `VECTOR_WORDS`) no
+    /// Which of node `i`'s streams (0 the rotation, 1 to 3 the vectors, words 1, 2 and 4) no
     /// window step has set the blend flag of yet: the game leaves their flag as its memory held
     /// it (`Stream::mode_set`).
     pub fn unset_modes(&self, i: usize) -> Vec<usize> {
@@ -162,7 +153,8 @@ impl TrackStreams {
         let node = &anim.nodes[i];
         let words = &anim.bit_words;
         let streams = &mut self.nodes[i];
-        let constants = |at: usize, n: usize| -> Vec<f32> { anim.constants.get(at..at + n).map_or_else(|| vec![0.0; n], <[f32]>::to_vec) };
+        // a constant channel's values; 0 where its index runs past the animation's constants
+        let constants = |at: usize| -> [f32; 3] { anim.constants.get(at..at + 3).map_or([0.0; 3], |c| c.try_into().unwrap()) };
         let mut pose = Pose { flags: if state_flags & FLAGS_KEEP != 0 { state_flags & FLAGS_KEPT } else { 0 }, ..Pose::default() };
 
         // word 0: the rotation, or the identity (flag 0x1)
@@ -170,7 +162,7 @@ impl TrackStreams {
             (Channel::None, _) => {}
             (Channel::Constant(at), _) => {
                 pose.flags |= 1;
-                pose.rotation = constants(at, 4).try_into().unwrap();
+                pose.rotation = anim.constants.get(at..at + 4).map_or([0.0; 4], |c| c.try_into().unwrap());
             }
             (Channel::Stream(_), stream) => {
                 pose.flags |= 1;
@@ -181,7 +173,7 @@ impl TrackStreams {
         let mut vec3 = |word: usize, slot: usize, flags: u32, default: [f32; 3]| -> ([f32; 3], u32) {
             match (Channel::of(node[word]), streams.vectors[slot].as_mut()) {
                 (Channel::None, _) => (default, 0),
-                (Channel::Constant(at), _) => (constants(at, 3).try_into().unwrap(), flags),
+                (Channel::Constant(at), _) => (constants(at), flags),
                 (Channel::Stream(_), stream) => (stream.map_or(default, |s| s.read(words, place)), flags),
             }
         };
@@ -311,21 +303,20 @@ pub fn layer(state: &Pose, pose: &Pose, w: f32) -> Pose {
     let t = rotation_power(pose.rotation, w);
     let s = state.rotation;
     // the product t * s, the terms fused as the code fuses them (80158A00 to 80158A34)
-    let fma = |a: f32, b: f32, c: f32| (a as f64).mul_add(b as f64, c as f64) as f32;
     let [tx, ty, tz, tw] = t;
     let [sx, sy, sz, sw] = s;
-    let a = fma(tw, sx, -(tz * sy));
-    let b = fma(-tx, sx, -(ty * sy));
-    let c = fma(-ty, sx, tx * sy);
-    let a = fma(ty, sz, a);
-    let d = fma(tz, sx, tw * sy);
-    let x = fma(tx, sw, a);
+    let a = fma32(tw, sx, -(tz * sy));
+    let b = fma32(-tx, sx, -(ty * sy));
+    let c = fma32(-ty, sx, tx * sy);
+    let a = fma32(ty, sz, a);
+    let d = fma32(tz, sx, tw * sy);
+    let x = fma32(tx, sw, a);
     let d = d - tx * sz;
-    let e = fma(tw, sz, c);
+    let e = fma32(tw, sz, c);
     let b = b - tz * sz;
-    let rw = fma(tw, sw, b);
-    let ry = fma(ty, sw, d);
-    let rz = fma(tz, sw, e);
+    let rw = fma32(tw, sw, b);
+    let ry = fma32(ty, sw, d);
+    let rz = fma32(tz, sw, e);
     Pose {
         flags: state.flags | pose.flags,
         rotation: [x, ry, rz, rw],
@@ -359,7 +350,7 @@ const NLERP_DOT: f32 = f32::from_bits(0x3f7f_be77);
 /// else the spherical interpolation, sin((1 - t) w) / sin w a + sin(t w) / sin w b with
 /// w = acos(dot).
 pub fn blend_rotation(a: [f32; 4], mut b: [f32; 4], t: f32) -> [f32; 4] {
-    let mut dot = fma(a[3], b[3], fma(a[2], b[2], fma(a[0], b[0], a[1] * b[1])));
+    let mut dot = fma32(a[3], b[3], fma32(a[2], b[2], fma32(a[0], b[0], a[1] * b[1])));
     if dot < 0.0 {
         b = b.map(|v| -v);
         dot = -dot;
@@ -382,11 +373,6 @@ pub fn blend_rotation(a: [f32; 4], mut b: [f32; 4], t: f32) -> [f32; 4] {
     core::array::from_fn(|i| wa * a[i] + wb * b[i])
 }
 
-/// a x b + c, fused, rounded to single.
-fn fma(a: f32, b: f32, c: f32) -> f32 {
-    (a as f64).mul_add(b as f64, c as f64) as f32
-}
-
 /// The game's arccosine (8010DB14): fdlibm's e_acos in single precision, the fused steps fused.
 /// The constants are the game's small-data floats (r13 - 30784 to r13 - 30716, r13 = 803833E0).
 pub fn acos(x: f32) -> f32 {
@@ -399,8 +385,8 @@ pub fn acos(x: f32) -> f32 {
     let qc: [f32; 4] = [0xc019_d139, 0x4001_572d, 0xbf30_3361, 0x3d9d_c62e].map(f32::from_bits);
     // p(z) / q(z) as fdlibm has them: z (pS0 + z (pS1 + ...)) and 1 + z (qS1 + ...)
     let ratio = |z: f32| {
-        let p = fma(z, fma(z, fma(z, fma(z, fma(z, pc[5], pc[4]), pc[3]), pc[2]), pc[1]), pc[0]);
-        let q = fma(z, fma(z, fma(z, fma(z, qc[3], qc[2]), qc[1]), qc[0]), 1.0);
+        let p = fma32(z, fma32(z, fma32(z, fma32(z, fma32(z, pc[5], pc[4]), pc[3]), pc[2]), pc[1]), pc[0]);
+        let q = fma32(z, fma32(z, fma32(z, fma32(z, qc[3], qc[2]), qc[1]), qc[0]), 1.0);
         (z * p) / q
     };
     let ix = x.to_bits() & 0x7fff_ffff;
@@ -420,7 +406,7 @@ pub fn acos(x: f32) -> f32 {
     if x < 0.0 {
         let z = (1.0 + x) * 0.5;
         let s = z.sqrt();
-        let w = fma(ratio(z), s, -PIO2_LO);
+        let w = fma32(ratio(z), s, -PIO2_LO);
         return PI_HI - 2.0 * (s + w);
     }
     let z = (1.0 - x) * 0.5;
@@ -428,7 +414,7 @@ pub fn acos(x: f32) -> f32 {
     // df: s without its low 12 bits, so that df * df is exact
     let df = f32::from_bits(s.to_bits() & 0xffff_f000);
     let c = (z - df * df) / (s + df);
-    let w = fma(ratio(z), s, c);
+    let w = fma32(ratio(z), s, c);
     2.0 * (df + w)
 }
 
