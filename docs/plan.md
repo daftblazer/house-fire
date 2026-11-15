@@ -33,6 +33,30 @@ other game gets the same kind of reference from its own recompilation later.
    sound, menus (`Apt`), Create-A-Sim, saves, the per-game modes (Bustin' Out's story, The
    Urbz's reputation and districts, The Sims 2's wants and fears, Pets' pets).
 5. **The other games,** each as its data and its own module of primitives and modes.
+6. **Multiplayer beyond the originals** (after the games are fully playable; the user's
+   roadmap item, 2026-11-15): a dedicated server holding a lot or neighbourhood, with players
+   joining it to play together. A deliberate difference, so off for every check against the
+   original.
+
+### Built for multiplayer from now on
+
+Nothing of it is built yet, but the engine is shaped so it can be added without a rewrite:
+- **The simulation is a deterministic state machine apart from the presentation.** It steps on
+  its own tick from the world state and a list of inputs, with no reads of the renderer, audio,
+  the wall clock or the host's randomness (its random stream is part of the state). This is
+  what the lockstep checks already hold it to, and a server needs the same.
+- **Player actions are commands.** What a player does (an interaction picked, a build or buy
+  change, a speed change, a Sim chosen) reaches the simulation as a command for a tick, never
+  as a direct write from the UI. Replays, the server and later save-game journals use the same
+  commands; a command carries which player sent it.
+- **The world state serializes whole** (chunk 4.7's saves): a joining player gets a snapshot,
+  then the commands after it. Ids are the engine's own and stable across machines.
+- **No single-player assumptions inside the simulation**: whose household or Sim a command acts
+  on is an argument, not a global "the player"; the camera, selection and UI state live in the
+  client.
+- **The client renders from the state, never feeds back into it**: animation, sound and the
+  picture are derived from the simulation's state and events, so a client can run without
+  authority (the server's tick decides).
 
 ## Same game, new engine
 
