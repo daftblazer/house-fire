@@ -668,3 +668,14 @@ loses the direction. That is the original's, and kept: in `anim::Play`, a backwa
 paused for a frame goes on forward from where it is. On home-a11.log, 4,026 Animate steps are
 native as the log's and 5 differ (a2o-sit-left with flag 0x40 at 5065, 4 steps; flag 0x10's
 false at once at 1791).
+Iteration 146: the 5 left, by flags (`REPLAY_ANIMATE_BY_FLAGS`). Every flag value but 0x40
+and 0x10 answers natively as the log's in every step (0x00 1,239, 0x02 40, 0x08 197, 0x11 154,
+0x20 1,975, 0x22 303, 0x31 49). Flag 0x40 is one run on home-a11 (a2o-sit-left at the outdoor
+chair, rate 60, 171 frames, from 4996). Its track reaches its last frame and is done at frame
+7521 (tick 5064). The original still yields at 5065; at 5066 the node answers false (to its
+node 15), then at once true, and the next node's a2o-sit-loop is true at once too. Flag 0x10
+is one call (a2o-reach-tableht-aroundchairr of the group meal at 1791), true at once. All three
+"true at once" steps look like an interaction being ended (the Sim's animations skipped), but
+there is no player input then (none after video frame 2104) and the engine's queue does not
+show it. One sample of each: not a rule that can be checked yet, so these 5 steps keep the
+log's answer. A log with the Sims' queue changes, or more runs with 0x40 and 0x10, is needed.

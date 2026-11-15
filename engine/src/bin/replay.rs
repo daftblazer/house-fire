@@ -705,8 +705,13 @@ impl Host for ReplayHost<'_, '_> {
                 Some(Poll::Event(_)) if s.result != 1 && !logged_true => "primitives: Animate: false (an event) natively as the log's",
                 _ => "primitives: Animate: DIFFERENT (the log's taken)",
             });
+            if has("REPLAY_ANIMATE_BY_FLAGS") {
+                note!(self.counts, "study animate flags {:#04x}: log {} native {}", n.operand[5], if s.result == 1 { "yield" } else if logged_true { "true" } else { "false" }, match native { Some(Poll::Pending) => "yield", Some(Poll::Done) => "true", Some(Poll::Event(_)) => "false", None => "-" });
+            }
             if has("REPLAY_SHOW_ANIMATE") && native.is_some() && animate_differs(&native, s, logged_true) {
                 let name = file.and_then(|f| lib.file(f).strings.get(&table).map(|t| (lib.file(f).path.rsplit('/').next().unwrap_or("").to_string(), t.get(n.operand16(0) as usize).map(|p| p.rsplit('\\').next().unwrap_or("").to_string()))));
+                let o = self.world.get(me);
+                println!("   queue: current {:?}; queued {:?}", (o.current.id, o.current.flags, o.current.tree), o.queue.iter().map(|q| (q.id, q.flags, q.tree, q.e)).collect::<Vec<_>>());
                 println!("animate different: tick {} sim {:x} tree {} node {} result {} local0 {:?}: native {native:?}; source {} {name:?}; targets {} {}; operand {:02x?}", s.tick, s.sim, s.tree, s.node, s.result, s.locals_after.first(), n.operand[4], n.true_target, n.false_target, n.operand);
             }
             return self.logged(s, n);
