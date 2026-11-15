@@ -2572,6 +2572,16 @@ fn main() -> ExitCode {
             }
             let materials: BTreeSet<[u32; 6]> = log.group_scales.iter().map(|g| [0, 1, 2, 3, 4, 5].map(|i| g.material[i / 3][i % 3].to_bits())).collect();
             let slip = log.group_scales.iter().filter(|g| g.material[0][1].to_bits() != g.material[0][2].to_bits()).count();
+            if std::env::var_os("ASSETS_MATERIALS").is_some() {
+                let mut seen: BTreeMap<[u32; 6], (u32, usize)> = BTreeMap::new();
+                for g in &log.group_scales {
+                    let e = seen.entry([0, 1, 2, 3, 4, 5].map(|i| g.material[i / 3][i % 3].to_bits())).or_insert((g.group, 0));
+                    e.1 += 1;
+                }
+                for (m, (g, n)) in &seen {
+                    println!("  material {:?} (first group {g:08x}, {n} groups)", m.map(f32::from_bits));
+                }
+            }
             println!("materials {} distinct; groups whose diffuse green and blue differ (the blue scale taking the green) {slip}", materials.len());
             println!("group scales {}: the engine's base and scale bit for bit {same}; the constant {:?} (the engine's {})", log.group_scales.len(), ks.iter().map(|b| f32::from_bits(*b)).collect::<Vec<_>>(), housefire::light::GROUP_K);
         }
@@ -2706,6 +2716,77 @@ fn main() -> ExitCode {
                 let worst = mine.iter().zip(r.iter()).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
                 println!("  parameters: target ({:.3}, {:.3}) distance {:.3} rotation {:.2} tilt {:.2}; the engine's view against the log's: largest difference {worst:.6}", target[0], target[1], kt, (back_yaw + 135.0).rem_euclid(360.0), pitch);
             }
+        }
+        "floormaterials" => {
+            // each relit floor group's material (the 'b' record's) against its tiles' floor
+            // shader (lockstep's LOCKSTEP_DUMP_FLOORS: x y value shader), or the terrain's
+            // where the tiles have no floor
+            let (Some(log), Some(floors)) = (args.get(3).and_then(|p| read_log(p)), args.get(4).and_then(|p| std::fs::read_to_string(p).ok())) else {
+                println!("usage: assets ISO floormaterials LOG FLOORS [TERRAIN]");
+                return ExitCode::FAILURE;
+            };
+            let sh = d.read("shaders.arc").unwrap_or_default();
+            let shaders: BTreeMap<u32, shader::Shader> = arc::entries(&sh).unwrap_or_default().iter().filter_map(|e| Some((e.id, shader::read(arc::bytes(&sh, e))?))).collect();
+            let floor: BTreeMap<(u32, u32), u32> = floors
+                .lines()
+                .filter_map(|l| {
+                    let f: Vec<&str> = l.split(' ').collect();
+                    Some(((f.first()?.parse().ok()?, f.get(1)?.parse().ok()?), u32::from_str_radix(f.get(3)?, 16).ok()?))
+                })
+                .collect();
+            // the lot's terrain shader by name (TERRAIN, e.g. terrain_mom_house): which one a lot
+            // takes is not read yet
+            let terrain = args.get(5).map(String::as_str).unwrap_or("terrain_mom_house");
+            let terrains: BTreeSet<[u32; 6]> = shaders.values().filter(|s| s.name == terrain).filter_map(|s| s.material()).map(|(a, b)| [a[0], a[1], a[2], b[0], b[1], b[2]].map(f32::to_bits)).collect();
+            let other: BTreeMap<String, usize> = shaders.values().filter(|s| s.name.starts_with("terrain_")).filter_map(|s| Some((s.material()?, s.name.clone()))).fold(BTreeMap::new(), |mut m, (mat, n)| {
+                if mat.0[0] != 1.25 && (mat.0[0] - 1.25).abs() > 1e-3 {
+                    *m.entry(n).or_default() += 1;
+                }
+                m
+            });
+            println!("terrain shaders without the 1.25 material: {:?}", other.keys().collect::<Vec<_>>());
+            let (mut groups, mut same, mut by_terrain, mut mixed, mut shown) = (0, 0, 0, 0, 0);
+            for rf in &log.room_floors {
+                let first = rf.scales_before.checked_sub(rf.groups.len());
+                for (gi, (_, entries)) in rf.groups.iter().enumerate() {
+                    let Some(g) = first.and_then(|f| log.group_scales.get(f + gi)) else { continue };
+                    groups += 1;
+                    let (m0, m1) = (g.material[0], g.material[1]);
+                    let want = [m0[0], m0[1], m0[2], m1[0], m1[1], m1[2]].map(f32::to_bits);
+                    // the entries' tiles (x, row) as the floors' (y, x)
+                    let mut found: BTreeSet<Option<u32>> = BTreeSet::new();
+                    for (word, _) in entries {
+                        let [_, row, a, b] = word.to_be_bytes();
+                        for x in u32::from(a & 0x3F)..=u32::from(b & 0x3F) {
+                            // (a diagonal tile, value 255, keeps its halves' floors elsewhere: skipped)
+                            match floor.get(&(x, u32::from(row))) {
+                                Some(0) => {}
+                                f => {
+                                    found.insert(f.copied());
+                                }
+                            }
+                        }
+                    }
+                    let mats: BTreeSet<Option<[u32; 6]>> = found.iter().map(|s| match s {
+                        Some(s) => shaders.get(s).and_then(|s| s.material()).map(|(a, b)| [a[0], a[1], a[2], b[0], b[1], b[2]].map(f32::to_bits)),
+                        None => terrains.iter().next().copied().filter(|_| terrains.len() == 1),
+                    }).collect();
+                    if mats.len() > 1 {
+                        mixed += 1;
+                    }
+                    if mats.len() == 1 && mats.first().copied().flatten() == Some(want) {
+                        same += 1;
+                        if found.contains(&None) {
+                            by_terrain += 1;
+                        }
+                    } else if shown < 4 {
+                        shown += 1;
+                        println!("  tick {} room {} group {gi}: the log's {:?}, its tiles' shaders {found:08x?}", g.tick, rf.id, want.map(f32::from_bits));
+                    }
+                }
+            }
+            println!("the terrain {terrain}'s material {:?}", terrains.iter().map(|m| m.map(f32::from_bits)).collect::<Vec<_>>());
+            println!("relit groups {groups}: the material from the tiles' floor shader {same} ({by_terrain} by the terrain), tiles of more than one material {mixed}");
         }
         "floorcheck" => {
             // the floors' textures the original loads at a tick against the lot's: each floor

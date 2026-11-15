@@ -14,9 +14,8 @@ pub struct Layer {
     pub value: f32,
 }
 
-/// A shader: its name, the 78 bytes after it (its layer count, a byte, first; colours, not read
-/// yet),
-/// its layers and the 28 bytes after them (not read yet).
+/// A shader: its name, the 78 bytes after it (its layer count, a byte, first; the material's
+/// colours, `Shader::material`), its layers and the 28 bytes after them (not read yet).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Shader {
     pub name: String,
@@ -27,6 +26,16 @@ pub struct Shader {
 
 fn be32(b: &[u8], p: usize) -> Option<u32> {
     Some(u32::from_be_bytes(b.get(p..p + 4)?.try_into().ok()?))
+}
+
+impl Shader {
+    /// The material's lighting colours, from the head: (diffuse, ambient), its words 7-9 and
+    /// 4-6 after the layer count's two bytes (what Light_GroupScale reads at the material's
+    /// +0x44 and +0x54; the floors' and terrains' measured against the 'b' records).
+    pub fn material(&self) -> Option<([f32; 3], [f32; 3])> {
+        let w = |i: usize| Some(f32::from_bits(be32(&self.head, 2 + 4 * i)?));
+        Some(([w(7)?, w(8)?, w(9)?], [w(4)?, w(5)?, w(6)?]))
+    }
 }
 
 /// Reads an entry: `None` unless it is a shader (the word 13, 12 zero bytes, the name) whose

@@ -1170,3 +1170,16 @@ call, through `room_triples`:
 Since the '2' records are the engine's from the clock and the room walk (iterations 90-103),
 the floor's colour bases and scales are the engine's, except the materials (logged) and the
 light grid sums (the lights' positions: the lamps wait for stage 4.4's poses).
+
+The floor groups' materials from the disc (iteration 105, `assets floormaterials`,
+`Shader::material`). The material Light_GroupScale reads is the floor's shader's: its diffuse
+is the head's words 7-9 and its ambient words 4-6 (after the layer count's two bytes). The
+floor patterns hold 1.0 and 1.0, or 0.7 and 1.0; the terrain shaders hold 1.25 and 1.25, except
+terrain_grass_dead and terrain_hollywood_house_under_filler. A group's tiles are its entries'
+(x, row) as the floor grid's (x, y), first to last x inclusive. A diagonal tile (value 255)
+keeps its halves' floors elsewhere, so it is skipped. A group on no floor takes the lot's
+terrain. With the floors from lockstep's `LOCKSTEP_DUMP_FLOORS`:
+- home: all 1,200 relit groups are their tiles' material (100 the terrain, terrain_mom_house);
+- the club: all 869 (67 the terrain, terrain_club_rubb; club-rooms.log).
+No group spans two materials. Which terrain shader a lot takes is not read yet; both lots'
+candidates carry the same material.
