@@ -194,12 +194,18 @@ Where the animations are (the fifth loop): the object files' "animations" string
 data's `AnimRef` table (`SimsObjects`: 2,891 rows of 12 bytes, a 32-bit id, a 32-bit value,
 an empty name), which `AnimRefName` (2,840 pointers into it) also reaches. The animations
 themselves are `animatio.arc`'s 4,013 entries, by name ("a2a-tickler-stop-laugh" ...). Which
-entry an AnimRef id names is not found yet: the id is not the archive's own name hash, nor
+entry an AnimRef id names (found in iteration 113 of the twelfth loop, once the archive index was
+read right in iteration 38): the id is the `animatio.arc` entry's own id, for all 2,891 rows
+(The Sims 2's `SAnimator2::loadSkillAnim` passes it to `EResourceManager::IsLoaded`). The
+earlier search, on the index read one entry off, found it not the archive's own name hash, nor
 CRC-32, FNV-1/1a, djb, sdbm, ELF or a ×31/37/131/65599 hash of the name (as is, lower or
 upper case, with or without an extension), and the row's value does not follow the run's
 length (0xA6A for 16 ticks, 0x514 for 17). Castaway's ELF has `EAnimManager` (resources by
-32-bit id) to read it from. Until then each animation's length cannot be checked, and
-Animate stays the log's. The primitive is a thin
+32-bit id) to read it from. But the operand's first 16 bits are not that table's row: read
+so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
+that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object
+(the object's or the Sim's own list into AnimRef, by the operand's source byte), still to read.
+Until then each animation's length cannot be checked, and Animate stays the log's. The primitive is a thin
 wrapper over that system, so it waits for it. Animate steps also make the effect objects
 (`objects.md`, "Objects made and removed").
 

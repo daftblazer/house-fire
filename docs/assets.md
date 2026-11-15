@@ -1273,3 +1273,7 @@ animation's name and its NUL, all big-endian and packed (nothing aligned):
 The engine's ERAnim::Load takes the frame count over the rate as the length (+20, in ticks by a
 constant). In all: 190,424 nodes and 265,862 constants. 3,050 animations have 58 nodes (the
 adult Sim's), the largest 248.
+The quick data's `AnimRef` rows (SimsObjects, 2,891) name animations by the entry's id: every
+row's id is an `animatio.arc` entry's (`assets anims`; iteration 113). The row's second word
+is not the length: paired rows share it (an apology's accept and reject, 0xB32 for 86 frames),
+and 0xEF9 stands beside a 116-frame entry.

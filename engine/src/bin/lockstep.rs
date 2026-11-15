@@ -632,6 +632,57 @@ fn main() -> ExitCode {
         }
     }
 
+    // (LOCKSTEP_ANIM_RUNS: each Animate (opcode 44) run, a Sim's steps on one node and frame
+    // yielding until a transition; its animation by the operand's first 16 bits, the AnimRef
+    // row whose id is the animatio.arc entry's; the run's ticks against the animation's frames)
+    if std::env::var_os("LOCKSTEP_ANIM_RUNS").is_some() {
+        let anims = d.read("animatio.arc").unwrap_or_default();
+        let quick = d.read("quickdat.arc").unwrap_or_default();
+        let by_id: BTreeMap<u32, housefire::anim::Anim> = housefire::arc::entries(&anims).unwrap_or_default().iter().filter_map(|e| Some((e.id, housefire::anim::read(housefire::arc::bytes(&anims, e))?))).collect();
+        let refs: Vec<u32> = housefire::arc::entries(&quick)
+            .unwrap_or_default()
+            .into_iter()
+            .find(|e| e.name == "SimsObjects")
+            .and_then(|e| housefire::quickdata::Image::read(housefire::arc::bytes(&quick, &e)))
+            .map(|img| img.rows("AnimRef").filter_map(|r| img.u32(r)).collect())
+            .unwrap_or_default();
+        // per Sim: (tree, node, frame, first tick, the animation's row)
+        let mut open: BTreeMap<u32, (u16, u16, u32, u32, usize)> = BTreeMap::new();
+        let mut runs: BTreeMap<usize, BTreeMap<u32, usize>> = BTreeMap::new();
+        let mut ends: BTreeMap<u8, usize> = BTreeMap::new();
+        for (i, s) in log.steps.iter().enumerate() {
+            let node = step_object[i].and_then(|o| lib.tree(Some(o), s.tree)).and_then(|t| lib.tree_at(t).nodes.get(s.node as usize)).copied();
+            let Some(n) = node.filter(|n| n.opcode == 44) else { continue };
+            let row = n.operand16(0) as usize;
+            let key = (s.tree, s.node, s.frame);
+            let start = match open.get(&s.sim) {
+                Some(&(t, nd, f, first, r)) if (t, nd, f) == key && r == row => first,
+                _ => s.tick,
+            };
+            if s.result == 1 {
+                open.insert(s.sim, (s.tree, s.node, s.frame, start, row));
+            } else {
+                open.remove(&s.sim);
+                *ends.entry(s.result).or_default() += 1;
+                *runs.entry(row).or_default().entry(s.tick - start).or_default() += 1;
+            }
+        }
+        let (mut fixed, mut total) = (0, 0);
+        let mut fits: BTreeMap<String, usize> = BTreeMap::new();
+        for (row, ticks) in &runs {
+            let Some(a) = refs.get(*row).and_then(|id| by_id.get(id)) else { continue };
+            total += 1;
+            if ticks.len() == 1 {
+                fixed += 1;
+                let t = *ticks.keys().next().unwrap();
+                *fits.entry(format!("{:.3}", t as f32 / a.frames as f32 * a.rate / 30.0)).or_default() += 1;
+            }
+            if std::env::var_os("LOCKSTEP_ANIM_RUNS_EACH").is_some() {
+                println!("  row {row} {}: {} frames at {}, runs {ticks:?}", a.name, a.frames, a.rate);
+            }
+        }
+        println!("animate runs: {} animations ({fixed} always the same ticks), ends by result {ends:?}; ticks over frames (at 30) of the fixed ones {fits:?}", total);
+    }
     // study (LOCKSTEP_SHOW_MAKERS): the node a made object came from, the step whose stack
     // object becomes an id the list gains that tick (or the one before)
     if std::env::var_os("LOCKSTEP_SHOW_MAKERS").is_some() {

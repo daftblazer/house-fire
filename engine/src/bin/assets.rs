@@ -2054,6 +2054,34 @@ fn main() -> ExitCode {
             for n in not.iter().take(10) {
                 println!("  not read: {n}");
             }
+            // (the quick data's AnimRef rows, SimsObjects: each one's id against the entries')
+            let q = d.read("quickdat.arc").unwrap_or_default();
+            if let Some(img) = arc::entries(&q).unwrap_or_default().into_iter().find(|e| e.name == "SimsObjects").and_then(|e| quickdata::Image::read(arc::bytes(&q, &e))) {
+                let ids: BTreeMap<u32, &arc::Entry> = es.iter().map(|e| (e.id, e)).collect();
+                let rows: Vec<(u32, u32)> = img.rows("AnimRef").filter_map(|r| Some((img.u32(r)?, img.u32(r + 4)?))).collect();
+                let found = rows.iter().filter(|(id, _)| ids.contains_key(id)).count();
+                println!("AnimRef rows {}: the id an animatio.arc entry's {found} (zero ids {})", rows.len(), rows.iter().filter(|r| r.0 == 0).count());
+                if std::env::var_os("ANIMS_REFS").is_some() {
+                    for (k, (id, v)) in rows.iter().enumerate().take(20) {
+                        let a = ids.get(id).and_then(|e| housefire::anim::read(arc::bytes(&b, e)));
+                        println!("  row {k}: {id:08x} {v:08x} -> {:?}", a.map(|a| (a.name, a.frames, a.rate)));
+                    }
+                }
+            }
+            // (ANIMS_AT=I,J,...: the entries at those indices, by the archive's order, and by id order)
+            if let Ok(v) = std::env::var("ANIMS_AT") {
+                let mut by_id: Vec<&arc::Entry> = es.iter().collect();
+                by_id.sort_by_key(|e| e.id);
+                for i in v.split(',').filter_map(|x| usize::from_str_radix(x.trim_start_matches("0x"), if x.starts_with("0x") { 16 } else { 10 }).ok()) {
+                    for (how, e) in [("archive order", es.get(i)), ("id order", by_id.get(i).copied())] {
+                        if let Some(e) = e
+                            && let Some(a) = housefire::anim::read(arc::bytes(&b, e))
+                        {
+                            println!("  {i} by {how}: {} ({} frames at {}: {:.3} s)", a.name, a.frames, a.rate, a.seconds());
+                        }
+                    }
+                }
+            }
         }
         "arclist" => {
             // (study) an archive's entries: count, sizes, and the first N entries' names, sizes and
