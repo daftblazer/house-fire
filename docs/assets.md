@@ -1721,3 +1721,13 @@ and stored as s8 (clamped, truncated). Sent per vertex: three big-endian floats,
 the colour, texture coordinate and generated ones as present. On home-a32.log all 200,127
 vertices of 2,926 primitives come out to the bit, positions and normals. Not compared: colours
 and texture coordinates (inputs not logged) and the sphere-mapped coordinates (none here).
+What a Sim wears (iteration 197). Sim_SetModels (800591CC) sets a Sim's model part slots (the
+Sim object's +1092..+1128, each a part's name hash; a row of the loaded models' pointers sits
+before them). It reads the person's description (+0 -> +236 -> +108, fn_8022A45C) and the part
+tables of the Sim's age and gender (fn_8018021C by name: "ChildFemale" and three siblings), and
+each slot is a table's entry at a description byte: +1092 table +28 at byte 9 (glasses or
+jewellery), +1100 +24 at byte 11 (hair or hat), +1104 +0 at 12 (upper body), +1108 +4 at 13 (lower
+body), +1112 +8 at 14 (shoes), +1116 +12 at 23 (eyes), +1120 +16 at 24 (nose), +1124 +20 at 25
+(mouth), +1128 +32 at 15. Found by a memory snapshot at tick 1,000 (the drawn parts' hashes side by
+side in each Sim) and the watch build naming the store. The observer's '?' records (home-a33.log:
+2 Sims, club-a1.log: 9) hold each dressing.
