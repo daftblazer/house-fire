@@ -293,9 +293,17 @@ unaligned). Home's lot has `House1Preload` and `housepre01` in memory. Every ani
 load ask on home-a10.log (43, `assets ISO resasks LOG` with
 `ASSETS_RES_DATASET=House1Preload,housepre01`) is answered loaded exactly when the animation is
 in one of the two: 28 in and loaded, 14 out and not, 42 of 43. The one left is
-`am_cas_idle_loop` at tick 0, a create-a-Sim animation still in memory from before the lot. How
-a lot names its sets (house 1: House1Preload, housepre01) is still to read, from the lot load or
-the HouseData table.
+`am_cas_idle_loop` at tick 0, a create-a-Sim animation still in memory from before the lot. How a lot names its sets (iteration 122): the requests at tick 0 ('0', `assets ISO resasks LOG`
+with `ASSETS_RES_TICK0`, named from every archive on the disc) are `globals` at boot, the
+create-a-Sim data, then the lot's two sets, `House1Preload` and `housepre01`, each through
+`fn_80082BB4` (an AddRefAsync of the set) and GetRef. Their ids are immediates in the code (lis/ori,
+so not found as bytes). In `fn_80081...`, the lot load: at 80081F54 `House1Preload` (ECF23484)
+when the global at 0x802F76D8 is 0, else `House2Preload` (627D3367; `House3Preload` AED733F9
+elsewhere). At 800822F8 `housepre[n - 1]`, from a table of the 16 sets' ids in the DOL at
+0x802D3380 (housepre01 to housepre16 in order), n the global at 0x802E68F8. Home's snapshots
+(ticks 1, 100, 1,000) hold n = 1 and the flag 0: House1Preload and housepre01, the two the log
+asks for. The club's (tick 100) holds n = 16, the flag 0. What the flag and the other branches
+of the switch are (House2/3Preload) is still to read.
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object

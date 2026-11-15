@@ -1509,6 +1509,42 @@ fn main() -> ExitCode {
                 println!("  animation {a:08x} ({n} steps): {}", h.iter().map(|w| format!("{w:08x}")).collect::<Vec<_>>().join(" "));
             }
         }
+        "setwhere" => {
+            // (study) where datasets.arc entries' ids appear: the quick data's tables and the
+            // disc's other files (aligned or not), for the sets named (or all housepre/Preload)
+            let ds = d.read("datasets.arc").unwrap_or_default();
+            let want: Vec<(String, u32)> = arc::entries(&ds)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|e| if args.len() > 3 { args[3..].iter().any(|a| a.eq_ignore_ascii_case(&e.name)) } else { e.name.to_ascii_lowercase().contains("pre") })
+                .map(|e| (e.name, e.id))
+                .collect();
+            println!("sets {}: {:?}", want.len(), want.iter().map(|w| format!("{} {:08x}", w.0, w.1)).collect::<Vec<_>>());
+            let q = d.read("quickdat.arc").unwrap_or_default();
+            for e in arc::entries(&q).unwrap_or_default() {
+                let Some(img) = quickdata::Image::read(arc::bytes(&q, &e)) else { continue };
+                for (name, id) in &want {
+                    for o in (0..img.data.len() / 4).map(|k| 4 * k) {
+                        if img.u32(o) == Some(*id) {
+                            let t = img.tables.iter().find(|(_, t)| o >= t.rows && o < t.rows + t.count * t.row_size).map_or(format!("@{o:x}"), |(n, t)| format!("{n}[{}]+{}", (o - t.rows) / t.row_size, (o - t.rows) % t.row_size));
+                            println!("{name}: quick {} {t}", e.name);
+                        }
+                    }
+                }
+            }
+            for f in d.files().keys().cloned().collect::<Vec<_>>() {
+                if f.ends_with("animatio.arc") || f.ends_with("datasets.arc") {
+                    continue;
+                }
+                let b = d.read(&f).unwrap_or_default();
+                for (name, id) in &want {
+                    let n = b.windows(4).filter(|w| *w == id.to_be_bytes()).count();
+                    if n > 0 {
+                        println!("{name}: file {f} x{n}");
+                    }
+                }
+            }
+        }
         "idwhere" => {
             // (study) where named animations' ids appear: each quick data entry's tables (by the
             // word's offset), and every disc file other than the archive itself
@@ -1596,6 +1632,19 @@ fn main() -> ExitCode {
                     }
                 }
                 println!("animations' first asks (in {set}, loaded): {tally:?}");
+            }
+            if std::env::var_os("ASSETS_RES_TICK0").is_some() {
+                // the first requests, named from every archive the disc has
+                let mut all: BTreeMap<u32, String> = BTreeMap::new();
+                for f in d.files().keys().filter(|f| f.ends_with(".arc")).cloned().collect::<Vec<_>>() {
+                    let b = d.read(&f).unwrap_or_default();
+                    for e in arc::entries(&b).unwrap_or_default() {
+                        all.insert(e.id, format!("{}:{}", f.rsplit('/').next().unwrap_or(&f), e.name));
+                    }
+                }
+                for q in log.res_asks.iter().filter(|q| q.tick == 0) {
+                    println!("  t0 kind {} {:08x} {} from {:08x} -> {:08x}", q.kind, q.id, all.get(&q.id).map_or("?", |s| s.as_str()), q.caller, q.result);
+                }
             }
             if let Ok(want) = std::env::var("ASSETS_RES_NAME") {
                 for q in log.res_asks.iter().filter(|q| names.get(&q.id).is_some_and(|n| n.contains(want.as_str()))) {
