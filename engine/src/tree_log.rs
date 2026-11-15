@@ -536,7 +536,7 @@ pub struct ScalarStreamRec {
     pub track: Option<(u32, f32)>,
 }
 
-/// A track's node states around its pose ('=', after ')' of Anim_Animate 801581C8, the first 40,000 poses): the states object, its array of 64-byte node states, and each state's 16 words before and after the pose.
+/// A track's node states around its pose ('=', after ')' of Anim_Animate 801581C8, the first 40,000 poses): the states object, its array of 64-byte node states, each state's 16 words before and after the pose, and the track's weights and flags.
 #[derive(Clone, Debug, Default)]
 pub struct NodeStatesRec {
     pub tick: u32,
@@ -545,6 +545,12 @@ pub struct NodeStatesRec {
     pub track: Option<(u32, f32)>,
     pub before: Vec<[u32; 16]>,
     pub after: Vec<[u32; 16]>,
+    /// The track's weight (+76), flags (+8) and +124 word.
+    pub weight: f32,
+    pub flags: u32,
+    pub word124: u32,
+    /// The track's node weights (+152; None when it has none).
+    pub node_weights: Option<Vec<f32>>,
 }
 
 /// A skeleton the first time its bones are computed ('>'): its address and each character node's 45 words (180 bytes; +0 the parent).
@@ -1495,7 +1501,13 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let read = |r: &mut Bytes| (0..n).map(|_| core::array::from_fn(|_| r.u32())).collect::<Vec<[u32; 16]>>();
                 let before = read(&mut r);
                 let after = read(&mut r);
-                log.node_states.push(NodeStatesRec { tick: log.ticks, states, array, track: last_posed, before, after });
+                if !r.has(12 + n * 4 + 4) {
+                    break;
+                }
+                let (weight, flags, word124) = (f32::from_bits(r.u32()), r.u32(), r.u32());
+                let weights: Vec<f32> = (0..n).map(|_| f32::from_bits(r.u32())).collect();
+                let node_weights = (r.u32() != 0).then_some(weights);
+                log.node_states.push(NodeStatesRec { tick: log.ticks, states, array, track: last_posed, before, after, weight, flags, word124, node_weights });
             }
             b'>' => {
                 if !r.has(8) {
