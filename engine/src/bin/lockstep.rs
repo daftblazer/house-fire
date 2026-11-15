@@ -813,6 +813,12 @@ fn main() -> ExitCode {
                             let step_at = first_step.get(&(name.clone(), *first)).copied().unwrap_or(0);
                             let next_frame = log.tracks.iter().find(|t| t.after_steps > step_at).map(|t| t.frame);
                             let first_use = !each.iter().any(|e| e.0 == *name && e.1 < *first);
+                            if !log.loaded.is_empty() {
+                                let id = by_id.iter().find(|(_, a)| a.name.eq_ignore_ascii_case(name)).map(|e| *e.0);
+                                let asks: Vec<String> = log.loaded.iter().filter(|l| Some(l.id) == id && l.tick + 40 >= *first && l.tick <= first + 2).map(|l| format!("t{} {} from {:08x}", l.tick, if l.loaded { "loaded" } else { "NOT" }, l.caller)).collect();
+                                let ever_before = log.loaded.iter().filter(|l| Some(l.id) == id && l.tick < *first).count();
+                                println!("  load {name} {first} late {}: asks near {asks:?}; asked before {ever_before}", next_frame != first_frame);
+                            }
                             *by.entry(format!("start: (first use {first_use}, late {})", next_frame != first_frame)).or_default() += 1;
                             *by.entry(if next_frame == first_frame { "first frame: the first after the step".into() } else { format!("first frame: not the first after the step ({next_frame:?} against {first_frame:?})") }).or_default() += 1;
                             let chained = each.iter().any(|e| e.2 == *first);

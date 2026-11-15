@@ -478,6 +478,17 @@ pub struct TrackRec {
     pub done: [u32; 2],
 }
 
+/// A resource asked whether it is loaded ('9', Res_IsLoaded 80177B24, EA's
+/// EResourceManager::IsLoaded): its id, the answer, the caller, and its place among the steps.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LoadedRec {
+    pub tick: u32,
+    pub after_steps: usize,
+    pub id: u32,
+    pub loaded: bool,
+    pub caller: u32,
+}
+
 /// A walker's step ('Z', Route_Follow 800AE0A4): its follower and its state before and after.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct FollowRec {
@@ -607,6 +618,7 @@ pub struct Log {
     pub plans: Vec<PlanRec>,
     pub follows: Vec<FollowRec>,
     pub tracks: Vec<TrackRec>,
+    pub loaded: Vec<LoadedRec>,
     pub ticks: u32,
 }
 
@@ -1248,6 +1260,13 @@ pub fn read_log(path: &str) -> Option<Log> {
                     break;
                 }
                 grower = Some([r.u32(), r.u32(), r.u32(), r.u32(), r.u32()]);
+            }
+            b'9' => {
+                if !r.has(12) {
+                    break;
+                }
+                let (id, result, caller) = (r.u32(), r.u32(), r.u32());
+                log.loaded.push(LoadedRec { tick: log.ticks, after_steps: log.steps.len(), id, loaded: result != 0, caller });
             }
             b'8' => {
                 // an animation track's step (Anim_UpdateTrack)

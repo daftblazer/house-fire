@@ -267,7 +267,17 @@ skip that frame and start on the first frame of the next tick (1483 against 1484
 times. All 6 late starts are an animation's first use on the log, and no repeated use is late
 (8 of 8). But 7 first uses start on time (the fridge's, the reaches, the approach), which looks
 like an animation loaded ahead of its step (`SAnimator2::loadSkillAnim`, `PreloadEvents`)
-against one loaded at it. Which animations are loaded ahead is still open.
+against one loaded at it.
+That is so (iteration 119). Bustin' Out's `fn_80177B24` is EA's `EResourceManager::IsLoaded(
+unsigned int)` (identical in shape), and The Sims 2's `TryAnimate` (Bustin' Out's `fn_800AC854`,
+0.65; its `resolveSkillForPrimitive` `fn_800AC5B4`, 0.85) asks it from 800AC7E4. The observer's
+'9' record logs each ask (the id, the answer, the caller). On a new home log, home-a9.log (562,616
+steps), every Animate step's first ask names its animation's `animatio.arc` id. Of the 21 whole
+plays, the 6 late starts are exactly those whose animation was not loaded at the run's first step
+and was at the next tick's. The 15 on time were loaded at their first step, the 7 first uses
+included. So a track starts on the first frame after the Animate step that finds its animation
+loaded. What loads the 7 ahead (the object's or the interaction's animations, when they were
+asked for no earlier) is the next question.
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object
