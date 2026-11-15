@@ -1947,6 +1947,57 @@ fn main() -> ExitCode {
                 }
             }
         }
+        "objlights" => {
+            // the objects' lights put at their nodes (study): each object's first record
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO objlights LOG");
+                return ExitCode::FAILURE;
+            };
+            let mut seen = BTreeSet::new();
+            println!("records {}", log.object_lights.len());
+            for o in &log.object_lights {
+                if !seen.insert(o.object) && std::env::var_os("ASSETS_EACH").is_none() {
+                    continue;
+                }
+                for l in &o.lights {
+                    let w: Vec<String> = l.words.iter().map(|&v| format!("{:.4}", f32::from_bits(v))).collect();
+                    println!("tick {} object {:08x} res {:08x}: kind {} node {} light {:08x} at {:?} radius {} reach {} | {:08x} {}", o.tick, o.object, o.resources, l.kind, l.node, l.light, l.at, l.radius, l.reach, l.words[0], w[1..].join(" "));
+                }
+            }
+        }
+        "lamplights" => {
+            // each rebuild's lamp lights against the engine's colour and reach from the light
+            // object's node (the last '1' record for that light before the rebuild)
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO lamplights LOG");
+                return ExitCode::FAILURE;
+            };
+            let f = |v: u32| f32::from_bits(v);
+            let (mut n, mut same, mut none, mut shown, mut other_kind) = (0, 0, 0, 0, 0);
+            for b in &log.light_rebuilds {
+                let nodes: BTreeMap<u32, &housefire::tree_log::ObjectLight> = log.object_lights[..b.object_lights_before.min(log.object_lights.len())].iter().flat_map(|o| o.lights.iter().map(|l| (l.light, l))).collect();
+                for l in b.lights.iter().skip(b.other as usize) {
+                    n += 1;
+                    let Some(node) = nodes.get(&l[7]) else {
+                        none += 1;
+                        continue;
+                    };
+                    if node.kind != 0 {
+                        other_kind += 1;
+                        continue;
+                    }
+                    let w = &node.words;
+                    let (colour, reach) = housefire::light::lamp_light([f(w[11]), f(w[12]), f(w[13])], f(w[14]), f(w[15]));
+                    if colour.map(f32::to_bits) == [l[4], l[5], l[6]] && reach.to_bits() == l[3] {
+                        same += 1;
+                    } else if shown < 5 {
+                        shown += 1;
+                        println!("  light of {:08x}: mine {colour:?} {reach}, the log's ({}, {}, {}) {}", l[7], f(l[4]), f(l[5]), f(l[6]), f(l[3]));
+                    }
+                }
+            }
+            println!("lamp lights {n} (without a node record {none}, not of a kind 0 node {other_kind}): the engine's colour and reach from the node {same}");
+        }
         "windowfill" => {
             // each logged window light fill against the engine's mix and colour
             let Some(log) = args.get(3).and_then(|p| read_log(p)) else {

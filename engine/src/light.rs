@@ -138,6 +138,13 @@ pub fn window_light_places(tile: (i32, i32), facing: u8) -> Option<[(f32, f32); 
     Some([at(1.0), at(-1.0)])
 }
 
+/// A lamp's light from its light node (an object's animation node of kind 0: words 11-13 its
+/// colour, 14 a factor, 15 its radius): the colour is the node's times the factor, and the reach
+/// twice the radius (the light object's +208) times the get-light's quarter (0x80165A90).
+pub fn lamp_light(colour: [f32; 3], factor: f32, radius: f32) -> ([f32; 3], f32) {
+    (colour.map(|c| factor * c), radius * 2.0 * 0.25)
+}
+
 /// The filler's squared length (the original's paired square magnitude, 0x80122228: x^2 and
 /// y^2 rounded, then z^2 fused onto x^2, then y^2 added).
 pub fn square_length(d: [f32; 3]) -> f32 {
@@ -392,6 +399,12 @@ mod tests {
         assert_eq!(entry_points(0x0005_0203), vec![(2, 5), (2, 6), (3, 5), (3, 6), (4, 5), (4, 6)]);
         // a leading half (0x40: on the row) and a trailing half (0x80: the row after)
         assert_eq!(entry_points(0x0005_4283), vec![(2, 5), (3, 5), (3, 6), (4, 6)]);
+    }
+
+    #[test]
+    fn a_lamps_light_is_its_nodes_colour_by_its_factor() {
+        assert_eq!(lamp_light([0.5019608, 0.5019608, 1.0], 0.5, 4.0), ([0.2509804, 0.2509804, 0.5], 2.0));
+        assert_eq!(lamp_light([0.9, 0.9, 0.9], 0.0, 1.0), ([0.0; 3], 0.5));
     }
 
     #[test]

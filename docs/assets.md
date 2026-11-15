@@ -879,3 +879,28 @@ Checked through the observer's 'z' record (per fill: the light, its object's roo
 position, the sun, the nearest list with each light as read, then the mix, the base, the reach
 and the colour) with `assets windowfill`: home's 4,000 fills (the record's cap), mix and colour bit for bit;
 club's lot makes none.
+
+The lamps' lights (`light::lamp_light`). Obj_PlaceLights (0x8007A8CC) puts an object's lights at
+its nodes. The object's definition (resources +344, then +140) lists 8-byte entries (a kind,
+then a node). The object keeps its light objects at +1604 (their count at +1608) and its nodes at
++848, 64 bytes each:
+- word 0: flags;
+- words 1-4: a rotation (quaternion);
+- words 5-7: the position;
+- words 8-10: a scale;
+- words 11-13: a colour;
+- word 14: a factor;
+- word 15: a radius.
+A kind 0 light takes the node's position (Light_SetPosition, 0x80165C28, the light object's +180,
+which the lamp get-light 0x80165A90 copies) and, with flag 0x80, the radius (+204, twice it at
++208). The light's colour is the node's colour × its factor, and its reach is +208 × 0.25. The
+node records are on the disc in the objects' `animatio.arc` entries (home's lamps:
+`Bottle_Lamp_A_00`, `Top_Brass_Sconce_A_00`, ...). Their scale, colour, factor and radius are as
+the disc has them; the position is the posed node's, in the object's own space. The world place
+follows the object's pose, which is stage 4.4 (animation): until a lamp is posed, its light sits
+near the origin, as in the first rebuilds. Checked through the observer's '1' record with
+`assets lamplights`, against the node as logged last before each rebuild (a node's colour and
+factor change: club's lamps go from (0.502, 0.502, 1) × 0.5 to white × 1 after the first
+ticks). Home's 418 lamp lights across the rebuilds and club's 494 kind 0 ones match on colour
+and reach bit for bit. Club's other 76 belong to an object whose list entry is not of kind 0
+(not read yet).

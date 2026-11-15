@@ -94,6 +94,28 @@ pub struct MatrixRec {
     pub strips_before: usize,
 }
 
+/// An object's lights put at its nodes ('1'): the object, its definition's resources, and each
+/// light: its kind and node (the definition's list), the light object, the node's 16 words, the
+/// light's position after and its +204 and +208 (as words).
+#[derive(Clone, Debug)]
+pub struct ObjectLightsRec {
+    pub tick: u32,
+    pub object: u32,
+    pub resources: u32,
+    pub lights: Vec<ObjectLight>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ObjectLight {
+    pub kind: i32,
+    pub node: u32,
+    pub light: u32,
+    pub words: [u32; 16],
+    pub at: [f32; 3],
+    pub radius: f32,
+    pub reach: f32,
+}
+
 /// A window light's colour filled ('z'): the light's index and its object's room, its position,
 /// the sun, the nearest lights listed and what the filler left.
 #[derive(Clone, Debug)]
@@ -127,6 +149,8 @@ pub struct LightRebuildRec {
     pub lights: Vec<[u32; 8]>,
     /// How many grid builds ('e') came before it (its own build is the last of those).
     pub builds_before: usize,
+    /// How many '1' records (objects' lights put at their nodes) came before it.
+    pub object_lights_before: usize,
 }
 
 /// The light grid's cells built ('e'): the three constants, room ids 0-15's light ranges (the
@@ -516,6 +540,8 @@ pub struct Log {
     /// 'y': the window light objects (the object, side, reach, two colour fields, the game
     /// object, its kind (+0xC), then its first 64 words and its kind's key, +0x138).
     pub window_lights: Vec<(Vec<u32>, Vec<u32>)>,
+    /// '1': objects' lights put at their nodes.
+    pub object_lights: Vec<ObjectLightsRec>,
     /// 'z': the window lights' colours filled.
     pub window_fills: Vec<WindowFillRec>,
     /// 'n': rooms' floors relit, each after the 'i' record of its own light grid (its index there
@@ -680,6 +706,29 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let k = f32::from_bits(r.u32());
                 log.group_scales.push(GroupScaleRec { tick, group, base, scale, material, room, k });
             }
+            b'1' => {
+                if !r.has(16) {
+                    break;
+                }
+                let (tick, object, resources, count) = (r.u32(), r.u32(), r.u32(), r.u32() as usize);
+                if count > 8 || !r.has(count * 4 * 24) {
+                    break;
+                }
+                let f = |v: u32| f32::from_bits(v);
+                let lights = (0..count)
+                    .map(|_| {
+                        let (kind, node, light) = (r.u32() as i32, r.u32(), r.u32());
+                        let mut words = [0; 16];
+                        for w in &mut words {
+                            *w = r.u32();
+                        }
+                        let at = [f(r.u32()), f(r.u32()), f(r.u32())];
+                        let (radius, reach) = (f(r.u32()), f(r.u32()));
+                        ObjectLight { kind, node, light, words, at, radius, reach }
+                    })
+                    .collect();
+                log.object_lights.push(ObjectLightsRec { tick, object, resources, lights });
+            }
             b'z' => {
                 if !r.has(4 * 53) {
                     break;
@@ -729,7 +778,7 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
                 let objects = (0..count).map(|_| [0; 4].map(|_| r.u32())).collect();
                 let lights = (0..lights_n).map(|_| [0; 8].map(|_| r.u32())).collect();
-                log.light_rebuilds.push(LightRebuildRec { tick, rooms, other, own, objects, lights, builds_before: log.grid_builds.len() });
+                log.light_rebuilds.push(LightRebuildRec { tick, rooms, other, own, objects, lights, builds_before: log.grid_builds.len(), object_lights_before: log.object_lights.len() });
             }
             b'f' => {
                 if !r.has(20) {
