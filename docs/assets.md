@@ -1075,3 +1075,23 @@ and one of 400. Home's three are in the snapshots. Each list starts with a tile,
 neighbour, the tile's north, that one's east, then the first tile again, and goes on in pairs up
 the column, adding a third tile where the room widens. The walk that builds them (inside
 0x80243C24, before `Room_SetTiles`) is next to port, checked against these lists.
+
+The room walk's shape (iteration 98, read from 0x80243C24; the port follows). Per level, it
+visits every tile in rows, x inside y. A tile not yet assigned starts a new room. The room's id
+is (level − 1) << 10 | a counter. The tile's list and a stack are cleared and the tile is pushed.
+The walk is depth first. The stack is a vector of 3-byte tiles, and it pops from the back. A
+grid of u16 per tile holds each tile's state:
+- 0xFFFF: not reached;
+- 0xFFFC: reached whole;
+- 0xFFFE or 0xFFFD: the first half reached of a diagonal tile (the wall byte's 0x10 or 0x20);
+- 0xFFFB: shared;
+- the room's id: done.
+A popped tile not yet reached is marked, pushed back and appended to the room's list. That is
+why the list repeats tiles: a tile is appended each time the walk comes back to it through
+another half or edge. Each of the four directions is then tried in order. A direction is open
+when the tile's wall byte has no wall on that edge, or the wall's pattern is 2, 12, 13 or 14
+(these let the walk through). Across an open edge, the neighbour is pushed by its state.
+Diagonal tiles go half by half through the half-tile lookup 0x80234910 and the half setter
+0x80234588 (r6 1 to 4: which half).
+After the stack empties, the room is made (0x8023443C) and given its list (`Room_SetTiles`). A
+room left with no list is dropped and its counter taken back.
