@@ -1163,6 +1163,9 @@ fn pick_lot(lib: &Library, ngh: &[u8], log: &housefire::tree_log::Log) -> LotPic
     (lots, lot_ids, walk, best, best_n)
 }
 
+/// The room walk's lists and the original's room objects paired with them (a lockstep study).
+type RoomLists = (Vec<Vec<(i32, i32)>>, std::collections::BTreeMap<u32, usize>);
+
 #[allow(clippy::too_many_arguments)]
 /// The disc's tables lockstep's checks use: the fence styles, the wall patterns, the floor
 /// patterns (SimsTiles) and the objects' resources by GUID (SimsObjects).
@@ -1383,7 +1386,7 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &DiscTab
         let (a, b) = v.split_once(',')?;
         Some((read_log(a)?, std::fs::read(b).ok()?))
     });
-    let mut ambient_lists: Option<(Vec<Vec<(i32, i32)>>, std::collections::BTreeMap<u32, usize>)> = None;
+    let mut ambient_lists: Option<RoomLists> = None;
     let (mut amb_k, mut amb_tick, mut amb_counts) = (0usize, u32::MAX, [0usize; 4]);
     let mut amb_shown = 0;
     for (i, s) in log.steps.iter().enumerate() {
