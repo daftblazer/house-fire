@@ -236,6 +236,87 @@ struct ReplayHost<'a, 'l> {
     /// Objects made before their maker's step (its CreateObjectInstance runs the new object's
     /// init inside it, and the log has the init's steps first): the maker's step only places them.
     pre_made: BTreeSet<i16>,
+    /// The Animate primitive natively (`anim::Animator`), where the log has the frames.
+    anim: Option<AnimReplay>,
+}
+
+/// What a run starts with besides the log, the lot and the library: whether the lot is the
+/// memory card's, and the disc's animations (for a log with the frames).
+struct RunWith {
+    card_lot: bool,
+    cat: Option<housefire::anim::Catalog>,
+}
+
+/// The Animate primitive run natively through the engine's `anim::Animator`, its Sims' plays
+/// stepped by the log's frames ('k' records) where they fall among the steps. The speed of a
+/// frame: 0 for the Sims a load miss of its tick stops (the asker of a miss the original asked,
+/// replayed through `anim::Loads`, and every Sim with an Animate step that tick), 5 on the
+/// fast-forward's frames (the log's), else 1.
+struct AnimReplay {
+    cat: housefire::anim::Catalog,
+    m: housefire::anim::Animator,
+    /// The frames: (tick, the steps before its first record).
+    frames: Vec<(u32, usize)>,
+    next: usize,
+    /// The Sims each tick's load misses stop (the askers; with every Sim animating that tick).
+    misses: BTreeMap<u32, BTreeSet<u32>>,
+    animating: BTreeMap<u32, BTreeSet<u32>>,
+    fast: BTreeSet<u32>,
+    tree_file: HashMap<TreeId, FileId>,
+}
+
+impl AnimReplay {
+    fn new(log: &Log, lib: &Library, cat: housefire::anim::Catalog) -> Option<AnimReplay> {
+        if log.tracks.is_empty() {
+            return None;
+        }
+        let mut frames: Vec<(u32, usize)> = Vec::new();
+        let mut last = None;
+        for t in &log.tracks {
+            if last != Some(t.frame) {
+                last = Some(t.frame);
+                frames.push((t.tick, t.after_steps));
+            }
+        }
+        let mut misses: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
+        let mut loads = cat.loads();
+        for q in log.loaded.iter().filter(|q| q.caller == 0x800A_C7E4) {
+            if !loads.ask(q.id, q.tick) {
+                let e = misses.entry(q.tick).or_default();
+                if let Some(st) = log.steps.get(q.after_steps.saturating_sub(1)) {
+                    e.insert(st.sim);
+                }
+            }
+        }
+        let fast = log.tracks.iter().filter(|t| t.speeds[1].abs() == 5.0).map(|t| t.tick).collect();
+        let mut tree_file = HashMap::new();
+        for (k, f) in lib.files().iter().enumerate() {
+            for t in f.trees.values() {
+                tree_file.insert(*t, FileId(k as u32));
+            }
+        }
+        let m = cat.animator();
+        Some(AnimReplay { cat, m, frames, next: 0, misses, animating: BTreeMap::new(), fast, tree_file })
+    }
+
+    /// The frames before log step `step`.
+    fn frames_to(&mut self, step: usize) {
+        while let Some(&(tick, _)) = self.frames.get(self.next).filter(|f| f.1 <= step) {
+            let stopped = self.misses.get(&tick);
+            let animating = self.animating.get(&tick);
+            let fast = self.fast.contains(&tick);
+            self.m.frame(|sim| {
+                if stopped.is_some_and(|st| st.contains(&sim) || animating.is_some_and(|a| a.contains(&sim))) {
+                    0.0
+                } else if fast {
+                    5.0
+                } else {
+                    1.0
+                }
+            });
+            self.next += 1;
+        }
+    }
 }
 
 /// Brings the native world's variables to what the original's lookups found, counting those
@@ -315,6 +396,17 @@ fn sync_variables(world: &mut World, counts: &mut Counts, shown: &mut Shown, me:
         }
         note!(counts, "variables: scope {}: different (set to the log's)", v.scope);
         vars.set(v.scope as u8, v.data, v.value);
+    }
+}
+
+/// Whether a native Animate answer differs from the log's step (for REPLAY_SHOW_ANIMATE).
+fn animate_differs(native: &Option<housefire::anim::Poll>, s: &StepRec, logged_true: bool) -> bool {
+    use housefire::anim::Poll;
+    !match native {
+        Some(Poll::Pending) => s.result == 1,
+        Some(Poll::Done) => logged_true,
+        Some(Poll::Event(_)) => s.result != 1 && !logged_true,
+        None => true,
     }
 }
 
@@ -497,6 +589,42 @@ impl Host for ReplayHost<'_, '_> {
         let s = &log.steps[self.step];
         let me = self.me;
         let me_id = self.me_id();
+        if n.opcode == 44
+            && let Some(ar) = &mut self.anim
+        {
+            // Animate: natively through `anim::Animator`, against the log's (yield, true, or false
+            // with an event in local 0); the log's result taken
+            ar.frames_to(self.step);
+            ar.animating.entry(s.tick).or_default().insert(s.sim);
+            let file = match n.operand[4] {
+                0 => interp.top().tree.and_then(|t| ar.tree_file.get(&t).copied()),
+                1 => lib.global(),
+                2 => self.world.get(me).file,
+                _ => None,
+            };
+            use housefire::anim::{Lookup, Poll};
+            let native = match ar.cat.lookup(lib, file, &n.operand) {
+                Lookup::Found(id) => {
+                    let a = &ar.cat.by_id[&id];
+                    Some(ar.m.animate(s.sim, id, a, n.operand[5] & 2 != 0, n.operand[6] as i8 as i32, s.tick))
+                }
+                Lookup::NotFound => Some(Poll::Done),
+                Lookup::Unknown => None,
+            };
+            let logged_true = s.result != 1 && s.after == n.true_target as u16;
+            self.counts.note(match native {
+                None => "primitives: Animate: not modelled (no archive animation), the log's",
+                Some(Poll::Pending) if s.result == 1 => "primitives: Animate: yields natively as the log's",
+                Some(Poll::Done) if logged_true => "primitives: Animate: true natively as the log's",
+                Some(Poll::Event(_)) if s.result != 1 && !logged_true => "primitives: Animate: false (an event) natively as the log's",
+                _ => "primitives: Animate: DIFFERENT (the log's taken)",
+            });
+            if has("REPLAY_SHOW_ANIMATE") && native.is_some() && animate_differs(&native, s, logged_true) {
+                let name = file.and_then(|f| lib.file(f).strings.get(&129).map(|t| (lib.file(f).path.clone(), t.get(n.operand16(0) as usize).cloned())));
+                println!("animate different: tick {} sim {:x} tree {} node {} result {} local0 {:?}: native {native:?}; source {} {name:?}; targets {} {}", s.tick, s.sim, s.tree, s.node, s.result, s.locals_after.first(), n.operand[4], n.true_target, n.false_target);
+            }
+            return self.logged(s, n);
+        }
         if n.opcode == 27 || n.opcode == 45 {
             // GotoRelativePosition, GotoRoutingSlot: natively a yield until its run's return tick
             // (its walker's walk, turn and frames: `routing_return_tick`), where the run is
@@ -1840,7 +1968,8 @@ fn native_plan_points(pl: &PlanRec, world: &World) -> Option<Vec<(i32, i32)>> {
 }
 
 /// `lot`: the lot as loaded, and the disc's copy of it (its house) if a save is loaded.
-fn run(log: &Log, lib: &Library, lot: (&LotChunks, Option<&LotChunks>), globals: &[i16], neighbours: &[Neighbour], bench: Option<Bench>, card_lot: bool) -> Option<(Counts, Option<Bench>)> {
+fn run(log: &Log, lib: &Library, lot: (&LotChunks, Option<&LotChunks>), globals: &[i16], neighbours: &[Neighbour], bench: Option<Bench>, with: RunWith) -> Option<(Counts, Option<Bench>)> {
+    let RunWith { card_lot, cat } = with;
     let (club, house) = lot;
     let mut world = World::new(lib);
     world.load_lot(club).expect("the lot");
@@ -2120,6 +2249,7 @@ fn run(log: &Log, lib: &Library, lot: (&LotChunks, Option<&LotChunks>), globals:
         now: 0,
         routing_returns: BTreeMap::new(),
         pre_made: BTreeSet::new(),
+        anim: cat.and_then(|c| AnimReplay::new(log, lib, c)),
     };
     for i in 0..native_plans.0 {
         h.counts.note(if i < native_plans.1 {
@@ -5627,7 +5757,7 @@ fn main() -> ExitCode {
         }
     }
     if !bench {
-        let Some((counts, _)) = run(&log, &lib, (the_lot, house), the_globals, &neighbours, None, card_lot) else { return ExitCode::from(1) };
+        let Some((counts, _)) = run(&log, &lib, (the_lot, house), the_globals, &neighbours, None, RunWith { card_lot, cat: (!log.tracks.is_empty()).then(|| housefire::anim::Catalog::read(&d, std::env::var("REPLAY_HOUSE").ok().and_then(|v| v.parse().ok()).unwrap_or(1))) }) else { return ExitCode::from(1) };
         for (k, n) in &counts.map {
             println!("  {k:<66} {n}");
         }
@@ -5636,7 +5766,7 @@ fn main() -> ExitCode {
     // The benchmark: five runs, each figure the median of the runs (the PC is shared).
     let mut runs: Vec<Bench> = Vec::new();
     for _ in 0..5 {
-        let Some((_, Some(b))) = run(&log, &lib, (the_lot, house), the_globals, &neighbours, Some(Bench::default()), card_lot) else { return ExitCode::from(1) };
+        let Some((_, Some(b))) = run(&log, &lib, (the_lot, house), the_globals, &neighbours, Some(Bench::default()), RunWith { card_lot, cat: None }) else { return ExitCode::from(1) };
         runs.push(b);
     }
     let median = |f: &dyn Fn(&Bench) -> f64| {

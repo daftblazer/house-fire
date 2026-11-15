@@ -460,10 +460,10 @@ calls are left.
 Iteration 138: those are a name the original does not find. Global.iff's STR# 129 entry 0 is
 "A2O-flamingo-kick" (capitals), and animatio.arc only has "a2o-flamingo-kick". The four Animate
 steps from the global table (source 1, index 0: the fridge, the chips and the food processor
-"break" calls) return false at once, with no load ask ('9', '0'). The lookup is case-sensitive,
+"break" calls) return at once, with no load ask ('9', '0'). The lookup is case-sensitive,
 so the call fails as TryAnimate does when it cannot resolve an animation. This is a bug of the
 original's data that the engine keeps: an Animate whose table name is not an entry as written
-returns false at once. With it, all 167 runs return on the native tick on home-a10.log and
+returns at once (true: iteration 143). With it, all 167 runs return on the native tick on home-a10.log and
 home-a11.log: 121 at a note, 31 at the end, 8 owed at once, 5 not found, 2 at once. Still taken
 from the log: the frames (the frame clock), the fast-forward frames and the tick's Animate steps
 (which the engine's own run gives).
@@ -495,7 +495,7 @@ Iteration 142: the Sims' plays are kept by `anim::Animator` (one play a Sim, the
 notes), driven in the game's order: `animate()` for each Animate step (once a tick for a run;
 the runs that start on one tick, like the owed events at once, take its steps in turn) and
 `frame()` for each frame where it falls among the steps, each Sim at its speed. A name not
-found is false at once. Through it, 167 of 167 runs native on home-a10.log and home-a11.log.
+found returns at once (true, iteration 143). Through it, 167 of 167 runs native on home-a10.log and home-a11.log.
 The replay's home.log is older and has no frame records ('k'), so the replay cannot run
 Animate natively on it; that needs the replay on home-a11.log's frames.
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
@@ -637,3 +637,12 @@ the home log, 4 of 4 as the original's: 8234 node 3 (function 7, after node 2's
 FindBestObjectForFunction(7) chose the dining table 47: its entry 0x19, 8199, with 25, 198, 0) and
 food_sg's 8206 node 11 (function 1 on the stove 61: entry 0x13, 8197, with 26). The operand's third
 byte (1 in both) is not read yet. `primitives::run_functional_tree`.
+Iteration 143: the replay runs Animate through the engine (`anim::Catalog`: the archive by id,
+the case-sensitive STR# 129 lookup, the notes and the house's preload sets; `anim::Animator`),
+where a log has the frames ('k'). On home-a11.log, every Animate step with an archive animation
+answers natively as the log's: 2,200 yields, 36 true and 131 false with an event, none
+different (the same on home-a10.log). 1,665 steps are not modelled yet: no name, or a name not
+in the archive. The not-found name returns **true** at once, not false: the five
+"A2O-flamingo-kick" steps go their node's true way (the tick checks before could not tell).
+The event's value is not checked yet: it is not always local 0 (16 there at tick 164 where the
+note's value is 100). The log's result is still the one taken.

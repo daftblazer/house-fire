@@ -1232,7 +1232,7 @@ fn main() -> ExitCode {
                             *t2.entry("at once, left out".to_string()).or_default() += 1;
                             continue;
                         }
-                        // an animation not found as written: false at once, no play
+                        // an animation not found as written: true at once, no play
                         if first_step.get(&(name.clone(), *first)).is_some_and(|i| not_found.contains(i)) {
                             let key = if end == first { "not found, at once, on the native tick" } else { "not found, at once (NOT native)" };
                             *t2.entry(key.to_string()).or_default() += 1;
@@ -1419,7 +1419,7 @@ fn main() -> ExitCode {
                                 continue;
                             }
                             if first_step.get(&(name.clone(), *first)).is_some_and(|i| not_found.contains(i)) {
-                                // a table name not found as written: false at once, no load ask
+                                // a table name not found as written: true at once, no load ask
                                 predicted[k] = Some(t);
                                 continue;
                             }

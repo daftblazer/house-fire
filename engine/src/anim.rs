@@ -317,6 +317,80 @@ impl Animator {
     }
 }
 
+/// An Animate operand's animation, looked up in its file's adult animation table (STR# 129).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Lookup {
+    /// An archive animation, by its id.
+    Found(u32),
+    /// The table's name differs from the archive's only in case: the lookup is case-sensitive,
+    /// so nothing plays and the primitive returns true at once, with no load asked (Global's
+    /// "A2O-flamingo-kick"; kept as the game's).
+    NotFound,
+    /// No name, or one not in the archive: not modelled.
+    Unknown,
+}
+
+/// The disc's animations: `animatio.arc`'s entries by id and by their name as written, every
+/// animation's notes (the quick data's AnimRef rows) and a house's preload sets.
+#[derive(Clone, Debug, Default)]
+pub struct Catalog {
+    pub by_id: std::collections::BTreeMap<u32, Anim>,
+    exact: std::collections::HashMap<String, u32>,
+    lower: std::collections::HashSet<String>,
+    pub notes: std::collections::BTreeMap<u32, Vec<Note>>,
+    sets: Vec<Vec<u8>>,
+}
+
+impl Catalog {
+    /// The catalog of `disc`, with house `house`'s preload sets (House1Preload, housepreNN).
+    pub fn read(disc: &crate::disc::Disc, house: u32) -> Catalog {
+        let anims = disc.read("animatio.arc").unwrap_or_default();
+        let quick = disc.read("quickdat.arc").unwrap_or_default();
+        let ds = disc.read("datasets.arc").unwrap_or_default();
+        let by_id: std::collections::BTreeMap<u32, Anim> = crate::arc::entries(&anims).unwrap_or_default().iter().filter_map(|e| Some((e.id, read(crate::arc::bytes(&anims, e))?))).collect();
+        let exact = by_id.iter().map(|(id, a)| (a.name.clone(), *id)).collect();
+        let lower = by_id.values().map(|a| a.name.to_ascii_lowercase()).collect();
+        let notes = crate::arc::entries(&quick)
+            .unwrap_or_default()
+            .into_iter()
+            .find(|e| e.name == "SimsObjects")
+            .and_then(|e| crate::quickdata::Image::read(crate::arc::bytes(&quick, &e)))
+            .map(|img| notes(&img))
+            .unwrap_or_default();
+        let set = format!("housepre{house:02}");
+        let sets = crate::arc::entries(&ds).unwrap_or_default().iter().filter(|e| e.name == "House1Preload" || e.name == set).map(|e| crate::arc::bytes(&ds, e).to_vec()).collect();
+        Catalog { by_id, exact, lower, notes, sets }
+    }
+
+    /// The loads at the house's start: its preload sets in memory.
+    pub fn loads(&self) -> Loads {
+        let refs: Vec<&[u8]> = self.sets.iter().map(|v| v.as_slice()).collect();
+        let ids = self.by_id.keys().copied().collect();
+        Loads::with_sets(&refs, &ids)
+    }
+
+    /// The animation of an Animate `operand` whose table is `file`'s (bytes 0-1 the index;
+    /// byte 5's 0x04 no name).
+    pub fn lookup(&self, lib: &crate::library::Library, file: Option<crate::FileId>, operand: &[u8; 8]) -> Lookup {
+        if operand[5] & 4 != 0 {
+            return Lookup::Unknown;
+        }
+        let index = u16::from_le_bytes([operand[0], operand[1]]) as usize;
+        let Some(path) = file.and_then(|f| lib.file(f).strings.get(&129)).and_then(|t| t.get(index)) else { return Lookup::Unknown };
+        let base = path.rsplit(['\\', '/']).next().unwrap_or("").trim_end_matches(".max").trim_end_matches(".MAX");
+        match self.exact.get(base) {
+            Some(id) => Lookup::Found(*id),
+            None if self.lower.contains(&base.to_ascii_lowercase()) => Lookup::NotFound,
+            None => Lookup::Unknown,
+        }
+    }
+
+    /// A new animator over the house's loads and the notes.
+    pub fn animator(&self) -> Animator {
+        Animator::new(self.loads(), self.notes.clone())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
