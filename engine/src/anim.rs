@@ -308,6 +308,55 @@ pub fn bits(words: &[u32], at: u32, width: u32) -> u32 {
     if width >= 32 { v } else { v & ((1 << width) - 1) }
 }
 
+/// A scale or translation stream's header, as Bustin' Out's 801BC318 reads it from the
+/// animation's bits: the key count (20 bits), the widths of the frame gap, the key's scalar and
+/// each value (5 bits each; a value width of 0 is 32), then per value its range and minimum as
+/// 32-bit floats. A value is its field times range / (2^width - 1), plus the minimum; the
+/// scalar is its signed field over 2^(width - 1) - 1 (1 with no scalar).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StreamHeader {
+    pub keys: u32,
+    pub gap_bits: u32,
+    pub scalar_bits: u32,
+    pub value_bits: u32,
+    pub scalar_scale: f32,
+    pub scale: [f32; 3],
+    pub offset: [f32; 3],
+    /// The first key's record: the bit after the header.
+    pub first_record: u32,
+    /// A record's bits.
+    pub record_bits: u32,
+    /// The frames the keys span: the sum of their gaps + 1.
+    pub frames: u32,
+}
+
+/// The header of the stream at bit `at` of `words` (801BC318).
+pub fn stream_header(words: &[u32], at: u32) -> StreamHeader {
+    let mut p = at;
+    let mut take = |w: u32| {
+        let v = bits(words, p, w);
+        p += w;
+        v
+    };
+    let keys = take(20);
+    let gap_bits = take(5);
+    let scalar_bits = take(5);
+    let scalar_scale = if scalar_bits == 0 { 1.0 } else { 1.0 / ((1i64 << (scalar_bits - 1)) - 1) as i32 as f32 };
+    let value_bits = match take(5) {
+        0 => 32,
+        w => w,
+    };
+    let factor = 1.0 / ((1u64 << value_bits) - 1) as u32 as i32 as f32;
+    let (mut scale, mut offset) = ([0.0; 3], [0.0; 3]);
+    for i in 0..3 {
+        scale[i] = factor * f32::from_bits(take(32));
+        offset[i] = f32::from_bits(take(32));
+    }
+    let record_bits = gap_bits + scalar_bits + 3 * value_bits;
+    let frames = (0..keys).map(|k| bits(words, p + k * record_bits, gap_bits) + 1).sum();
+    StreamHeader { keys, gap_bits, scalar_bits, value_bits, scalar_scale, scale, offset, first_record: p, record_bits, frames }
+}
+
 /// A key's three values in a stream's bits (801BCE50): `width`-bit unsigned fields from bit
 /// `at`, each times its scale plus its offset (one fused multiply-add).
 pub fn key3(words: &[u32], at: u32, width: u32, scale: [f32; 3], offset: [f32; 3]) -> [f32; 3] {
@@ -535,6 +584,35 @@ mod tests {
         }
         // 3 frames to pass the last (3) after a still one
         assert_eq!(at, Some(5));
+    }
+
+    #[test]
+    fn a_stream_header_is_read_from_the_bits() {
+        // 2 keys, widths 3 (gap), 0 (scalar), 4 (values); ranges 15, 0, 0 and minimums 1, 2, 3
+        let mut w = vec![0u32; 12];
+        let mut at = 0;
+        let mut put = |v: u32, n: u32| {
+            for i in 0..n {
+                if v >> i & 1 != 0 {
+                    w[((at + i) / 32) as usize] |= 1 << ((at + i) % 32);
+                }
+            }
+            at += n;
+        };
+        for (v, n) in [(2, 20), (3, 5), (0, 5), (4, 5)] {
+            put(v, n);
+        }
+        for (r, m) in [(15.0f32, 1.0f32), (0.0, 2.0), (0.0, 3.0)] {
+            put(r.to_bits(), 32);
+            put(m.to_bits(), 32);
+        }
+        // the gaps: 1 and 4
+        put(1, 3);
+        put(0, 12);
+        put(4, 3);
+        let h = stream_header(&w, 0);
+        assert_eq!((h.keys, h.gap_bits, h.scalar_bits, h.value_bits, h.record_bits, h.first_record), (2, 3, 0, 4, 15, 227));
+        assert_eq!((h.scale, h.offset, h.frames), ([1.0, 0.0, 0.0], [1.0, 2.0, 3.0], 2 + 5));
     }
 
     #[test]

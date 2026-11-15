@@ -1323,3 +1323,17 @@ unsigned). Each value is the field times its scale (+92, +96, +100) plus its off
 records (the stream's header, and four words of its bits at P1) on home-a13.log: all 157,750
 P1s the same to the bit. Where the header comes from (EAnimController::CreateStreams, from the
 node's words, its constants and the bit array) is next.
+The stream header (iteration 150) is in the animation's bits, at the stream's first bit. It is
+read by fn_801BC318, the stream's init, which then resets the stream to its start (fn_801BCBBC):
+- the key count (20 bits);
+- the widths of a record's frame gap, its scalar and each of its three values (5 bits each; a
+  value width of 0 means 32);
+- for each value, its range and its minimum as two raw 32-bit floats (fn_801ADB1C), giving the
+  scale range / (2^width - 1) (fn_801ADC18) and the offset minimum;
+- the scalar's factor 1 / (2^(width - 1) - 1) (fn_801ADBCC; the constant at 802C3820 with no
+  scalar).
+The records follow, so they start 227 bits after the header. A record's bits are the gap +
+the scalar + 3 x the value, and the frames are the sum of the gaps + 1. `anim::stream_header`
+reads it. Each of the 290 streams on home-a13.log is found in one animation's bits at its first
+record - 227, and every field is the same to the bit (`LOCKSTEP_ANIM_HEADERS`). Still to read:
+the stream's first bit from the node's word (CreateStreams), and the rotation stream.

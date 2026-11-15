@@ -667,6 +667,40 @@ fn main() -> ExitCode {
             }
         }
         println!("P1 from the stream's bits: {keys:?}");
+        // (LOCKSTEP_ANIM_HEADERS: each logged stream's header decoded from its animation's bits
+        // through `anim::stream_header`)
+        if std::env::var_os("LOCKSTEP_ANIM_HEADERS").is_some() {
+            let anims = d.read("animatio.arc").unwrap_or_default();
+            let all: Vec<housefire::anim::Anim> = housefire::arc::entries(&anims).unwrap_or_default().iter().filter_map(|e| housefire::anim::read(housefire::arc::bytes(&anims, e))).collect();
+            // the header decoded where it starts (227 bits before the first record, +4) in the
+            // animation whose bits give the logged key count and floats: every field compared
+            let mut cmp: BTreeMap<&str, usize> = BTreeMap::new();
+            let mut done = BTreeSet::new();
+            for v in &log.vec_streams {
+                let Some((h, _)) = v.header else { continue };
+                if !done.insert(v.stream) {
+                    continue;
+                }
+                let Some(start) = h[1].checked_sub(227) else { continue };
+                let fit = all.iter().map(|a| housefire::anim::stream_header(&a.bit_words, start)).find(|x| x.keys == h[3] && x.offset[0].to_bits() == h[10] && x.offset[1].to_bits() == h[11] && x.offset[2].to_bits() == h[12]);
+                let Some(x) = fit else {
+                    *cmp.entry("no animation's bits give it").or_default() += 1;
+                    continue;
+                };
+                let same = x.first_record == h[1]
+                    && x.record_bits as i32 == (h[4] >> 16) as i16 as i32
+                    && x.gap_bits == (h[4] >> 8) & 0xff
+                    && x.value_bits == h[4] & 0xff
+                    && x.scalar_bits == h[5] >> 24
+                    && x.scale.iter().zip(&h[7..10]).all(|(a, b)| a.to_bits() == *b)
+                    && (x.scalar_bits == 0 || x.scalar_scale.to_bits() == h[6]);
+                *cmp.entry(if same { "every field the same" } else { "DIFFERENT" }).or_default() += 1;
+                if !same && cmp["DIFFERENT"] <= 4 {
+                    println!("  header different: logged {h:x?}; native {x:?} (scales {:x?})", x.scale.map(f32::to_bits));
+                }
+            }
+            println!("stream headers decoded from the bits: {cmp:?}");
+        }
     }
 
     // (LOCKSTEP_ANIM_RUNS: each Animate (opcode 44) run, a Sim's steps on one node and frame
