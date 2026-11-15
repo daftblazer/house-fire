@@ -1538,3 +1538,11 @@ change only:
   1700, 5013, 5026 and others. These are the ticks its Animate's load misses (iteration 162):
   the animator stops while its animation loads.
 So a Sim's animator speed is the game speed, and 0 on a tick its Animate waits on a load.
+The animator's speed from the engine's state (iteration 172). Some object controllers never
+leave 1 at +80, so the game speed comes from the controllers that follow it, the ones whose
++80 ever changes. With that game speed (the tick's frames) and 0 on a Sim's load-miss tick,
+17,177 of the 17,198 '#' records on home-a19.log are predicted. The 21 left are the one-tick
+dips. All 13 dip ticks have an Animate load miss that tick, but tying the miss to its Sim
+through the Sim's Animate run finds only 6. So the rule holds (a Sim's animator stops on the
+tick its Animate's load misses), but which Sim a miss belongs to needs the observer. The '0'
+ask names no Sim, and the Animate runs are named runs only.

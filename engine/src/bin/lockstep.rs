@@ -1693,6 +1693,62 @@ fn main() -> ExitCode {
                     *model.entry(k).or_default() += 1;
                 }
                 println!("Sims' track speeds from the engine's animator: {model:?}");
+                // each '#' record's speed from the engine's state: the game speed of the tick (the
+                // objects' +80 at the tick's frames, variants below) and 0 on a tick its Sim's
+                // Animate load misses (the Sim of the step logged after the miss)
+                let mut miss: BTreeSet<(u32, u32)> = BTreeSet::new();
+                // (the Sims whose Animate run of the missed animation covers the tick)
+                for l in log.loaded.iter().filter(|l| !l.loaded) {
+                    let Some(name) = by_id.get(&l.id).map(|a| a.name.clone()) else { continue };
+                    for (k, (nm, first, end)) in each.iter().enumerate() {
+                        if *nm == name && *first <= l.tick && l.tick <= *end {
+                            miss.insert((each_sim[k], l.tick));
+                        }
+                    }
+                }
+                {
+                    // the dips (a '#' to 0 at game speed 1) against the ticks with any load miss
+                    let dips: BTreeSet<u32> = log.speeds.iter().filter(|sp| sp.after == 0.0 && sp.before == 1.0).map(|sp| sp.tick).collect();
+                    let any_miss: BTreeSet<u32> = log.loaded.iter().filter(|l| !l.loaded).map(|l| l.tick).collect();
+                    let by_run: BTreeSet<u32> = miss.iter().map(|m| m.1).collect();
+                    println!("  dips to 0: {} ticks; with a load miss that tick: {}; with a miss tied to a Sim's run: {}; dip ticks without a miss {:?}", dips.len(), dips.intersection(&any_miss).count(), dips.intersection(&by_run).count(), dips.difference(&any_miss).take(20).collect::<Vec<_>>());
+                }
+                let mut game_tick: BTreeMap<u32, Vec<f32>> = BTreeMap::new(); // tick -> its frames' game speeds in order
+                {
+                    let mut last_f = u32::MAX;
+                    // (only the controllers that follow the game speed: some never leave 1)
+                    let pausable: BTreeSet<u32> = log.tracks.iter().filter(|t| t.speeds[2] != 1.0).map(|t| t.controller).collect();
+                    for t in log.tracks.iter().filter(|t| t.tick != 0 && !sim_of.contains_key(&t.controller) && pausable.contains(&t.controller)) {
+                        if t.frame != last_f {
+                            last_f = t.frame;
+                            game_tick.entry(t.tick).or_default().push(t.speeds[2]);
+                        }
+                    }
+                }
+                for variant in ["the tick's first frame", "the tick's last frame", "the last frame, the miss as the other Sim's"] {
+                    let mut tally: BTreeMap<String, usize> = BTreeMap::new();
+                    let mut shown = 0;
+                    for sp in log.speeds.iter().filter(|sp| sp.tick != 0) {
+                        let c = sp.owner.wrapping_add(0x350);
+                        let Some(sim) = sim_of.get(&c) else { continue };
+                        let g = match variant {
+                            "the tick's first frame" => game_tick.range(sp.tick..).next().and_then(|e| e.1.first().copied()),
+                            "the tick's last frame" => game_tick.range(..=sp.tick).next_back().and_then(|e| e.1.last().copied()),
+                            _ => game_tick.range(..=sp.tick).next_back().and_then(|e| e.1.last().copied()),
+                        };
+                        let Some(g) = g else { continue };
+                        let other = sim_of.values().find(|x| *x != sim).copied().unwrap_or(0);
+                        let missed = match variant { "the last frame, the miss as the other Sim's" => miss.contains(&(other, sp.tick)), _ => miss.contains(&(*sim, sp.tick)) };
+                        let want = if missed { 0.0 } else { g };
+                        let k = if want == sp.after { "the same".to_string() } else { format!("DIFFERENT (engine {want}, log {} -> {}{})", sp.before, sp.after, if miss.contains(&(*sim, sp.tick)) { ", a miss" } else { "" }) };
+                        if k != "the same" && variant == "the tick's last frame" && shown < 12 {
+                            shown += 1;
+                            println!("  mismatch tick {} sim {sim:x} {k}; game speeds that tick {:?}; prev {:?}", sp.tick, game_tick.get(&sp.tick), game_tick.range(..sp.tick).next_back());
+                        }
+                        *tally.entry(k).or_default() += 1;
+                    }
+                    println!("animator speeds from the game speed ({variant}) and load misses: {tally:?}");
+                }
                 println!("  the animators' speed changes (of {} records): {:?}", log.speeds.len(), log.speeds.iter().filter(|sp| sp.before != sp.after).map(|sp| (sp.tick, sp.owner.wrapping_add(0x350) & 0xfffff, sp.before, sp.after)).collect::<Vec<_>>());
                 // the Sims' still tracks against the game speed that frame (the objects' +80)
                 let mut still: BTreeMap<String, usize> = BTreeMap::new();
