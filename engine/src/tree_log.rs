@@ -584,6 +584,19 @@ pub struct SkinRec {
     pub strips_before: usize,
 }
 
+/// A skinned primitive's vertices ('+', after its '$', the first 4,000 in the draw window): the vertex count, flags (1 normals, 2 colours, 4 texture coordinates, 8 generated ones), the heaviest bone carried in, the positions (s16 x, y, z in 8 bytes a vertex), weights (4 bytes), normals (4 bytes; empty without), and the bytes the loop sends; `skin` is its '$' record's index.
+#[derive(Clone, Debug)]
+pub struct SkinVerticesRec {
+    pub skin: usize,
+    pub count: u32,
+    pub flags: u32,
+    pub heaviest: u32,
+    pub positions: Vec<u8>,
+    pub weights: Vec<u8>,
+    pub normals: Vec<u8>,
+    pub sent: Vec<u8>,
+}
+
 /// A track speed set ('^', Anim_SetTrackSpeed 8015AB80): the controller, track id, speed, caller, the track found (0 if none) and the wrapper's caller.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SpeedSetRec {
@@ -796,6 +809,7 @@ pub struct Log {
     pub skeletons: Vec<SkeletonRec>,
     pub bones: Vec<BonesRec>,
     pub skins: Vec<SkinRec>,
+    pub skin_vertices: Vec<SkinVerticesRec>,
     pub scalar_streams: Vec<ScalarStreamRec>,
     pub res_asks: Vec<ResAskRec>,
     pub ticks: u32,
@@ -1560,6 +1574,28 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let bones = core::array::from_fn(|_| core::array::from_fn(|_| f32::from_bits(r.u32())));
                 let weights = r.u32().to_be_bytes();
                 log.skins.push(SkinRec { tick, count, bones, weights, strips_before: log.strips.len() });
+            }
+            b'+' => {
+                if !r.has(12) {
+                    break;
+                }
+                let (count, flags, heaviest) = (r.u32(), r.u32(), r.u32());
+                let n = count as usize;
+                let nrm = if flags & 1 != 0 { n * 4 } else { 0 };
+                if !r.has(n * 12 + nrm + 4) {
+                    break;
+                }
+                let take = |r: &mut Bytes, k: usize| (0..k).map(|_| r.u8()).collect::<Vec<u8>>();
+                let positions = take(&mut r, n * 8);
+                let weights = take(&mut r, n * 4);
+                let normals = take(&mut r, nrm);
+                let sent_len = r.u32() as usize;
+                if !r.has(sent_len) {
+                    break;
+                }
+                let sent = take(&mut r, sent_len);
+                let skin = log.skins.len().saturating_sub(1);
+                log.skin_vertices.push(SkinVerticesRec { skin, count, flags, heaviest, positions, weights, normals, sent });
             }
             b'~' => {
                 if !r.has(4 * 7) {
