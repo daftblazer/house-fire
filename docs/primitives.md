@@ -416,6 +416,21 @@ the one asking: at 994 the chips Sim asks for a2o-starteat-stand and the cook's 
 1618, 1632 and 1700, all logged) pause nobody, and 3 pauses (23, 2048, 5630) come with no miss
 (2048 with two other loads, 80256088). New `assets animid ID...` names animation ids. Still
 open: which loads pause whom (the loader's stall, a shared track or the camera's Sim).
+Iteration 134, in Bustin' Out's code:
+- `fn_800AB820` is its `SAnimator2::Update`. Unless global r13 − 28672 is 0, it asks the game
+  object at r13 − 23196 three questions (virtual +144, +104, +152). If any answers nonzero, the
+  animator's speed (+124) is 0.001. Otherwise the speed comes from that object's +72 call: 0
+  gives 1.0, −1 gives 0.5, −2 gives 5.0 (the fast-forward of iteration 129), −3 gives 10.0, and
+  anything else gives 0.0, a pause (constants at 0x802A8BB4).
+- `fn_800ABFD8` is its `adjustAnimationPlayRates`. When +124 differs from the last speed (+128),
+  a 0 saves each of the Sim's six track speeds (+1600 to +1620) and stops them. Any other value
+  sets them to it, or puts the saved ones back.
+- `fn_8015AB80` (controller, track id, speed) stores one track's speed (+72), found through the
+  controller's +44.
+So the speed is the game's, read by each Sim's Update in turn, and a pause is that game state
+being "other" on a frame. A Sim updated while it holds pauses for that frame, and a Sim updated
+earlier does not: the other Sim on a load miss. Next: the game state's +72 answer around a load
+miss, and the Sims' update order.
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object
