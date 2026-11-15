@@ -1432,3 +1432,11 @@ animation on its Sim's controller is explained:
 - 4 ticks: the run's last tick, the play done the tick before.
 So for all 152 runs, the run's play is the controller's track with its animation whenever the
 controller is stepped. When a controller is stepped is the next question.
+When a controller steps (iteration 162). Animation steps go by frames, not ticks: a tick holds
+0, 1 or 2 frames (home-a17.log: 105, 4,929 and 1,835 ticks). Of the 130 run ticks off their
+play:
+- 116 had no frame (no track stepped at all). This covers the every-fourth-tick span 414 to 573.
+- 10 were ticks where an Animate load missed. The Sim's controller waits while the others step,
+  as iteration 136's rule had it.
+- 4 were end ticks after the play was done.
+So a Sim's play steps once per frame, except on a tick its Animate's load misses.

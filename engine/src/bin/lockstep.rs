@@ -1344,8 +1344,13 @@ fn main() -> ExitCode {
                             was_done = log.tracks.iter().filter(|t| t.controller == ctl && t.head[1] == id && t.tick == tick).any(|t| t.done[1] != 0);
                             continue;
                         }
-                        let why = if !stepped(tick) {
-                            "the controller not stepped that tick"
+                        let any_frame = log.tracks.iter().any(|t| t.tick == tick);
+                        let why = if !any_frame {
+                            "no frame that tick (no track stepped at all)"
+                        } else if !stepped(tick) && log.loaded.iter().any(|l| l.tick == tick && !l.loaded) {
+                            "the controller waiting on a load missed that tick (others stepped)"
+                        } else if !stepped(tick) {
+                            "the controller not stepped that tick (others were)"
                         } else if tick == *first && log.loaded.iter().any(|l| l.id == id && l.tick == tick && !l.loaded) {
                             "the first tick, its animation not loaded yet"
                         } else if tick == *end && was_done {
@@ -1364,6 +1369,16 @@ fn main() -> ExitCode {
                     *by_ctl.entry(format!("first tick {}, last {}, ticks with it {}", on(*first) || on(first + 1), on(*end), if span == end - first + 1 { "all".to_string() } else if span == 0 { "none".to_string() } else { "some".to_string() })).or_default() += 1;
                 }
                 println!("animate runs on their Sim's controller: {by_ctl:?}");
+                // frames a tick: ticks by how many frames (distinct +52 frame numbers) they hold
+                let mut fr: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
+                for t in log.tracks.iter().filter(|t| t.tick != 0) {
+                    fr.entry(t.tick).or_default().insert(t.frame);
+                }
+                let mut per: BTreeMap<usize, usize> = BTreeMap::new();
+                for tick in 1..log.ticks {
+                    *per.entry(fr.get(&tick).map_or(0, |f| f.len())).or_default() += 1;
+                }
+                println!("ticks by frames in them: {per:?}");
                 let one = ctl_of.values().filter(|c| c.len() == 1).count();
                 println!("animate runs to their tracks (by animation id): {tally:?}; Sims on one controller {one} of {}", ctl_of.len());
             }
