@@ -498,6 +498,21 @@ pub struct SpeedRec {
     pub state: [u32; 6],
 }
 
+/// A rotation stream read ('!', Anim_RotStream 801B5F48): the stream, the place, its words
+/// +0..+44, the mode byte +33, the window's words +48..+108, the four floats out, and the track
+/// posed around it.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RotStreamRec {
+    pub tick: u32,
+    pub stream: u32,
+    pub place: f32,
+    pub head: [u32; 12],
+    pub mode: u8,
+    pub window: [u32; 16],
+    pub result: [f32; 4],
+    pub track: Option<(u32, f32)>,
+}
+
 /// A track speed set ('^', Anim_SetTrackSpeed 8015AB80): the controller, track id, speed, caller, the track found (0 if none) and the wrapper's caller.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SpeedSetRec {
@@ -704,6 +719,7 @@ pub struct Log {
     /// The tracks posed ('(', Anim_Animate), in order.
     pub poses: Vec<PoseRec>,
     pub speed_sets: Vec<SpeedSetRec>,
+    pub rot_streams: Vec<RotStreamRec>,
     pub res_asks: Vec<ResAskRec>,
     pub ticks: u32,
 }
@@ -1387,6 +1403,23 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
             }
             b')' => posing = None,
+            b'!' => {
+                if !r.has(4 * 2 + 4 * 12 + 1 + 4 * 16 + 4 * 4) {
+                    break;
+                }
+                let (stream, place) = (r.u32(), f32::from_bits(r.u32()));
+                let mut head = [0u32; 12];
+                for w in &mut head {
+                    *w = r.u32();
+                }
+                let mode = r.u8();
+                let mut window = [0u32; 16];
+                for w in &mut window {
+                    *w = r.u32();
+                }
+                let result = [f32::from_bits(r.u32()), f32::from_bits(r.u32()), f32::from_bits(r.u32()), f32::from_bits(r.u32())];
+                log.rot_streams.push(RotStreamRec { tick: log.ticks, stream, place, head, mode, window, result, track: posing });
+            }
             b'^' => {
                 if !r.has(24) {
                     break;

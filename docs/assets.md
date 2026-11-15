@@ -1599,3 +1599,12 @@ route. Its inputs come from the engine's side only:
 
 It gives 17,197 of the 17,198 animator speed records on home-a22.log. The one left is a Sim
 in an Animate the run list misses (not routing by the log's +16).
+The rotation reads (iteration 178). The observer hooks the rotation decoder as Anim_RotStream
+(801B5F48, '!'). It records the stream, the place, the stream's words +0..+44 (the window's
+times +8/+12, frames +16, the packed header at +28..+36), the mode byte +33, the window's 16
+words (+48..+108, four quaternions) and the four floats out. The first 300,000 reads of
+home-a23.log (562,616 steps; up to about tick 600) cover 851 streams, all in a track's pose.
+- Every result is a unit quaternion.
+- 294,193 reads are mode 0 and 5,807 are mode 1 (the blend, as for the vec3 streams).
+- The window's four quaternions are not a plain slerp, nlerp, squad or Bezier of the place:
+  the best fit is 21% within 1e-4. So the evaluation is to be read from the code.
