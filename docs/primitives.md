@@ -230,10 +230,21 @@ last the same take about 24 ticks a second on every log (iteration 115):
 | a2o_dj_start_spinning | 2.883 | 69 |
 | a2o_dance_floor_dance_outgoing01 | 6.350 | 151 |
 
-The long ones fit 23.8 ticks a second; the short ones run a tick or two over. So the animation
-advances a fixed time a tick (about 0.042 s), with something at the ends (a blend, or the
-step's first and last ticks). The exact rule needs the original's animation time each tick
-(an observer record of the Sim's animation clock).
+The long ones fit 23.8 ticks a second; the short ones run a tick or two over. The rule (iteration 116): the animation runs by the frame, not the tick. EA's
+`EAnimController::UpdateTrack` (The Sims 2's map) is Bustin' Out's `fn_8015708C` (94% of its
+instructions' shapes alike, `work/match/fnmatch.py`, not in git). Once a frame (skipped when the
+track's +52 is the frame counter at r13 - 29732), it moves the track's place (+60, in frames) by
+the frame's time (r13 - 29720, 0.033 s, the walkers' step) times the controller's +80, the
+track's +72 and its +0 (the rate), and the track is done past its last frame. So an animation
+takes the frames for (frames - 1) / (0.033 x rate), and the frames map to ticks by the frame clock
+(`routing::FrameClock`: 0.042 s a tick). Lockstep's `LOCKSTEP_ANIM_RUNS` sets every run of one
+length against the ticks those frames span at any phase of the clock. Of the nine that take
+ticks, seven fall in the span, the long ones exactly: a2o_dj_start_spinning 87 frames, 68 or
+69 ticks, logged 69; a2o_dance_floor_dance_outgoing01 192 frames, 151 or 152, logged 151. Two
+15-frame starts (a2o-easel-startpaint, a2o-starteat-stand) take 13, a tick over. The runs of 0
+ticks end at once.
+Still open: those two ticks, the speed factors (taken as 1), and the clock's phase at a run's
+start.
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object

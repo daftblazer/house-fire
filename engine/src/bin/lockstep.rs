@@ -706,13 +706,44 @@ fn main() -> ExitCode {
         }
         let (mut fixed, mut total) = (0, 0);
         let mut fits: BTreeMap<String, usize> = BTreeMap::new();
+        let mut rule: BTreeMap<&str, usize> = BTreeMap::new();
+        let mut all: BTreeMap<&str, usize> = BTreeMap::new();
         println!("animate steps: named an animation {named}, not {unnamed}; by source (named, not) {by_source:?}");
         for (row, ticks) in &runs {
             let Some(a) = by_name.get(row) else { continue };
             total += 1;
-            if ticks.len() == 1 && std::env::var_os("LOCKSTEP_ANIM_RUNS_FIXED").is_some() {
+            // the frames the track takes to pass its last frame (the original's track step a
+            // frame, fn_8015708C: its place += the frame's time x the animation's rate, the
+            // speeds 1), and the ticks those frames span by the frame clock at any phase
+            let frames_needed = {
+                let (mut pos, mut n) = (0f32, 0u32);
+                while pos <= (a.frames as f32 - 1.0) && n < 100_000 {
+                    pos += housefire::routing::WALK_FRAME * a.rate;
+                    n += 1;
+                }
+                n
+            };
+            let spans: BTreeSet<u32> = (0..42)
+                .map(|ph| {
+                    let mut clock = housefire::routing::FrameClock { time: ph as f32 / 1000.0 };
+                    let (mut t, mut f) = (0u32, 0u32);
+                    while f < frames_needed {
+                        f += clock.frames_to_tick();
+                        t += 1;
+                    }
+                    t
+                })
+                .collect();
+            if ticks.len() == 1 {
                 let t = *ticks.keys().next().unwrap();
-                println!("  fixed {row}: {} ticks ({} runs), {:.4} s, ceil(s / 0.04) {}", t, ticks.values().next().unwrap(), a.seconds(), (a.seconds() / 0.04).ceil());
+                *rule.entry(if spans.contains(&t) { "in the spans" } else if t < *spans.first().unwrap() { "shorter" } else { "longer" }).or_default() += 1;
+                if std::env::var_os("LOCKSTEP_ANIM_RUNS_FIXED").is_some() {
+                    println!("  fixed {row}: {t} ticks; {frames_needed} frames, spans {spans:?}");
+                }
+            }
+            let longest = *spans.last().unwrap();
+            for (t, k) in ticks {
+                *all.entry(if *t <= longest { "within" } else { "beyond" }).or_default() += k;
             }
             if ticks.len() == 1 {
                 fixed += 1;
@@ -723,6 +754,7 @@ fn main() -> ExitCode {
                 println!("  row {row} {}: {} frames at {}, runs {ticks:?}", a.name, a.frames, a.rate);
             }
         }
+        println!("animate runs by the frames: fixed runs against the frame clock's spans {rule:?}; all runs against the longest span {all:?}");
         println!("animate runs: {} animations ({fixed} always the same ticks), ends by result {ends:?}; ticks over frames (at 30) of the fixed ones {fits:?}", total);
     }
     // study (LOCKSTEP_SHOW_MAKERS): the node a made object came from, the step whose stack
