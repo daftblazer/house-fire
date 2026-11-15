@@ -1220,3 +1220,15 @@ the window's kind (`window_kind`) and whether the light's own room is inside. Ch
 place, height and reach bit for bit. The club has none, as the engine gives. The lights'
 colours are the window fill's (iteration 82). They need the nearest lamps, whose places follow
 the objects' poses (stage 4.4).
+
+The light grid built from the engine (iteration 109). For the grid build after the last rebuild,
+lockstep builds three things:
+- the cells' rooms: `cell_room_adds` over the engine's tiles, through `CellRooms::add`;
+- the other ranges: `sort_lights` over the engine's window lights;
+- the other lights: the engine's array (place, height, reach).
+The own ranges and lights (the lamps) stay as logged: their places follow the objects' poses
+(stage 4.4). Then every cell room's four lights come from `cell_lights`. Against the log's 'e'
+build:
+- home: 1,296 cells' rooms all the same, and all 1,364 cell rooms' lights;
+- the club (club-rooms.log, no windows): 1,296 and 1,386, all the same.
+(`LOCKSTEP_WINDOW_LIGHTS=LOG`; club-l.log has no rebuild with rooms to check against.)

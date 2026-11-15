@@ -1781,6 +1781,49 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &DiscTab
                             }
                         }
                         println!("other lights' array: the engine's {}, the log's {}; in order the same place {placed}, height {heights}, reach {reaches}", order.len(), theirs.len());
+                        // (and the grid build after this rebuild from the engine: its cells' rooms
+                        // (`cell_room_adds` through `CellRooms`), the other ranges and lights (the
+                        // array above), the own ranges and lights still the log's (the lamps'
+                        // places wait for the poses); each cell room's four lights by `cell_lights`)
+                        let (ranges, _, _) = housefire::light::sort_lights(rooms, &objs);
+                        if let Some(g) = b.builds_before.checked_sub(1).and_then(|i| log.grid_builds.get(i)) {
+                            let mut cells = housefire::light::CellRooms::default();
+                            for (x, y, r) in housefire::light::cell_room_adds((walls.size().0.min(39), walls.size().1.min(39)), |x, y| walls.room(x, y).wrapping_sub(1) as u8, |x, y| walls.diagonal_bits(x, y)) {
+                                cells.add(x, y, r);
+                            }
+                            let mut lights = g.lights.clone();
+                            for (k, &i) in order.iter().enumerate() {
+                                let ((x, y), kind, me) = info[i];
+                                if let (Some(l), Some((reach, _, Some(h)))) = (lights.get_mut(k), housefire::light::window_light_params(kind, me != 0)) {
+                                    *l = ([x, y, h], reach);
+                                }
+                            }
+                            let (mut cell_rooms, mut rooms_same, mut lit_same) = (0, 0, 0);
+                            for (ci, cell) in g.cells.iter().enumerate() {
+                                let (x, y) = (2 + ci / 36, 2 + ci % 36);
+                                let mine = cells.at(x as i32, y as i32).unwrap_or([0xFF; 4]);
+                                let ids = cell[0].to_be_bytes();
+                                if mine == ids {
+                                    rooms_same += 1;
+                                }
+                                for (k, &id) in mine.iter().enumerate() {
+                                    if id == 0xFF {
+                                        break;
+                                    }
+                                    cell_rooms += 1;
+                                    let logged: [u16; 4] = {
+                                        let (a, c) = (cell[1 + 2 * k], cell[2 + 2 * k]);
+                                        [(a >> 16) as u16, a as u16, (c >> 16) as u16, c as u16]
+                                    };
+                                    let (Some(other), Some(own)) = (ranges.get(usize::from(id)), g.ranges.get(usize::from(id))) else { continue };
+                                    let point = [x as f32, y as f32, housefire::light::GRID_Z];
+                                    if housefire::light::cell_lights(point, (own[2], own[3]), (other[0], other[1]), &lights) == Some(logged) {
+                                        lit_same += 1;
+                                    }
+                                }
+                            }
+                            println!("grid build at tick {} from the engine: cells {}, rooms the same {rooms_same}; cell rooms {cell_rooms}, the four lights the same {lit_same}", g.tick, g.cells.len());
+                        }
                         println!("window lights' nearest lights: {fills} fills after a build ({first_fills} before any), from the other side's room {near_same}");
                     }
                 }
