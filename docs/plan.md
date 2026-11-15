@@ -58,6 +58,29 @@ Nothing of it is built yet, but the engine is shaped so it can be added without 
   picture are derived from the simulation's state and events, so a client can run without
   authority (the server's tick decides).
 
+### Optimized as it is written
+
+The user's rule (2026-11-15): code is written for the hardware it runs on, not as a copy of how
+the original did it. The original's results are the answer key; its methods are not.
+- **What the simulation depends on stays on the CPU, deterministic and checked to the bit**:
+  the scripts, the simulation, animation decoding, posing and the bone matrices (root motion
+  moves Sims, node positions feed slots and routing, and a future server has no GPU). It is
+  made fast there: stored decoded, no per-frame work that can be done once, no redundant
+  passes, spread over threads where a profile shows a need.
+- **What only makes the picture goes to the GPU where it is better there**: skinning in the
+  vertex shader from each Sim's bone matrices (the original blends every vertex on the CPU,
+  fn_801A6ADC, and streams it); lighting per vertex in the shader; models as vertex and index
+  buffers built once at load (the original streams vertex data through its command list each
+  draw); textures converted once at load to what the GPU samples natively (ETC2 or ASTC on the
+  RK3566's Mali-G52, which has no BC formats; the GameCube formats kept where the GPU has them).
+- **How a moved piece stays checked**: a CPU reference of the original's computation lives in
+  the tools only (lockstep, tests) and is checked to the bit against the original; the fast
+  path is checked against that reference within a stated tolerance, then the picture against the
+  recomp's frame dumps. A rounding difference this brings (skinned vertices) is a deliberate
+  difference, listed below; it never reaches the simulation.
+- **Code already written is held to the same rule**: a quality pass reviews the engine's
+  modules for work copied from the original's method where a faster one gives the same result.
+
 ## Same game, new engine
 
 The games must play and look the same; the engine under them is new, written to be clean
@@ -76,6 +99,7 @@ Deliberate differences:
 | A new frame's locals | what the stack's memory held | zero | the scripts that read one first read zero in practice (`interpreter.md`, "The call"); reads are reported. Checked on the three logs: 372, 62 and 21 reads of a local its frame had not written (the original's left-over values, -32569 among them), and with them left at zero no expression, branch or step changes (replay `REPLAY_ZERO_LOCALS`); replay counts them apart |
 | `++`/`--` then compare, on a float variable | compares a word read through a null pointer | compares the new value | a crash-class bug; no script in the logged session does it |
 | Random's numbers | the console's generator, shared with animation, sound and the rest | the engine's own (xorshift64*, `World::rng`), unbiased over the range | the numbers are as random and in the same ranges; a sequence the same as the original's would mean copying every other user of its generator. Lockstep and replay take the original's numbers (autonomy's choice included: its `R` records) |
+| Skinned vertices | blended on the CPU each frame (fn_801A6ADC), each product rounded to single | blended in the vertex shader from the same bone matrices | the picture only; the difference is a float's rounding. A CPU reference in the tools is checked to the bit against the original, the shader against it within a stated tolerance |
 | Autonomy's list, values equal within 1e-7 | the order its sort (`Util_Sort`, not stable) leaves them | the candidates' order (a stable sort) | such a tie is between interactions of the same worth; which of two equal ones a Sim prefers is chance in the original too (the home log has one, of the 41 entries, below the pick) |
 
 ## The CPU budget
