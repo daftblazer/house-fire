@@ -4,7 +4,7 @@
 
 use crate::*;
 use housefire::anim::Anim;
-use housefire::pose::{self, Fold, Pose, TrackStreams, Unsupported};
+use housefire::pose::{self, Fold, Pose, TrackStreams};
 
 /// What the log shows of a track when a pose starts: its animation's id (the last step before
 /// the pose, '8') and the track's flags (+8, '*').
@@ -43,6 +43,7 @@ pub fn poses(log: &housefire::tree_log::Log, d: &Disc) {
             continue;
         }
         let layer = play.flags.map(|f| f & 0x100 != 0);
+        let mut known = Vec::new();
         let ts = streams.entry((p.track, play.anim)).or_insert_with(|| TrackStreams::new(anim));
         for i in 0..rec.before.len() {
             let (before, after) = (&rec.before[i], &rec.after[i]);
@@ -58,13 +59,12 @@ pub fn poses(log: &housefire::tree_log::Log, d: &Disc) {
                 }
             };
             let state = Pose::from_words(before);
-            let what = match explain(&state, &local, after, layer) {
-                Explained::Fold(Fold::Copy) => "copy".to_string(),
-                Explained::Fold(Fold::Blend(_)) => "blend".to_string(),
-                Explained::Fold(Fold::Layer(_)) => "layer".to_string(),
-                Explained::Fold(_) => "skip".to_string(),
-                Explained::Slerp(f) => format!("{} with a slerp, the rest the same", if matches!(f, Fold::Layer(_)) { "layer" } else { "blend" }),
-                Explained::No => "DIFFERENT".to_string(),
+            let what = match explain(&state, &local, after, layer, &mut known) {
+                Some(Fold::Copy) => "copy",
+                Some(Fold::Blend(_)) => "blend",
+                Some(Fold::Layer(_)) => "layer",
+                Some(Fold::Skip) => "skip",
+                None => "DIFFERENT",
             };
             if what == "DIFFERENT" && local.to_words()[1..] == after[1..] {
                 *tally.entry(format!("  flags only: before {:x} local {:x} after {:x} node0 {}", before[0], local.flags, after[0], i == 0)).or_default() += 1;
@@ -73,23 +73,14 @@ pub fn poses(log: &housefire::tree_log::Log, d: &Disc) {
                 shown += 1;
                 println!("  tick {} node {i} anim {} place {} layer {layer:?}: local {:x?}\n    before {before:x?}\n    after  {after:x?}", rec.tick, anim.name, p.place, local.to_words());
             }
-            *tally.entry(what).or_default() += 1;
+            *tally.entry(what.to_string()).or_default() += 1;
         }
     }
     println!("{tally:?}");
 }
 
-/// What a node's logged state after the pose is: a fold of the local pose into the state before
-/// (the weights are not logged: found from the vectors), or one whose rotation needs the
-/// arccosine.
-enum Explained {
-    Fold(Fold),
-    Slerp(Fold),
-    No,
-}
-
-/// The weights a node's before, local pose and after allow: each component's, and the floats
-/// next to them.
+/// The weights a node's before, local pose and after allow (the weights are not logged): each
+/// component's, and the floats next to them.
 fn weights(state: &Pose, local: &Pose, after: &Pose) -> Vec<f32> {
     let mut ratios = Vec::new();
     for k in 0..3 {
@@ -100,9 +91,22 @@ fn weights(state: &Pose, local: &Pose, after: &Pose) -> Vec<f32> {
         ratios.push((a - s) / (l - s));
         ratios.push((a - s) / (s * l - s));
     }
+    // the rotation's share of the way: the blend's angle from the state over the angle between
+    // the two, the layer's angle (twice the arccosine of w) over the pose's
+    let (a, b, c) = (state.rotation.map(f64::from), local.rotation.map(f64::from), after.rotation.map(f64::from));
+    let dot = |p: [f64; 4], q: [f64; 4]| p.iter().zip(&q).map(|(x, y)| x * y).sum::<f64>().abs().min(1.0);
+    ratios.push((dot(a, c).acos() / dot(a, b).acos()) as f32);
+    let conj = [-a[0], -a[1], -a[2], a[3]];
+    let t = [
+        c[3] * conj[0] + c[0] * conj[3] + c[1] * conj[2] - c[2] * conj[1],
+        c[3] * conj[1] - c[0] * conj[2] + c[1] * conj[3] + c[2] * conj[0],
+        c[3] * conj[2] + c[0] * conj[1] - c[1] * conj[0] + c[2] * conj[3],
+        c[3] * conj[3] - c[0] * conj[0] - c[1] * conj[1] - c[2] * conj[2],
+    ];
+    ratios.push((t[3].abs().min(1.0).acos() / b[3].abs().min(1.0).acos()) as f32);
     let mut out = Vec::new();
     for r in ratios.into_iter().filter(|r| r.is_finite() && (0.0..=4.0).contains(r)) {
-        for d in -24i32..=24 {
+        for d in -3000i32..=3000 {
             out.push(f32::from_bits((r.to_bits() as i32 + d) as u32));
         }
     }
@@ -111,30 +115,21 @@ fn weights(state: &Pose, local: &Pose, after: &Pose) -> Vec<f32> {
     out
 }
 
-fn explain(state: &Pose, local: &Pose, after: &[u32; 16], layer: Option<bool>) -> Explained {
+/// The fold of the local pose into the state before that gives the state after, if there is one.
+/// The weights already found in the pose are tried first (a track has one weight, bar its nodes').
+fn explain(state: &Pose, local: &Pose, after: &[u32; 16], layer: Option<bool>, known: &mut Vec<f32>) -> Option<Fold> {
     if local.to_words() == *after {
-        return Explained::Fold(Fold::Copy);
+        return Some(Fold::Copy);
     }
     let want = Pose::from_words(after);
-    let mut slerp = None;
-    for w in weights(state, local, &want) {
-        for f in [Fold::Blend(w), Fold::Layer(w)] {
-            if layer.is_some_and(|l| l != matches!(f, Fold::Layer(_))) {
-                continue;
-            }
-            match pose::fold(state, local, f) {
-                Ok(p) if p.to_words() == *after => return Explained::Fold(f),
-                Err(Unsupported::Slerp) => {
-                    // everything but the rotation (the pose given the state's own: a straight blend)
-                    let mut mine = pose::fold(state, &Pose { rotation: state.rotation, ..*local }, f).unwrap_or(*state);
-                    mine.rotation = want.rotation;
-                    if mine.to_words() == *after {
-                        slerp = Some(f);
-                    }
-                }
-                _ => {}
-            }
+    let wanted = |f: &Fold| layer.is_none_or(|l| l == matches!(f, Fold::Layer(_)));
+    let same = |f: &Fold| pose::fold(state, local, *f).to_words() == *after;
+    let tried = known.iter().flat_map(|w| [Fold::Blend(*w), Fold::Layer(*w)]).filter(wanted).find(same);
+    let found = tried.or_else(|| weights(state, local, &want).into_iter().flat_map(|w| [Fold::Blend(w), Fold::Layer(w)]).filter(wanted).find(same));
+    if let Some(Fold::Blend(w) | Fold::Layer(w)) = found {
+        if !known.contains(&w) {
+            known.push(w);
         }
     }
-    slerp.map_or(Explained::No, Explained::Slerp)
+    found
 }

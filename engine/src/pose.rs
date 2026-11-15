@@ -5,6 +5,7 @@
 //! in single precision, fused where the original's code fuses. `docs/assets.md`, "A node's seven
 //! channels".
 
+use crate::mathf;
 use crate::anim::{self, Anim, Channel, FlagStream, RotStream, Stream};
 
 /// The node state flag whose set bit carries the state's 0x18 bits into the pose and stops the flag channel being read.
@@ -78,13 +79,11 @@ impl Pose {
     }
 }
 
-/// What a pose could not be made or folded with: not decoded yet.
+/// What a local pose could not be made from: not decoded yet.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Unsupported {
     /// A scalar channel (word 5 or 6) given by a stream (801BD7BC).
     ScalarStream,
-    /// A rotation blend that slerps (801B4B50's arccosine branch).
-    Slerp,
 }
 
 /// The readers of one track's streams, a node's channels each with the window it keeps from read
@@ -255,13 +254,13 @@ impl Fold {
 }
 
 /// `state` with `pose` folded in as `fold` says.
-pub fn fold(state: &Pose, pose: &Pose, fold: Fold) -> Result<Pose, Unsupported> {
-    Ok(match fold {
+pub fn fold(state: &Pose, pose: &Pose, fold: Fold) -> Pose {
+    match fold {
         Fold::Skip => *state,
         Fold::Copy => *pose,
-        Fold::Blend(w) => blend(state, pose, w)?,
-        Fold::Layer(w) => layer(state, pose, w)?,
-    })
+        Fold::Blend(w) => blend(state, pose, w),
+        Fold::Layer(w) => layer(state, pose, w),
+    }
 }
 
 /// a + (b - a) t per component (801587D4: the difference and its product each rounded).
@@ -271,21 +270,21 @@ fn lerp3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
 
 /// Blend (801587D4): the flags or'd, the rotation blended (`rotation_blend`), the translation
 /// and the scale moved toward the pose by the weight; the rest stays the state's.
-pub fn blend(state: &Pose, pose: &Pose, w: f32) -> Result<Pose, Unsupported> {
-    Ok(Pose {
+pub fn blend(state: &Pose, pose: &Pose, w: f32) -> Pose {
+    Pose {
         flags: state.flags | pose.flags,
-        rotation: blend_rotation(state.rotation, pose.rotation, w)?,
+        rotation: blend_rotation(state.rotation, pose.rotation, w),
         translation: lerp3(state.translation, pose.translation, w),
         scale: lerp3(state.scale, pose.scale, w),
         ..*state
-    })
+    }
 }
 
 /// Layer (80158964): the flags or'd, the rotation the pose's rotation raised to the weight
 /// (801B5154) multiplied onto the state's, the translation added by the weight, the scale
 /// scaled by the pose's by the weight; the rest stays the state's.
-pub fn layer(state: &Pose, pose: &Pose, w: f32) -> Result<Pose, Unsupported> {
-    let t = rotation_power(pose.rotation, w)?;
+pub fn layer(state: &Pose, pose: &Pose, w: f32) -> Pose {
+    let t = rotation_power(pose.rotation, w);
     let s = state.rotation;
     // the product t * s, the terms fused as the code fuses them (80158A00 to 80158A34)
     let fma = |a: f32, b: f32, c: f32| (a as f64).mul_add(b as f64, c as f64) as f32;
@@ -303,7 +302,7 @@ pub fn layer(state: &Pose, pose: &Pose, w: f32) -> Result<Pose, Unsupported> {
     let rw = fma(tw, sw, b);
     let ry = fma(ty, sw, d);
     let rz = fma(tz, sw, e);
-    Ok(Pose {
+    Pose {
         flags: state.flags | pose.flags,
         rotation: [x, ry, rz, rw],
         translation: core::array::from_fn(|i| state.translation[i] + w * pose.translation[i]),
@@ -312,17 +311,17 @@ pub fn layer(state: &Pose, pose: &Pose, w: f32) -> Result<Pose, Unsupported> {
             s + (s * l - s) * w
         }),
         ..*state
-    })
+    }
 }
 
 /// The rotation `q` raised to `t` (801B5154): the identity at 0, `q` at 1, else the blend of the
 /// identity toward `q`.
-fn rotation_power(q: [f32; 4], t: f32) -> Result<[f32; 4], Unsupported> {
+fn rotation_power(q: [f32; 4], t: f32) -> [f32; 4] {
     const IDENTITY: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
     if t == 0.0 {
-        Ok(IDENTITY)
+        IDENTITY
     } else if t == 1.0 {
-        Ok(q)
+        q
     } else {
         blend_rotation(IDENTITY, q, t)
     }
@@ -333,25 +332,80 @@ const NLERP_DOT: f32 = f32::from_bits(0x3f7f_be77);
 
 /// Two rotations blended by `t` (801B4B50): `b` flipped to the shorter way round, then a at 0,
 /// b at 1, the normalized straight line when the two are close (dot at least `NLERP_DOT`),
-/// else the spherical one, which needs the arccosine (not decoded: `Unsupported::Slerp`).
-pub fn blend_rotation(a: [f32; 4], mut b: [f32; 4], t: f32) -> Result<[f32; 4], Unsupported> {
-    let fma = |x: f32, y: f32, z: f32| (x as f64).mul_add(y as f64, z as f64) as f32;
+/// else the spherical interpolation, sin((1 - t) w) / sin w a + sin(t w) / sin w b with
+/// w = acos(dot).
+pub fn blend_rotation(a: [f32; 4], mut b: [f32; 4], t: f32) -> [f32; 4] {
     let mut dot = fma(a[3], b[3], fma(a[2], b[2], fma(a[0], b[0], a[1] * b[1])));
     if dot < 0.0 {
         b = b.map(|v| -v);
         dot = -dot;
     }
     if t == 0.0 {
-        return Ok(a);
+        return a;
     }
     if t == 1.0 {
-        return Ok(b);
+        return b;
     }
     if dot >= NLERP_DOT {
         let sum: [f32; 4] = core::array::from_fn(|i| a[i] + t * (b[i] - a[i]));
-        return Ok(anim::unit_or_identity(sum));
+        return anim::unit_or_identity(sum);
     }
-    Err(Unsupported::Slerp)
+    let sin = |x: f32| mathf::sin(x).unwrap_or(0.0);
+    let omega = acos(dot);
+    let inverse = 1.0 / sin(omega);
+    let wa = sin((1.0 - t) * omega) * inverse;
+    let wb = sin(t * omega) * inverse;
+    core::array::from_fn(|i| wa * a[i] + wb * b[i])
+}
+
+/// a x b + c, fused, rounded to single.
+fn fma(a: f32, b: f32, c: f32) -> f32 {
+    (a as f64).mul_add(b as f64, c as f64) as f32
+}
+
+/// The game's arccosine (8010DB14): fdlibm's e_acos in single precision, the fused steps fused.
+/// The constants are the game's small-data floats (r13 - 30784 to r13 - 30716, r13 = 803833E0).
+pub fn acos(x: f32) -> f32 {
+    const PI: f32 = f32::from_bits(0x4049_0fdb);
+    const PIO2: f32 = f32::from_bits(0x3fc9_0fdb);
+    const PIO2_HI: f32 = f32::from_bits(0x3fc9_0fda);
+    const PIO2_LO: f32 = f32::from_bits(0x33a2_2168);
+    const PI_HI: f32 = f32::from_bits(0x4049_0fda);
+    let pc: [f32; 6] = [0x3e2a_aaab, 0xbea6_b090, 0x3e4e_0aa8, 0xbd24_1146, 0x3a4f_7f04, 0x3811_ef08].map(f32::from_bits);
+    let qc: [f32; 4] = [0xc019_d139, 0x4001_572d, 0xbf30_3361, 0x3d9d_c62e].map(f32::from_bits);
+    // p(z) / q(z) as fdlibm has them: z (pS0 + z (pS1 + ...)) and 1 + z (qS1 + ...)
+    let ratio = |z: f32| {
+        let p = fma(z, fma(z, fma(z, fma(z, fma(z, pc[5], pc[4]), pc[3]), pc[2]), pc[1]), pc[0]);
+        let q = fma(z, fma(z, fma(z, fma(z, qc[3], qc[2]), qc[1]), qc[0]), 1.0);
+        (z * p) / q
+    };
+    let ix = x.to_bits() & 0x7fff_ffff;
+    if ix == 0x3f80_0000 {
+        return if x > 0.0 { 0.0 } else { PI };
+    }
+    if ix > 0x3f80_0000 {
+        return f32::NAN;
+    }
+    if ix < 0x3f00_0000 {
+        if ix <= 0x2300_0000 {
+            return PIO2;
+        }
+        let r = ratio(x * x);
+        return PIO2_HI - (x - (PIO2_LO - x * r));
+    }
+    if x < 0.0 {
+        let z = (1.0 + x) * 0.5;
+        let s = z.sqrt();
+        let w = fma(ratio(z), s, -PIO2_LO);
+        return PI_HI - 2.0 * (s + w);
+    }
+    let z = (1.0 - x) * 0.5;
+    let s = z.sqrt();
+    // df: s without its low 12 bits, so that df * df is exact
+    let df = f32::from_bits(s.to_bits() & 0xffff_f000);
+    let c = (z - df * df) / (s + df);
+    let w = fma(ratio(z), s, c);
+    2.0 * (df + w)
 }
 
 #[cfg(test)]
@@ -382,15 +436,15 @@ mod tests {
     fn skip_and_copy() {
         let a = pose([0.0, 0.0, 0.0, 1.0], [1.0, 1.0, 1.0], [1.0; 3]);
         let b = pose([0.0, 1.0, 0.0, 0.0], [2.0, 3.0, 4.0], [2.0; 3]);
-        assert_eq!(fold(&a, &b, Fold::Skip).unwrap(), a);
-        assert_eq!(fold(&a, &b, Fold::Copy).unwrap(), b);
+        assert_eq!(fold(&a, &b, Fold::Skip), a);
+        assert_eq!(fold(&a, &b, Fold::Copy), b);
     }
 
     #[test]
     fn blend_moves_the_vectors_and_keeps_the_rest() {
         let a = Pose { flags: 1, vector: [7.0; 3], ..pose([0.0, 0.0, 0.0, 1.0], [0.0; 3], [1.0; 3]) };
         let b = Pose { flags: 2, vector: [9.0; 3], ..pose([0.0, 0.0, 0.0, 1.0], [2.0, 4.0, 8.0], [3.0; 3]) };
-        let r = fold(&a, &b, Fold::Blend(0.5)).unwrap();
+        let r = fold(&a, &b, Fold::Blend(0.5));
         assert_eq!(r.translation, [1.0, 2.0, 4.0]);
         assert_eq!(r.scale, [2.0; 3]);
         assert_eq!(r.flags, 3);
@@ -402,16 +456,15 @@ mod tests {
     fn blend_takes_the_shorter_way() {
         let a = [0.0, 0.0, 0.0, 1.0];
         let b = [0.0, 0.0, 0.0, -1.0];
-        assert_eq!(blend_rotation(a, b, 0.5).unwrap(), a);
-        assert_eq!(blend_rotation(a, b, 1.0).unwrap(), a);
-        assert_eq!(blend_rotation(a, [1.0, 0.0, 0.0, 0.0], 0.5), Err(Unsupported::Slerp));
+        assert_eq!(blend_rotation(a, b, 0.5), a);
+        assert_eq!(blend_rotation(a, b, 1.0), a);
     }
 
     #[test]
     fn layer_adds_the_translation_and_scales() {
         let a = pose([0.0, 0.0, 0.0, 1.0], [1.0, 2.0, 3.0], [2.0; 3]);
         let b = pose([0.0, 0.0, 0.0, 1.0], [4.0, 4.0, 4.0], [3.0; 3]);
-        let r = layer(&a, &b, 0.5).unwrap();
+        let r = layer(&a, &b, 0.5);
         assert_eq!(r.translation, [3.0, 4.0, 5.0]);
         // 2 + (2 * 3 - 2) * 0.5
         assert_eq!(r.scale, [4.0; 3]);
