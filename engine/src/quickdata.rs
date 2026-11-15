@@ -124,6 +124,10 @@ pub struct ObjResources {
     /// The first word of what the row's first word points at (0 without one): the name hash
     /// the original keys a window's kind by (`light::window_kind`).
     pub key: u32,
+    /// The third word of that record: the id (an `animatio.arc` entry's) of the animation the
+    /// object's controller plays when it is idle (a lamp's, one still pose of two frames); 0
+    /// without one.
+    pub idle: u32,
 }
 
 impl ObjResources {
@@ -135,12 +139,12 @@ impl ObjResources {
 /// Each object's resources by GUID, from `SimsObjects`: an `ObjDefinition` row (196 bytes, the
 /// GUID at +0x1c) points (+0xc0) at an `ObjDefinition::ResData` row (48 bytes: flags at +4, the
 /// dataset's id at +0x10, the model's hash at +0x18, a pointer at +0 to a record that starts
-/// with a name hash). Definitions without one are left out.
+/// with a name hash, then its idle animation's id at +8). Definitions without one are left out.
 pub fn object_resources(img: &Image) -> BTreeMap<u32, ObjResources> {
     img.rows("ObjDefinition")
         .filter_map(|r| {
             let res = img.ptr(r + 0xc0)?;
-            Some((img.u32(r + 0x1c)?, ObjResources { dataset: img.u32(res + 0x10)?, model: img.u32(res + 0x18)?, flags: img.u32(res + 4)?, key: img.ptr(res).and_then(|k| img.u32(k)).unwrap_or(0) }))
+            Some((img.u32(r + 0x1c)?, ObjResources { dataset: img.u32(res + 0x10)?, model: img.u32(res + 0x18)?, flags: img.u32(res + 4)?, key: img.ptr(res).and_then(|k| img.u32(k)).unwrap_or(0), idle: img.ptr(res).and_then(|k| img.u32(k + 8)).unwrap_or(0) }))
         })
         .collect()
 }

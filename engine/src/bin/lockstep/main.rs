@@ -676,10 +676,6 @@ fn main() -> ExitCode {
     if std::env::var_os("LOCKSTEP_ANIM_SKIN").is_some() {
         anim::skin_study(&log);
     }
-    // (LOCKSTEP_ANIM_LAMPS: the lamps' lights against the bones of their tick)
-    if std::env::var_os("LOCKSTEP_ANIM_LAMPS").is_some() {
-        anim::lamps(&log);
-    }
     // (LOCKSTEP_ANIM_OUTFITS: each Sim dressed, its description and the model parts it set)
     if std::env::var_os("LOCKSTEP_ANIM_OUTFITS").is_some() {
         anim::outfits(&log, &d);
@@ -773,6 +769,11 @@ fn main() -> ExitCode {
         .and_then(|e| housefire::quickdata::Image::read(housefire::arc::bytes(&quick, &e)))
         .map(|img| housefire::quickdata::object_resources(&img))
         .unwrap_or_default();
+    // (LOCKSTEP_ANIM_LAMPS: the lamps' lights against the bones of their tick, and placed from
+    // the engine's world, skeletons, animations and poses alone)
+    if std::env::var_os("LOCKSTEP_ANIM_LAMPS").is_some() {
+        anim::lamps(&log, &lot_world, &objects, &d);
+    }
     let tiles = (tiles.0, tiles.1, tiles.2, objects);
     set_to_next_check(&lib, &ngh, &disc_ngh, &tiles, &log, &step_object, &mut notes);
 
