@@ -1546,3 +1546,13 @@ dips. All 13 dip ticks have an Animate load miss that tick, but tying the miss t
 through the Sim's Animate run finds only 6. So the rule holds (a Sim's animator stops on the
 tick its Animate's load misses), but which Sim a miss belongs to needs the observer. The '0'
 ask names no Sim, and the Animate runs are named runs only.
+Whose animator a load miss stops (iteration 173). A miss belongs to the Animate step logged
+next, and on home-a19.log that Sim's animator dips on all 13 miss ticks. The other Sim dips too
+on 8 of them: foodprep at 208, starteat/eatloop/stopeat at 994/1007/1208, idle4 at 1553, the
+easel at 5013/5026, and fidget-1b at tick 1. It does not dip on 5 idle misses (fidget-1c at 18,
+trans-lstand at 1418, the idle transitions at 1618/1632, fidget-1a at 1700). Counted on the
+17,198 '#' records:
+- stopping only the missing Sim: 17,187;
+- stopping every Sim: 17,191.
+Neither is exact, so what stops the other Sim is still to find, from the writer of the
+animator's +124.

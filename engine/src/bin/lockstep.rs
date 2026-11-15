@@ -1697,20 +1697,24 @@ fn main() -> ExitCode {
                 // objects' +80 at the tick's frames, variants below) and 0 on a tick its Sim's
                 // Animate load misses (the Sim of the step logged after the miss)
                 let mut miss: BTreeSet<(u32, u32)> = BTreeSet::new();
-                // (the Sims whose Animate run of the missed animation covers the tick)
+                // (a miss is its Sim's: the step logged next, the Animate that asked)
                 for l in log.loaded.iter().filter(|l| !l.loaded) {
-                    let Some(name) = by_id.get(&l.id).map(|a| a.name.clone()) else { continue };
-                    for (k, (nm, first, end)) in each.iter().enumerate() {
-                        if *nm == name && *first <= l.tick && l.tick <= *end {
-                            miss.insert((each_sim[k], l.tick));
-                        }
+                    if let Some(st) = log.steps.get(l.after_steps) {
+                        miss.insert((st.sim, l.tick));
                     }
                 }
+                let miss_any: BTreeSet<u32> = miss.iter().map(|m| m.1).collect();
                 {
                     // the dips (a '#' to 0 at game speed 1) against the ticks with any load miss
                     let dips: BTreeSet<u32> = log.speeds.iter().filter(|sp| sp.after == 0.0 && sp.before == 1.0).map(|sp| sp.tick).collect();
                     let any_miss: BTreeSet<u32> = log.loaded.iter().filter(|l| !l.loaded).map(|l| l.tick).collect();
                     let by_run: BTreeSet<u32> = miss.iter().map(|m| m.1).collect();
+                    for l in log.loaded.iter().filter(|l| !l.loaded && l.tick != 0) {
+                        let who = log.steps.get(l.after_steps).map(|s| s.sim);
+                        let dipped: Vec<u32> = log.speeds.iter().filter(|sp| sp.tick == l.tick && sp.after == 0.0 && sp.before != 0.0).filter_map(|sp| sim_of.get(&sp.owner.wrapping_add(0x350)).copied()).collect();
+                        let other_busy: Vec<_> = sim_of.values().filter(|x| Some(**x) != who).map(|x| (x, log.loaded.iter().any(|m| m.tick == l.tick && !m.loaded && log.steps.get(m.after_steps).map(|s| s.sim) == Some(*x)))).collect();
+                        println!("  miss tick {} {} by {who:x?}: dipped {dipped:x?} (other Sim missing too: {other_busy:x?})", l.tick, by_id.get(&l.id).map(|a| a.name.as_str()).unwrap_or("?"));
+                    }
                     println!("  dips to 0: {} ticks; with a load miss that tick: {}; with a miss tied to a Sim's run: {}; dip ticks without a miss {:?}", dips.len(), dips.intersection(&any_miss).count(), dips.intersection(&by_run).count(), dips.difference(&any_miss).take(20).collect::<Vec<_>>());
                 }
                 let mut game_tick: BTreeMap<u32, Vec<f32>> = BTreeMap::new(); // tick -> its frames' game speeds in order
@@ -1725,7 +1729,7 @@ fn main() -> ExitCode {
                         }
                     }
                 }
-                for variant in ["the tick's first frame", "the tick's last frame", "the last frame, the miss as the other Sim's"] {
+                for variant in ["the tick's first frame", "the tick's last frame", "the last frame, a miss stopping every Sim"] {
                     let mut tally: BTreeMap<String, usize> = BTreeMap::new();
                     let mut shown = 0;
                     for sp in log.speeds.iter().filter(|sp| sp.tick != 0) {
@@ -1738,7 +1742,8 @@ fn main() -> ExitCode {
                         };
                         let Some(g) = g else { continue };
                         let other = sim_of.values().find(|x| *x != sim).copied().unwrap_or(0);
-                        let missed = match variant { "the last frame, the miss as the other Sim's" => miss.contains(&(other, sp.tick)), _ => miss.contains(&(*sim, sp.tick)) };
+                        let _ = other;
+                        let missed = match variant { "the last frame, a miss stopping every Sim" => miss_any.contains(&sp.tick), _ => miss.contains(&(*sim, sp.tick)) };
                         let want = if missed { 0.0 } else { g };
                         let k = if want == sp.after { "the same".to_string() } else { format!("DIFFERENT (engine {want}, log {} -> {}{})", sp.before, sp.after, if miss.contains(&(*sim, sp.tick)) { ", a miss" } else { "" }) };
                         if k != "the same" && variant == "the tick's last frame" && shown < 12 {
