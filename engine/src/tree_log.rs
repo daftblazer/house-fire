@@ -536,6 +536,17 @@ pub struct ScalarStreamRec {
     pub track: Option<(u32, f32)>,
 }
 
+/// A track's node states around its pose ('=', after ')' of Anim_Animate 801581C8, the first 40,000 poses): the states object, its array of 64-byte node states, and each state's 16 words before and after the pose.
+#[derive(Clone, Debug, Default)]
+pub struct NodeStatesRec {
+    pub tick: u32,
+    pub states: u32,
+    pub array: u32,
+    pub track: Option<(u32, f32)>,
+    pub before: Vec<[u32; 16]>,
+    pub after: Vec<[u32; 16]>,
+}
+
 /// A track speed set ('^', Anim_SetTrackSpeed 8015AB80): the controller, track id, speed, caller, the track found (0 if none) and the wrapper's caller.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SpeedSetRec {
@@ -744,6 +755,7 @@ pub struct Log {
     pub speed_sets: Vec<SpeedSetRec>,
     pub rot_streams: Vec<RotStreamRec>,
     pub flag_streams: Vec<FlagStreamRec>,
+    pub node_states: Vec<NodeStatesRec>,
     pub scalar_streams: Vec<ScalarStreamRec>,
     pub res_asks: Vec<ResAskRec>,
     pub ticks: u32,
@@ -805,6 +817,7 @@ pub fn read_log(path: &str) -> Option<Log> {
     let mut in_pass = false;
     // the track whose pose is being read ('(' ... ')'), for its streams' reads
     let mut posing: Option<(u32, f32)> = None;
+    let mut last_posed: Option<(u32, f32)> = None;
     while r.p < b.len() {
         let k = r.u8();
         match k {
@@ -1427,7 +1440,10 @@ pub fn read_log(path: &str) -> Option<Log> {
                     log.poses.push(PoseRec { at: r.p, tick: log.ticks, track, place });
                 }
             }
-            b')' => posing = None,
+            b')' => {
+                last_posed = posing;
+                posing = None;
+            }
             b'!' => {
                 if !r.has(4 * 2 + 4 * 12 + 1 + 4 * 16 + 4 * 4) {
                     break;
@@ -1444,6 +1460,19 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
                 let result = [f32::from_bits(r.u32()), f32::from_bits(r.u32()), f32::from_bits(r.u32()), f32::from_bits(r.u32())];
                 log.rot_streams.push(RotStreamRec { tick: log.ticks, stream, place, head, mode, window, result, track: posing });
+            }
+            b'=' => {
+                if !r.has(12) {
+                    break;
+                }
+                let (states, array, n) = (r.u32(), r.u32(), r.u32() as usize);
+                if !r.has(n * 128) {
+                    break;
+                }
+                let read = |r: &mut Bytes| (0..n).map(|_| core::array::from_fn(|_| r.u32())).collect::<Vec<[u32; 16]>>();
+                let before = read(&mut r);
+                let after = read(&mut r);
+                log.node_states.push(NodeStatesRec { tick: log.ticks, states, array, track: last_posed, before, after });
             }
             b'~' => {
                 if !r.has(4 * 7) {
