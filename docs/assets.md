@@ -1479,3 +1479,17 @@ tracks. On the Sims' tracks:
 - 6,554 are happyFace, held at 0 at any game speed;
 - 474 are still on frames where the game speed is changing (the objects not yet agreeing);
 - 24 are short stops at speed 1.
+The animator's six play slots (iteration 167). fn_800ABE20 runs on a Sim's animator. When its
+speed (+124) differs from the last one (+128), it sets the new speed on six tracks, each named
+by a slot of the animator. Each track is looked up at the controller's +892 and set through
+the controller's +816. By the animations the sets reach on home-a19.log, the slots are:
+- +224: the standing (or sitting) loop, the base idle (61 sets: a2o-/c2o-standing-loop, a2o-sit-loop);
+- +188: the walking loop (9: a2o-walking-loop, -female-loop, c2o-walking-loop);
+- +184: the turn (a2o-standing-turn-90-cw);
+- +164: the current action, the Animate's own animation (51 over 23 animations);
+- +212: the action before it, still blending out (6);
+- +220: the carry overlay (16: a2o-rarm-carry-loop).
+Elsewhere:
+- happyFace is set by fn_800AF06C (800AF190, 3 sets: the face, held at 0).
+- The walk's turns are set by fn_800AF964.
+- Backward (-1) and new-play sets come from fn_800B0ADC.

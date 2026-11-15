@@ -1599,6 +1599,17 @@ fn main() -> ExitCode {
                     *in_step.entry(format!("from {:08x} speed {} {}", x.caller2, x.speed, if sim_of.contains_key(&x.controller) { "Sim" } else { "object" })).or_default() += 1;
                 }
                 println!("speed sets by the wrapper's caller: {in_step:?}");
+                // each set's track's animation (its next step record) by the call site
+                let mut steps_of_track: HashMap<u32, Vec<(usize, u32)>> = HashMap::new();
+                for t in &log.tracks {
+                    steps_of_track.entry(t.track).or_default().push((t.at, t.head[1]));
+                }
+                let mut by_site: BTreeMap<String, usize> = BTreeMap::new();
+                for x in &log.speed_sets {
+                    let anim = steps_of_track.get(&x.track).and_then(|v| v.iter().find(|e| e.0 > x.at)).and_then(|e| by_id.get(&e.1)).map(|a| a.name.clone()).unwrap_or_else(|| "(no later step)".into());
+                    *by_site.entry(format!("{:08x} {anim}", x.caller2)).or_default() += 1;
+                }
+                println!("speed sets by call site and animation: {by_site:?}");
                 // the Sims' still tracks against the game speed that frame (the objects' +80)
                 let mut still: BTreeMap<String, usize> = BTreeMap::new();
                 for t in log.tracks.iter().filter(|t| t.tick != 0 && sim_of.contains_key(&t.controller)) {
