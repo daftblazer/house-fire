@@ -862,3 +862,20 @@ belongs to its second tile's definition, not to the leader's. Found with a `-DGC
 watching a window's +0xC; the observer's 'y' record now also carries +0x138. Checked by lockstep
 (`LOCKSTEP_WINDOW_LIGHTS`): home's 28 window lights, each at the engine's place, with the
 engine's kind taken from the window group's key.
+
+The window lights' colours (`light::window_mix`, the original's Light_FillWindow at
+0x801697F0, run for each window light by 0x80169780). A light's mix starts at 0. An inside
+window light adds the sun (record +0x5048); outside ones don't. The filler adds it when the
+light's vtable +48 call gives room 0, and the log shows that this is so for every inside light
+(the other side's room, it seems; not read further). Then up to 4 of its
+nearest lights (the list at record +0x4014 + 16·index, read up to its first gap) each add
+colour × min(reach² / d², 1). Here d² is the paired square length (0x80122228: x² and y²
+rounded, z² fused onto x², then y² added), and a d² of 0 is taken as 0.0001. Last, the mix is
+scaled down by 1 / max(1, its largest part). The object keeps it at +152 (flagging a change at
++136 when the move is over 0.25), and the light's colour is the mix × the base (+148, by kind).
+At the first fill the window lights' positions are still 0, so lamps near the origin count in
+full: that is the original's own state, and the port keeps it.
+Checked through the observer's 'z' record (per fill: the light, its object's room, its
+position, the sun, the nearest list with each light as read, then the mix, the base, the reach
+and the colour) with `assets windowfill`: home's 4,000 fills (the record's cap), mix and colour bit for bit;
+club's lot makes none.

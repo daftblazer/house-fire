@@ -1947,6 +1947,42 @@ fn main() -> ExitCode {
                 }
             }
         }
+        "windowfill" => {
+            // each logged window light fill against the engine's mix and colour
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO windowfill LOG");
+                return ExitCode::FAILURE;
+            };
+            let (mut mixes, mut colours, mut shown) = (0, 0, 0);
+            for w in &log.window_fills {
+                let near: Vec<_> = w.near.iter().map(|n| (n.1, n.2, n.3)).collect();
+                let mix = housefire::light::window_mix(w.room, w.sun, w.at, &near);
+                let colour = mix.map(|v| v * w.base);
+                let bits = |a: [f32; 3]| a.map(f32::to_bits);
+                if bits(mix) == bits(w.mix) {
+                    mixes += 1;
+                }
+                if bits(colour) == bits(w.colour) {
+                    colours += 1;
+                } else if shown < 5 {
+                    shown += 1;
+                    println!("  tick {} light {} room {}: mine {mix:?} -> {colour:?}, the log's {:?} -> {:?} (at {:?} sun {:?}, near {:?})", w.tick, w.light, w.room, w.mix, w.colour, w.at, w.sun, w.near);
+                }
+            }
+            println!("window fills {}: the engine's mix bit for bit {mixes}, colour {colours}", log.window_fills.len());
+            if std::env::var_os("ASSETS_SUN").is_some() {
+                // (study: which fills match with the sun and which without, by room)
+                let mut by: BTreeMap<(i32, bool, bool), usize> = BTreeMap::new();
+                for w in &log.window_fills {
+                    let near: Vec<_> = w.near.iter().map(|n| (n.1, n.2, n.3)).collect();
+                    let bits = |a: [f32; 3]| a.map(f32::to_bits);
+                    let with = bits(housefire::light::window_mix(1, w.sun, w.at, &near)) == bits(w.mix);
+                    let without = bits(housefire::light::window_mix(0, w.sun, w.at, &near)) == bits(w.mix);
+                    *by.entry((w.room, with, without)).or_insert(0) += 1;
+                }
+                println!("(room, with the sun, without): {by:?}");
+            }
+        }
         "windowlights" => {
             // the window light objects and their game objects, for study
             let Some(log) = args.get(3).and_then(|p| read_log(p)) else {

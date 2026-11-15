@@ -138,6 +138,39 @@ pub fn window_light_places(tile: (i32, i32), facing: u8) -> Option<[(f32, f32); 
     Some([at(1.0), at(-1.0)])
 }
 
+/// The filler's squared length (the original's paired square magnitude, 0x80122228: x^2 and
+/// y^2 rounded, then z^2 fused onto x^2, then y^2 added).
+pub fn square_length(d: [f32; 3]) -> f32 {
+    let xx = (f64::from(d[0]) * f64::from(d[0])) as f32;
+    let yy = (f64::from(d[1]) * f64::from(d[1])) as f32;
+    (f64::from(d[2]).mul_add(f64::from(d[2]), f64::from(xx)) as f32) + yy
+}
+
+/// A window light's mix of light (the original's Light_FillWindow, 0x801697F0): the sun when its
+/// room is inside (not 0: the filler's own test is the light's vtable +48 room being 0, which
+/// the log shows for every inside light), then up to 4 of its nearest lights (position, reach, colour; the list up to its first gap), each
+/// colour times min(reach^2 / its squared distance, 1) (a zero distance taken as 0.0001), then
+/// scaled down so its largest part is at most 1. The light's colour is the mix times its base.
+pub fn window_mix(room: i32, sun: [f32; 3], at: [f32; 3], near: &[([f32; 3], f32, [f32; 3])]) -> [f32; 3] {
+    let mut mix = [0.0f32; 3];
+    if room != 0 {
+        mix = [mix[0] + sun[0], mix[1] + sun[1], mix[2] + sun[2]];
+    }
+    for (p, reach, colour) in near.iter().take(4) {
+        let mut d2 = square_length([p[0] - at[0], p[1] - at[1], p[2] - at[2]]);
+        if d2 == 0.0 {
+            d2 = RANK_INSTEAD;
+        }
+        let f = (reach * reach / d2).min(1.0);
+        for k in 0..3 {
+            mix[k] += f * colour[k];
+        }
+    }
+    let most = mix.iter().fold(1.0f32, |m, &v| if v > m { v } else { m });
+    let s = 1.0 / most;
+    mix.map(|v| v * s)
+}
+
 /// A window's kind by its resources' key (`quickdata::ObjResources::key`; the original's table
 /// in 0x801679CC, called by 0x80078A68 on the window object's +0x138; 0 for a key not listed). Home's storm windows are 0xD02B5C12
 /// (1) and its small rectangle ones 0x92751A1A (2).
@@ -359,6 +392,19 @@ mod tests {
         assert_eq!(entry_points(0x0005_0203), vec![(2, 5), (2, 6), (3, 5), (3, 6), (4, 5), (4, 6)]);
         // a leading half (0x40: on the row) and a trailing half (0x80: the row after)
         assert_eq!(entry_points(0x0005_4283), vec![(2, 5), (3, 5), (3, 6), (4, 6)]);
+    }
+
+    #[test]
+    fn a_window_mix_takes_the_sun_inside_and_scales_down() {
+        let lamp = ([0.0, 0.0, 1.0], 2.0, [0.25, 0.25, 0.5]);
+        // outside: the lamp in full (reach^2 / distance^2 over 1), no sun
+        assert_eq!(window_mix(0, [1.3, 1.3, 0.91], [0.0; 3], &[lamp]), [0.25, 0.25, 0.5]);
+        // inside: the sun added, then scaled down to a largest part of 1
+        let m = window_mix(1, [1.3, 1.3, 0.91], [0.0; 3], &[lamp]);
+        assert_eq!(m[0], 1.0);
+        assert!(m[2] < 1.0);
+        // a fifth listed light is not read
+        assert_eq!(window_mix(0, [0.0; 3], [0.0; 3], &[lamp; 5]), window_mix(0, [0.0; 3], [0.0; 3], &[lamp; 4]));
     }
 
     #[test]

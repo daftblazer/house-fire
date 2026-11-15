@@ -94,8 +94,26 @@ pub struct MatrixRec {
     pub strips_before: usize,
 }
 
-/// An orientation the original gave a static model ('o': EIStaticModel::SetOrient): the tick,
-/// the model's address and the 4x4, rows (the translation in the last row).
+/// A window light's colour filled ('z'): the light's index and its object's room, its position,
+/// the sun, the nearest lights listed and what the filler left.
+#[derive(Clone, Debug)]
+pub struct WindowFillRec {
+    pub tick: u32,
+    pub light: u32,
+    /// The light object's room (+0x34; 0 outside).
+    pub room: i32,
+    pub at: [f32; 3],
+    pub sun: [f32; 3],
+    /// The nearest lights listed (up to 4, up to the list's first gap, as the filler reads
+    /// them): each one's index, position, reach and colour as the filler read them.
+    pub near: Vec<(u32, [f32; 3], f32, [f32; 3])>,
+    /// After: the object's mix (+152), its base (+148), the light's reach and colour.
+    pub mix: [f32; 3],
+    pub base: f32,
+    pub reach: f32,
+    pub colour: [f32; 3],
+}
+
 /// The lights rebuilt ('t'): the room count, the other and own lights' counts (own from 256),
 /// each light object (the object, its vtable, its room, its changed flag) and the lights (0 to
 /// the other count, then 256 to the own: position, reach, colour as words, then the object).
@@ -498,6 +516,8 @@ pub struct Log {
     /// 'y': the window light objects (the object, side, reach, two colour fields, the game
     /// object, its kind (+0xC), then its first 64 words and its kind's key, +0x138).
     pub window_lights: Vec<(Vec<u32>, Vec<u32>)>,
+    /// 'z': the window lights' colours filled.
+    pub window_fills: Vec<WindowFillRec>,
     /// 'n': rooms' floors relit, each after the 'i' record of its own light grid (its index there
     /// is `light_grids.len()` less one when read).
     pub room_floors: Vec<RoomFloorRec>,
@@ -659,6 +679,30 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let room = [three(), three()];
                 let k = f32::from_bits(r.u32());
                 log.group_scales.push(GroupScaleRec { tick, group, base, scale, material, room, k });
+            }
+            b'z' => {
+                if !r.has(4 * 53) {
+                    break;
+                }
+                let f = |v: u32| f32::from_bits(v);
+                let (tick, light, room) = (r.u32(), r.u32(), r.u32() as i32);
+                let mut v3 = || [f(r.u32()), f(r.u32()), f(r.u32())];
+                let (at, sun) = (v3(), v3());
+                let list: Vec<u32> = (0..4).map(|_| r.u32()).collect();
+                let mut near = Vec::new();
+                let mut gap = false;
+                for &p in &list {
+                    let w: Vec<u32> = (0..8).map(|_| r.u32()).collect();
+                    gap |= p == 0;
+                    if !gap {
+                        near.push((w[0], [f(w[1]), f(w[2]), f(w[3])], f(w[4]), [f(w[5]), f(w[6]), f(w[7])]));
+                    }
+                }
+                let mix = [f(r.u32()), f(r.u32()), f(r.u32())];
+                let base = f(r.u32());
+                let reach = f(r.u32());
+                let colour = [f(r.u32()), f(r.u32()), f(r.u32())];
+                log.window_fills.push(WindowFillRec { tick, light, room, at, sun, near, mix, base, reach, colour });
             }
             b'y' => {
                 if !r.has(4) {
