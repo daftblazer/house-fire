@@ -50,6 +50,9 @@ pub fn poses(log: &housefire::tree_log::Log, d: &Disc) {
     let mut folds: BTreeMap<String, usize> = BTreeMap::new();
     let mut skipped: BTreeMap<String, usize> = BTreeMap::new();
     let (mut root_fixed_nodes, mut stale_flags, mut records, mut shown) = (0, 0, 0, 0);
+    // line 3: the logged weights against what Animate does with them
+    let mut weights: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut weights_different = 0;
     for p in &log.poses {
         let Some(rec) = log.node_states.get(next).filter(|r| r.tick == p.tick && r.track.is_some_and(|(t, pl)| t == p.track && pl.to_bits() == p.place.to_bits())) else {
             *skipped.entry("pose without a record (after the log's first 40,000)".into()).or_default() += 1;
@@ -77,10 +80,24 @@ pub fn poses(log: &housefire::tree_log::Log, d: &Disc) {
             *based = false;
         }
         let track_weight = pose::base_weight(rec.weight, layer, based);
+        let unit = 0.0..=1.0;
+        let mut check = |what: &'static str, ok: bool| {
+            *weights.entry(what).or_default() += 1;
+            weights_different += usize::from(!ok);
+        };
+        check("track weights in 0 to 1", unit.contains(&rec.weight));
+        check(if rec.node_weights.is_some() { "tracks with node weights" } else { "tracks without" }, true);
+        if track_weight != rec.weight {
+            check("base tracks (weight 1 whatever theirs)", true);
+        }
         for i in 0..rec.before.len() {
             let (before, after) = (&rec.before[i], &rec.after[i]);
             let node_weight = rec.node_weights.as_ref().map_or(1.0, |w| w[i]);
             let weight = track_weight * node_weight;
+            check("node weights in 0 to 1", unit.contains(&node_weight));
+            if weight == 0.0 {
+                check("nodes of weight 0 left as they were", before == after);
+            }
             let fold = Fold::of(weight, layer);
             // the root node's fix: the components the track's flags name take the track's values.
             // Only +124 (the first) is logged; the other two are taken from the state after
@@ -116,6 +133,10 @@ pub fn poses(log: &housefire::tree_log::Log, d: &Disc) {
                     local = attempt(ts).map_or(local, |(l, _)| l);
                 }
             }
+            // +124 is the root fix's first value (the translation's x) when the flags name it
+            if fold == Fold::Copy && root_fixed && rec.flags & 1 != 0 {
+                check("root fixes with bit 0 set (+124 is the pose's translation x)", after[5] == rec.word124);
+            }
             stale_flags += usize::from(stale);
             root_fixed_nodes += usize::from(root_fixed);
             let name = match fold {
@@ -139,5 +160,6 @@ pub fn poses(log: &housefire::tree_log::Log, d: &Disc) {
     let different: usize = folds.iter().filter(|(k, _)| k.starts_with("DIFFERENT")).map(|(_, n)| n).sum();
     println!("local poses from the channels (the weight-1 copies, {copy_nodes} nodes): DIFFERENT -> {copy_different}");
     println!("node states after the pose (logged weights; {records} poses, every node, all 16 words): DIFFERENT -> {different}; {folds:?}");
+    println!("weights from the track (what the logged weights show; a failed check counts): DIFFERENT -> {weights_different}; {weights:?}");
     println!("  root-node fix (track flags bits 0 to 2 set on the pose's node 0): {root_fixed_nodes} nodes; nodes whose first read of a stream used a blend flag the constructor leaves stale (the other value, as logged): {stale_flags}; not compared: {skipped:?}");
 }

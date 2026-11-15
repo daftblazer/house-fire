@@ -457,6 +457,19 @@ mod tests {
     }
 
     #[test]
+    fn the_first_plain_track_is_the_base() {
+        let mut based = false;
+        // a weight 0 track does nothing, a layer is never the base
+        assert_eq!(base_weight(0.0, false, &mut based), 0.0);
+        assert_eq!(base_weight(0.5, true, &mut based), 0.5);
+        assert!(!based);
+        // the first plain track counts as 1 and marks the states, the next keeps its weight
+        assert_eq!(base_weight(0.25, false, &mut based), 1.0);
+        assert!(based);
+        assert_eq!(base_weight(0.25, false, &mut based), 0.25);
+    }
+
+    #[test]
     fn skip_and_copy() {
         let a = pose([0.0, 0.0, 0.0, 1.0], [1.0, 1.0, 1.0], [1.0; 3]);
         let b = pose([0.0, 1.0, 0.0, 0.0], [2.0, 3.0, 4.0], [2.0; 3]);
