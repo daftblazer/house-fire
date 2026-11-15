@@ -243,8 +243,23 @@ ticks, seven fall in the span, the long ones exactly: a2o_dj_start_spinning 87 f
 69 ticks, logged 69; a2o_dance_floor_dance_outgoing01 192 frames, 151 or 152, logged 151. Two
 15-frame starts (a2o-easel-startpaint, a2o-starteat-stand) take 13, a tick over. The runs of 0
 ticks end at once.
-Still open: those two ticks, the speed factors (taken as 1), and the clock's phase at a run's
-start.
+The original's own clock (iteration 117): the observer's '8' record, at each call of
+`fn_8015708C` (named `Anim_UpdateTrack` in the recomp), gives the controller, the track and its
+animation (at 0x7E... addresses the hook cannot read), the track's place before and after, its
+speeds, the frame counter and the frame its play started (+52), and +160 (set once the place
+passes the last frame). On a new home log (home-a8.log, 562,616 steps like the kept one; 532,941
+track steps of 58 controllers): the place grows 0.990 or 1.980 a frame (the speeds 1 on nearly
+all), and the ticks hold 1 or 2 frames (4,929 and 1,835, the frame clock's 1.27). Each Sim's
+controller has two tracks, an object's one. Matching each Animate run to the play (a track's steps
+from one start frame) of its animation's rate starting within two ticks (lockstep
+`LOCKSTEP_ANIM_RUNS` on that log):
+- a play left to run takes exactly the predicted frames (60, 23, 58, 122, 15, 14, 31, 182: 21
+  plays whole);
+- its first frame is in the run's first tick or the next (where that tick's frames fall);
+- a run that lasts to its animation's end returns on the tick after the track's last frame (5
+  of 5). The rest end earlier, on an event (flag 0x20), with the track still going.
+So the two 15-frame starts' extra tick is that last tick plus the start: from the first tick, the
+frames by the clock, and one more.
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object

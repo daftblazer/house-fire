@@ -665,6 +665,8 @@ fn main() -> ExitCode {
         // per Sim: (tree, node, frame, first tick, the animation's name)
         let mut open: BTreeMap<u32, (u16, u16, u32, u32, String)> = BTreeMap::new();
         let mut runs: BTreeMap<String, BTreeMap<u32, usize>> = BTreeMap::new();
+        // each run: (name, first tick, end tick)
+        let mut each: Vec<(String, u32, u32)> = Vec::new();
         let mut ends: BTreeMap<u8, usize> = BTreeMap::new();
         for (i, s) in log.steps.iter().enumerate() {
             let node = step_object[i].and_then(|o| lib.tree(Some(o), s.tree)).and_then(|t| lib.tree_at(t).nodes.get(s.node as usize)).copied();
@@ -701,6 +703,7 @@ fn main() -> ExitCode {
             } else {
                 open.remove(&s.sim);
                 *ends.entry(s.result).or_default() += 1;
+                each.push((name.clone(), start, s.tick));
                 *runs.entry(name).or_default().entry(s.tick - start).or_default() += 1;
             }
         }
@@ -753,6 +756,67 @@ fn main() -> ExitCode {
             if std::env::var_os("LOCKSTEP_ANIM_RUNS_EACH").is_some() {
                 println!("  row {row} {}: {} frames at {}, runs {ticks:?}", a.name, a.frames, a.rate);
             }
+        }
+        // against the original's tracks ('8'): a track's play (its animation unchanged, its
+        // place not going back) from its first step to the one that sets it done; each run's
+        // nearest play of its rate starting within two ticks of it
+        if !log.tracks.is_empty() {
+            // a play: a track's steps from one start frame (+52); (step, first tick, done tick, frames)
+            let mut plays: Vec<(f32, u32, u32, u32)> = Vec::new();
+            let mut at: BTreeMap<(u32, u32), usize> = BTreeMap::new();
+            for t in &log.tracks {
+                let k = *at.entry((t.track, t.ran[1])).or_insert_with(|| {
+                    plays.push((0.0, t.tick, u32::MAX, 0));
+                    plays.len() - 1
+                });
+                let step = t.place[1] - t.place[0];
+                let p = &mut plays[k];
+                if p.2 == u32::MAX {
+                    if step > 0.0 && p.0 == 0.0 {
+                        p.0 = step;
+                    }
+                    p.3 += 1;
+                    if t.done[1] != 0 {
+                        p.2 = t.tick;
+                    }
+                }
+            }
+            let mut by: BTreeMap<String, usize> = BTreeMap::new();
+            let mut hits: BTreeMap<(i32, i32), usize> = BTreeMap::new();
+            for (name, first, end) in &each {
+                let Some(a) = by_name.get(name) else { continue };
+                if end == first {
+                    continue;
+                }
+                let want = housefire::routing::WALK_FRAME * a.rate;
+                let near = plays
+                    .iter()
+                    .filter(|p| (p.0 - want).abs() < 0.01 && p.2 != u32::MAX && p.1 + 2 >= *first && p.1 <= first + 2)
+                    .min_by_key(|p| (p.1 as i64 - *first as i64).abs());
+                match near {
+                    Some(p) => {
+                        *by.entry("found".into()).or_default() += 1;
+                        let predicted = ((a.frames as f32 - 1.0) / want).floor() as u32 + 1;
+                        if p.3 == predicted {
+                            *by.entry("played whole (the predicted frames)".into()).or_default() += 1;
+                            *hits.entry((p.1 as i32 - *first as i32, *end as i32 - p.2 as i32)).or_default() += 1;
+                        }
+                        if std::env::var_os("LOCKSTEP_ANIM_TRACKS_EACH").is_some() {
+                            println!("  run {name} {first}..{end}: track play {}..{} ({} frames, predicted {})", p.1, p.2, p.3, ((a.frames as f32 - 1.0) / want).floor() as u32 + 1);
+                        }
+                    }
+                    None => *by.entry("no track".into()).or_default() += 1,
+                }
+            }
+            if let Ok(want) = std::env::var("LOCKSTEP_ANIM_TRACKS_NEAR") {
+                for (name, first, end) in each.iter().filter(|e| e.0 == want) {
+                    println!("  {name} {first}..{end}:");
+                    for t in log.tracks.iter().filter(|t| t.tick + 3 >= *first && t.tick <= first + 3) {
+                        println!("    tick {} ctl {:08x} track {:08x} anim {:08x} place {:.3}->{:.3} done {}->{} speeds {:?} frame {} ran {:?}", t.tick, t.controller, t.track, t.anim, t.place[0], t.place[1], t.done[0], t.done[1], t.speeds, t.frame, t.ran);
+                    }
+                }
+            }
+            println!("animate runs against the tracks: {by:?}; (track start - run start, run end - track done): runs {hits:?}");
         }
         println!("animate runs by the frames: fixed runs against the frame clock's spans {rule:?}; all runs against the longest span {all:?}");
         println!("animate runs: {} animations ({fixed} always the same ticks), ends by result {ends:?}; ticks over frames (at 30) of the fixed ones {fits:?}", total);

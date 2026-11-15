@@ -458,6 +458,24 @@ pub struct PlanRec {
     pub approach: Option<[i32; 8]>,
 }
 
+/// An animation track's step ('8', Anim_UpdateTrack 8015708C, EA's EAnimController::UpdateTrack):
+/// the controller, the track, its animation and that animation's first words; the track's +0,
+/// +72 and the controller's +80 (speeds), the frame counter, and the track's +52 (the frame it last
+/// ran), +60 (its place in frames) and +160 (done) before and after.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TrackRec {
+    pub tick: u32,
+    pub controller: u32,
+    pub track: u32,
+    pub anim: u32,
+    pub head: [u32; 10],
+    pub speeds: [f32; 3],
+    pub frame: u32,
+    pub ran: [u32; 2],
+    pub place: [f32; 2],
+    pub done: [u32; 2],
+}
+
 /// A walker's step ('Z', Route_Follow 800AE0A4): its follower and its state before and after.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct FollowRec {
@@ -586,6 +604,7 @@ pub struct Log {
     pub randoms: Vec<RandomRec>,
     pub plans: Vec<PlanRec>,
     pub follows: Vec<FollowRec>,
+    pub tracks: Vec<TrackRec>,
     pub ticks: u32,
 }
 
@@ -1227,6 +1246,28 @@ pub fn read_log(path: &str) -> Option<Log> {
                     break;
                 }
                 grower = Some([r.u32(), r.u32(), r.u32(), r.u32(), r.u32()]);
+            }
+            b'8' => {
+                // an animation track's step (Anim_UpdateTrack)
+                if !r.has(4 * 23) {
+                    break;
+                }
+                let (controller, track, anim) = (r.u32(), r.u32(), r.u32());
+                let head = [0; 10].map(|_| r.u32());
+                let b = [0; 7].map(|_| r.u32());
+                let a = [0; 3].map(|_| r.u32());
+                log.tracks.push(TrackRec {
+                    tick: log.ticks,
+                    controller,
+                    track,
+                    anim,
+                    head,
+                    speeds: [f32::from_bits(b[0]), f32::from_bits(b[3]), f32::from_bits(b[5])],
+                    frame: b[6],
+                    ran: [b[1], a[0]],
+                    place: [f32::from_bits(b[2]), f32::from_bits(a[1])],
+                    done: [b[4], a[2]],
+                });
             }
             b'Z' => {
                 // a walker's step (Route_Follow)

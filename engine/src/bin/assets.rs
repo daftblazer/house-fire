@@ -1477,6 +1477,38 @@ fn main() -> ExitCode {
                 println!("  not found: {missing:?}");
             }
         }
+        "tracks" => {
+            // (study) the animation tracks' steps ('8'): how many, the frames a tick (distinct
+            // frame counters), the place's step a frame against the rate, and each animation's
+            // first words with its frame count (+32)
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO tracks LOG");
+                return ExitCode::FAILURE;
+            };
+            let mut frames_at: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
+            let mut steps: BTreeMap<u32, usize> = BTreeMap::new();
+            let mut anims: BTreeMap<u32, ([u32; 10], usize)> = BTreeMap::new();
+            let mut ran_twice = 0;
+            for t in &log.tracks {
+                frames_at.entry(t.tick).or_default().insert(t.frame);
+                let d = t.place[1] - t.place[0];
+                *steps.entry((d * 1000.0).round() as i32 as u32).or_default() += 1;
+                anims.entry(t.anim).or_insert((t.head, 0)).1 += 1;
+                if t.ran[0] == t.frame {
+                    ran_twice += 1;
+                }
+            }
+            let mut per: BTreeMap<usize, usize> = BTreeMap::new();
+            for f in frames_at.values() {
+                *per.entry(f.len()).or_default() += 1;
+            }
+            println!("track steps {}, controllers {}, animations {}; skipped (ran this frame) {ran_twice}", log.tracks.len(), log.tracks.iter().map(|t| t.controller).collect::<BTreeSet<_>>().len(), anims.len());
+            println!("frames a tick (frames: ticks) {per:?}");
+            println!("place's step a call (thousandths: calls), the top 12: {:?}", { let mut v: Vec<_> = steps.into_iter().collect(); v.sort_by_key(|e| std::cmp::Reverse(e.1)); v.truncate(12); v });
+            for (a, (h, n)) in anims.iter().take(8) {
+                println!("  animation {a:08x} ({n} steps): {}", h.iter().map(|w| format!("{w:08x}")).collect::<Vec<_>>().join(" "));
+            }
+        }
         "frameticks" => {
             // (study) the frames (the camera's own step a frame, which 0) against the ticks: how
             // many frames each tick spans, and the ticks a frame
