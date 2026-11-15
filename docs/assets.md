@@ -1623,3 +1623,26 @@ The rotation blend (iteration 180). Mode 1 (after a jump, as for the vec3 stream
 lerp(w0, w3, t), normalized the same way as the window (fn_801B5320 scales the difference by t
 in single operations). `anim::rotation_blend` gives all 5,807 mode-1 reads on home-a23.log
 to the bit. With `rotation_window`, every one of the 300,000 rotation reads is the game's.
+Rotation streams from the bits (iteration 182, `anim::RotHeader`, `anim::RotStream`). The
+rotation stream's init is fn_801B5DC8 (the vec3's fn_801BC318's sibling):
+- The header has 20 bits of key count (+24), then 5 bits each for the gap's width (+30), the
+  bias's width (+32) and the point component's width (+31, 0 meaning 32). The first record
+  starts 35 bits after the header.
+- A record is the gap, the bias, y, z, w (signed), then one sign bit for x. Its stride is gap +
+  bias + 3 x point + 1. The scales are 1 / (2^(w-1) - 1) in single (801ADBCC), and the bias's
+  is 0.0 with no bias. Key k's frame is the sum of (gap + 1) over keys 1..=k, and the frames
+  (+16) are that sum over every key, key 0 included.
+- The point (801B6B40): x = sqrt(1 - s), s being z*z with y*y then w*w fused in, each rounded
+  to single; x is 0 when 1 - s <= 0, and the sign bit negates it.
+- The window (801B6C44) holds P_k, key k's outgoing control, key k+1's incoming control and
+  P_k+1. At the first key the control is unit(P + (P_next - P) * (bias + 1) / 2), at the last
+  unit(P + (P_prev - P) * (1 - bias) / 2). Between, X and Y are the moves toward the previous
+  and next keys, weighted -(bias + 1) / 2 and (1 - bias) / 2, M = unit(X + 0.5 (Y - X)), and the
+  control is unit(P + (s * r * -2) (M - P)), r being this side's frame gap over both, s +1 in,
+  -1 out. A zero length gives the identity (801B52F8). The constants are 802C35F0..3614.
+- Stepping (801B6638, 801B6774, 801B68AC, 801B6918) is the vec3 stream's, the same blend after a
+  jump; the last place is reset to +/-FLT_MAX.
+On home-a23.log (`LOCKSTEP_ANIM_ROTATIONS`) all 628 headers decode from their animation, and
+all 300,000 reads' windows and results come out the same to the bit from the places alone. The
+rotation streams start at the negated node word 0 (all 628), not word 3 as said above: word 3,
+negative on every node, is something else.
