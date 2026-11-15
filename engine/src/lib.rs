@@ -7,6 +7,7 @@ pub mod autonomy;
 pub mod bhav;
 pub mod cfmt;
 pub mod disc;
+pub mod draw;
 pub mod expression;
 pub mod iff;
 pub mod library;

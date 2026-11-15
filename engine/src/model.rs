@@ -31,6 +31,8 @@ pub struct SubModel {
     pub matrices: Vec<(u16, u8)>,
     /// A blended batch's weights: 4 bytes a vertex, after the other arrays.
     pub blend: Vec<u8>,
+    /// The bytes after the hash, one for each matrix slot the sub-model's batches use (`docs/assets.md`, "Batches").
+    pub slot_bytes: Vec<u8>,
     /// The hash in its sub-model's block (after the format).
     pub hash: u32,
 }
@@ -76,6 +78,7 @@ fn sub_model(b: &[u8], mut p: usize) -> Option<(Vec<(u32, SubModel)>, usize)> {
     if slots > 255 {
         return None;
     }
+    let slot_bytes = b.get(p + 12..p + 12 + slots)?.to_vec();
     p += 4 + 4 + 4 + slots + 4;
     let mut weights = 0u8;
     let mut out = Vec::new();
@@ -120,7 +123,7 @@ fn sub_model(b: &[u8], mut p: usize) -> Option<(Vec<(u32, SubModel)>, usize)> {
             None
         };
         let kind = u8::from(!matrices.is_empty());
-        out.push((format, SubModel { kind, count, positions, texcoords, colours, normals, values: None, list, weights, matrices, blend, hash }));
+        out.push((format, SubModel { kind, count, positions, texcoords, colours, normals, values: None, list, weights, matrices, blend, hash, slot_bytes: slot_bytes.clone() }));
         if format & 0x20 != 0 && *b.get(p)? != 6 {
             return None;
         }
@@ -225,5 +228,5 @@ pub fn read(b: &[u8]) -> Option<Model> {
     let colours = if format & 0x04 != 0 { Some(take(4 * count)?) } else { None };
     let normals = if format & 0x10 != 0 { take(3 * count)? } else { Vec::new() };
     let values = if format & 0x20 != 0 { Some(take(2 * count)?) } else { None };
-    Some(Model { name, scale, format, first: SubModel { kind, count, positions, texcoords, colours, normals, values, list: None, weights: 0, matrices: Vec::new(), blend: Vec::new(), hash: 0 }, tail: p })
+    Some(Model { name, scale, format, first: SubModel { kind, count, positions, texcoords, colours, normals, values, list: None, weights: 0, matrices: Vec::new(), blend: Vec::new(), hash: 0, slot_bytes: Vec::new() }, tail: p })
 }
