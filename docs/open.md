@@ -15,3 +15,10 @@
 - **Simulation speed left** (Q1): `ScriptVariables::get` scans objects for slot and neighbour
   scopes; `Node`'s byte order is branched on at every operand read (decode at load);
   `World::unindex`/`remove` are O(n), `next_id` builds a set per call.
+- **Models kept as raw big-endian bytes** (Q2): model.rs holds positions, texture coordinates,
+  colours and normals as the disc's bytes, and `slot_bytes` is cloned per batch. For the GPU
+  path (phase 5) they become plain vertex and index arrays built once at load (model, draw,
+  scene and assets change together).
+- **`Stream` and `RotStream` duplicate the window stepping** (Q2): one generic stepper.
+- **Study samples from HashMaps** (the RUNS and PLACES studies' "followed tracks" and Sims
+  lines) vary run to run: sort them so the outputs are stable.
