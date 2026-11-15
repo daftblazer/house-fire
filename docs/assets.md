@@ -970,7 +970,15 @@ the loader that set 24: the SIMI reader 0x80237810. It reads 32, 42 or 48 global
 version (up to 63, up to 68, after) into the lot object's +1056, through 0x80230530 and
 0x80230370. The 18:15:24 is the disc's `default.ngh` lot 15 SIMI (`assets cardfind disc 18 15
 24`); the save's lot 15 says 19:27:40, and home's 7:04:00 is the save's lot 0 (the disc's says
-6:30:00). So the club visit takes its globals from the disc, and home from the save. With
-`REPLAY_DISC_GLOBALS` (the disc's), the club's 2,000 calls match end to end like home's. What
-decides disc or save is still to find. The engine's clock now keeps the second as global 6
-(`World::clock_pass`), as the original does.
+6:30:00). The engine's clock now keeps the second as global 6 (`World::clock_pass`), as the
+original does.
+The club session's lot is the disc's, not the card's (iteration 89): the session did not load
+the card's save, and played the disc's default neighbourhood (as a free play start would). The
+card already held the club at 19:27:40 before the session, and the session still began at the
+disc's 18:15:24. Replayed from the disc (`replay club-l.log ISO --lot 15`, no `--card`), the club
+log agrees far better than from the card:
+- the clock and the time of day's 2,000 calls match end to end;
+- global differences (scope 0) fall from 78 to 4, scopes 14, 15 and 1 from 111, 559 and 41 to
+  0, scope 4 from 41 to 2 and scope 8 from 70 to 20;
+- motives set to the log's fall from 94 to 1 (the card run lets the motives move, `card_lot`).
+The figures keep their `--card` (both give 0 differing steps).
