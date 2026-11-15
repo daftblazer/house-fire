@@ -1126,3 +1126,12 @@ wall bit and the wall's style (was: both sides' walls and patterns).
 With both, all nine logged rooms come out entry for entry (lockstep `LOCKSTEP_ROOM_LISTS`):
 - home's three: 224, 34 and 35 entries;
 - the club's six, its outside the same up to the record's cap of 2,048.
+
+The rooms' window brightness from the engine alone (iteration 101). The share's tile count,
++72 / 2, is the list's half count: 2 for each whole tile's entry, 1 for a split tile's (home's
++72 438, 68 and 68, all the engine's). With the walk's lists, the openings rule on each entry
+and `window_brightness`, home's three rooms give the log's brightness bit for bit at tick 100
+(1.0136986, 1.0514706, 1.0294118; lockstep `LOCKSTEP_ROOM_LISTS` with
+`LOCKSTEP_ROOM_BRIGHTNESS=LOG`). The club's room objects differ between its two recordings, so
+they pair up by value instead. The engine's five inside rooms give 1.0277778, 1.0056962 and 1.0
+(three one-tile rooms), the log's three values exactly. The outside is not lit this way.

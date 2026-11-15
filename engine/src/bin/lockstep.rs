@@ -1450,11 +1450,13 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &DiscTab
                     let log = parts.next().and_then(read_log).expect("LOCKSTEP_ROOM_LISTS: the log");
                     let snap = parts.next().and_then(|p| std::fs::read(p).ok());
                     let mut theirs: Vec<Vec<(i32, i32)>> = log.room_tiles.iter().map(|r| r.3.iter().map(|e| (((e >> 8) & 0xff) as i32, (e >> 16) as i32)).collect()).collect();
+                    let mut ptrs: Vec<u32> = log.room_tiles.iter().map(|r| r.1).collect();
                     if let Some(m) = &snap {
                         let byte = |a: u32| a.checked_sub(0x8000_0000).and_then(|o| m.get(o as usize).copied());
                         let mut seen = std::collections::BTreeSet::new();
                         for w in &log.window_brightness {
                             if seen.insert(w[1]) {
+                                ptrs.push(w[1]);
                                 theirs.push((w[2]..w[3]).step_by(3).filter_map(|a| Some((i32::from(byte(a + 1)?), i32::from(byte(a)?)))).collect());
                             }
                         }
@@ -1462,6 +1464,27 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &DiscTab
                     let open = |x: i32, y: i32, dx: i32, dy: i32| !lw.walls.wall_into(x, y, dx, dy) || matches!(lw.walls.style(x, y, dx, dy), 2 | 12 | 13 | 14);
                     let mine = housefire::light::room_tile_lists((39, 39), |x, y| lw.walls.diagonal_bits(x, y), open);
                     println!("room lists: the engine's {}, the original's {}", mine.len(), theirs.len());
+                    // (and each room's window brightness from the engine alone, against the '6'
+                    // records of LOCKSTEP_ROOM_BRIGHTNESS=LOG nearest this tick: the openings rule on
+                    // each entry, over the half count (2 a whole tile's entry, 1 a split tile's) / 2)
+                    if let Some(blog) = std::env::var("LOCKSTEP_ROOM_BRIGHTNESS").ok().and_then(|p| read_log(&p)) {
+                        for (t, ptr) in theirs.iter().zip(&ptrs) {
+                            let Some(m) = t.first().and_then(|f| mine.iter().find(|m| m.first() == Some(f))) else { continue };
+                            let halves: i32 = m.iter().map(|&(x, y)| if lw.walls.diagonal_bits(x, y) != 0 { 1 } else { 2 }).sum();
+                            let openings = m
+                                .iter()
+                                .filter(|&&(x, y)| housefire::light::tile_counts_as_opening(lw.objects().filter(|w| w.on_lot() && w.level == 1 && (w.x16 >> 4, w.y16 >> 4) == (x, y)).map(|w| (w.door || w.window, w.person, w.data.get(housefire::world::DATA_CONTAINER).copied().unwrap_or(0) != 0))))
+                                .count() as u32;
+                            let b = housefire::light::window_brightness(openings, halves / 2);
+                            let logged = blog.window_brightness.iter().filter(|w| w[1] == *ptr).min_by_key(|w| (i64::from(w[0]) - i64::from(s.tick)).abs());
+                            let half_logged = blog.window_entries.iter().zip(&blog.window_brightness).find(|(_, w)| w[1] == *ptr).map(|(e, _)| e.0);
+                            println!("  room {ptr:08x}: halves {halves} (the log's +72 {half_logged:?}), openings {openings}, brightness {b} {}", match logged {
+                                Some(w) if w[4] == b.to_bits() => format!("as the log's at tick {}", w[0]),
+                                Some(w) => format!("DIFFERENT: the log's {} at tick {}", f32::from_bits(w[4]), w[0]),
+                                None => "(no record)".into(),
+                            });
+                        }
+                    }
                     for t in &theirs {
                         let Some(m) = t.first().and_then(|f| mine.iter().find(|m| m.first() == Some(f))) else {
                             println!("  from {:?} ({} entries): no engine room starts there", t.first(), t.len());
