@@ -1591,6 +1591,29 @@ fn main() -> ExitCode {
                     }
                 }
                 println!("Sims' track speeds, own set or animator: {rule2:?}");
+                // the script step a set came in: the step logged next (a step is logged after it runs)
+                let mut in_step: BTreeMap<String, usize> = BTreeMap::new();
+                for x in &log.speed_sets {
+                    let st = |i: usize| log.steps.get(i).map(|s| format!("tree {} node {}", s.tree, s.node)).unwrap_or_default();
+                    let _ = st;
+                    *in_step.entry(format!("from {:08x} speed {} {}", x.caller2, x.speed, if sim_of.contains_key(&x.controller) { "Sim" } else { "object" })).or_default() += 1;
+                }
+                println!("speed sets by the wrapper's caller: {in_step:?}");
+                // the Sims' still tracks against the game speed that frame (the objects' +80)
+                let mut still: BTreeMap<String, usize> = BTreeMap::new();
+                for t in log.tracks.iter().filter(|t| t.tick != 0 && sim_of.contains_key(&t.controller)) {
+                    let g = game.get(&t.frame).filter(|g| g.len() == 1).map(|g| f32::from_bits(*g.iter().next().unwrap()));
+                    let name = by_id.get(&t.head[1]).map(|a| a.name.as_str()).unwrap_or("");
+                    let k = match (t.speeds[1] == 0.0, g) {
+                        (true, Some(0.0)) => "still, the game paused".to_string(),
+                        (true, Some(g)) => format!("still at game speed {g} ({name})"),
+                        (true, None) => format!("still, no game speed that frame ({name})"),
+                        (false, Some(0.0)) => "moving while paused".to_string(),
+                        (false, _) => "moving".to_string(),
+                    };
+                    *still.entry(k).or_default() += 1;
+                }
+                println!("Sims' tracks by the game speed: {still:?}");
                 let pairs: BTreeSet<(u32, u32)> = log.speeds.iter().map(|sp| (sp.animator, sp.owner)).collect();
                 println!("  speed records' (animator, owner): {:x?}; Sims {:x?}", pairs.iter().take(8).collect::<Vec<_>>(), sim_of);
                 println!("controller speeds: {ctl_tally:?}");

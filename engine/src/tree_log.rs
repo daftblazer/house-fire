@@ -495,16 +495,19 @@ pub struct SpeedRec {
     pub after: f32,
 }
 
-/// A track speed set ('^', Anim_SetTrackSpeed 8015AB80): the controller, track id, speed, caller and the track found (0 if none).
+/// A track speed set ('^', Anim_SetTrackSpeed 8015AB80): the controller, track id, speed, caller, the track found (0 if none) and the wrapper's caller.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SpeedSetRec {
     pub at: usize,
     pub tick: u32,
+    pub after_steps: usize,
     pub controller: u32,
     pub id: u32,
     pub speed: f32,
     pub caller: u32,
     pub track: u32,
+    /// Through the wrapper fn_801C22C8: the wrapper's caller.
+    pub caller2: u32,
 }
 
 /// A track posed ('(', Anim_Animate 801581C8): its place in the log, the track and its place.
@@ -1381,11 +1384,11 @@ pub fn read_log(path: &str) -> Option<Log> {
             }
             b')' => posing = None,
             b'^' => {
-                if !r.has(20) {
+                if !r.has(24) {
                     break;
                 }
-                let (controller, id, speed, caller, track) = (r.u32(), r.u32(), f32::from_bits(r.u32()), r.u32(), r.u32());
-                log.speed_sets.push(SpeedSetRec { at: r.p, tick: log.ticks, controller, id, speed, caller, track });
+                let (controller, id, speed, caller, track, caller2) = (r.u32(), r.u32(), f32::from_bits(r.u32()), r.u32(), r.u32(), r.u32());
+                log.speed_sets.push(SpeedSetRec { at: r.p, tick: log.ticks, after_steps: log.steps.len(), controller, id, speed, caller, track, caller2 });
             }
             b'*' => {
                 if !r.has(5) {

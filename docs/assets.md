@@ -1468,3 +1468,14 @@ objects' tracks. On the 58,944 Sim track records, +72 is:
 - its own last set: 54,030, all the 0s among them (happyFace's hold, the loops' stops);
 - the animator's speed on a track never set: 4,362;
 - the animator's speed over an older own set: 552.
+Who sets a track's speed (iteration 166). The '^' record now also carries the wrapper
+fn_801C22C8's caller (home-a19.log, 562,616 steps). The 172 sets come from:
+- fn_800ABE20, the most (6 call sites, 800ABE84 to 800ABFC4);
+- fn_800AF06C (800AF190) and fn_800AF964 (800AFA58);
+- fn_800B0ADC (800B0BB4: the -1 sets, backward plays; 800B0BE4).
+The speeds set are 0, 1 and 5, the game speeds, so these are the game speed reaching the
+tracks. On the Sims' tracks:
+- 36,561 records are still while the game is paused (the animator's speed is 0 too);
+- 6,554 are happyFace, held at 0 at any game speed;
+- 474 are still on frames where the game speed is changing (the objects not yet agreeing);
+- 24 are short stops at speed 1.
