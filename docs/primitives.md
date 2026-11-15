@@ -366,6 +366,16 @@ at a note on the native tick (7 later, 22 earlier), 27 run to the end on it (1 l
 and 2 of 14 that end at once. The misses gather in a2o-counter-foodprep's second half (notes
 3 to 11, predicted about 110 ticks late: its play there seems to start at another frame) and in
 a2o-stove-cook's runs that end at once (tick 1096).
+Iteration 129: those food-prep misses are fast-forward. From tick 426 to 563 of home-a10.log the
+game runs at speed 5: a frame comes every ~4 ticks (36 frames in 138 ticks), and each steps every
+track's place by 5 × the usual step (the track's +72 is 5, or −5 played backward; −1 and 1 are
+the normal speeds). The speed lags one frame: a frame steps at the speed its frame before set.
+In The Sims 2, `SAnimator2::Update` stores the game's speed into the animator's +252 (a virtual
+call on the global at r13 − 21496, when three checks pass, else 1). `TryAnimate` hands +252 to
+`EAnimController::SetTrackSpeed`, negated for 0x02, and `adjustAnimationPlayRates` →
+`SetAllTrackSpeed` carries changes to the tracks. With the speed, 144 of 165 runs return on the
+native tick (113 at a note, 29 at the end, 2 at once). All misses are now the Sim's
+a2o-stove-cook (16), from tick 1096, where 8 runs return in one tick.
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object

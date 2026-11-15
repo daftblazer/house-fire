@@ -847,11 +847,42 @@ fn main() -> ExitCode {
                     None => *by.entry("no track".into()).or_default() += 1,
                 }
             }
+            if std::env::var_os("LOCKSTEP_ANIM_SPEEDS").is_some() {
+                // (the tracks' +72 speed by tick: its spans per value, all tracks)
+                let mut spans: Vec<(u32, u32, String)> = Vec::new();
+                let mut by_tick: BTreeMap<u32, BTreeSet<String>> = BTreeMap::new();
+                for t in &log.tracks {
+                    if t.speeds[1] != 0.0 {
+                        by_tick.entry(t.tick).or_default().insert(format!("{}", t.speeds[1]));
+                    }
+                }
+                for (tick, v) in by_tick {
+                    let v = v.into_iter().collect::<Vec<_>>().join(",");
+                    match spans.last_mut() {
+                        Some(l) if l.2 == v => l.1 = tick,
+                        _ => spans.push((tick, tick, v)),
+                    }
+                }
+                for (a, b, v) in spans {
+                    println!("  speeds {a}..{b}: {v}");
+                }
+                // the primitive steps (not 0/2/8/31) of the ticks LOCKSTEP_ANIM_SPEEDS names
+                let want: Vec<u32> = std::env::var("LOCKSTEP_ANIM_SPEEDS").unwrap_or_default().split(',').filter_map(|t| t.parse().ok()).collect();
+                for (i, st) in log.steps.iter().enumerate() {
+                    if !want.contains(&st.tick) {
+                        continue;
+                    }
+                    let Some(n) = step_object[i].and_then(|o| lib.tree(Some(o), st.tree)).and_then(|t| lib.tree_at(t).nodes.get(st.node as usize)).copied() else { continue };
+                    if n.opcode < 256 && !matches!(n.opcode, 0 | 2 | 8 | 31) {
+                        println!("  step tick {} sim {:x} tree {:#x} node {} of {:?}: opcode {} operand {:02x?} result {}", st.tick, st.sim, st.tree, st.node, step_object[i].map(|f| &lib.file(f).path), n.opcode, n.operand, st.result);
+                    }
+                }
+            }
             if let Ok(want) = std::env::var("LOCKSTEP_ANIM_TRACKS_NEAR") {
                 for (name, first, end) in each.iter().filter(|e| e.0 == want) {
                     println!("  {name} {first}..{end}:");
                     for t in log.tracks.iter().filter(|t| t.tick + 3 >= *first && t.tick <= first + 3) {
-                        println!("    tick {} ctl {:08x} track {:08x} anim {:08x} place {:.3}->{:.3} done {}->{} speeds {:?} frame {} ran {:?}", t.tick, t.controller, t.track, t.anim, t.place[0], t.place[1], t.done[0], t.done[1], t.speeds, t.frame, t.ran);
+                        println!("    tick {} ctl {:08x} track {:08x} anim {:08x} place {:.3}->{:.3} done {}->{} speeds {:?} frame {} ran {:?} head {:08x?}", t.tick, t.controller, t.track, t.anim, t.place[0], t.place[1], t.done[0], t.done[1], t.speeds, t.frame, t.ran, t.head);
                     }
                 }
             }
@@ -944,6 +975,12 @@ fn main() -> ExitCode {
                     let mut order: Vec<usize> = (0..each.len()).collect();
                     order.sort_by_key(|&k| each[k].1);
                     let mut t2: BTreeMap<String, usize> = BTreeMap::new();
+                    // the frames' ticks in fast-forward (the tracks stepping at 5: The Sims 2's
+                    // SAnimator2::Update sets +252 from the game's speed; a frame every ~4 ticks)
+                    let fast_ticks: BTreeSet<u32> = log.tracks.iter().filter(|t| t.speeds[1].abs() == 5.0).map(|t| t.tick).collect();
+                    if let (Some(a), Some(b)) = (fast_ticks.first(), fast_ticks.last()) {
+                        println!("  fast-forward frames: ticks {a}..{b} ({} frames)", fast_ticks.len());
+                    }
                     let mut no_note: BTreeMap<(u8, &str, u8, i16, String), usize> = BTreeMap::new();
                     let mut no_note_by: BTreeMap<(String, String, &str), usize> = BTreeMap::new();
                     for k in order {
@@ -978,10 +1015,25 @@ fn main() -> ExitCode {
                         // first frame
                         let backward = flags & 2 != 0;
                         let gone = |t: f32| if backward { last - t } else { t };
-                        let j = match next {
-                            Some(t) => ((gone(t) / step).floor() as usize) + 1 + usize::from(backward),
-                            None => (last / step).floor() as usize + 1 + usize::from(backward),
+                        // the frames whose place stays at or below the target, the place stepping
+                        // by the step × the game's speed (5 in fast-forward, from the frame before)
+                        let target = match next {
+                            Some(t) => gone(t),
+                            None => last,
                         };
+                        let mut place = 0.0f32;
+                        let mut m = 0usize;
+                        while frames.get(k0 + m + 1).is_some() {
+                            // (the speed the frame before set: the animator's +252, read by the
+                            // next frame's track step)
+                            let speed = if fast_ticks.contains(&frames[k0 + m].1) { 5.0 } else { 1.0 };
+                            if place + step * speed > target + 1e-3 {
+                                break;
+                            }
+                            place += step * speed;
+                            m += 1;
+                        }
+                        let j = m + 1 + usize::from(backward);
                         let Some(f) = frames.get(k0 + j - 1) else { continue };
                         let predicted = f.1 + 1;
                         let what = if end == first { "at once" } else if next.is_some() { "a note's" } else { "the end's" };
@@ -991,7 +1043,7 @@ fn main() -> ExitCode {
                             std::cmp::Ordering::Less => format!("{what}: ended after (NOT native)"),
                         };
                         if predicted != *end && next.is_some() && std::env::var_os("LOCKSTEP_ANIM_NOTES_EACH").is_some() {
-                            println!("  note end {name} {first}..{end} (note {passed}, place {:?}): native {predicted}", next);
+                            println!("  note end {name} {first}..{end} sim {sim:x} (note {passed}, place {:?}): native {predicted}", next);
                         }
                         if predicted > *end && end != first {
                             // an early end with no note due: its flags, branch and local 0, and
