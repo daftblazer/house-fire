@@ -1488,6 +1488,42 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &DiscTab
                             }
                         }
                         println!("  entries with a field at 8, by field {by_field:?}");
+                        // (logs with the entries: each kind 8 entry's tile against its opening's
+                        // own tile and facing, by the log's id)
+                        if let Some(k) = log.window_brightness.iter().position(|w| w[1] == o) {
+                            let list = log.lists.iter().rev().find(|l| l.tick <= log.window_brightness[k][0]);
+                            let mut per: std::collections::BTreeMap<i16, Vec<(i32, i32)>> = std::collections::BTreeMap::new();
+                            for (t, e) in tiles.iter().zip(&log.window_entries[k].1) {
+                                if e[2] as i32 != 8 {
+                                    continue;
+                                }
+                                if let Some(id) = list.and_then(|l| l.objects.iter().position(|p| *p == e[1].wrapping_add(112)).map(|j| l.ids[j])) {
+                                    per.entry(id).or_default().push((t.0, t.1));
+                                }
+                            }
+                            // the engine's: entries (a, b) with a door or window standing at (b, a)
+                            // (the entries' bytes are (y, x, level) in the engine's axes)
+                            let counted = |t: &(i32, i32, i32)| {
+                                housefire::light::tile_counts_as_opening(
+                                    lw.objects().filter(|w| w.on_lot() && (w.x16 >> 4, w.y16 >> 4, w.level) == (t.1, t.0, t.2)).map(|w| (w.door || w.window, w.person, w.data.get(housefire::world::DATA_CONTAINER).copied().unwrap_or(0) != 0)),
+                                )
+                            };
+                            let mine = tiles.iter().filter(|t| counted(t)).count();
+                            let theirs = log.window_entries[k].1.iter().filter(|e| e[2] as i32 == 8).count();
+                            println!("    openings: the engine's {mine}, the log's {theirs}");
+                            for (t, e) in tiles.iter().zip(&log.window_entries[k].1) {
+                                let here: Vec<String> = lw.objects().filter(|w| w.on_lot() && (w.x16 >> 4, w.y16 >> 4, w.level) == (t.1, t.0, t.2)).map(|w| format!("{}{}:{}", w.id(), if w.door || w.window { "*" } else { "" }, w.file.map_or("", |f| lib.file(f).path.rsplit('/').next().unwrap_or("")))).collect();
+                                let opening = counted(t);
+                                if opening != (e[2] as i32 == 8) {
+                                    let id = list.and_then(|l| l.objects.iter().position(|p| *p == e[1].wrapping_add(112)).map(|j| l.ids[j]));
+                                    println!("      tile {t:?}: the log's kind {} id {id:?} grid {}; the engine's objects there {here:?}", e[2] as i32, e[0] as i32);
+                                }
+                            }
+                            for (id, ts) in per {
+                                let me = lw.find_object(id).map(|w| (w.x16 >> 4, w.y16 >> 4, w.facing(), w.leader, w.file.map_or(String::new(), |f| lib.file(f).path.rsplit('/').next().unwrap_or("").to_string())));
+                                println!("    opening {id} {me:?}: its entries' tiles {ts:?}");
+                            }
+                        }
                     }
                 }
                 // (and the windows' lights, LOCKSTEP_WINDOW_LIGHTS=LOG: the engine's places for each

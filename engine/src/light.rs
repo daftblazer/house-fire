@@ -230,6 +230,20 @@ pub fn window_brightness(windows: u32, tiles: i32) -> f32 {
     (f64::from(share).mul_add(f64::from(1.25f32 - 1.0), 1.0)) as f32
 }
 
+/// What a tile counts as in a room's window share (`window_brightness`): the original looks the
+/// tile up in its grid of one object id per tile (0x802031B0) and counts it when that object is
+/// of kind 8, a door or a window. The grid holds the tile's floor object when there is one (not
+/// a person, not a door or window, not on another object), so an opening counts only on a tile
+/// with nothing standing on its floor. Each item is (door or window, person, on another object).
+pub fn tile_counts_as_opening(objects: impl IntoIterator<Item = (bool, bool, bool)>) -> bool {
+    let (mut opening, mut floor) = (false, false);
+    for (door_or_window, person, contained) in objects {
+        opening |= door_or_window;
+        floor |= !door_or_window && !person && !contained;
+    }
+    opening && !floor
+}
+
 pub fn sun_angle(hour: i32, minute: i32, second: i32) -> f32 {
     let (m, sec) = (minute % 60, second % 60);
     let f = f32::from_bits;
@@ -730,4 +744,13 @@ mod tests {
         assert!(far[0] > 0.0 && far[0] < 0.5 * 0.3, "{far:?}");
         assert_eq!(point_light(0.0, 0.0, &[]), [0.0; 3]);
     }
+
+    #[test]
+    fn an_opening_counts_unless_something_stands_on_its_floor() {
+        assert!(tile_counts_as_opening([(true, false, false)]));
+        assert!(tile_counts_as_opening([(true, false, false), (false, false, true), (false, true, false)]));
+        assert!(!tile_counts_as_opening([(true, false, false), (false, false, false)]));
+        assert!(!tile_counts_as_opening([(false, false, false)]));
+    }
+
 }

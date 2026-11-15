@@ -1044,3 +1044,14 @@ are the doors and windows: storm windows, small windows, wooden archways and the
 The grid gives a tile the door or window on its walls, so a room counts the openings around it.
 The big room counts 12 entries, the small rooms 7 (two archways, two storm windows) and 4 (two
 archways, a small window). Kind 4 (147,171 entries seen) and 2 are other objects, not counted.
+
+The grid's openings from the engine's lot (iteration 95, no game run). Paired by the log's ids,
+each kind 8 entry is the door or window standing on that very tile. The entries' bytes are (y,
+x, level) in the engine's axes, which hid this before. The grid keeps one object per tile: the
+tile's floor object when there is one. That is a desk, counter, chair or bathtub, not a person,
+not an object on another (the plant on the desk, the sink on the counter) and not the opening
+itself. Only an opening with nothing on its floor counts (`light::tile_counts_as_opening`).
+With the engine's objects at tick 100, home's three rooms count 12, 7 and 4 openings, entry for
+entry as the log's kinds (lockstep `LOCKSTEP_ROOM_WINDOWS=LOG,SNAPSHOT` with
+`LOCKSTEP_DUMP_PLACES=100` and `LOCKSTEP_DUMP_WALLS`). The rooms' tile lists themselves still
+come from the snapshot; the engine's rooms are next.
