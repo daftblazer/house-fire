@@ -1610,6 +1610,16 @@ fn main() -> ExitCode {
                     *by_site.entry(format!("{:08x} {anim}", x.caller2)).or_default() += 1;
                 }
                 println!("speed sets by call site and animation: {by_site:?}");
+                // a new action's set (fn_800B0ADC): -speed for a backward play, its first step from
+                // the last frame
+                let mut back: BTreeMap<String, usize> = BTreeMap::new();
+                for x in log.speed_sets.iter().filter(|x| x.caller2 == 0x800b_0bb4 || x.caller2 == 0x800b_0be4) {
+                    let Some(t) = log.tracks.iter().find(|t| t.track == x.track && t.at > x.at) else { continue };
+                    let Some(a) = by_id.get(&t.head[1]) else { continue };
+                    let at_end = t.place[0].to_bits() == (a.frames as f32 - 1.0).to_bits();
+                    *back.entry(format!("{} set {}: first step {}", if x.caller2 == 0x800b_0bb4 { "backward" } else { "forward" }, x.speed, if at_end { "from the last frame" } else if t.place[0] == 0.0 { "from 0" } else { "elsewhere" })).or_default() += 1;
+                }
+                println!("new actions' sets: {back:?}");
                 // the Sims' still tracks against the game speed that frame (the objects' +80)
                 let mut still: BTreeMap<String, usize> = BTreeMap::new();
                 for t in log.tracks.iter().filter(|t| t.tick != 0 && sim_of.contains_key(&t.controller)) {

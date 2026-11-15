@@ -1493,3 +1493,16 @@ Elsewhere:
 - happyFace is set by fn_800AF06C (800AF190, 3 sets: the face, held at 0).
 - The walk's turns are set by fn_800AF964.
 - Backward (-1) and new-play sets come from fn_800B0ADC.
+A new action and the face (iteration 168). fn_800B0ADC(animator, animation, backward) starts
+an action:
+- It takes a fresh track id (+192) into the action slot +164 and starts the play on it
+  (fn_801C1FC0).
+- Backward (r5 = 1): it sets the speed to minus the animator's (+124), and the place through
+  fn_801C21C8.
+- Forward: it sets the animator's speed.
+- Then fn_801C234C, with a constant.
+The wrapper sets only on a change and a new track starts at 1. So on home-a19.log a forward
+action at speed 1 makes no set, and the 14 forward sets are 0 (13, paused) and 5 (1). All 12
+backward sets (-1) are the 12 plays whose first step is from the last frame. fn_800AF06C
+starts the face (slot +800) with a constant speed, the 802A8E44 single: 0 on all 3 of its
+sets, so happyFace is held at its first frame.
