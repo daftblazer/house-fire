@@ -1275,6 +1275,73 @@ fn main() -> ExitCode {
                     None => *by.entry("no track".into()).or_default() += 1,
                 }
             }
+            // (newer logs, the track's animation id at its head +4) each Animate run against the
+            // plays started with its animation within two ticks of its first step: how many, how
+            // late, and whether a Sim's plays are all on one controller
+            if log.tracks.iter().any(|t| t.head[1] != 0) {
+                let mut play_starts: Vec<(u32, u32, u32, u32)> = Vec::new(); // (tick, controller, track, anim id)
+                let mut cur: HashMap<u32, (u32, u32)> = HashMap::new();
+                for t in log.tracks.iter().filter(|t| t.tick != 0) {
+                    let key = (t.head[1], t.ran[1]);
+                    if cur.get(&t.track) != Some(&key) {
+                        cur.insert(t.track, key);
+                        play_starts.push((t.tick, t.controller, t.track, t.head[1]));
+                    }
+                }
+                let mut tally: BTreeMap<String, usize> = BTreeMap::new();
+                let mut ctl_of: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
+                // a play's runs: a run continues the Sim's run of the same animation that ended
+                // on its first tick (with an event); the chain's first run starts the play
+                let mut track_of: HashMap<usize, u32> = HashMap::new();
+                let mut order: Vec<usize> = (0..each.len()).collect();
+                order.sort_by_key(|&k| (each[k].1, k));
+                for &k in &order {
+                    let (name, first, end) = &each[k];
+                    if end == first {
+                        continue;
+                    }
+                    let Some(id) = by_id.iter().find(|(_, a)| a.name.eq_ignore_ascii_case(name)).map(|e| *e.0) else { continue };
+                    let prev = order.iter().copied().filter(|&j| j != k && each_sim[j] == each_sim[k] && each[j].0 == *name && each[j].2 == *first && each[j].1 < *first).find(|j| track_of.contains_key(j));
+                    if let Some(j) = prev {
+                        // a continuation: the same track still has its animation at this run's end
+                        let tr = track_of[&j];
+                        let held = log.tracks.iter().any(|t| t.track == tr && t.head[1] == id && t.tick == *end);
+                        *tally.entry(format!("continued play: its track {}", if held { "still plays it at the run's end" } else { "NOT playing it at the end" })).or_default() += 1;
+                        track_of.insert(k, tr);
+                        continue;
+                    }
+                    let near: Vec<_> = play_starts.iter().filter(|p| p.3 == id && p.0 >= *first && p.0 <= first + 2).collect();
+                    let what = match near.len() {
+                        0 => "new play: none started near".to_string(),
+                        1 => format!("new play: one started, {} tick(s) after", near[0].0 - first),
+                        _ => "new play: several started".to_string(),
+                    };
+                    *tally.entry(what).or_default() += 1;
+                    if near.len() == 1 {
+                        track_of.insert(k, near[0].2);
+                        ctl_of.entry(each_sim[k]).or_default().insert(near[0].1);
+                    }
+                }
+                // every run through its Sim's controller (when known): a track of it with the run's
+                // animation during the run, at its first and at its last tick
+                let mut by_ctl: BTreeMap<String, usize> = BTreeMap::new();
+                for (k, (name, first, end)) in each.iter().enumerate() {
+                    if end == first {
+                        continue;
+                    }
+                    let Some(id) = by_id.iter().find(|(_, a)| a.name.eq_ignore_ascii_case(name)).map(|e| *e.0) else { continue };
+                    let Some(ctl) = ctl_of.get(&each_sim[k]).and_then(|c| (c.len() == 1).then(|| *c.iter().next().unwrap())) else {
+                        *by_ctl.entry("Sim's controller unknown".into()).or_default() += 1;
+                        continue;
+                    };
+                    let on = |tick: u32| log.tracks.iter().any(|t| t.controller == ctl && t.head[1] == id && t.tick == tick);
+                    let span = (*first..=*end).filter(|&t| on(t)).count() as u32;
+                    *by_ctl.entry(format!("first tick {}, last {}, ticks with it {}", on(*first) || on(first + 1), on(*end), if span == end - first + 1 { "all".to_string() } else if span == 0 { "none".to_string() } else { "some".to_string() })).or_default() += 1;
+                }
+                println!("animate runs on their Sim's controller: {by_ctl:?}");
+                let one = ctl_of.values().filter(|c| c.len() == 1).count();
+                println!("animate runs to their tracks (by animation id): {tally:?}; Sims on one controller {one} of {}", ctl_of.len());
+            }
             if std::env::var_os("LOCKSTEP_ANIM_SPEEDS").is_some() {
                 // (the tracks' +72 speed by tick: its spans per value, all tracks)
                 let mut spans: Vec<(u32, u32, String)> = Vec::new();

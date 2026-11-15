@@ -1416,3 +1416,11 @@ The end mode is the animation's second flag byte (`Anim::end_mode`): 1 stops, 0 
 home-a17.log, all 690 play starts have the animation's frames, rate and end mode. The track's
 own speed (+72) at its first step is 1 for 670 of them, -1 for 10 (backward), 0 for 7
 (paused) and 5 for 3. Tying the speed to the Animate call that started the play is still to do.
+An Animate call's play (iteration 160). A Sim's plays run on one controller, and the play is
+the track of that controller with the run's animation (archive id at head +4). Runs that end
+with an event chain into one play: the next run of the same animation starts the tick the last
+ended. Only the chain's first run starts a play; a play started within two ticks of it was
+found for 22 of 54 chains. Track slots change across a chain, so a play is known by
+(controller, animation), not by track. On home-a17.log, both Sims keep one controller. For 128
+of 152 runs, that controller plays the run's animation on every tick of the run. The other 24
+differ at the run's first or last tick (load waits and the end tick), which is still to read.
