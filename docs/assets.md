@@ -1095,3 +1095,15 @@ Diagonal tiles go half by half through the half-tile lookup 0x80234910 and the h
 0x80234588 (r6 1 to 4: which half).
 After the stack empties, the room is made (0x8023443C) and given its list (`Room_SetTiles`). A
 room left with no list is dropped and its counter taken back.
+
+The room walk for whole tiles (iteration 99, `light::room_tile_lists`). A pop of a tile not yet
+reached (only ever the seed) marks it, pushes it back and appends it. Any other pop marks the
+tile done. Either way the four directions follow, in the order −x, +x, −y, +y. A neighbour on
+the lot (39 × 39 on both logged lots), not done and not diagonal is appended and pushed if its
+edge is open. It is pushed even when it is already on the stack. An edge is open when no wall
+stands on it (`Walls::wall_between`), or the wall's pattern on either side is 2, 12, 13 or 14.
+Against the original (lockstep `LOCKSTEP_ROOM_LISTS=LOG[,SNAPSHOT]` with `LOCKSTEP_DUMP_PLACES`
+and `LOCKSTEP_DUMP_WALLS`), five of the nine logged rooms come out entry for entry: home's
+34-entry room, and the club's 36-entry room and three one-tile rooms. The other four (home's big
+room and kitchen, the club's outside and 400-entry room) first differ at a diagonal tile, and
+the walk's halves are next.

@@ -1442,6 +1442,42 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &DiscTab
                     }
                     let _ = std::fs::write(&at, out);
                 }
+                // (LOCKSTEP_ROOM_LISTS=LOG[,SNAPSHOT]: the engine's room walk, `light::room_tile_lists`,
+                // against the original's lists: the log's '7' records, or the '6' records' ranges
+                // read from the snapshot; matched by their first tile, entry for entry)
+                if let Ok(v) = std::env::var("LOCKSTEP_ROOM_LISTS") {
+                    let mut parts = v.split(',');
+                    let log = parts.next().and_then(read_log).expect("LOCKSTEP_ROOM_LISTS: the log");
+                    let snap = parts.next().and_then(|p| std::fs::read(p).ok());
+                    let mut theirs: Vec<Vec<(i32, i32)>> = log.room_tiles.iter().map(|r| r.3.iter().map(|e| (((e >> 8) & 0xff) as i32, (e >> 16) as i32)).collect()).collect();
+                    if let Some(m) = &snap {
+                        let byte = |a: u32| a.checked_sub(0x8000_0000).and_then(|o| m.get(o as usize).copied());
+                        let mut seen = std::collections::BTreeSet::new();
+                        for w in &log.window_brightness {
+                            if seen.insert(w[1]) {
+                                theirs.push((w[2]..w[3]).step_by(3).filter_map(|a| Some((i32::from(byte(a + 1)?), i32::from(byte(a)?)))).collect());
+                            }
+                        }
+                    }
+                    let open = |x: i32, y: i32, dx: i32, dy: i32| {
+                        let through = |p: u8| matches!(p, 2 | 12 | 13 | 14);
+                        !lw.walls.wall_between(x, y, dx, dy) || through(lw.walls.pattern(x, y, dx, dy)) || through(lw.walls.pattern(x + dx, y + dy, -dx, -dy))
+                    };
+                    let mine = housefire::light::room_tile_lists((39, 39), |x, y| !lw.walls.diagonal(x, y), open);
+                    println!("room lists: the engine's {}, the original's {}", mine.len(), theirs.len());
+                    for t in &theirs {
+                        let Some(m) = t.first().and_then(|f| mine.iter().find(|m| m.first() == Some(f))) else {
+                            println!("  from {:?} ({} entries): no engine room starts there", t.first(), t.len());
+                            continue;
+                        };
+                        let first_diff = t.iter().zip(m).position(|(a, b)| a != b);
+                        println!("  from {:?}: the original's {} entries, the engine's {}{}", t.first(), t.len(), m.len(), match first_diff {
+                            None if t.len() == m.len() => " (the same)".to_string(),
+                            None => " (the same as far as the shorter)".to_string(),
+                            Some(k) => format!(", first different at {k}: {:?} against {:?}", &t[k..(k + 4).min(t.len())], &m[k..(k + 4).min(m.len())]),
+                        });
+                    }
+                }
                 // (study, LOCKSTEP_ROOM_WINDOWS=LOG,SNAPSHOT: each room's tile list from the
                 // snapshot (the '6' records' ranges of (x, y, level) bytes), its tile count (+72 / 2),
                 // the engine's window objects on those tiles, against the window share the log's

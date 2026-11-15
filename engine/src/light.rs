@@ -244,6 +244,54 @@ pub fn tile_counts_as_opening(objects: impl IntoIterator<Item = (bool, bool, boo
     opening && !floor
 }
 
+/// The rooms' tile lists (the original's room walk inside 0x80243C24, before `Room_SetTiles`),
+/// in the order the rooms are made. Tiles are taken in rows (y outer, x inner). A tile not yet
+/// in a room starts one, walked depth first: a stack, popped from the back. The first pop of
+/// the seed appends it and pushes it back. Every pop then marks the tile done and tries the four
+/// directions −x, +x, −y, +y. `size` is the lot's (39 square on both logged lots, from a virtual
+/// call not read yet), not the wall grid's 64. An open neighbour (`open`) not yet done is appended to the list and
+/// pushed, again if it is already waiting on the stack: hence the repeats. Diagonal tiles
+/// (`whole` false) are left out here. The original walks them half by half, not ported yet.
+pub fn room_tile_lists(size: (i32, i32), whole: impl Fn(i32, i32) -> bool, open: impl Fn(i32, i32, i32, i32) -> bool) -> Vec<Vec<(i32, i32)>> {
+    const DIRS: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+    let (w, h) = size;
+    let at = |x: i32, y: i32| (y * w + x) as usize;
+    // 0: not reached, 1: reached (on the stack), 2: done
+    let mut state = vec![0u8; (w * h).max(0) as usize];
+    let mut rooms = Vec::new();
+    for y0 in 0..h {
+        for x0 in 0..w {
+            if state[at(x0, y0)] != 0 || !whole(x0, y0) {
+                continue;
+            }
+            let mut list = Vec::new();
+            let mut stack = vec![(x0, y0)];
+            while let Some((x, y)) = stack.pop() {
+                match state[at(x, y)] {
+                    2 => continue,
+                    0 => {
+                        state[at(x, y)] = 1;
+                        stack.push((x, y));
+                        list.push((x, y));
+                    }
+                    _ => state[at(x, y)] = 2,
+                }
+                for (dx, dy) in DIRS {
+                    let (nx, ny) = (x + dx, y + dy);
+                    if nx < 0 || ny < 0 || nx >= w || ny >= h || state[at(nx, ny)] == 2 || !whole(nx, ny) || !open(x, y, dx, dy) {
+                        continue;
+                    }
+                    state[at(nx, ny)] = 1;
+                    list.push((nx, ny));
+                    stack.push((nx, ny));
+                }
+            }
+            rooms.push(list);
+        }
+    }
+    rooms
+}
+
 pub fn sun_angle(hour: i32, minute: i32, second: i32) -> f32 {
     let (m, sec) = (minute % 60, second % 60);
     let f = f32::from_bits;
@@ -751,6 +799,13 @@ mod tests {
         assert!(tile_counts_as_opening([(true, false, false), (false, false, true), (false, true, false)]));
         assert!(!tile_counts_as_opening([(true, false, false), (false, false, false)]));
         assert!(!tile_counts_as_opening([(false, false, false)]));
+    }
+
+
+    #[test]
+    fn the_room_walk_repeats_tiles_reached_again() {
+        let lists = room_tile_lists((2, 2), |_, _| true, |_, _, _, _| true);
+        assert_eq!(lists, vec![vec![(0, 0), (1, 0), (0, 1), (1, 1), (0, 0), (1, 0), (1, 1)]]);
     }
 
 }
