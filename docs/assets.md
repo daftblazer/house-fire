@@ -1376,3 +1376,12 @@ Of the 157,750 reads, 157,749 have the same key,
 window, flag and result to the bit, given only the places (iteration 154). home-a14.log is home-a13 again
 with the observer logging every read whatever the result's address. It has the same 157,750
 reads, so none had been skipped, and the same 562,616 steps.
+A stream's place (iteration 155). The controller's Animate (801581C8, now hooked as
+Anim_Animate: '(' with the track and its place, ')' after) poses one track. The track's +148
+holds a 28-byte record a node, with +0 the rotation stream and +4 and +8 the scale and
+translation streams. +152 holds the weights. Every stream is read at the track's place +60.
+On home-a15.log, all 157,750 reads are inside a track's pose at exactly its place. 419 of 430
+streams belong to one track; the others are addresses reused by a later play. A stream's
+bit array object (+0) is the animation + 88, and that animation is shared by Sims playing it.
+Of the reads, 146,334 come after their track's step that tick, 10,562 before it (posed first),
+and 853 at another place. The order of poses and steps within a tick is still to read.

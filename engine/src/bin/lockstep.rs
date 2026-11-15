@@ -667,6 +667,93 @@ fn main() -> ExitCode {
             }
         }
         println!("P1 from the stream's bits: {keys:?}");
+        // (LOCKSTEP_ANIM_PLACES: a read's place against the tracks stepped the same tick)
+        if std::env::var_os("LOCKSTEP_ANIM_PLACES").is_some() {
+            let mut by_tick: BTreeMap<u32, Vec<&housefire::tree_log::TrackRec>> = BTreeMap::new();
+            for t in &log.tracks {
+                by_tick.entry(t.tick).or_default().push(t);
+            }
+            let mut tally: BTreeMap<String, usize> = BTreeMap::new();
+            let mut shown = 0;
+            for v in &log.vec_streams {
+                let ts = by_tick.get(&v.tick).map(Vec::as_slice).unwrap_or(&[]);
+                let what = if ts.iter().any(|t| t.place[1].to_bits() == v.place.to_bits()) {
+                    "a track's place after"
+                } else if ts.iter().any(|t| t.place[0].to_bits() == v.place.to_bits()) {
+                    "a track's place before"
+                } else if ts.iter().any(|t| (t.place[1] * 0.99).to_bits() == v.place.to_bits() || (t.place[1] * 30.0).to_bits() == v.place.to_bits()) {
+                    "a track's place after, scaled"
+                } else if ts.is_empty() {
+                    "no track that tick"
+                } else {
+                    "none of the tracks'"
+                };
+                *tally.entry(what.into()).or_default() += 1;
+                if what == "none of the tracks'" && shown < 6 {
+                    shown += 1;
+                    println!("  place {} at tick {}: tracks {:?}", v.place, v.tick, ts.iter().map(|t| (t.place, t.speeds, t.frame)).collect::<Vec<_>>());
+                }
+            }
+            println!("read places: {tally:?}");
+            // a stream (its address, between header changes) against the track it follows
+            let mut life: HashMap<(u32, u32), BTreeSet<u32>> = HashMap::new();
+            let mut ambiguous = 0;
+            for v in &log.vec_streams {
+                let Some((h, _)) = v.header else { continue };
+                let ts = by_tick.get(&v.tick).map(Vec::as_slice).unwrap_or(&[]);
+                let hits: Vec<u32> = ts.iter().filter(|t| t.place[1].to_bits() == v.place.to_bits()).map(|t| t.track).collect();
+                if hits.len() == 1 {
+                    life.entry((v.stream, h[1])).or_default().insert(hits[0]);
+                } else {
+                    ambiguous += 1;
+                }
+            }
+            // the link: the stream's bit array object (+0) is its track's animation + 88, and the
+            // read's place is that track's place after its step the same tick
+            let mut link: BTreeMap<&str, usize> = BTreeMap::new();
+            for v in &log.vec_streams {
+                let Some((h, _)) = v.header else { continue };
+                let ts = by_tick.get(&v.tick).map(Vec::as_slice).unwrap_or(&[]);
+                let mine: Vec<_> = ts.iter().filter(|t| t.anim.wrapping_add(88) == h[0]).collect();
+                let what = match mine.as_slice() {
+                    [] => "no track with its animation that tick",
+                    [t] if t.place[1].to_bits() == v.place.to_bits() => "its track's place after",
+                    [_] => "its track's place DIFFERENT",
+                    m if m.iter().all(|t| t.place[1].to_bits() == v.place.to_bits()) => "its tracks' (several, one animation) place after",
+                    _ => "several tracks, places DIFFERENT",
+                };
+                *link.entry(what).or_default() += 1;
+            }
+            println!("read places by the stream's own track: {link:?}");
+            // with '(' (newer logs): each read inside its track's pose, at the track's place
+            let mut posed: BTreeMap<&str, usize> = BTreeMap::new();
+            let mut owner: HashMap<(u32, u32), BTreeSet<u32>> = HashMap::new();
+            for v in &log.vec_streams {
+                let Some((track, tplace)) = v.track else {
+                    *posed.entry("outside a pose").or_default() += 1;
+                    continue;
+                };
+                let ts = by_tick.get(&v.tick).map(Vec::as_slice).unwrap_or(&[]);
+                let stepped = ts.iter().rev().find(|t| t.track == track);
+                let what = match stepped {
+                    _ if tplace.to_bits() != v.place.to_bits() => "the place is not its track's",
+                    Some(t) if t.place[1].to_bits() == v.place.to_bits() => "its track's place after its step this tick",
+                    Some(t) if t.place[0].to_bits() == v.place.to_bits() => "its track's place before its step this tick (posed first)",
+                    Some(_) => "its track's place, but not the step's",
+                    None => "its track's place (track not stepped this tick)",
+                };
+                *posed.entry(what).or_default() += 1;
+                if let Some((h, _)) = v.header {
+                    owner.entry((v.stream, h[1])).or_default().insert(track);
+                }
+            }
+            println!("reads in their track's pose: {posed:?}; streams with one track {} of {}", owner.values().filter(|t| t.len() == 1).count(), owner.len());
+            let one = life.values().filter(|t| t.len() == 1).count();
+            println!("streams following one track: {one} of {}; reads matching several tracks {ambiguous}", life.len());
+            for (k, t) in life.iter().filter(|(_, t)| t.len() > 1).take(4) {
+                println!("  stream {:x} (first bit {}) followed tracks {:x?}", k.0, k.1, t);
+            }
+        }
         // (LOCKSTEP_ANIM_HEADERS: each logged stream's header decoded from its animation's bits
         // through `anim::stream_header`)
         if std::env::var_os("LOCKSTEP_ANIM_HEADERS").is_some() {

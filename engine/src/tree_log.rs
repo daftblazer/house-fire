@@ -506,6 +506,9 @@ pub struct Vec3StreamRec {
     /// The stream's header and four words of its bits at P1's values ('&', in newer logs):
     /// words +0, +4, +8, +24, +28, +32, +36, +92 to +112.
     pub header: Option<([u32; 13], [u32; 4])>,
+    /// The track whose pose read it and the track's place ('(' around Anim_Animate 801581C8,
+    /// in newer logs).
+    pub track: Option<(u32, f32)>,
 }
 
 /// A resource asked whether it is loaded ('9', Res_IsLoaded 80177B24, EA's
@@ -724,6 +727,8 @@ pub fn read_log(path: &str) -> Option<Log> {
     let mut pending: Option<ExprRec> = None;
     let mut pending_lookups: Vec<LookupRec> = Vec::new();
     let mut in_pass = false;
+    // the track whose pose is being read ('(' ... ')'), for its streams' reads
+    let mut posing: Option<(u32, f32)> = None;
     while r.p < b.len() {
         let k = r.u8();
         match k {
@@ -1334,8 +1339,15 @@ pub fn read_log(path: &str) -> Option<Log> {
                     *k = f32::from_bits(r.u32());
                 }
                 let result = [f32::from_bits(r.u32()), f32::from_bits(r.u32()), f32::from_bits(r.u32())];
-                log.vec_streams.push(Vec3StreamRec { tick: log.ticks, stream, place, first, last, mode, keys, result, header: None });
+                log.vec_streams.push(Vec3StreamRec { tick: log.ticks, stream, place, first, last, mode, keys, result, header: None, track: posing });
             }
+            b'(' => {
+                if !r.has(8) {
+                    break;
+                }
+                posing = Some((r.u32(), f32::from_bits(r.u32())));
+            }
+            b')' => posing = None,
             b'&' => {
                 if !r.has(17 * 4) {
                     break;
