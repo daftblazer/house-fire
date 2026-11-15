@@ -1703,3 +1703,10 @@ slot, one world matrix, a bone's); 642 are blended (3 or 4 slots), with no world
 their matrices are loaded is not in the log, as the 'p' cap (20,000) is spent on views and
 worlds. The Sims' parts at tick 1000 include the bodies, heads' parts (eyes on bone 15), shoes,
 jewellery and shadow_adult.
+The skinned parts (iteration 191, home-a31.log). With every draw of ticks 1000-1014 recorded
+(`BUSTIN_TREE_DRAW_TICKS`, the caps raised), all 13,939 bone-drawn strips tie to their models.arc
+part on the bone their matrix is. The blended batches (3 or 4 slots) load no GX matrix: the
+game skins them on the CPU (fn_801A6ADC, the loop at 801A6C48), blending each position through
+up to four bone matrices at the device's +0x4548 (3x4 rows) by the vertex's four weight bytes,
+the normal by the heaviest bone's. All 4,712 matrices the 2,926 logged primitives use are bone
+matrices to the bit: 4,416 of their tick, 296 of a bone set within 2 ticks.
