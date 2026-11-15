@@ -12,6 +12,7 @@ pub mod expression;
 pub mod iff;
 pub mod library;
 pub mod model;
+pub mod outfit;
 pub mod motives;
 pub mod planner;
 pub mod pose;

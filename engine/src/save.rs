@@ -446,6 +446,59 @@ pub fn read_neighbours(file: &[u8]) -> Result<Vec<Neighbour>> {
     Ok(out)
 }
 
+/// A Sim of the neighbourhood made by its description (a "User" chunk of the neighbourhood's
+/// section): the GUID of the neighbour it is (`Neighbour::guid`), its names, and its looks, 20
+/// bytes: the gender (1 male), the age (1 adult), then 18 bytes of part indices and the like
+/// (`outfit::Description`).
+#[derive(Clone, Debug, Default)]
+pub struct CreatedSim {
+    pub guid: u32,
+    pub first_name: String,
+    pub last_name: String,
+    pub looks: [u8; 20],
+}
+
+/// A User chunk's string: a byte order mark (ff fe) then 16-bit characters, high byte first,
+/// to a zero one; the string and where the chunk goes on.
+fn read_user_string(c: &[u8], mut p: usize) -> Option<(String, usize)> {
+    if c.get(p..p + 2)? != [0xff, 0xfe] {
+        return None;
+    }
+    p += 2;
+    let mut units = Vec::new();
+    loop {
+        let u = u16::from_be_bytes([*c.get(p)?, *c.get(p + 1)?]);
+        p += 2;
+        if u == 0 {
+            return Some((String::from_utf16_lossy(&units), p));
+        }
+        units.push(u);
+    }
+}
+
+/// The neighbourhood's made Sims, in file order (its "User" chunks, each: 0, the version (4),
+/// a "resU" mark, the GUID, the first and the last name, the looks); one that does not read is
+/// left out.
+pub fn read_created_sims(file: &[u8]) -> Result<Vec<CreatedSim>> {
+    let mut out = Vec::new();
+    for b in read_neighbourhood(file)? {
+        if b.section != 1 {
+            continue;
+        }
+        for (tag, c) in chunk_table(&b)?.chunks {
+            if tag != "User" || c.get(8..12) != Some(b"resU".as_slice()) {
+                continue;
+            }
+            let Some(guid) = c.get(12..16).map(|g| le32(g, 0)) else { continue };
+            let Some((first_name, p)) = read_user_string(&c, 16) else { continue };
+            let Some((last_name, p)) = read_user_string(&c, p) else { continue };
+            let Some(looks) = c.get(p..p + 20).and_then(|l| <[u8; 20]>::try_from(l).ok()) else { continue };
+            out.push(CreatedSim { guid, first_name, last_name, looks });
+        }
+    }
+    Ok(out)
+}
+
 /// An object type of a lot (objt): its GUID, six 16-bit fields (field 4 is the type number the
 /// lot's objects name) and its name.
 #[derive(Clone, Debug, Default)]

@@ -20,6 +20,8 @@ pub struct Table {
     pub rows: usize,
     pub count: usize,
     pub row_size: usize,
+    /// Where the row names' pointer array starts (0 for a table whose rows have none).
+    pub names: usize,
 }
 
 /// A quick data entry's main image.
@@ -71,7 +73,7 @@ impl Image {
             let name = img.ptr(d)?;
             let end = img.data.get(name..)?.iter().position(|&c| c == 0)?;
             let name = img.data[name..name + end].iter().map(|&c| c as char).collect();
-            let table = Table { rows: img.ptr(d + 4).unwrap_or(0), count: img.u32(d + 12)? as usize, row_size: img.u32(d + 16)? as usize };
+            let table = Table { rows: img.ptr(d + 4).unwrap_or(0), count: img.u32(d + 12)? as usize, row_size: img.u32(d + 16)? as usize, names: img.ptr(d + 8).unwrap_or(0) };
             img.tables.insert(name, table);
         }
         Some(img)
@@ -90,9 +92,22 @@ impl Image {
         (t <= self.data.len()).then_some(t)
     }
 
+    /// The row of a table with this name (the row names the descriptor's third word points at,
+    /// a pointer to a zero-ended string a row), its offset in the image.
+    pub fn row_named(&self, table: &str, name: &str) -> Option<usize> {
+        let t = self.tables.get(table).copied()?;
+        if t.names == 0 {
+            return None;
+        }
+        let k = (0..t.count).find(|&k| {
+            self.ptr(t.names + 4 * k).and_then(|s| self.data.get(s..)).is_some_and(|b| b.starts_with(name.as_bytes()) && b.get(name.len()) == Some(&0))
+        })?;
+        Some(t.rows + k * t.row_size).filter(|&r| r + t.row_size <= self.data.len())
+    }
+
     /// The rows of a table, each its offset in the image.
     pub fn rows(&self, name: &str) -> impl Iterator<Item = usize> + '_ {
-        let t = self.tables.get(name).copied().unwrap_or(Table { rows: 0, count: 0, row_size: 0 });
+        let t = self.tables.get(name).copied().unwrap_or(Table { rows: 0, count: 0, row_size: 0, names: 0 });
         (0..t.count).map(move |k| t.rows + k * t.row_size).filter(move |&r| r + t.row_size <= self.data.len())
     }
 }
