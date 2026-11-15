@@ -535,6 +535,12 @@ impl SimAnimator {
         changed
     }
 
+    /// The animator's speed for a tick (Anim_SpeedUpdate 800AB820): the game speed, but 0 on a
+    /// tick an Animate's load misses (anyone's) unless this Sim is walking a route.
+    pub fn speed_for(game_speed: f32, load_miss: bool, routing: bool) -> f32 {
+        if load_miss && !routing { 0.0 } else { game_speed }
+    }
+
     /// A new action's track speed.
     pub fn action_speed(&self, backward: bool) -> f32 {
         if backward { -self.speed } else { self.speed }
@@ -985,6 +991,9 @@ mod tests {
         assert_eq!(a.action_speed(true), -0.0);
         assert!(a.follow(5.0));
         assert_eq!((a.action_speed(false), a.action_speed(true)), (5.0, -5.0));
+        assert_eq!(SimAnimator::speed_for(1.0, true, false), 0.0);
+        assert_eq!(SimAnimator::speed_for(1.0, true, true), 1.0);
+        assert_eq!(SimAnimator::speed_for(5.0, false, false), 5.0);
     }
 
     #[test]

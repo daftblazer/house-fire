@@ -1590,3 +1590,12 @@ on exactly the 13 Animate load-miss ticks (1, 18, 208, 994, 1007, 1208, 1418, 15
 - +28 = 5 is rare (2 records).
 So the rule is: on a tick an Animate's load misses, every Sim's animator stops except the ones
 walking a route. The engine knows both: its Animate's load waits and its routing state.
+The stop rule from the engine's state (iteration 177). `SimAnimator::speed_for(game_speed,
+load_miss, routing)` is the game speed, or 0 on a load-miss tick unless the Sim is walking a
+route. Its inputs come from the engine's side only:
+- the game speed of the pausable controllers;
+- the Animate load-miss ticks;
+- routing, meaning no Animate run of the Sim covers the tick.
+
+It gives 17,197 of the 17,198 animator speed records on home-a22.log. The one left is a Sim
+in an Animate the run list misses (not routing by the log's +16).

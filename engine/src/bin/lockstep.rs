@@ -1789,6 +1789,20 @@ fn main() -> ExitCode {
                     }
                     println!("animator speeds from the game speed ({variant}) and load misses: {tally:?}");
                 }
+                // the rule from the engine's own state: the game speed (the pausable controllers),
+                // the load-miss ticks, and routing = no Animate run of the Sim covering the tick
+                let mut eng: BTreeMap<String, usize> = BTreeMap::new();
+                for sp in log.speeds.iter().filter(|sp| sp.tick != 0) {
+                    let c = sp.owner.wrapping_add(0x350);
+                    let Some(sim) = sim_of.get(&c) else { continue };
+                    let Some(g) = game_tick.range(..=sp.tick).next_back().and_then(|e| e.1.last().copied()) else { continue };
+                    let in_animate = each.iter().zip(&each_sim).any(|((_, first, end), s)| s == sim && *first <= sp.tick && sp.tick <= *end);
+                    let routing = !in_animate;
+                    let want = housefire::anim::SimAnimator::speed_for(g, miss_any.contains(&sp.tick), routing);
+                    let k = if want == sp.after { "the same".to_string() } else { format!("DIFFERENT (engine {want}, log {}, routing by the log {}, by the engine {routing})", sp.after, sp.state[4] == 1) };
+                    *eng.entry(k).or_default() += 1;
+                }
+                println!("  animator speeds from the engine's state: {eng:?}");
                 println!("  the animators' speed changes (of {} records): {:?}", log.speeds.len(), log.speeds.iter().filter(|sp| sp.before != sp.after).map(|sp| (sp.tick, sp.owner.wrapping_add(0x350) & 0xfffff, sp.before, sp.after)).collect::<Vec<_>>());
                 // the Sims' still tracks against the game speed that frame (the objects' +80)
                 let mut still: BTreeMap<String, usize> = BTreeMap::new();
