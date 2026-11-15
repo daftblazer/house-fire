@@ -2165,6 +2165,41 @@ fn main() -> ExitCode {
             for ((kind, d, n), c) in &kinds {
                 println!("  kind {kind}: day {} night {}: {c}", f(*d), f(*n));
             }
+            // (logs with the entries: the brightness from the entries' kinds, `window_brightness`)
+            let (mut from_kinds, mut kinds_seen) = (0, BTreeMap::<i32, usize>::new());
+            for (w, (half, ents)) in log.window_brightness.iter().zip(&log.window_entries) {
+                let windows = ents.iter().filter(|e| e[2] as i32 == 8).count() as u32;
+                for e in ents {
+                    *kinds_seen.entry(e[2] as i32).or_default() += 1;
+                }
+                let tiles = (*half as i32) / 2;
+                if housefire::light::window_brightness(windows, tiles).to_bits() == w[4] {
+                    from_kinds += 1;
+                }
+            }
+            if !log.window_entries.is_empty() {
+                println!("brightness from the entries' kinds: {from_kinds} of {}; kinds seen {kinds_seen:?}", log.window_entries.len());
+                // the kind 8 objects by the log's ids (the object lists' pointers, at the record's
+                // tick), per room at the first call
+                let mut done = BTreeSet::new();
+                for (w, (_, ents)) in log.window_brightness.iter().zip(&log.window_entries) {
+                    if !done.insert(w[1]) {
+                        continue;
+                    }
+                    let list = log.lists.iter().rev().find(|l| l.tick <= w[0]);
+                    // (the nearest listed object's offset and id, for the first few)
+                    for e in ents.iter().filter(|e| e[2] as i32 == 8).take(3) {
+                        let near = list.and_then(|l| l.objects.iter().zip(&l.ids).min_by_key(|(o, _)| (i64::from(**o) - i64::from(e[1])).abs()));
+                        println!("    kind 8 object {:08x}: nearest listed {:?}", e[1], near.map(|(o, i)| (format!("{o:08x}"), i64::from(*o) - i64::from(e[1]), *i)));
+                    }
+                    let id = |p: u32| list.and_then(|l| l.objects.iter().position(|o| *o == p.wrapping_add(112)).map(|k| l.ids[k]));
+                    let mut by: BTreeMap<(i32, Option<i16>), usize> = BTreeMap::new();
+                    for e in ents.iter().filter(|e| e[2] as i32 == 8 || e[2] as i32 == 4) {
+                        *by.entry((e[2] as i32, id(e[1]))).or_default() += 1;
+                    }
+                    println!("  room {:08x}: (kind, id): entries {by:?}", w[1]);
+                }
+            }
             let mut rooms: BTreeMap<(u32, u32, u32, u32), (u32, u32)> = BTreeMap::new();
             for w in &log.window_brightness {
                 let e = rooms.entry((w[1], w[2], w[3], w[4])).or_insert((w[0], w[0]));

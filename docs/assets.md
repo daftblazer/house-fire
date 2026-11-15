@@ -1033,3 +1033,14 @@ against the engine: the big room's 12 windows are the engine's 12 window objects
 The two small rooms are not (7 and 4 implied, against 4 and 0 windows, and no definition field
 at 8 fits). So the grid maps tiles to objects beyond those standing on them. Next: log each
 entry's grid id and kind in the observer (memory reads only).
+
+The window share's kinds (iteration 94, one home recording with the batch). The observer's '6'
+now also holds the room's +72 and, for each tile entry, its grid id, the table's object and the
+kind (memory reads only). The snapshots now also hold the game's virtual heap (0x7E000000,
+12.25 MiB, `mem7e-<tick>.bin`). From the logged kinds, `light::window_brightness(the entries of
+kind 8, +72 / 2)` gives all 4,000 brightness values bit for bit. The table's object is the
+listed object less 112, the same this-adjust. Named through the log's lists, the kind 8 objects
+are the doors and windows: storm windows, small windows, wooden archways and the lattice door.
+The grid gives a tile the door or window on its walls, so a room counts the openings around it.
+The big room counts 12 entries, the small rooms 7 (two archways, two storm windows) and 4 (two
+archways, a small window). Kind 4 (147,171 entries seen) and 2 are other objects, not counted.
