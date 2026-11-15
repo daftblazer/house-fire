@@ -658,3 +658,13 @@ pause (a 30-frame backward play lasting 45 ticks from 186; a per-Sim speed, the 
 owner to its Sim, still to map); a2o-sit-left after the long pause at 5065, with flag 0x40;
 one flag 0x10 call that returns false at once (tick 1791). On home-a10.log (no '#' records)
 9 differ.
+Iteration 145: the Sims' own speeds. Each Sim's '#' records (its animator's owner, the nearest
+owner above the Sim's address) give the same answers as the rules (1, 5 in fast-forward, 0 on
+a load miss or the game's pause): the rules hold. The one Sim's long run at 186 is not a
+pause. Its backward play (a2o-idle-neutral-trans-mstand-mhips, flags 0x22) is stopped for one
+frame by a load miss at 208 (place 2.27 of 29), and when its speed comes back it is +1: the
+track turns and plays forward to the end, which the run waits for (231). The speed's restore
+loses the direction. That is the original's, and kept: in `anim::Play`, a backward play
+paused for a frame goes on forward from where it is. On home-a11.log, 4,026 Animate steps are
+native as the log's and 5 differ (a2o-sit-left with flag 0x40 at 5065, 4 steps; flag 0x10's
+false at once at 1791).

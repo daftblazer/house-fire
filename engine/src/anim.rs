@@ -205,6 +205,9 @@ pub struct Play {
     wanted: i32,
     counted: i32,
     backward: bool,
+    /// A backward play paused for a frame goes on forward: the speed restored after the pause is
+    /// +1 (the original's, kept). Its place then runs back toward 0 (the animation's end).
+    turned: bool,
     done: bool,
 }
 
@@ -220,13 +223,17 @@ impl Play {
             .filter(|n| n.0 <= last)
             .map(|(t, v)| (if backward { last - t } else { t }, v))
             .collect();
-        Play { last, place: 0.0, still_first: backward, notes, next: 0, wanted, counted: 0, backward, done: false }
+        Play { last, place: 0.0, still_first: backward, notes, next: 0, wanted, counted: 0, backward, turned: false, done: false }
     }
 
     /// A frame: the place moves by `step` (the frame step × the rate × the speed).
     pub fn frame(&mut self, step: f32) {
         if self.still_first {
             self.still_first = false;
+        } else if self.turned {
+            self.place -= step;
+        } else if step == 0.0 && self.backward {
+            self.turned = true;
         } else {
             self.place += step;
         }
@@ -247,6 +254,14 @@ impl Play {
     pub fn poll(&mut self) -> Poll {
         const EPS: f32 = 1e-3;
         if self.done {
+            return Poll::Done;
+        }
+        if self.turned {
+            // turned forward: it ends past the animation's last frame (place below 0)
+            if self.place >= -EPS {
+                return Poll::Pending;
+            }
+            self.done = true;
             return Poll::Done;
         }
         while let Some(&(at, value)) = self.notes.get(self.next) {
@@ -476,6 +491,23 @@ mod tests {
         }
         // 3 frames to pass the last (3) after a still one
         assert_eq!(at, Some(5));
+    }
+
+    #[test]
+    fn a_backward_play_paused_goes_on_forward() {
+        let mut p = Play::new(&anim(31, 30.0), &[], true, 0);
+        p.frame(1.0); // the still first frame
+        for _ in 0..5 {
+            p.frame(1.0);
+        }
+        p.frame(0.0); // paused: turned
+        let mut n = 0;
+        while p.poll() == Poll::Pending {
+            p.frame(1.0);
+            n += 1;
+        }
+        // back over the 5 frames it had played, then past the end
+        assert_eq!(n, 6);
     }
 
     #[test]

@@ -265,6 +265,11 @@ struct AnimReplay {
     /// The ticks of the game paused for the Sims: their speed updates all left at 0 (the
     /// log's '#' records, like the fast-forward; The Sims 2's SAnimator2::Update).
     paused: BTreeSet<u32>,
+    /// Study REPLAY_ANIMATE_OWN_SPEED: each Sim's own speed, the last '#' record of its
+    /// animator's owner (the nearest owner above the Sim's address) before the frame: (owner,
+    /// the records by their place among the steps).
+    own: Option<BTreeMap<u32, Vec<(usize, f32)>>>,
+    owner_of: BTreeMap<u32, u32>,
     tree_file: HashMap<TreeId, FileId>,
 }
 
@@ -286,6 +291,26 @@ impl AnimReplay {
             *moving.entry(r.tick).or_default() |= r.after != 0.0;
         }
         let paused = moving.into_iter().filter(|e| !e.1).map(|e| e.0).collect();
+        let mut own: BTreeMap<u32, Vec<(usize, f32)>> = BTreeMap::new();
+        for r in &log.speeds {
+            own.entry(r.owner).or_default().push((r.after_steps, r.after.abs()));
+        }
+        let sims: BTreeSet<u32> = log.steps.iter().map(|s| s.sim).collect();
+        let owner_of: BTreeMap<u32, u32> = sims.iter().filter_map(|&sim| own.keys().copied().filter(|&o| o > sim && o - sim < 0x1000).min().map(|o| (sim, o))).collect();
+        if has("REPLAY_SHOW_SPEEDS") {
+            println!("  owners: {owner_of:x?}");
+        }
+        if let Some((c, a, b)) = std::env::var("REPLAY_SHOW_TRACKS").ok().and_then(|v| {
+            let p: Vec<u32> = v.split(',').filter_map(|x| u32::from_str_radix(x, 16).ok()).collect();
+            (p.len() == 3).then(|| (p[0], p[1], p[2]))
+        }) {
+            let sp: Vec<_> = log.speeds.iter().filter(|r| r.tick >= a && r.tick <= b && r.before != r.after).map(|r| (r.tick, format!("{:x}", r.owner), r.before, r.after)).collect();
+            println!("  speed changes {sp:?}");
+            for t in log.tracks.iter().filter(|t| t.controller == c && t.tick >= a && t.tick <= b) {
+                println!("  track t {} frame {} track {} anim {:x} speeds {:?} place {:?} ran {:?} done {:?}", t.tick, t.frame, t.track, t.anim, t.speeds, t.place, t.ran, t.done);
+            }
+        }
+        let own = has("REPLAY_ANIMATE_OWN_SPEED").then_some(own);
         let mut misses: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
         let mut loads = cat.loads();
         for q in log.loaded.iter().filter(|q| q.caller == 0x800A_C7E4) {
@@ -311,12 +336,20 @@ impl AnimReplay {
             }
         }
         let m = cat.animator();
-        Some(AnimReplay { cat, m, frames, next: 0, misses, animating: BTreeMap::new(), fast, paused, tree_file })
+        Some(AnimReplay { cat, m, frames, next: 0, misses, animating: BTreeMap::new(), fast, paused, own, owner_of, tree_file })
     }
 
     /// The frames before log step `step`.
     fn frames_to(&mut self, step: usize) {
-        while let Some(&(tick, _)) = self.frames.get(self.next).filter(|f| f.1 <= step) {
+        while let Some(&(tick, at)) = self.frames.get(self.next).filter(|f| f.1 <= step) {
+            if let Some(own) = &self.own {
+                let owner_of = &self.owner_of;
+                self.m.frame(|sim| {
+                    owner_of.get(&sim).and_then(|o| own.get(o)).and_then(|v| v[..v.partition_point(|r| r.0 <= at)].last()).map_or(1.0, |r| r.1)
+                });
+                self.next += 1;
+                continue;
+            }
             let stopped = self.misses.get(&tick);
             let animating = self.animating.get(&tick);
             let fast = self.fast.contains(&tick);
