@@ -308,6 +308,25 @@ pub fn bits(words: &[u32], at: u32, width: u32) -> u32 {
     if width >= 32 { v } else { v & ((1 << width) - 1) }
 }
 
+/// A node's channel word (`docs/assets.md`, "Animation channels"): none, an index into the
+/// animation's constants, or a stream at a bit of its bit array (the word negated).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Channel {
+    None,
+    Constant(usize),
+    Stream(u32),
+}
+
+impl Channel {
+    pub fn of(word: u32) -> Channel {
+        match word as i32 {
+            0 => Channel::None,
+            w if w > 0 => Channel::Constant(w as usize),
+            w => Channel::Stream(w.unsigned_abs()),
+        }
+    }
+}
+
 /// A scale or translation stream's header, as Bustin' Out's 801BC318 reads it from the
 /// animation's bits: the key count (20 bits), the widths of the frame gap, the key's scalar and
 /// each value (5 bits each; a value width of 0 is 32), then per value its range and minimum as
@@ -326,8 +345,18 @@ pub struct StreamHeader {
     pub first_record: u32,
     /// A record's bits.
     pub record_bits: u32,
-    /// The frames the keys span: the sum of their gaps + 1.
-    pub frames: u32,
+}
+
+impl StreamHeader {
+    /// The frames the keys span: the sum of their gaps + 1 (801BC318's +20).
+    pub fn frames(&self, words: &[u32]) -> u32 {
+        (0..self.keys).map(|k| bits(words, self.first_record + k * self.record_bits, self.gap_bits) + 1).sum()
+    }
+
+    /// The bit after the stream's last record.
+    pub fn end(&self) -> u32 {
+        self.first_record + self.keys * self.record_bits
+    }
 }
 
 /// The header of the stream at bit `at` of `words` (801BC318).
@@ -353,8 +382,7 @@ pub fn stream_header(words: &[u32], at: u32) -> StreamHeader {
         offset[i] = f32::from_bits(take(32));
     }
     let record_bits = gap_bits + scalar_bits + 3 * value_bits;
-    let frames = (0..keys).map(|k| bits(words, p + k * record_bits, gap_bits) + 1).sum();
-    StreamHeader { keys, gap_bits, scalar_bits, value_bits, scalar_scale, scale, offset, first_record: p, record_bits, frames }
+    StreamHeader { keys, gap_bits, scalar_bits, value_bits, scalar_scale, scale, offset, first_record: p, record_bits }
 }
 
 /// A key's three values in a stream's bits (801BCE50): `width`-bit unsigned fields from bit
@@ -587,6 +615,13 @@ mod tests {
     }
 
     #[test]
+    fn a_channel_word_is_none_a_constant_or_a_stream() {
+        assert_eq!(Channel::of(0), Channel::None);
+        assert_eq!(Channel::of(4), Channel::Constant(4));
+        assert_eq!(Channel::of(-7954i32 as u32), Channel::Stream(7954));
+    }
+
+    #[test]
     fn a_stream_header_is_read_from_the_bits() {
         // 2 keys, widths 3 (gap), 0 (scalar), 4 (values); ranges 15, 0, 0 and minimums 1, 2, 3
         let mut w = vec![0u32; 12];
@@ -612,7 +647,7 @@ mod tests {
         put(4, 3);
         let h = stream_header(&w, 0);
         assert_eq!((h.keys, h.gap_bits, h.scalar_bits, h.value_bits, h.record_bits, h.first_record), (2, 3, 0, 4, 15, 227));
-        assert_eq!((h.scale, h.offset, h.frames), ([1.0, 0.0, 0.0], [1.0, 2.0, 3.0], 2 + 5));
+        assert_eq!((h.scale, h.offset, h.frames(&w), h.end()), ([1.0, 0.0, 0.0], [1.0, 2.0, 3.0], 2 + 5, 227 + 30));
     }
 
     #[test]

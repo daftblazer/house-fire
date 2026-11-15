@@ -2285,10 +2285,10 @@ fn main() -> ExitCode {
                 let Some(a) = housefire::anim::read(arc::bytes(&b, e)) else { continue };
                 for nd in &a.nodes {
                     *first_words.entry(nd[0].min(1000)).or_default() += 1;
-                    for (w, word) in nd.iter().enumerate().skip(1).take(4) {
+                    for (w, word) in nd.iter().enumerate() {
                         let v = *word as i32;
                         *signs.entry((w, if v == 0 { "0" } else if v > 0 { "+" } else { "-" })).or_default() += 1;
-                        if v > 0 {
+                        if v > 0 && (1..5).contains(&w) {
                             let n = 3;
                             let k = v as usize;
                             let ok = k + n <= a.constants.len();

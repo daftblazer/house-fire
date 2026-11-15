@@ -695,11 +695,63 @@ fn main() -> ExitCode {
                     && x.scale.iter().zip(&h[7..10]).all(|(a, b)| a.to_bits() == *b)
                     && (x.scalar_bits == 0 || x.scalar_scale.to_bits() == h[6]);
                 *cmp.entry(if same { "every field the same" } else { "DIFFERENT" }).or_default() += 1;
+                // which node word names this start (study: its relation to the start bit)
+                if let Some(a) = all.iter().find(|a| housefire::anim::stream_header(&a.bit_words, start) == x) {
+                    let mut how = Vec::new();
+                    for (ni, nd) in a.nodes.iter().enumerate() {
+                        for (wi, w) in nd.iter().enumerate() {
+                            if housefire::anim::Channel::of(*w) == housefire::anim::Channel::Stream(start) {
+                                how.push(format!("node {ni} word {wi} as a stream"));
+                            }
+                        }
+                    }
+                    *cmp.entry(if how.is_empty() { "start named by no node word" } else { "start named by a node word" }).or_default() += 1;
+                    for h in &how {
+                        *cmp.entry(match h.split(" as ").next().and_then(|x| x.rsplit(' ').next()) { Some("0") => "as word 0", Some("1") => "as word 1", Some("2") => "as word 2", Some("3") => "as word 3", Some("4") => "as word 4", _ => "as another word" }).or_default() += 1;
+                    }
+                    if cmp.get("shown").copied().unwrap_or(0) < 10 {
+                        *cmp.entry("shown").or_default() += 1;
+                        println!("  stream {:x} in {} at bit {start}: {how:?}; nodes {}", v.stream, a.name, a.nodes.len());
+                    }
+                }
                 if !same && cmp["DIFFERENT"] <= 4 {
                     println!("  header different: logged {h:x?}; native {x:?} (scales {:x?})", x.scale.map(f32::to_bits));
                 }
             }
             println!("stream headers decoded from the bits: {cmp:?}");
+            // (study: the logged starts in one animation, against a walk of headers from bit 0)
+            if let Ok(name) = std::env::var("LOCKSTEP_ANIM_WALK")
+                && let Some(a) = all.iter().find(|a| a.name == name)
+            {
+                {
+                    let mut starts: BTreeSet<u32> = BTreeSet::new();
+                    let mut once = BTreeSet::new();
+                    for v in log.vec_streams.iter().filter(|v| once.insert(v.stream)) {
+                        if let Some((h, _)) = v.header
+                            && let Some(st) = h[1].checked_sub(227)
+                            && housefire::anim::stream_header(&a.bit_words, st).first_record == h[1]
+                            && housefire::anim::stream_header(&a.bit_words, st).keys == h[3]
+                        {
+                            starts.insert(st);
+                        }
+                    }
+                    println!("  {name}: bits {}, nodes {}; logged starts {starts:?}", a.bits, a.nodes.len());
+                    for (i, nd) in a.nodes.iter().enumerate().take(6) {
+                        println!("    node {i}: {:?}", nd.map(|w| w as i32));
+                    }
+                    let mut at = 0u32;
+                    let mut chain = Vec::new();
+                    for _ in 0..12 {
+                        let x = housefire::anim::stream_header(&a.bit_words, at);
+                        chain.push((at, x.keys, x.record_bits));
+                        at = x.end();
+                        if at >= a.bits {
+                            break;
+                        }
+                    }
+                    println!("    walk from 0 (start, keys, record bits): {chain:?}");
+                }
+            }
         }
     }
 

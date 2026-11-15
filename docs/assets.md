@@ -1337,3 +1337,9 @@ the scalar + 3 x the value, and the frames are the sum of the gaps + 1. `anim::s
 reads it. Each of the 290 streams on home-a13.log is found in one animation's bits at its first
 record - 227, and every field is the same to the bit (`LOCKSTEP_ANIM_HEADERS`). Still to read:
 the stream's first bit from the node's word (CreateStreams), and the rotation stream.
+A stream's first bit is its node word negated (iteration 151, `anim::Channel`): all 290 logged
+translation streams start at -(word 2) (parrot_cas_loop1's node 2: -7954, bit 7954). Word 0 is
+set on most nodes, both signs (79,228 negative, 50,067 positive, 61,129 zero), so it is
+something else, maybe the bone's id. Words 5 and 6 are as rare as word 4 (199 and 215 positive,
+37 and 21 negative). The streams are not packed from bit 0: a walk of headers from 0 does not
+reach them, as the rotation streams (word 3, its own format) sit between.
