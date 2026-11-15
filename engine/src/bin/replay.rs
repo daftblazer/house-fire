@@ -112,7 +112,13 @@ impl Counts {
     }
     fn add(&mut self, k: &str, n: usize) {
         if !self.quiet {
-            *self.map.entry(k.to_string()).or_default() += n;
+            // (the key is made a String only the first time it is counted)
+            match self.map.get_mut(k) {
+                Some(c) => *c += n,
+                None => {
+                    self.map.insert(k.to_string(), n);
+                }
+            }
         }
     }
 }

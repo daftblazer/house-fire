@@ -491,8 +491,7 @@ fn merge_sort_with_buffer<T: Copy>(v: &mut [T], buffer: &mut Vec<T>, less: &impl
     while step < n {
         merge_sort_loop(v, &mut buffer[..n], step, less);
         step *= 2;
-        let b: Vec<T> = buffer[..n].to_vec();
-        merge_sort_loop(&b, v, step, less);
+        merge_sort_loop(&buffer[..n], v, step, less);
         step *= 2;
     }
 }
