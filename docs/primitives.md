@@ -376,6 +376,16 @@ call on the global at r13 − 21496, when three checks pass, else 1). `TryAnimat
 `SetAllTrackSpeed` carries changes to the tracks. With the speed, 144 of 165 runs return on the
 native tick (113 at a note, 29 at the end, 2 at once). All misses are now the Sim's
 a2o-stove-cook (16), from tick 1096, where 8 runs return in one tick.
+Iteration 130: those 8 are a burst. The food processor's tree 0x2003 node 7 (Animate, operand
+02 00 06 00 00 20 08 00) returns false 9 times in tick 1096, the tick after its play's end
+(true at 1094 and 1095). Then tree 0x2006 node 2 starts the play over. The burst does not use up
+the new play's notes: its 8 later runs return on the native tick, one per note from the restart.
+With the 15 runs that return on their first tick left out (`LOCKSTEP_ANIM_SKIP_ONCE`), 146 of 150
+return natively. The misses left are a2o-stove-cook's last note twice (366 frames, 2 ticks late)
+and a2o-fridge-open/close's note 6 once each. Tried and dropped: a burst of every note whenever a
+play left at its end is started again within a tick. Food prep's and the easel's restarts are
+like that and have no burst (57 native instead of 113). What makes a call return at once is
+still open.
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object

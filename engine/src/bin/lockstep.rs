@@ -874,7 +874,7 @@ fn main() -> ExitCode {
                     }
                     let Some(n) = step_object[i].and_then(|o| lib.tree(Some(o), st.tree)).and_then(|t| lib.tree_at(t).nodes.get(st.node as usize)).copied() else { continue };
                     if n.opcode < 256 && !matches!(n.opcode, 0 | 2 | 8 | 31) {
-                        println!("  step tick {} sim {:x} tree {:#x} node {} of {:?}: opcode {} operand {:02x?} result {}", st.tick, st.sim, st.tree, st.node, step_object[i].map(|f| &lib.file(f).path), n.opcode, n.operand, st.result);
+                        println!("  step tick {} sim {:x} tree {:#x} node {} of {:?}: opcode {} operand {:02x?} result {} locals {:?}", st.tick, st.sim, st.tree, st.node, step_object[i].map(|f| &lib.file(f).path), n.opcode, n.operand, st.result, &st.locals_after[..st.locals_after.len().min(3)]);
                     }
                 }
             }
@@ -993,6 +993,12 @@ fn main() -> ExitCode {
                         // going on with the Sim's play, or a new one
                         // (the play goes on when the Sim's play is of this animation and was left
                         // at a note, not at its end)
+                        // (LOCKSTEP_ANIM_SKIP_ONCE: a run that returns on its first tick leaves the
+                        // play alone: whether a restart's burst uses up the new play's notes)
+                        if end == first && std::env::var_os("LOCKSTEP_ANIM_SKIP_ONCE").is_some() {
+                            *t2.entry("at once, left out".to_string()).or_default() += 1;
+                            continue;
+                        }
                         let go_on = play.get(&sim).is_some_and(|p| p.0 == *name && p.3 != u32::MAX);
                         let (k0, passed) = if go_on {
                             let p = &play[&sim];
