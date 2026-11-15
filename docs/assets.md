@@ -1684,3 +1684,12 @@ and scale s + (l - s) w, words 11-15 untouched. Layer ORs the flags, rotation sl
 q, w) (801B5154) times the state's, translation s + w l, scale s + (s l - s) w. A track's
 animation can change within a tick, so a pose's is the one of its last step. On home-a25.log,
 with the weights found from the states, 618,836 of 618,895 node states come out to the bit.
+Posing with the logged weights (iteration 189). The pose record now carries the track's weight
+(+76), flags (+8), +124 and node weights (+152). A node's weight is the track's times its own.
+The first non-layer track posed after a reset of the node states (their +88 is 0) sets +88 and
+poses at weight 1.0 whatever its weight (Animate 80158254..80158278, `pose::base_weight`). The
+root fix (FixAccumulationForRootNode 80158184) takes the translation x from +124. A stream's
+blend flag is left over in memory until its first window step sets it. With them, all node
+states of the 39,999 poses on home-a28.log come out to the bit: 474,452 copies, 22,587 blends,
+1,354 layers and 120,662 at weight 0 (`LOCKSTEP_ANIM_POSES`). The weights come from the track's
+SetWeight (fn_80159D9C, clamped) and a mask's array (fn_80162F7C).
