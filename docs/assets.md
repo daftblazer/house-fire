@@ -1295,3 +1295,15 @@ translation: 16,003 constant, 20,690 a stream. Word 3 is the rotation, a stream 
 the 190,424 nodes (the pool table's -1 - 66k). Word 4 is a fourth channel: 186 constant (triples
 in 0 to 1), 50 streams. Every positive word's three constants are inside the animation's. The
 streams' encoding (the bit array, the "-1 - 66k" indices) is the decoders' and still to read.
+The scale and translation decoder is fn_801BC4E0 (named Anim_Vec3Stream in the recomp,
+iteration 148). It takes the stream (r4), the place (f1) and three floats to fill (r3). The
+stream keeps a window of two key frames, its first (+12) and last (+16). While the place is past
+the last it steps forward (fn_801BC958); before the first, it steps back (fn_801BCA8C) or reads
+again from the start (fn_801BCC28, fn_801BCBBC). Inside the window t = (place - first) / (last
+- first). With the mode byte (+33) nonzero it blends the keys P0 (+44) and P1 (+80) straight.
+Otherwise it takes a cubic Hermite curve with the tangents T0 (+56) and T1 (+68):
+P0 (2t³ - 3t² + 1) + T0 (t³ - 2t² + t) + P1 (-2t³ + 3t², one fused multiply-add) + T1 (t³ - t²),
+summed in that order. The engine's `anim::channel3` does the same f32 steps. Checked by the
+observer's new '%' records (the window as the call leaves it, and the result) on home-a12.log:
+157,750 reads, every one the same to the bit (51,150 curves, 106,600 straight). How the keys
+come out of the stream's bits (the stepping functions) is next.

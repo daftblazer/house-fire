@@ -490,6 +490,21 @@ pub struct SpeedRec {
     pub after: f32,
 }
 
+/// A node's scale or translation stream read at a place ('%', Anim_Vec3Stream 801BC4E0): the
+/// stream, the place, its window as the call left it (the first and last key frames, the mode
+/// byte, the keys and tangents P0, T0, T1, P1 from +44) and the three floats it gave.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Vec3StreamRec {
+    pub tick: u32,
+    pub stream: u32,
+    pub place: f32,
+    pub first: i32,
+    pub last: i32,
+    pub mode: u8,
+    pub keys: [f32; 12],
+    pub result: [f32; 3],
+}
+
 /// A resource asked whether it is loaded ('9', Res_IsLoaded 80177B24, EA's
 /// EResourceManager::IsLoaded): its id, the answer, the caller, and its place among the steps.
 #[derive(Clone, Copy, Debug, Default)]
@@ -646,6 +661,8 @@ pub struct Log {
     pub loaded: Vec<LoadedRec>,
     /// The animators' speed updates ('#'), in order.
     pub speeds: Vec<SpeedRec>,
+    /// The scale and translation streams read ('%', in newer logs, at most 300,000).
+    pub vec_streams: Vec<Vec3StreamRec>,
     pub res_asks: Vec<ResAskRec>,
     pub ticks: u32,
 }
@@ -1303,6 +1320,18 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
                 let (animator, owner, before, after) = (r.u32(), r.u32(), f32::from_bits(r.u32()), f32::from_bits(r.u32()));
                 log.speeds.push(SpeedRec { tick: log.ticks, after_steps: log.steps.len(), animator, owner, before, after });
+            }
+            b'%' => {
+                if !r.has(4 * 4 + 1 + 15 * 4) {
+                    break;
+                }
+                let (stream, place, first, last, mode) = (r.u32(), f32::from_bits(r.u32()), r.u32() as i32, r.u32() as i32, r.u8());
+                let mut keys = [0.0; 12];
+                for k in &mut keys {
+                    *k = f32::from_bits(r.u32());
+                }
+                let result = [f32::from_bits(r.u32()), f32::from_bits(r.u32()), f32::from_bits(r.u32())];
+                log.vec_streams.push(Vec3StreamRec { tick: log.ticks, stream, place, first, last, mode, keys, result });
             }
             b'9' => {
                 if !r.has(12) {

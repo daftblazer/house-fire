@@ -296,6 +296,32 @@ impl Play {
     }
 }
 
+/// A scale or translation channel's value inside its stream's window (Bustin' Out's 801BC4E0,
+/// called from EAnimController::Animate): the window's key frames `first` and `last`, its
+/// `keys` (P0, T0, T1, P1: the two keys and their tangents), at `place` (in frames). A
+/// nonzero `mode` blends the keys straight; else a cubic Hermite curve. The f32 operations
+/// and their order are the original's (one fused multiply-add), so the result is its own to
+/// the bit.
+pub fn channel3(first: i32, last: i32, mode: u8, keys: &[f32; 12], place: f32) -> [f32; 3] {
+    let (f0, f1) = (first as f32, last as f32);
+    let t = (place - f0) / (f1 - f0);
+    let p0 = [keys[0], keys[1], keys[2]];
+    let t0 = [keys[3], keys[4], keys[5]];
+    let t1 = [keys[6], keys[7], keys[8]];
+    let p1 = [keys[9], keys[10], keys[11]];
+    if mode != 0 {
+        return [0, 1, 2].map(|i| p0[i] + (p1[i] - p0[i]) * t);
+    }
+    let t2 = t * t;
+    let t3 = t2 * t;
+    let three_t2 = t2 * 3.0;
+    let h00 = ((t3 + t3) - three_t2) + 1.0;
+    let h10 = (t3 - (t2 + t2)) + t;
+    let h01 = t3.mul_add(-2.0, three_t2);
+    let h11 = t3 - t2;
+    [0, 1, 2].map(|i| ((p0[i] * h00 + t0[i] * h10) + p1[i] * h01) + t1[i] * h11)
+}
+
 /// The Sims' plays, as the game keeps them: one a Sim, asked by its Animate steps and stepped by
 /// the frames, in the game's order. A Sim's play goes on across Animate calls of the same
 /// animation until it has given true; another animation, or a call after true, starts anew (once
@@ -491,6 +517,16 @@ mod tests {
         }
         // 3 frames to pass the last (3) after a still one
         assert_eq!(at, Some(5));
+    }
+
+    #[test]
+    fn a_channel_blends_or_curves_between_its_keys() {
+        let keys = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 2.0, 4.0, 6.0];
+        // straight: halfway is the keys' middle
+        assert_eq!(channel3(10, 20, 1, &keys, 15.0), [1.0, 2.0, 3.0]);
+        // a curve meets its keys at its ends
+        assert_eq!(channel3(10, 20, 0, &keys, 10.0), [0.0, 0.0, 0.0]);
+        assert_eq!(channel3(10, 20, 0, &keys, 20.0), [2.0, 4.0, 6.0]);
     }
 
     #[test]

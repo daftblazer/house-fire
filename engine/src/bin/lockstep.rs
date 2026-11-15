@@ -632,6 +632,25 @@ fn main() -> ExitCode {
         }
     }
 
+    // (LOCKSTEP_ANIM_CHANNELS: every logged scale or translation read ('%') through the
+    // engine's `anim::channel3` on its logged window: the same bits, close, or different)
+    if std::env::var_os("LOCKSTEP_ANIM_CHANNELS").is_some() {
+        let mut tally: BTreeMap<(u8, &str), usize> = BTreeMap::new();
+        let mut shown = 0;
+        for v in &log.vec_streams {
+            let got = housefire::anim::channel3(v.first, v.last, v.mode, &v.keys, v.place);
+            let same = got.iter().zip(&v.result).all(|(a, b)| a.to_bits() == b.to_bits());
+            let close = got.iter().zip(&v.result).all(|(a, b)| (a - b).abs() <= 1e-5 * b.abs().max(1.0));
+            let what = if same { "the same bits" } else if close { "within 1e-5" } else { "DIFFERENT" };
+            *tally.entry((v.mode.min(1), what)).or_default() += 1;
+            if what == "DIFFERENT" && shown < 8 {
+                shown += 1;
+                println!("  channel different: {v:?}: native {got:?}");
+            }
+        }
+        println!("scale and translation reads ({}), by (mode, result): {tally:?}", log.vec_streams.len());
+    }
+
     // (LOCKSTEP_ANIM_RUNS: each Animate (opcode 44) run, a Sim's steps on one node and frame
     // yielding until a transition; its animation by the operand's first 16 bits, the AnimRef
     // row whose id is the animatio.arc entry's; the run's ticks against the animation's frames)
