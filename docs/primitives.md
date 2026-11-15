@@ -398,6 +398,16 @@ once on each call until all have come, then returns true. The value goes to loca
 the native tick (119 at a note, 29 at the end, 8 owed at once, 2 at once). Left: a2o-stove-cook's
 last note and its end, 2 to 3 ticks late on both plays, and a2o-flamingo-kick's 4 calls that
 return at once with nothing owed.
+Iteration 132: the stove's lateness is a pause. On some frames all of one Sim's tracks have
+speed 0 (+72), so that Sim's animations stand still while the other Sims' move. This happens for
+1 frame at tick 994, 2 at 1007 and 2 at 1208, on the ticks the other Sim starts an Animate. Each
+paused frame pushes the play's later notes and end back by a frame. Stepping each play by its own
+track's logged speed, one frame behind like the fast-forward (`LOCKSTEP_ANIM_TRACK_SPEED`; the
+play's track is the one whose start frame +52 is the frame before the play's first), 162 of 166
+runs return on the native tick. 121 return at a note, 31 at the end, 8 owed at once and 2 at once;
+food prep's fast-forward comes out of the same speeds. Only a2o-flamingo-kick's 4 at-once calls
+are left. The speeds are still read from the log: what pauses a Sim, and the fast-forward, are
+next to make native.
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object

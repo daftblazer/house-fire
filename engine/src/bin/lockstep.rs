@@ -878,6 +878,22 @@ fn main() -> ExitCode {
                     }
                 }
             }
+            if let Ok(want) = std::env::var("LOCKSTEP_ANIM_TRACK_STEPS") {
+                // (a track's steps whose place moves other than its usual step: the tracks
+                // set done at tick LOCKSTEP_ANIM_TRACK_STEPS)
+                let at: u32 = want.parse().unwrap_or(0);
+                for tr in log.tracks.iter().filter(|t| t.tick == at && t.done[0] == 0 && t.done[1] != 0).map(|t| t.track).collect::<BTreeSet<_>>() {
+                    let steps: Vec<_> = log.tracks.iter().filter(|t| t.track == tr && t.tick + 200 > at && t.tick <= at).collect();
+                    let usual = steps.iter().map(|t| ((t.place[1] - t.place[0]) * 100.0).round() as i32).fold(BTreeMap::<i32, usize>::new(), |mut m, d| { *m.entry(d).or_default() += 1; m });
+                    println!("  track {tr:08x}: steps x100 {usual:?}");
+                    for t in steps.iter().filter(|t| ((t.place[1] - t.place[0]) * 100.0).round() as i32 != usual.iter().max_by_key(|e| e.1).map_or(0, |e| *e.0)) {
+                        let same: Vec<_> = log.tracks.iter().filter(|u| u.frame == t.frame && u.track != t.track).collect();
+                        let moved = same.iter().filter(|u| u.place[1] != u.place[0]).count();
+                        let paused = same.iter().filter(|u| u.speeds[1] == 0.0).count();
+                        println!("    tick {} frame {} place {:.3}->{:.3} speeds {:?} ran {:?} (that frame's other tracks: {} moved, {} at speed 0, of {}; its controller's: {:?})", t.tick, t.frame, t.place[0], t.place[1], t.speeds, t.ran, moved, paused, same.len(), same.iter().filter(|u| u.controller == t.controller).map(|u| (u.track, u.speeds[1])).collect::<Vec<_>>());
+                    }
+                }
+            }
             if let Ok(want) = std::env::var("LOCKSTEP_ANIM_TRACKS_NEAR") {
                 for (name, first, end) in each.iter().filter(|e| e.0 == want) {
                     println!("  {name} {first}..{end}:");
@@ -978,6 +994,14 @@ fn main() -> ExitCode {
                     // per Sim: the counted events handed out, and whether its play is at its end
                     // owing more
                     let mut counted: BTreeMap<u32, (usize, bool)> = BTreeMap::new();
+                    let use_track_speed = std::env::var_os("LOCKSTEP_ANIM_TRACK_SPEED").is_some();
+                    let mut started: BTreeMap<u32, Vec<(u32, f32)>> = BTreeMap::new();
+                    let mut track_speed: BTreeMap<(u32, u32), f32> = BTreeMap::new();
+                    for t in &log.tracks {
+                        if track_speed.insert((t.track, t.frame), t.speeds[1].abs()).is_none() && t.ran[1] + 1 >= t.frame && t.ran[1] <= t.frame {
+                            started.entry(t.ran[1]).or_default().push((t.track, t.speeds[0]));
+                        }
+                    }
                     // the frames' ticks in fast-forward (the tracks stepping at 5: The Sims 2's
                     // SAnimator2::Update sets +252 from the game's speed; a frame every ~4 ticks)
                     let fast_ticks: BTreeSet<u32> = log.tracks.iter().filter(|t| t.speeds[1].abs() == 5.0).map(|t| t.tick).collect();
@@ -1076,12 +1100,21 @@ fn main() -> ExitCode {
                             Some(t) => gone(t),
                             None => last,
                         };
+                        // the play's track: one whose start frame (+52) is the play's first frame,
+                        // at the animation's rate
+                        let play_track = frames.get(k0).and_then(|f| started.get(&(f.0 - 1)).or(started.get(&f.0))).and_then(|v| v.iter().find(|(_, r)| *r == a.rate)).map(|e| e.0);
                         let mut place = 0.0f32;
                         let mut m = 0usize;
                         while frames.get(k0 + m + 1).is_some() {
                             // (the speed the frame before set: the animator's +252, read by the
                             // next frame's track step)
                             let speed = if fast_ticks.contains(&frames[k0 + m].1) { 5.0 } else { 1.0 };
+                            // (LOCKSTEP_ANIM_TRACK_SPEED: the play's own track's logged speed at
+                            // that frame instead: its Sim's pauses as well)
+                            let speed = match play_track.filter(|_| use_track_speed).and_then(|tr| track_speed.get(&(tr, frames[k0 + m].0))) {
+                                Some(&v) => v,
+                                None => speed,
+                            };
                             if place + step * speed > target + 1e-3 {
                                 break;
                             }
