@@ -2095,6 +2095,45 @@ fn main() -> ExitCode {
             }
             println!("room records set {} (with both objects {both}): the engine's words {same}", log.room_suns.len());
         }
+        "snapword" => {
+            // words of a memory snapshot (the observer's mem-<tick>.bin), as hex and float
+            let (Some(path), Some(at)) = (args.get(3), args.get(4).and_then(|a| u32::from_str_radix(a.trim_start_matches("0x"), 16).ok())) else {
+                println!("usage: assets ISO snapword SNAPSHOT ADDR [COUNT]");
+                return ExitCode::FAILURE;
+            };
+            let n: u32 = args.get(5).and_then(|v| v.parse().ok()).unwrap_or(8);
+            let m = std::fs::read(path).unwrap_or_default();
+            for k in 0..n {
+                let a = at.wrapping_add(4 * k);
+                if let Some(w) = snap_word(&m, a) {
+                    println!("  {a:08x}: {w:08x} {}", f32::from_bits(w));
+                }
+            }
+        }
+        "snapcheck" => {
+            // each snapshot against the log: the clock's globals (the log's '4' place) as the
+            // clock of the log's '5' records around its tick, and the day/night table as theirs
+            let (Some(log), Some(dir)) = (args.get(3).and_then(|p| read_log(p)), args.get(4)) else {
+                println!("usage: assets ISO snapcheck LOG SNAPDIR");
+                return ExitCode::FAILURE;
+            };
+            let Some(&at) = log.clock_places.first() else {
+                println!("the log has no clock place ('4')");
+                return ExitCode::FAILURE;
+            };
+            let mut ticks: Vec<u32> = std::fs::read_dir(dir).into_iter().flatten().flatten().filter_map(|e| e.file_name().to_str()?.strip_prefix("mem-")?.strip_suffix(".bin")?.parse().ok()).collect();
+            ticks.sort();
+            for t in ticks {
+                let m = std::fs::read(format!("{dir}/mem-{t}.bin")).unwrap_or_default();
+                let half = |a: u32| snap_word(&m, a & !3).map(|w| if a & 2 == 0 { (w >> 16) as i16 } else { w as i16 });
+                let clock = (half(at), half(at + 10), half(at + 12));
+                let near: Vec<(u32, (i16, i16, i16))> = log.room_ambients.iter().filter(|a| a[0] + 1 >= t && a[0] <= t).map(|a| (a[0], (a[6] as i16, a[7] as i16, a[8] as i16))).collect();
+                let matches = near.iter().any(|(_, c)| (Some(c.0), Some(c.1), Some(c.2)) == clock);
+                let table = (snap_word(&m, 0x8034_0D5C), snap_word(&m, 0x8034_0D60));
+                let logged = log.room_ambients.first().map(|a| (Some(a[4]), Some(a[5])));
+                println!("tick {t}: clock {clock:?}, the log's around it {:?}: {}; day/night table as logged: {}", near.first().map(|n| n.1), if near.is_empty() { "no record to compare" } else if matches { "same" } else { "DIFFERENT" }, Some(table) == logged);
+            }
+        }
         "roomambient" => {
             // the inside rooms' ambient factors ('5') from their logged inputs and window
             // brightness ('6', the call made inside), and the brightness values seen (study)
@@ -3072,4 +3111,10 @@ fn main() -> ExitCode {
         }
     }
     ExitCode::SUCCESS
+}
+
+/// A word of a memory snapshot (24 MiB from 0x80000000, the console's byte order).
+fn snap_word(m: &[u8], a: u32) -> Option<u32> {
+    let o = a.checked_sub(0x8000_0000)? as usize;
+    Some(u32::from_be_bytes(m.get(o..o + 4)?.try_into().ok()?))
 }

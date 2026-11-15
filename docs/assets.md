@@ -1007,3 +1007,13 @@ threshold (0.1), and marks the object (+136) past a larger one (0.25). Both take
 The observer's '5' and '6' records hold each call's inputs and result. From the logged inputs,
 `assets roomambient` gives all 4,000 calls bit for bit at home and at the club. The window
 counts behind the brightness come next, from the engine's own room tiles.
+
+Memory snapshots (iteration 92). The observer writes the whole 24 MiB of main memory before the
+simulation of chosen ticks: `BUSTIN_TREE_SNAP=1,100,500` (the ticks) and
+`BUSTIN_TREE_SNAP_DIR=DIR`, giving `DIR/mem-<tick>.bin` in the console's byte order. The engine
+reads them offline: `assets snapword SNAPSHOT ADDR [COUNT]` for words, and
+`assets snapcheck LOG DIR` to check each snapshot against the log. Home's ten (in
+work/snap/home, ticks 1 to 6,000) hold the clock's globals as the log's '5' records wherever the
+log has them (ticks 1, 100, 500 and 1,000), and the day/night table (0.3, 0.2) as logged. A run
+with ten snapshots came out 30 steps short of the full log, so snapshot runs give data only. The
+steps are counted from the log kept beside them.
