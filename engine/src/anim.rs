@@ -153,6 +153,129 @@ impl Loads {
     }
 }
 
+/// A note of an animation (the AnimRef row's, `docs/primitives.md` "Animate"): its time in ms,
+/// its type (6 the script's events; 1 steps, 5 sounds) and its value.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Note {
+    pub ms: u32,
+    pub kind: u32,
+    pub value: i32,
+}
+
+/// The notes of every animation, by its id, from the quick data's AnimRef rows: (id, length in
+/// ms, a pointer to the notes, their count in the word before it).
+pub fn notes(img: &crate::quickdata::Image) -> std::collections::BTreeMap<u32, Vec<Note>> {
+    img.rows("AnimRef")
+        .filter_map(|r| {
+            let id = img.u32(r)?;
+            let p = img.ptr(r + 8)?;
+            let n = (img.u32(p.checked_sub(4)?)? as usize).min(64);
+            let list = (0..n).map(|k| Some(Note { ms: img.u32(p + 12 * k)?, kind: img.u32(p + 12 * k + 4)?, value: img.u32(p + 12 * k + 8)? as i32 })).collect::<Option<Vec<_>>>()?;
+            Some((id, list))
+        })
+        .collect()
+}
+
+/// What the Animate primitive gets when it asks its play (The Sims 2's `SAnimator2::TryAnimate`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Poll {
+    /// Still playing: the primitive waits a tick.
+    Pending,
+    /// An event: the primitive returns false with this value (into a local with flag 0x20).
+    Event(i32),
+    /// Played to its end with every counted event handed out: the primitive returns true.
+    Done,
+}
+
+/// One play of an animation by a Sim, frame by frame. Its place runs from 0 in the play's
+/// direction (frames of the animation): each frame from the first after the step that starts it
+/// reaches 0.033 s × the animation's rate × that frame's speed further (1, 5 in fast-forward, 0
+/// on a load miss's frames). A note is given once a frame reaches past it. Played backward, the
+/// first frame stands still.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Play {
+    /// The animation's last frame (its frames − 1).
+    last: f32,
+    place: f32,
+    still_first: bool,
+    /// The script's notes (type 6): their places along the play and their values, in order.
+    notes: Vec<(f32, i32)>,
+    next: usize,
+    /// The counted events (values 0 to 99) the call asks for (operand byte 6) and those given.
+    wanted: i32,
+    counted: i32,
+    backward: bool,
+    done: bool,
+}
+
+impl Play {
+    /// A play of `anim` with its `notes` (all types; only type 6 are the script's), `backward`
+    /// (operand byte 5's 0x02) and `wanted` counted events (operand byte 6).
+    pub fn new(anim: &Anim, notes: &[Note], backward: bool, wanted: i32) -> Play {
+        let last = anim.frames as f32 - 1.0;
+        let notes = notes
+            .iter()
+            .filter(|n| n.kind == 6)
+            .map(|n| (n.ms as f32 * anim.rate / 1000.0, n.value))
+            .filter(|n| n.0 <= last)
+            .map(|(t, v)| (if backward { last - t } else { t }, v))
+            .collect();
+        Play { last, place: 0.0, still_first: backward, notes, next: 0, wanted, counted: 0, backward, done: false }
+    }
+
+    /// A frame: the place moves by `step` (the frame step × the rate × the speed).
+    pub fn frame(&mut self, step: f32) {
+        if self.still_first {
+            self.still_first = false;
+        } else {
+            self.place += step;
+        }
+    }
+
+    /// Whether the play has been asked to its end (true given).
+    pub fn finished(&self) -> bool {
+        self.done
+    }
+
+    fn expected(&self) -> i32 {
+        if self.backward { self.wanted - self.counted - 1 } else { self.counted }
+    }
+
+    /// The primitive's question this tick. A note passed that is over 99 is an event; one of 0
+    /// to 99 only when it is the next counted event (else it is passed over). Past the end, the
+    /// counted events still owed come one a call, then done.
+    pub fn poll(&mut self) -> Poll {
+        const EPS: f32 = 1e-3;
+        if self.done {
+            return Poll::Done;
+        }
+        while let Some(&(at, value)) = self.notes.get(self.next) {
+            if self.place <= at + EPS {
+                break;
+            }
+            self.next += 1;
+            if value > 99 {
+                return Poll::Event(value);
+            }
+            let e = self.expected();
+            if (0..self.wanted).contains(&e) && value == e {
+                self.counted += 1;
+                return Poll::Event(value);
+            }
+        }
+        if self.next < self.notes.len() || self.place <= self.last + EPS {
+            return Poll::Pending;
+        }
+        if self.counted < self.wanted {
+            let e = self.expected();
+            self.counted += 1;
+            return Poll::Event(e);
+        }
+        self.done = true;
+        Poll::Done
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -189,6 +312,45 @@ mod tests {
         assert_eq!(a.seconds(), 1.0);
         e.push(0);
         assert_eq!(read(&e), None);
+    }
+
+    fn anim(frames: u32, rate: f32) -> Anim {
+        Anim { name: String::new(), frames, first: [0.0; 3], second: [0.0; 3], nodes: vec![], word: 0, constants: vec![], bits: 0, bit_words: vec![], rate, floats: [0.0; 2], byte: 0, words: [0; 4], flags: [0; 2], events: vec![] }
+    }
+
+    #[test]
+    fn a_play_gives_its_notes_then_its_end() {
+        // 31 frames at 30: notes at 100 ms (frame 3, value 101), 500 ms (15, counted 0) and
+        // 600 ms (18, counted 2, not the next one: passed over)
+        let notes = [Note { ms: 100, kind: 6, value: 101 }, Note { ms: 500, kind: 6, value: 0 }, Note { ms: 600, kind: 6, value: 2 }, Note { ms: 200, kind: 1, value: 7 }];
+        let mut p = Play::new(&anim(31, 30.0), &notes, false, 2);
+        let mut seen = vec![];
+        for f in 0..40 {
+            match p.poll() {
+                Poll::Pending => {}
+                e => seen.push((f, e)),
+            }
+            p.frame(1.0);
+        }
+        // the note at 3 seen after the frame that passes it; the end (30) passed at frame 31,
+        // the counted event 1 owed at once then, and done
+        assert_eq!(seen[..4], [(4, Poll::Event(101)), (16, Poll::Event(0)), (31, Poll::Event(1)), (32, Poll::Done)]);
+        assert!(p.finished());
+    }
+
+    #[test]
+    fn a_backward_play_stands_still_its_first_frame() {
+        let mut p = Play::new(&anim(4, 30.0), &[], true, 0);
+        let mut at = None;
+        for f in 0..10 {
+            if p.poll() == Poll::Done {
+                at = Some(f);
+                break;
+            }
+            p.frame(1.0);
+        }
+        // 3 frames to pass the last (3) after a still one
+        assert_eq!(at, Some(5));
     }
 
     #[test]

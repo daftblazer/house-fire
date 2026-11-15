@@ -1364,6 +1364,84 @@ fn main() -> ExitCode {
                         play.insert(sim, (name.clone(), k0, passed_after, if next.is_some() || at_end { *end } else { u32::MAX }));
                     }
                     println!("animate runs with the notes: {t2:?}");
+                    // (LOCKSTEP_ANIM_ENGINE: the same runs through the engine's `anim::Play`, frame
+                    // by frame: each Sim's play stepped by the frames before each of its Animate
+                    // steps, asked at each step; a play goes on with the next run of the same
+                    // animation until it has given true)
+                    if std::env::var_os("LOCKSTEP_ANIM_ENGINE").is_some() {
+                        let all_notes = housefire::arc::entries(&quick)
+                            .unwrap_or_default()
+                            .into_iter()
+                            .find(|e| e.name == "SimsObjects")
+                            .and_then(|e| housefire::quickdata::Image::read(housefire::arc::bytes(&quick, &e)))
+                            .map(|img| housefire::anim::notes(&img))
+                            .unwrap_or_default();
+                        let mut loads = housefire::anim::Loads::with_sets(&refs, &ids);
+                        // per Sim: (animation, its play, the next frame to step, its rate)
+                        let mut plays: BTreeMap<u32, (String, housefire::anim::Play, usize, f32)> = BTreeMap::new();
+                        // a frame's speed: its own tick's (the place a frame reaches counts its step)
+                        let speed_after = |sim: u32, i: usize| -> f32 {
+                            let Some(prev) = frames.get(i) else { return 1.0 };
+                            if paused_at.get(&prev.1).is_some_and(|p| p.contains(&sim)) {
+                                0.0
+                            } else if fast_ticks.contains(&prev.1) {
+                                5.0
+                            } else {
+                                1.0
+                            }
+                        };
+                        let advance = |sim: u32, e: &mut (String, housefire::anim::Play, usize, f32), before: usize| {
+                            while let Some(f) = frames.get(e.2).filter(|f| f.2 <= before) {
+                                let _ = f;
+                                e.1.frame(housefire::routing::WALK_FRAME * e.3 * speed_after(sim, e.2));
+                                e.2 += 1;
+                            }
+                        };
+                        let mut order: Vec<usize> = (0..each.len()).collect();
+                        order.sort_by_key(|&k| (each[k].1, each[k].2));
+                        let mut tally: BTreeMap<&str, usize> = BTreeMap::new();
+                        for k in order {
+                            let (name, first, end) = &each[k];
+                            let sim = each_sim[k];
+                            let (Some(a), Some(steps)) = (by_name.get(name), steps_of.get(&(name.clone(), *first))) else { continue };
+                            let Some(id) = by_id.iter().find(|(_, x)| x.name == a.name).map(|e| *e.0) else { continue };
+                            if first_step.get(&(name.clone(), *first)).is_some_and(|i| not_found.contains(i)) {
+                                *tally.entry(if end == first { "native" } else { "NOT native" }).or_default() += 1;
+                                continue;
+                            }
+                            let o = operand_of.get(&(name.clone(), *first)).copied().unwrap_or_default();
+                            let mut seen = BTreeSet::new();
+                            let mut predicted = None;
+                            for &(t, idx) in steps.iter().filter(|(t, _)| seen.insert(*t)) {
+                                if let Some(e) = plays.get_mut(&sim) {
+                                    advance(sim, e, idx);
+                                }
+                                if plays.get(&sim).is_some_and(|e| e.0 != *name || e.1.finished()) {
+                                    plays.remove(&sim);
+                                }
+                                if !plays.contains_key(&sim) && loads.ask(id, t) {
+                                    let play = housefire::anim::Play::new(a, all_notes.get(&id).map_or(&[][..], |v| v.as_slice()), o[5] & 2 != 0, o[6] as i8 as i32);
+                                    let next = frames.iter().position(|f| f.2 > idx).unwrap_or(frames.len());
+                                    plays.insert(sim, (name.clone(), play, next, a.rate));
+                                }
+                                if std::env::var("LOCKSTEP_ANIM_ENGINE_TRACE").ok().is_some_and(|w| w == format!("{name}:{first}")) {
+                                    println!("    t {t} step {idx}: play {:?}", plays.get(&sim).map(|e| (e.2, format!("{:?}", e.1))));
+                                }
+                                if let Some(e) = plays.get_mut(&sim)
+                                    && e.1.poll() != housefire::anim::Poll::Pending
+                                {
+                                    predicted = Some(t);
+                                    break;
+                                }
+                            }
+                            let ok = predicted == Some(*end);
+                            *tally.entry(if ok { "native" } else { "NOT native" }).or_default() += 1;
+                            if !ok && std::env::var_os("LOCKSTEP_ANIM_NOTES_EACH").is_some() {
+                                println!("  engine run {name} {first}..{end} sim {sim:x}: {predicted:?}");
+                            }
+                        }
+                        println!("animate runs through anim::Play: {tally:?}");
+                    }
                     for (k, v) in &no_note_by {
                         println!("  early, no note due, by: {} {} {}: {v}", k.0, k.1, k.2);
                     }

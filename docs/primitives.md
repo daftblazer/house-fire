@@ -485,6 +485,12 @@ party controller calls "CT - Party - Override" at 2047. What pauses the game is 
 the steps; the engine runs the log's ticks as they are. No Animate runs inside a pause, so
 the animation clock needs only the speed of the ticks that run: 1, 5 with R held, and 0 for a
 load miss's Sims.
+Iteration 141: the model is in the engine, `anim::Play` (with `anim::notes` reading the type-6
+notes from the quick data's AnimRef rows). A play is stepped frame by frame from the first
+frame after the step that starts it, each frame by 0.033 s × the rate × that frame's own speed.
+`poll()` gives Pending, Event(value) or Done: notes over 99, the next counted event, the owed
+counted events past the end. `LOCKSTEP_ANIM_ENGINE` drives each Sim's play through it on the
+log's frames: 167 of 167 runs native on home-a10.log and home-a11.log.
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object
