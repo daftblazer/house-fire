@@ -4,11 +4,8 @@
 //! (three floats), a rotation (a quaternion, four), a flag byte and two 4x4 matrices; then a
 //! plane's name and five floats.
 
+use crate::arc::be32;
 use crate::anim::fma32 as madd;
-
-fn be32(b: &[u8], p: usize) -> Option<u32> {
-    Some(u32::from_be_bytes(b.get(p..p + 4)?.try_into().ok()?))
-}
 
 fn f32s<const N: usize>(b: &[u8], p: usize) -> Option<[f32; N]> {
     let mut out = [0.0; N];
@@ -291,7 +288,14 @@ fn local(node: &CharNode, st: &NodeState, how: Build) -> Mat4 {
 /// without `POSED` is its parent's as it is. Last, a controller scale other than 1 scales every
 /// matrix's 3 x 3. The original then writes each matrix's translation over its state's.
 pub fn bone_matrices(nodes: &[CharNode], states: &[NodeState], root: &Mat4, mode: PoseMode) -> Vec<Mat4> {
-    let mut out: Vec<Mat4> = Vec::with_capacity(nodes.len());
+    let mut out = Vec::with_capacity(nodes.len());
+    bone_matrices_into(&mut out, nodes, states, root, mode);
+    out
+}
+
+/// `bone_matrices` into `out` (cleared first), so a caller posing every tick keeps one buffer.
+pub fn bone_matrices_into(out: &mut Vec<Mat4>, nodes: &[CharNode], states: &[NodeState], root: &Mat4, mode: PoseMode) {
+    out.clear();
     for (i, (node, st)) in nodes.iter().zip(states).enumerate() {
         let parent = if i == 0 { root } else { &out[node.parent as usize] };
         let how = build(node, st, mode);
@@ -299,15 +303,10 @@ pub fn bone_matrices(nodes: &[CharNode], states: &[NodeState], root: &Mat4, mode
         out.push(m);
     }
     if mode.scale != 1.0 {
-        for m in &mut out {
-            for row in 0..3 {
-                for c in 0..3 {
-                    m[row * 4 + c] *= mode.scale;
-                }
-            }
+        for m in out.iter_mut() {
+            scale_rows(m, [mode.scale; 3]);
         }
     }
-    out
 }
 
 #[cfg(test)]

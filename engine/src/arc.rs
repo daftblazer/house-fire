@@ -18,8 +18,14 @@ pub struct Entry {
     pub words: [u32; 2],
 }
 
-fn be32(b: &[u8], p: usize) -> Option<u32> {
+/// The big-endian word at byte `p`, if `b` has it (the disc's formats are big-endian).
+pub(crate) fn be32(b: &[u8], p: usize) -> Option<u32> {
     Some(u32::from_be_bytes(b.get(p..p + 4)?.try_into().ok()?))
+}
+
+/// The big-endian half word at byte `p`, if `b` has it.
+pub(crate) fn be16(b: &[u8], p: usize) -> Option<u16> {
+    Some(u16::from_be_bytes(b.get(p..p + 2)?.try_into().ok()?))
 }
 
 fn entries_at(data: &[u8], mut p: usize, n: usize) -> Option<Vec<Entry>> {

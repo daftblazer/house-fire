@@ -2,6 +2,8 @@
 //! far for the first sub-model of a record, of the two kinds known. The rest of a record (its
 //! tail: strip indices, bounds, further sub-models) is kept as bytes until it is read.
 
+use crate::arc::{be16, be32};
+
 /// The arrays a sub-model has, each as the record keeps it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SubModel {
@@ -52,10 +54,6 @@ pub struct Record {
     pub scale: f32,
     pub nodes: Vec<Node>,
     pub bounds: Vec<u8>,
-}
-
-fn be32(b: &[u8], p: usize) -> Option<u32> {
-    Some(u32::from_be_bytes(b.get(p..p + 4)?.try_into().ok()?))
 }
 
 /// `size` bytes at `*p`, moving `*p` past them.
@@ -192,10 +190,6 @@ pub struct Model {
     pub first: SubModel,
     /// Where the bytes after the first sub-model's arrays begin.
     pub tail: usize,
-}
-
-fn be16(b: &[u8], p: usize) -> Option<u16> {
-    Some(u16::from_be_bytes(b.get(p..p + 2)?.try_into().ok()?))
 }
 
 /// Reads a record's head and first sub-model; `None` if it is not of a shape known.

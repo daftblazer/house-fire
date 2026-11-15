@@ -2,6 +2,8 @@
 //! material by name, its layers each naming its texture. A sub-model names its shader, and a
 //! layer its texture, by the CRC-32 of the name in capitals (`name_hash`).
 
+use crate::arc::be32;
+
 /// A layer as the shader keeps it: its texture (by name hash), two words, seven bytes (what the
 /// device's SetMaterialStages reads at +0x10: mode, blend, blend-by, enabled, factor, unlit, uv
 /// source) and a float.
@@ -22,10 +24,6 @@ pub struct Shader {
     pub head: Vec<u8>,
     pub layers: Vec<Layer>,
     pub tail: Vec<u8>,
-}
-
-fn be32(b: &[u8], p: usize) -> Option<u32> {
-    Some(u32::from_be_bytes(b.get(p..p + 4)?.try_into().ok()?))
 }
 
 impl Shader {

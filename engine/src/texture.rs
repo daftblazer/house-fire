@@ -2,6 +2,8 @@
 //! 20-byte header and the texels, mip levels and palette after it (`docs/assets.md`,
 //! "Textures"). Read here as the disc has them; decoding the texels is the renderer's.
 
+use crate::arc::be16;
+
 /// How a texture's texels are stored (the header's first byte).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -53,10 +55,6 @@ pub struct Texture {
     pub texels: (usize, usize),
     /// The palette's offset and its entry count (4 bytes an entry), for the palette kinds.
     pub palette: Option<(usize, usize)>,
-}
-
-fn be16(b: &[u8], p: usize) -> Option<u16> {
-    Some(u16::from_be_bytes(b.get(p..p + 2)?.try_into().ok()?))
 }
 
 /// The bytes of a level `w` by `h` texels of `bits` each.
