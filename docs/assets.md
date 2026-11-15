@@ -1693,3 +1693,13 @@ blend flag is left over in memory until its first window step sets it. With them
 states of the 39,999 poses on home-a28.log come out to the bit: 474,452 copies, 22,587 blends,
 1,354 layers and 120,662 at weight 0 (`LOCKSTEP_ANIM_POSES`). The weights come from the track's
 SetWeight (fn_80159D9C, clamped) and a mask's array (fn_80162F7C).
+Parts on their bones (iterations 188-190, `draw.rs`, `LOCKSTEP_ANIM_DRAWS`, home-a29.log). Of
+18,809 world matrices drawn on ticks 1000-1014, 13,590 are a bone matrix of their tick to the
+bit. A strip's world matrix is the one logged after it (the strip is recorded when its command
+starts). A part's bone is its node word when it is 0 or more, else its batch's first matrix slot
+(slot s is bone s); a batch without slots is a one-piece mesh drawn at its controller's bone 0.
+All 3,296 tied parts are on the bone their matrix is (0 different). 2,780 batches are rigid (one
+slot, one world matrix, a bone's); 642 are blended (3 or 4 slots), with no world matrix: how
+their matrices are loaded is not in the log, as the 'p' cap (20,000) is spent on views and
+worlds. The Sims' parts at tick 1000 include the bodies, heads' parts (eyes on bone 15), shoes,
+jewellery and shadow_adult.
