@@ -1336,6 +1336,31 @@ fn main() -> ExitCode {
                     };
                     let on = |tick: u32| log.tracks.iter().any(|t| t.controller == ctl && t.head[1] == id && t.tick == tick);
                     let span = (*first..=*end).filter(|&t| on(t)).count() as u32;
+                    // each tick of the run without its animation on the controller, by reason
+                    let stepped = |tick: u32| log.tracks.iter().any(|t| t.controller == ctl && t.tick == tick);
+                    let mut was_done = false;
+                    for tick in *first..=*end {
+                        if on(tick) {
+                            was_done = log.tracks.iter().filter(|t| t.controller == ctl && t.head[1] == id && t.tick == tick).any(|t| t.done[1] != 0);
+                            continue;
+                        }
+                        let why = if !stepped(tick) {
+                            "the controller not stepped that tick"
+                        } else if tick == *first && log.loaded.iter().any(|l| l.id == id && l.tick == tick && !l.loaded) {
+                            "the first tick, its animation not loaded yet"
+                        } else if tick == *end && was_done {
+                            "the end tick, the play done the tick before"
+                        } else {
+                            "UNEXPLAINED"
+                        };
+                        *by_ctl.entry(format!("  missing tick: {why}")).or_default() += 1;
+                    }
+                    if span != end - first + 1 && std::env::var_os("LOCKSTEP_ANIM_RUNS_PARTIAL").is_some() {
+                        let marks: String = (first.saturating_sub(3)..=end + 3).map(|t| if t == *first { '[' } else if !on(t) { '.' } else { '#' }).collect();
+                        let others: BTreeSet<String> = log.tracks.iter().filter(|t| t.controller == ctl && t.tick == *first).filter_map(|t| by_id.get(&t.head[1]).map(|a| a.name.clone())).collect();
+                        let loaded_ask = log.loaded.iter().filter(|l| l.id == id && l.tick + 3 >= *first && l.tick <= *first + 1).map(|l| (l.tick, l.loaded)).collect::<Vec<_>>();
+                        println!("  partial {name} {first}..{end}: ticks {}-{}: {marks}; on its controller at first {others:?}; loaded asks {loaded_ask:?}", first.saturating_sub(3), end + 3);
+                    }
                     *by_ctl.entry(format!("first tick {}, last {}, ticks with it {}", on(*first) || on(first + 1), on(*end), if span == end - first + 1 { "all".to_string() } else if span == 0 { "none".to_string() } else { "some".to_string() })).or_default() += 1;
                 }
                 println!("animate runs on their Sim's controller: {by_ctl:?}");

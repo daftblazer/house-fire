@@ -1424,3 +1424,11 @@ found for 22 of 54 chains. Track slots change across a chain, so a play is known
 (controller, animation), not by track. On home-a17.log, both Sims keep one controller. For 128
 of 152 runs, that controller plays the run's animation on every tick of the run. The other 24
 differ at the run's first or last tick (load waits and the end tick), which is still to read.
+The 24 runs with ticks off their play (iteration 161). Every tick of a run without the run's
+animation on its Sim's controller is explained:
+- 126 ticks: the controller was not stepped at all that tick. This covers a first tick waiting
+  on the animation's load (the whole controller waits) and spans where it steps every fourth
+  tick (414 to 573).
+- 4 ticks: the run's last tick, the play done the tick before.
+So for all 152 runs, the run's play is the controller's track with its animation whenever the
+controller is stepped. When a controller is stepped is the next question.
