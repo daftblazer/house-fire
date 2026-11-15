@@ -1582,3 +1582,11 @@ predicts all 17,198 '#' records:
 
 So a Sim stops on another Sim's load miss unless it is exempt. That explains the dips of both
 Sims and of one.
+What the stop rule reads (iteration 176). On home-a22.log the pending count (r13 - 31628) is 1
+on exactly the 13 Animate load-miss ticks (1, 18, 208, 994, 1007, 1208, 1418, 1553, 1618,
+1632, 1700, 5013, 5026) and 0 otherwise. The animator's +16 and +28 are its mode:
+- +16 = 1 while routing, with +28 1 (start: turns), 2 (walking, 9,000 records) and 3 (stop);
+- +16 = 0 with +28 = 4 while playing Animate actions and idles (7,902 records);
+- +28 = 5 is rare (2 records).
+So the rule is: on a tick an Animate's load misses, every Sim's animator stops except the ones
+walking a route. The engine knows both: its Animate's load waits and its routing state.

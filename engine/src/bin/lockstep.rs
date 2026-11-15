@@ -1732,6 +1732,19 @@ fn main() -> ExitCode {
                         *rule.entry(key).or_default() += 1;
                     }
                     println!("  speed updates by the second path's inputs: {rule:?}");
+                    // the pending count against the load misses, and the animator's +16/+28 against
+                    // what its Sim is playing (the Sim's latest new play before the record)
+                    let pend: BTreeMap<u32, i32> = log.speeds.iter().filter(|sp| sp.state[3] as i32 > 0).map(|sp| (sp.tick, sp.state[3] as i32)).collect();
+                    let miss_ticks: BTreeSet<u32> = log.loaded.iter().filter(|l| !l.loaded).map(|l| l.tick).collect();
+                    println!("  pending > 0 on ticks {:?}; load-miss ticks {:?}", pend.iter().take(20).collect::<Vec<_>>(), miss_ticks);
+                    let mut st: BTreeMap<String, usize> = BTreeMap::new();
+                    for sp in log.speeds.iter().filter(|sp| sp.tick != 0) {
+                        let c = sp.owner.wrapping_add(0x350);
+                        let playing = log.tracks.iter().rev().find(|t| t.controller == c && t.tick <= sp.tick && t.tick + 2 >= sp.tick && t.head[1] != 0 && by_id.get(&t.head[1]).is_some_and(|a| a.name != "happyFace" && !a.name.contains("carry")))
+                            .and_then(|t| by_id.get(&t.head[1])).map(|a| { let n = a.name.as_str(); if n.contains("walk") { "walk" } else if n.contains("turn") { "turn" } else if n.contains("idle") || n.contains("standing-loop") || n.contains("sit-loop") { "idle" } else { "action" } }).unwrap_or("none");
+                        *st.entry(format!("+16 {} +28 {} playing {playing}", sp.state[4] as i32, sp.state[5] as i32)).or_default() += 1;
+                    }
+                    println!("  the animators' +16/+28 by play: {st:?}");
                     println!("  dips to 0: {} ticks; with a load miss that tick: {}; with a miss tied to a Sim's run: {}; dip ticks without a miss {:?}", dips.len(), dips.intersection(&any_miss).count(), dips.intersection(&by_run).count(), dips.difference(&any_miss).take(20).collect::<Vec<_>>());
                 }
                 let mut game_tick: BTreeMap<u32, Vec<f32>> = BTreeMap::new(); // tick -> its frames' game speeds in order
