@@ -917,8 +917,8 @@ fn main() -> ExitCode {
                     }
                 }
                 println!("animate runs natively (the load, the frames, the tick after): {tally:?}");
-                // (LOCKSTEP_ANIM_NOTES: event ends. A run with operand byte 5's 0x20 ends on the
-                // tick after the frame whose place passes its play's next note (the AnimRef row's
+                // (LOCKSTEP_ANIM_NOTES: event ends. A run ends on the tick after the frame whose
+                // place passes its play's next note (the AnimRef row's
                 // notes, ms); the script's next Animate of the same animation from that tick goes
                 // on with the same play)
                 if std::env::var_os("LOCKSTEP_ANIM_NOTES").is_some() {
@@ -944,6 +944,8 @@ fn main() -> ExitCode {
                     let mut order: Vec<usize> = (0..each.len()).collect();
                     order.sort_by_key(|&k| each[k].1);
                     let mut t2: BTreeMap<String, usize> = BTreeMap::new();
+                    let mut no_note: BTreeMap<(u8, &str, u8, i16, String), usize> = BTreeMap::new();
+                    let mut no_note_by: BTreeMap<(String, String, &str), usize> = BTreeMap::new();
                     for k in order {
                         let (name, first, end) = &each[k];
                         let sim = each_sim[k];
@@ -964,11 +966,14 @@ fn main() -> ExitCode {
                             let Some(k0) = frames.iter().position(|f| f.2 > at) else { continue };
                             (k0, 0)
                         };
-                        let list = notes.get(&id).cloned().unwrap_or_default();
+                        // the script's notes: type 6 (type 1, 5 and the rest are other notes:
+                        // the approach's steps, sounds)
+                        let list: Vec<(u32, u32, i32)> = notes.get(&id).cloned().unwrap_or_default().into_iter().filter(|n| n.1 == 6).collect();
                         let last = a.frames as f32 - 1.0;
                         // the frame (from the play's first) whose place passes the next note, if
                         // this run waits for notes
-                        let next = if flags & 0x20 != 0 { list.get(passed).map(|n| n.0 as f32 * a.rate / 1000.0).filter(|&t| t <= last) } else { None };
+                        // (every note ends the run, whatever the flags: iteration 128)
+                        let next = if !list.is_empty() { list.get(passed).map(|n| n.0 as f32 * a.rate / 1000.0).filter(|&t| t <= last) } else { None };
                         // forward the place runs 0 → last; backward (0x02) last → 0 after a still
                         // first frame
                         let backward = flags & 2 != 0;
@@ -988,10 +993,28 @@ fn main() -> ExitCode {
                         if predicted != *end && next.is_some() && std::env::var_os("LOCKSTEP_ANIM_NOTES_EACH").is_some() {
                             println!("  note end {name} {first}..{end} (note {passed}, place {:?}): native {predicted}", next);
                         }
+                        if predicted > *end && end != first {
+                            // an early end with no note due: its flags, branch and local 0, and
+                            // whether the next of the Sim's steps (after the run) is in another tree
+                            let last_i = steps.last().map(|e| e.1).unwrap_or(0);
+                            let ls = &log.steps[last_i];
+                            let node = step_object[last_i].and_then(|o| lib.tree(Some(o), ls.tree)).and_then(|t| lib.tree_at(t).nodes.get(ls.node as usize)).copied();
+                            let branch = node.map_or("?", |nd| if ls.after == nd.true_target as u16 { "true" } else if ls.after == nd.false_target as u16 { "false" } else { "other" });
+                            let next_same_sim = log.steps[last_i + 1..].iter().find(|x| x.sim == sim);
+                            let after = next_same_sim.map_or("none".to_string(), |x| if x.frame == ls.frame && x.tree == ls.tree { "the same tree".into() } else if x.frame < ls.frame { "a popped frame".into() } else { format!("frame {} (was {})", x.frame, ls.frame) });
+                            *no_note_by.entry((name.clone(), format!("{:02x?}", operand_of.get(&(name.clone(), *first)).copied().unwrap_or_default()), branch)).or_default() += 1;
+                            *no_note.entry((flags, branch, ls.result, ls.locals_after.first().copied().unwrap_or(-1), if after.starts_with("frame") { "another frame".to_string() } else { after })).or_default() += 1;
+                        }
                         *t2.entry(key).or_default() += 1;
                         play.insert(sim, (name.clone(), k0, passed + usize::from(next.is_some()), if next.is_some() { *end } else { u32::MAX }));
                     }
                     println!("animate runs with the notes: {t2:?}");
+                    for (k, v) in &no_note_by {
+                        println!("  early, no note due, by: {} {} {}: {v}", k.0, k.1, k.2);
+                    }
+                    for (k, v) in &no_note {
+                        println!("  early, no note due: flags {:02x}, {}, result {}, local0 {}, then {}: {v}", k.0, k.1, k.2, k.3, k.4);
+                    }
                 }
                 if std::env::var_os("LOCKSTEP_ANIM_EARLY").is_some() {
                     for ((name, flags, branch, l0), played) in &early {

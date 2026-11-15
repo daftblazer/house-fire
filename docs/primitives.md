@@ -358,6 +358,14 @@ a2o-stove-cook's last note (6,100 ms, 366 frames, near its 418-frame end), two t
 runs left to their end, 21 return on the native tick, 1 later, and 70 end earlier with no note
 due (an interruption, or other flags: the fridge's 0x11 ends with 62 in local 0). 14 end on
 their first tick.
+Iteration 128: the flags do not choose the notes; the note type does. Every type-6 note ends a
+run, whatever byte 5 holds. a2o-counter-foodprep's 12 notes (value 100) end its 0x00 runs, and
+a2o-fridge-open/close's notes end their 0x00 and 0x11 runs. Types 1 (a2o-approach: −1, 1, −2, 2,
+its steps) and 5 (a2o-flamingo-kick: pointers, sounds) end nothing. With that, of 165 runs, 92 end
+at a note on the native tick (7 later, 22 earlier), 27 run to the end on it (1 later, 3 earlier),
+and 2 of 14 that end at once. The misses gather in a2o-counter-foodprep's second half (notes
+3 to 11, predicted about 110 ticks late: its play there seems to start at another frame) and in
+a2o-stove-cook's runs that end at once (tick 1096).
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object
