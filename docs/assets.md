@@ -1157,3 +1157,16 @@ Every inside record's factor is one the logged room ambient ('5') gave by then. 
 inside chain is the engine's: clock, day/night blend, the room walk's lists, the openings,
 brightness, and the record. (club-l.log, recorded in iteration 91, holds a single '3' call
 and no '2' records; club-rooms.log holds them all.)
+
+The floor groups' colours from the room records (iteration 104, `assets floorchain`). A room
+id's light record, which Light_RoomTriples reads at the light state + id x 80 + 0x5018, is the
+'2' record that Light_RoomSun writes (home's light state at 0x80F33838, the club's at
+0x80F35248, found by pairing records by value). Taking each room id's last '2' record before the
+call, through `room_triples`:
+- the 'a' records: home's 4,000 and the club's 4,000 (club-rooms.log), the same record and
+  triples bit for bit;
+- the relit groups' 'b' bases and scales, through `group_colour` with the logged material: all
+  1,200 of home's and 869 of the club's.
+Since the '2' records are the engine's from the clock and the room walk (iterations 90-103),
+the floor's colour bases and scales are the engine's, except the materials (logged) and the
+light grid sums (the lights' positions: the lamps wait for stage 4.4's poses).

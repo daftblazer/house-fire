@@ -2575,6 +2575,64 @@ fn main() -> ExitCode {
             println!("materials {} distinct; groups whose diffuse green and blue differ (the blue scale taking the green) {slip}", materials.len());
             println!("group scales {}: the engine's base and scale bit for bit {same}; the constant {:?} (the engine's {})", log.group_scales.len(), ks.iter().map(|b| f32::from_bits(*b)).collect::<Vec<_>>(), housefire::light::GROUP_K);
         }
+        "floorchain" => {
+            // the floor groups' bases and scales from the engine's room records ('2', each one
+            // the engine's since iterations 90-103): the room id's record (the light state + id x
+            // 80 + 0x5018) logged last before, through `room_triples` and `group_colour` (the
+            // material still as logged), against the 'a' triples and the 'b' bases and scales
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO floorchain LOG");
+                return ExitCode::FAILURE;
+            };
+            // the light state's base from the records that pair by value
+            let mut bases: BTreeMap<u32, usize> = BTreeMap::new();
+            for t in log.room_triples.iter().take(400) {
+                for (_, rec, _, _) in log.room_suns.iter().filter(|r| r.3 == t.record) {
+                    *bases.entry(rec.wrapping_sub(t.id * 80 + 0x5018)).or_default() += 1;
+                }
+            }
+            let Some((&base, _)) = bases.iter().max_by_key(|b| b.1) else {
+                println!("no room record pairs with a triple record");
+                return ExitCode::FAILURE;
+            };
+            let record_at = |id: u32, tick: u32| log.room_suns.iter().rev().find(|r| r.0 <= tick && r.1 == base.wrapping_add(id * 80 + 0x5018)).map(|r| r.3);
+            let bits = |a: [f32; 3]| a.map(f32::to_bits);
+            let (mut a_same, mut a_none) = (0, 0);
+            for t in &log.room_triples {
+                match record_at(t.id, t.tick) {
+                    Some(r) => {
+                        let mine = housefire::light::room_triples(&r);
+                        if r == t.record && (bits(mine.0), bits(mine.1)) == (bits(t.ambient), bits(t.light)) {
+                            a_same += 1;
+                        }
+                    }
+                    None => a_none += 1,
+                }
+            }
+            let (mut groups, mut g_same, mut g_none, mut shown) = (0, 0, 0, 0);
+            for rf in &log.room_floors {
+                let first = rf.scales_before.checked_sub(rf.groups.len());
+                for gi in 0..rf.groups.len() {
+                    let Some(g) = first.and_then(|f| log.group_scales.get(f + gi)) else { continue };
+                    groups += 1;
+                    let Some(r) = record_at(rf.id, g.tick) else {
+                        g_none += 1;
+                        continue;
+                    };
+                    let (amb, light) = housefire::light::room_triples(&r);
+                    let mine = housefire::light::group_colour(g.material[0], g.material[1], amb, light);
+                    if mine == (g.base, g.scale) {
+                        g_same += 1;
+                    } else if shown < 4 {
+                        shown += 1;
+                        println!("  tick {} room {} group {:08x}: mine {mine:?}, the log's {:?} {:?} (room {:?})", g.tick, rf.id, g.group, g.base, g.scale, g.room);
+                    }
+                }
+            }
+            println!("the light state at {base:08x} ({} pairings)", bases[&base]);
+            println!("triple records {}: from the room id's last room record, the same record and triples {a_same} (no record before {a_none})", log.room_triples.len());
+            println!("relit groups {groups}: base and scale from the room's record {g_same} (no record before {g_none})");
+        }
         "floorlight" => {
             // each relit room's floor colours against the engine's, from the room's own light
             // grid record and the groups' logged bases and scales
