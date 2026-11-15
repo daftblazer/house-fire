@@ -496,6 +496,29 @@ pub fn wrap_back(mut place: f32, last: f32) -> f32 {
     place
 }
 
+/// A track's frame (Anim_UpdateTrack 80157318 to 801575F4): the place moved by
+/// `track_advance`, then at the ends by the track's end mode (+13). Past the last frame, mode 0
+/// (a loop) comes back by the last frame (`wrap_back`), and the others stop at the last frame.
+/// Before 0, mode 0 goes on by the last frame until it is not below 0 (at most the last frame),
+/// and the others stop at 0. Gives the new place and whether an end was passed (+160 set).
+pub fn track_step(place: f32, frame_time: f32, controller_speed: f32, track_speed: f32, rate: f32, last: f32, end_mode: u8) -> (f32, bool) {
+    let next = track_advance(place, frame_time, controller_speed, track_speed, rate);
+    if next > last {
+        return (if end_mode == 0 { wrap_back(next, last).max(0.0) } else { last }, true);
+    }
+    if next < 0.0 {
+        if end_mode != 0 {
+            return (0.0, true);
+        }
+        let mut p = next;
+        while p < 0.0 && last > 0.0 {
+            p += last;
+        }
+        return (p.min(last), true);
+    }
+    (next, false)
+}
+
 /// A scale or translation stream as the evaluator runs it (801BC4E0): its window between keys
 /// `key` and `key` + 1, the blend flag, and the place of the last read.
 #[derive(Clone, Debug)]
@@ -923,6 +946,14 @@ mod tests {
         // a two-frame loop (last frame 1): 2.92 comes back to 0.92
         assert!((wrap_back(2.92, 1.0) - 0.92).abs() < 1e-5);
         assert_eq!(wrap_back(0.5, 1.0), 0.5);
+        // the ends by the end mode: a loop wraps, a stop holds its end; both mark the end passed
+        assert_eq!(track_step(9.5, 0.033, 1.0, 1.0, 30.0, 10.0, 1), (10.0, true));
+        let (p, ended) = track_step(9.5, 0.033, 1.0, 1.0, 30.0, 10.0, 0);
+        assert!(ended && (p - 0.49).abs() < 1e-4);
+        assert_eq!(track_step(0.5, 0.033, 1.0, -1.0, 30.0, 10.0, 1), (0.0, true));
+        let (p, ended) = track_step(0.5, 0.033, 1.0, -1.0, 30.0, 10.0, 0);
+        assert!(ended && (p - 9.51).abs() < 1e-4);
+        assert!(!track_step(2.0, 0.033, 1.0, 1.0, 30.0, 10.0, 0).1);
     }
 
     #[test]

@@ -1402,3 +1402,11 @@ frame as many times as it takes. Before 0 it stops at 0. `anim::track_advance` a
 stopped, 40,960 wrapped, 11 stopped at 0. Two separate single roundings miss 616 of them. The
 observer now reads the animation's head from the 0x7E virtual memory too (home-a16.log: the
 same 562,616 steps).
+A track's ends (iteration 158). The track's byte +13 is its end mode, now logged as '*' after
+each step. Past the last frame or before 0, the step sets done (+160 = 1):
+- Mode 0 (a loop) comes back by the last frame, as many times as it takes. Before 0 it goes on
+  by the last frame until it is not below 0.
+- Modes 1 and 2 stop at the end they passed. Mode 2 also sets a flag, r22, not yet followed.
+A track already stepped this frame (+52 = the frame) is kept as it is. `anim::track_step`
+gives every step on home-a17.log, place and done, to the bit: 482,150 in mode 0 and 49,841 in
+mode 1. 12 had already run that frame. No mode 2 occurs on this replay.

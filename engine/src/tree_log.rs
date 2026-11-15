@@ -478,6 +478,9 @@ pub struct TrackRec {
     pub ran: [u32; 2],
     pub place: [f32; 2],
     pub done: [u32; 2],
+    /// The track's end mode (+13: 0 loops, 1 and 2 stop) and its flags (+8), after the step
+    /// ('*', in newer logs).
+    pub end: Option<(u8, u32)>,
 }
 
 /// An animator's speed update ('#', Anim_SpeedUpdate 800AB820, EA's SAnimator2::Update): the
@@ -1364,6 +1367,15 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
             }
             b')' => posing = None,
+            b'*' => {
+                if !r.has(5) {
+                    break;
+                }
+                let (mode, flags) = (r.u8(), r.u32());
+                if let Some(t) = log.tracks.last_mut() {
+                    t.end = Some((mode, flags));
+                }
+            }
             b'&' => {
                 if !r.has(17 * 4) {
                     break;
@@ -1406,6 +1418,7 @@ pub fn read_log(path: &str) -> Option<Log> {
                     ran: [b[1], a[0]],
                     place: [f32::from_bits(b[2]), f32::from_bits(a[1])],
                     done: [b[4], a[2]],
+                    end: None,
                 });
             }
             b'Z' => {

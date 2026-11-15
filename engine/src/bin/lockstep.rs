@@ -801,6 +801,38 @@ fn main() -> ExitCode {
                 }
             }
             println!("track steps with their ends: {ends:?}");
+            // (newer logs, with '*') every step through `anim::track_step` by its end mode: the
+            // place and the done flag (+160)
+            let mut whole: BTreeMap<String, usize> = BTreeMap::new();
+            let mut prev_done: HashMap<u32, u32> = HashMap::new();
+            for t in log.tracks.iter().filter(|t| t.tick != 0) {
+                let Some((mode, _)) = t.end else { continue };
+                if t.ran[0] == t.frame {
+                    // already stepped this frame (+52): kept as it is
+                    let kept = t.place[0].to_bits() == t.place[1].to_bits() && t.done[0] == t.done[1];
+                    *whole.entry(format!("already run this frame: {}", if kept { "kept" } else { "CHANGED" })).or_default() += 1;
+                    continue;
+                }
+                let [s0, s72, c80] = t.speeds;
+                let last = t.head[8] as f32 - 1.0;
+                let (place, ended) = housefire::anim::track_step(t.place[0], g, c80, s72, s0, last, mode);
+                let ran = t.place[0] != t.place[1] || ended || t.done[0] != t.done[1];
+                let same_place = place.to_bits() == t.place[1].to_bits();
+                let same_done = (t.done[0] != 0 || ended) == (t.done[1] != 0);
+                let _ = prev_done.insert(t.track, t.done[1]);
+                let what = match (same_place, same_done) {
+                    (true, true) => "place and done the same",
+                    (true, false) => "place the same, done DIFFERENT",
+                    (false, _) if !ran => "not stepped (place kept)",
+                    _ => "place DIFFERENT",
+                };
+                *whole.entry(format!("mode {mode}: {what}")).or_default() += 1;
+                if what.contains("DIFFERENT") && whole.get("(shown)").copied().unwrap_or(0) < 8 {
+                    *whole.entry("(shown)".into()).or_default() += 1;
+                    println!("  track step different: mode {mode} place {:?} speeds {:?} last {last} done {:?}: native ({place}, {ended})", t.place, t.speeds, t.done);
+                }
+            }
+            println!("track steps by end mode: {whole:?}");
             let one = life.values().filter(|t| t.len() == 1).count();
             println!("streams following one track: {one} of {}; reads matching several tracks {ambiguous}", life.len());
             for (k, t) in life.iter().filter(|(_, t)| t.len() > 1).take(4) {
