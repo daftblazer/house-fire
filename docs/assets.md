@@ -1646,3 +1646,15 @@ On home-a23.log (`LOCKSTEP_ANIM_ROTATIONS`) all 628 headers decode from their an
 all 300,000 reads' windows and results come out the same to the bit from the places alone. The
 rotation streams start at the negated node word 0 (all 628), not word 3 as said above: word 3,
 negative on every node, is something else.
+A node's seven channels (iteration 183). EAnimController::Animate (801581C8) reads a node
+record's words +4..+28 (the engine's node words 0..6): +4 the rotation (801B5F48), +8, +12 and
++20 vec3 streams (801BC4E0), +16 a flag stream (801BD4D4, read only when the node state's bit
+0x10 is set), +24 and +28 scalar streams (801BD7BC, init 801BD614; never read on the home
+replay). The flag stream (init 801BD4C8) is the bits object and the start bit (the negated node
+word 3). Its read is the bit at trunc(start + place), 0 past the bit count (801AD898): one bit
+a frame. On home-a24.log all 2,285 flag streams and 300,000 reads match (`anim::FlagStream`,
+`LOCKSTEP_ANIM_FLAGS`). Per node, Animate builds a 64-byte local pose from the channels, then
+with the weight (the track's +76 times its +152 entry for the node) skips it at 0, layers it
+(Layer 80158964) when the track's +8 has bit 0x100, copies it at weight 1, else blends it (Blend
+801587D4) into the node state (64 bytes a node). The observer's '=' records (home-a25.log, the
+first 40,000 poses) hold every node state before and after the pose.
