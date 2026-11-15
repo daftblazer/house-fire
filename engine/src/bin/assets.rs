@@ -2580,6 +2580,48 @@ fn main() -> ExitCode {
             }
             println!("grid builds {}: cell rooms {slots}, the engine's four lights {same}, without the lights logged {no_range}; constants {:?} (the engine's {} {} {})", log.grid_builds.len(), consts.iter().map(|c| c.map(f32::from_bits)).collect::<Vec<_>>(), housefire::light::GRID_Z, housefire::light::SLOT_EMPTY, housefire::light::SLOT_TAKEN);
         }
+        "nearest" => {
+            // each window fill's nearest lights (as the fill read them, up to the first gap)
+            // against the engine's `nearest_lights` from the light's place and its room's own
+            // range, with the lights of the grid build before (the lists are made at a rebuild,
+            // after its fills: the fill reads the last rebuild's)
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO nearest LOG");
+                return ExitCode::FAILURE;
+            };
+            let (mut n, mut same, mut none, mut shown) = (0, 0, 0, 0);
+            for w in &log.window_fills {
+                let Some(b) = log.grid_builds.iter().rev().find(|b| b.tick < w.tick).or_else(|| log.grid_builds.iter().rev().find(|b| b.tick <= w.tick)) else {
+                    none += 1;
+                    continue;
+                };
+                n += 1;
+                let Some(r) = usize::try_from(w.room).ok().and_then(|r| b.ranges.get(r)) else { continue };
+                let Some(mine) = housefire::light::nearest_lights(w.at, (r[2], r[3]), &b.lights) else { continue };
+                let mine: Vec<u32> = mine.iter().map_while(|s| s.map(u32::from)).collect();
+                let theirs: Vec<u32> = w.near.iter().map(|x| x.0).collect();
+                if mine == theirs {
+                    same += 1;
+                } else if shown < 5 {
+                    shown += 1;
+                    println!("  tick {} light {:08x} room {} at {:?}: mine {mine:?}, the fill's {theirs:?} (build at tick {}, own {}..{})", w.tick, w.light, w.room, w.at, b.tick, r[2], r[3]);
+                }
+            }
+            println!("window fills {}: with a build before {n} ({none} none); the engine's nearest lights as the fill's {same}", log.window_fills.len());
+            // (study: per light, the rooms whose own range gives the fill's list)
+            let mut by: BTreeMap<u32, BTreeMap<Vec<usize>, usize>> = BTreeMap::new();
+            for w in &log.window_fills {
+                let Some(b) = log.grid_builds.iter().rev().find(|b| b.tick < w.tick).or_else(|| log.grid_builds.iter().rev().find(|b| b.tick <= w.tick)) else { continue };
+                let theirs: Vec<u32> = w.near.iter().map(|x| x.0).collect();
+                let rooms: Vec<usize> = (0..16)
+                    .filter(|&k| housefire::light::nearest_lights(w.at, (b.ranges[k][2], b.ranges[k][3]), &b.lights).is_some_and(|m| m.iter().map_while(|s| s.map(u32::from)).collect::<Vec<_>>() == theirs))
+                    .collect();
+                *by.entry(w.light).or_default().entry(rooms).or_default() += 1;
+            }
+            for (l, m) in by.iter().take(30) {
+                println!("  light {l}: {m:?}");
+            }
+        }
         "lightrank" => {
             // each logged light ranking against the engine's, from the list before
             let Some(log) = args.get(3).and_then(|p| read_log(p)) else {

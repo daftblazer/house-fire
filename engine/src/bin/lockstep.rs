@@ -1700,6 +1700,10 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &DiscTab
                     // at the engine's place)
                     if let Some(b) = log.light_rebuilds.iter().rev().find(|b| b.rooms > 0) {
                         let (mut n, mut same_kind) = (0, 0);
+                        // (and each light's nearest lights: the room of the tile under the window's
+                        // other light (the wall's other side) less one, ranked over that room's own range at
+                        // the grid build before each fill, against the fill's list)
+                        let (mut fills, mut near_same, mut first_fills) = (0, 0, 0);
                         for o in lw.objects().filter(|o| o.window && o.on_lot() && o.leader == o.id()) {
                             let Some(places) = housefire::light::window_light_places((o.x16 >> 4, o.y16 >> 4), o.facing() as u8) else { continue };
                             // (the group's model: a multi-tile object's resources are on one of its
@@ -1709,8 +1713,27 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &DiscTab
                             if std::env::var_os("LOCKSTEP_WINDOW_FIELDS").is_some() {
                                 println!("  window {} guid {:08x}: key {model:08x?}", o.id(), o.guid);
                             }
-                            for (x, y) in places {
-                                let Some(light) = b.lights.iter().find(|l| l[0] == x.to_bits() && l[1] == y.to_bits()) else { continue };
+                            for (side, (x, y)) in places.into_iter().enumerate() {
+                                let (ox, oy) = places[1 - side];
+                                let room = walls.room(ox.floor() as i32, oy.floor() as i32).wrapping_sub(1) as usize;
+                                let Some(index) = b.lights.iter().position(|l| l[0] == x.to_bits() && l[1] == y.to_bits()) else { continue };
+                                let light = &b.lights[index];
+                                for w in log.window_fills.iter().filter(|w| w.light == index as u32) {
+                                    let Some(g) = log.grid_builds.iter().rev().find(|g| g.tick < w.tick) else {
+                                        first_fills += 1;
+                                        continue;
+                                    };
+                                    fills += 1;
+                                    let Some(r) = g.ranges.get(room) else { continue };
+                                    let mine: Vec<u32> = housefire::light::nearest_lights(w.at, (r[2], r[3]), &g.lights).map_or(Vec::new(), |m| m.iter().map_while(|s| s.map(u32::from)).collect());
+                                    if mine == w.near.iter().map(|x| x.0).collect::<Vec<_>>() {
+                                        near_same += 1;
+                                    } else if std::env::var_os("LOCKSTEP_NEAREST_SHOW").is_some() && w.tick < 3 {
+                                        let fits: Vec<usize> = (0..16).filter(|&k| housefire::light::nearest_lights(w.at, (g.ranges[k][2], g.ranges[k][3]), &g.lights).is_some_and(|m| m.iter().map_while(|s| s.map(u32::from)).collect::<Vec<_>>() == w.near.iter().map(|x| x.0).collect::<Vec<_>>())).collect();
+                                        let (tx, ty) = (o.x16 >> 4, o.y16 >> 4);
+                                        println!("  light {index} window {} at ({tx},{ty}) facing {}: engine room {room}, fits {fits:?}; rooms around {:?}", o.id(), o.facing(), [(1, 0), (-1, 0), (0, 1), (0, -1)].map(|(dx, dy)| walls.room(tx + dx, ty + dy).wrapping_sub(1) as i32));
+                                    }
+                                }
                                 let Some((h, _)) = log.window_lights.iter().find(|(h, _)| h[0] == light[7]) else { continue };
                                 n += 1;
                                 if h[6] == kind {
@@ -1719,6 +1742,7 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &DiscTab
                             }
                         }
                         println!("window lights' kinds: {n} found, the engine's (by its resources' key) {same_kind}");
+                        println!("window lights' nearest lights: {fills} fills after a build ({first_fills} before any), from the other side's room {near_same}");
                     }
                 }
                 // (and the rooms the light grid is given at the load, LOCKSTEP_CELL_ROOMS=LOG: the

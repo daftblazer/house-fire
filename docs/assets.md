@@ -1194,3 +1194,19 @@ house's terrain, `assets floormaterials LOG FLOORS HOUSE` gives every relit grou
 as before: home's 1,200 (100 terrain) and the club's 869 (67). The terrain shaders all carry
 the 1.25 material, so the textures are what tells the row apart. `replay`'s
 `REPLAY_SHOW_LOT_CLOCKS` now also prints each lot's house number.
+
+The objects' nearest lights (`light::nearest_lights`, the original's 0x8016906C, iteration 107).
+At a rebuild, for each light of a range:
+1. it takes the light's object (the light entry's +28) and gets its position (the object's
+   vtable +304);
+2. it takes the object's room (+48 on +56, or -1);
+3. it ranks that room's own lights (its record's words 18-19) into 4 empty slots (`light::rank`);
+4. it stores each slot's light pointer, 0 when empty, at the manager + 0x4014 + 16 x the light's
+   index.
+The window fill reads that list up to its first gap, so each fill uses the last rebuild's
+lists. A window light's room is the wall's other side (the room under its window's other light),
+which is also why an inside light's fill adds the outside's sun. Checked by lockstep
+(`LOCKSTEP_WINDOW_LIGHTS=LOG`): home's 28 window lights, each at the engine's place, ranked
+over the engine's other-side room at the grid build before each fill. All 3,916 fills after a
+build get the fill's list, light for light. The 84 fills before any build (each light's first,
+at tick 0) read lists not made yet.

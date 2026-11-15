@@ -634,6 +634,20 @@ pub fn cell_lights(point: [f32; 3], own: (u32, u32), other: (u32, u32), lights: 
     Some(out)
 }
 
+/// An object's 4 nearest lights (the original's 0x8016906C, run for each light of a range at a
+/// rebuild): its room's own lights (`own`, an index range into `lights`) ranked from its
+/// position into four empty slots, the empty ones `None`. The original keeps the slots' light
+/// pointers at the manager + 0x4014 + 16 x the light's index (0 for an empty one); the window
+/// fill reads them up to the first gap. An object with no room ranks the record at -1's range.
+/// A window light's room is the wall's other side: the one under its window's other light
+/// (home's 28).
+pub fn nearest_lights(point: [f32; 3], own: (u32, u32), lights: &[([f32; 3], f32)]) -> Option<[Option<u16>; 4]> {
+    let own_l = lights.get(own.0 as usize..own.1.max(own.0) as usize)?;
+    let mut list = [(0xFFFF_0000u32, SLOT_EMPTY); 4];
+    rank(point, own.0, own_l, &mut list);
+    Some(list.map(|s| Some((s.0 >> 16) as u16).filter(|&i| i != 0xFFFF)))
+}
+
 /// What a room's light falls back to when its record has none (the original's 0x802A1240).
 pub const NO_LIGHT: f32 = 0.0;
 
@@ -934,6 +948,16 @@ mod tests {
         // the east tile still waiting)
         let lists = room_tile_lists((2, 1), |x, _| if x == 0 { 0x10 } else { 0 }, |_, _, _, _| true);
         assert_eq!(lists, vec![vec![(0, 0)], vec![(1, 0), (0, 0), (0, 0), (1, 0)]]);
+    }
+
+
+    #[test]
+    fn an_objects_nearest_lights_are_its_rooms_own_strongest_first() {
+        // lights 0-1 another room's, 2-4 this room's: the near and wide one first, the far one
+        // last; the fourth slot stays empty
+        let lights = [([0.0, 0.0, 0.0], 9.0), ([0.0, 0.0, 0.0], 9.0), ([3.0, 0.0, 0.0], 1.0), ([1.0, 0.0, 0.0], 2.0), ([9.0, 0.0, 0.0], 1.0)];
+        assert_eq!(nearest_lights([0.0; 3], (2, 5), &lights), Some([Some(3), Some(2), Some(4), None]));
+        assert_eq!(nearest_lights([0.0; 3], (2, 9), &lights), None);
     }
 
 }
