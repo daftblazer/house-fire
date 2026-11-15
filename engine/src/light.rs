@@ -202,6 +202,34 @@ pub fn time_of_day(hour: i32, minute: i32, second: i32) -> TimeOfDay {
 /// The sun's angle at a clock time (Light_TimeOfDay): a turn over the day from midnight, a
 /// quarter by 4:00, three quarters by 20:00 (the hours between taken at even speed: 4:00 to
 /// 20:00 over pi, the nights over pi/2 each), with the code's own pi and pi/2.
+/// An inside room's ambient factor (the original's 0x8004B300): the lot's day and night values,
+/// blended across the hours of 6:00 (night to day) and 18:00 (day to night) by the minute and
+/// second over 3,600, day from 7:00 to 17:59 and night otherwise, times the room's window
+/// brightness (`window_brightness`). Single precision step for step, the blend fused.
+pub fn room_ambient(day: f32, night: f32, hour: i32, minute: i32, second: i32, brightness: f32) -> f32 {
+    let into = || ((minute * 60 + second) as f32) / 3600.0;
+    let level = match hour {
+        6 => {
+            let t = into();
+            (f64::from(night).mul_add(f64::from(1.0 - t), f64::from(day * t))) as f32
+        }
+        18 => {
+            let t = into();
+            (f64::from(day).mul_add(f64::from(1.0 - t), f64::from(night * t))) as f32
+        }
+        7..=17 => day,
+        _ => night,
+    };
+    level * brightness
+}
+
+/// A room's window brightness (the original's 0x80236270): 1 + 0.25 x the share of its tiles
+/// with a window (kind 8), the share clamped to [0, 1]; fused as the code has it.
+pub fn window_brightness(windows: u32, tiles: i32) -> f32 {
+    let share = (windows as f32 / tiles as f32).clamp(0.0, 1.0);
+    (f64::from(share).mul_add(f64::from(1.25f32 - 1.0), 1.0)) as f32
+}
+
 pub fn sun_angle(hour: i32, minute: i32, second: i32) -> f32 {
     let (m, sec) = (minute % 60, second % 60);
     let f = f32::from_bits;

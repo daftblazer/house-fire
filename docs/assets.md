@@ -991,3 +991,19 @@ records hold an ambient object of their own (no sun). Its colour is the time of 
 colour (0.8, 0.8, 1), but its factor is the room's own: home's three rooms about 0.303, 0.315 and
 0.309 (the outside's 0.4), the club's about 0.265 to 0.272, all drifting with the time. Its
 writer is next.
+
+The inside rooms' ambient factor (iteration 91). A watch on an inside ambient object's factor
+(+148) named its writers: 0x8004B10C once at the lot's load, then 0x8004AE38 each tick. The
+tick's pass writes the new value only when its square difference from the old passes a
+threshold (0.1), and marks the object (+136) past a larger one (0.25). Both take the value from
+`Light_RoomAmbient` 0x8004B300 (`light::room_ambient`):
+- the lot's day and night values, from a run-time table at 0x80340D5C by the light manager's
+  kind (+60): day 0.3 and night 0.2 at home (kind 1) and the club (kind 16);
+- day from 7:00 to 17:59, night otherwise; across 6:00 night to day, and across 18:00 day to
+  night, by (minute × 60 + second) / 3,600;
+- times the room's window brightness, `Room_WindowBrightness` 0x80236270
+  (`light::window_brightness`): 1 + 0.25 × the share of the room's tiles whose object reports
+  kind 8 (a window), clamped to [0, 1].
+The observer's '5' and '6' records hold each call's inputs and result. From the logged inputs,
+`assets roomambient` gives all 4,000 calls bit for bit at home and at the club. The window
+counts behind the brightness come next, from the engine's own room tiles.

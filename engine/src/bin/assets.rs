@@ -2095,6 +2095,40 @@ fn main() -> ExitCode {
             }
             println!("room records set {} (with both objects {both}): the engine's words {same}", log.room_suns.len());
         }
+        "roomambient" => {
+            // the inside rooms' ambient factors ('5') from their logged inputs and window
+            // brightness ('6', the call made inside), and the brightness values seen (study)
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO roomambient LOG");
+                return ExitCode::FAILURE;
+            };
+            let f = f32::from_bits;
+            let (mut same, mut shown) = (0, 0);
+            let mut k = 0;
+            let mut kinds: BTreeMap<(u32, u32, u32), usize> = BTreeMap::new();
+            for a in &log.room_ambients {
+                // the brightness call made inside this one: the next '6' of the same tick
+                while k < log.window_brightness.len() && log.window_brightness[k][0] < a[0] {
+                    k += 1;
+                }
+                let Some(w) = log.window_brightness.get(k) else { break };
+                k += 1;
+                *kinds.entry((a[3], a[4], a[5])).or_default() += 1;
+                let mine = housefire::light::room_ambient(f(a[4]), f(a[5]), a[6] as i32, a[7] as i32, a[8] as i32, f(w[4]));
+                if mine.to_bits() == a[9] {
+                    same += 1;
+                } else if shown < 5 {
+                    shown += 1;
+                    println!("  tick {} room {} at {}:{}:{}: mine {mine}, the log's {} (brightness {})", a[0], a[2], a[6] as i32, a[7] as i32, a[8] as i32, f(a[9]), f(w[4]));
+                }
+            }
+            println!("calls {} (brightness {}): the engine's {same}", log.room_ambients.len(), log.window_brightness.len());
+            for ((kind, d, n), c) in &kinds {
+                println!("  kind {kind}: day {} night {}: {c}", f(*d), f(*n));
+            }
+            let bs: BTreeSet<u32> = log.window_brightness.iter().map(|w| w[4]).collect();
+            println!("  brightness values {:?}", bs.iter().map(|b| f(*b)).collect::<Vec<_>>());
+        }
         "roomclock" => {
             // the outside room record (the time of day's two objects) from the clock alone: the
             // tick's last '3' call's clock through `time_of_day`, `sun_direction` and `room_sun`;

@@ -552,6 +552,12 @@ pub struct Log {
     /// +148, +152 (3), +180 (3), the out word and the ambient object's +148 and +152 (3), all
     /// as words.
     pub times_of_day: Vec<TimeOfDayRec>,
+    /// '5': inside rooms' ambient factors (`Light_RoomAmbient`): tick, manager, room, kind, the
+    /// day and night values, hour, minute, second, the result.
+    pub room_ambients: Vec<[u32; 10]>,
+    /// '6': rooms' window brightness (`Room_WindowBrightness`): tick, room object, its tile
+    /// list's start and end, the result.
+    pub window_brightness: Vec<[u32; 5]>,
     /// '4': where main memory held the clock as the globals do, at the first time of day call.
     pub clock_places: Vec<u32>,
     /// '1': objects' lights put at their nodes.
@@ -719,6 +725,18 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let room = [three(), three()];
                 let k = f32::from_bits(r.u32());
                 log.group_scales.push(GroupScaleRec { tick, group, base, scale, material, room, k });
+            }
+            b'5' => {
+                if !r.has(40) {
+                    break;
+                }
+                log.room_ambients.push(std::array::from_fn(|_| r.u32()));
+            }
+            b'6' => {
+                if !r.has(20) {
+                    break;
+                }
+                log.window_brightness.push(std::array::from_fn(|_| r.u32()));
             }
             b'4' => {
                 if !r.has(4) {
