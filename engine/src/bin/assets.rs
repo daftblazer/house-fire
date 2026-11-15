@@ -2023,6 +2023,71 @@ fn main() -> ExitCode {
                 println!("  {n}: {:08x}", shader::name_hash(n));
             }
         }
+        "anims" => {
+            // every animatio.arc entry through `anim::read`: how many fill their entry exactly,
+            // the nodes, constants and events in all, the rates and frame counts seen
+            let b = d.read("animatio.arc").unwrap_or_default();
+            let es = arc::entries(&b).unwrap_or_default();
+            let (mut ok, mut nodes, mut consts, mut events) = (0, 0, 0, 0);
+            let mut rates: BTreeMap<u32, usize> = BTreeMap::new();
+            let mut node_counts: BTreeMap<usize, usize> = BTreeMap::new();
+            let mut not: Vec<String> = Vec::new();
+            for e in &es {
+                match housefire::anim::read(arc::bytes(&b, e)) {
+                    Some(a) => {
+                        ok += 1;
+                        nodes += a.nodes.len();
+                        consts += a.constants.len();
+                        events += a.events.len();
+                        *rates.entry(a.rate.to_bits()).or_default() += 1;
+                        *node_counts.entry(a.nodes.len()).or_default() += 1;
+                        if a.name != e.name {
+                            not.push(format!("{} named {}", e.name, a.name));
+                        }
+                    }
+                    None => not.push(format!("{} ({} bytes)", e.name, arc::bytes(&b, e).len())),
+                }
+            }
+            println!("animatio.arc: {} entries, read to their ends {ok}; nodes {nodes}, constants {consts}, events {events}", es.len());
+            println!("rates {:?}", rates.iter().map(|(r, n)| (f32::from_bits(*r), n)).collect::<Vec<_>>());
+            println!("node counts (count: animations) {:?}", node_counts.iter().rev().take(10).collect::<Vec<_>>());
+            for n in not.iter().take(10) {
+                println!("  not read: {n}");
+            }
+        }
+        "arclist" => {
+            // (study) an archive's entries: count, sizes, and the first N entries' names, sizes and
+            // first 64 bytes
+            let Some(name) = args.get(3) else {
+                println!("usage: assets ISO arclist ARC [N]");
+                return ExitCode::FAILURE;
+            };
+            let n = args.get(4).and_then(|v| v.parse::<usize>().ok()).unwrap_or(8);
+            let b = d.read(name).unwrap_or_default();
+            let es = arc::entries(&b).unwrap_or_default();
+            let total: usize = es.iter().map(|e| arc::bytes(&b, e).len()).sum();
+            println!("{name}: {} bytes, {} entries, {total} bytes in them", b.len(), es.len());
+            let mut firsts: BTreeMap<u32, usize> = BTreeMap::new();
+            for e in &es {
+                let x = arc::bytes(&b, e);
+                *firsts.entry(x.get(..4).map_or(0, |w| u32::from_be_bytes(w.try_into().unwrap()))).or_default() += 1;
+            }
+            println!("first words: {:08x?}", firsts.iter().take(12).collect::<Vec<_>>());
+            for e in es.iter().take(n) {
+                let x = arc::bytes(&b, e);
+                println!("{:08x} {} ({} bytes): {:02x?}", e.id, e.name, x.len(), &x[..x.len().min(64)]);
+            }
+            // (ARCLIST_DUMP=NAME: that entry whole, 16 bytes a line with its ASCII)
+            if let Ok(want) = std::env::var("ARCLIST_DUMP") {
+                for e in es.iter().filter(|e| e.name == want) {
+                    let x = arc::bytes(&b, e);
+                    for (k, c) in x.chunks(16).enumerate() {
+                        let asc: String = c.iter().map(|&b| if b.is_ascii_graphic() { b as char } else { '.' }).collect();
+                        println!("{:05x}: {} {asc}", k * 16, c.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" "));
+                    }
+                }
+            }
+        }
         "qtable" => {
             // (study) the quick data table (of ENTRY) holding a word: its name and every row's
             // words, pointers to strings shown as the strings

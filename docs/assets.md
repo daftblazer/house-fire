@@ -1252,3 +1252,24 @@ The hashes are not in the card's save. The base bodies are rows of CreateASim's 
 (136 rows of 44 bytes: the upper body at word 0, others at 2, 4, 6, 8, 10; am_ub_1c_tight_01 in
 rows 118, 126, 130). The robe, jacket and jewellery are in other tables: a Sim's outfit is
 layered, and how the save names it is still to read.
+
+## Animations
+
+`animatio.arc`'s 4,013 entries (`anim::read`, iteration 112, `assets anims`), all read to their
+ends. The layout is The Sims 2's `ERAnim::OldLoad` (its map names it; its ELF read with
+llvm-objdump). The same fields sit there behind an "ANIM" chunk header. Here they follow the
+animation's name and its NUL, all big-endian and packed (nothing aligned):
+1. the frame count (u32);
+2. two float triples (1, 1, 1 on all seen);
+3. the nodes: a count, then 28 bytes each (seven words; The Sims 2's are 32). On the pool
+   table's, the third word is 3k + 1 and the fourth -1 - 66k (66 its frame count);
+4. a word (a float on the pool table, 1.59);
+5. the constants: a count, then floats (the tracks' values);
+6. a bit count, then its bits as words (count / 32 rounded up);
+7. the frame rate (30.0 on 2,475 entries, 60.0 on 1,538), two floats, a byte, four words, two
+   bytes;
+8. the events: a count, then 80 bytes each (a 64-byte name, four words). It is 0 on every entry,
+   so the scripts' animation events come from elsewhere.
+The engine's ERAnim::Load takes the frame count over the rate as the length (+20, in ticks by a
+constant). In all: 190,424 nodes and 265,862 constants. 3,050 animations have 58 nodes (the
+adult Sim's), the largest 248.
