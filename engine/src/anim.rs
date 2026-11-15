@@ -347,6 +347,14 @@ pub struct StreamHeader {
     pub record_bits: u32,
 }
 
+impl Anim {
+    /// The end mode a play of it gets (a track's +13): 0 loops, 1 stops at its end. The
+    /// animation's second flag byte.
+    pub fn end_mode(&self) -> u8 {
+        self.flags[1]
+    }
+}
+
 impl StreamHeader {
     /// The frames the keys span: the sum of their gaps + 1 (801BC318's +20).
     pub fn frames(&self, words: &[u32]) -> u32 {

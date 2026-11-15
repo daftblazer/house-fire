@@ -833,6 +833,30 @@ fn main() -> ExitCode {
                 }
             }
             println!("track steps by end mode: {whole:?}");
+            // a play's start: each track's first step (a new animation on it) against the
+            // animation in the archive, found by its id (head +4)
+            let anims = d.read("animatio.arc").unwrap_or_default();
+            let by_id: HashMap<u32, housefire::anim::Anim> = housefire::arc::entries(&anims).unwrap_or_default().iter().filter_map(|e| Some((e.id, housefire::anim::read(housefire::arc::bytes(&anims, e))?))).collect();
+            let mut seen: HashMap<u32, u32> = HashMap::new();
+            let mut starts: BTreeMap<String, usize> = BTreeMap::new();
+            for t in log.tracks.iter().filter(|t| t.tick != 0) {
+                if seen.insert(t.track, t.anim) == Some(t.anim) {
+                    continue;
+                }
+                let Some((mode, flags)) = t.end else { continue };
+                let Some(a) = by_id.get(&t.head[1]) else {
+                    *starts.entry("animation id not in the archive".into()).or_default() += 1;
+                    continue;
+                };
+                *starts.entry(format!("frames {}", if a.frames == t.head[8] { "same" } else { "DIFFERENT" })).or_default() += 1;
+                *starts.entry(format!("rate (+0) {}", if a.rate == t.speeds[0] { "the animation's" } else { "OTHER" })).or_default() += 1;
+                *starts.entry(format!("+72 {}", t.speeds[1])).or_default() += 1;
+                *starts.entry(format!("end mode {}", if mode == a.end_mode() { "the animation's" } else { "OTHER" })).or_default() += 1;
+                let _ = flags;
+            }
+            let mut st: Vec<_> = starts.into_iter().collect();
+            st.sort_by_key(|x| std::cmp::Reverse(x.1));
+            println!("play starts: {:?}", &st[..st.len().min(24)]);
             let one = life.values().filter(|t| t.len() == 1).count();
             println!("streams following one track: {one} of {}; reads matching several tracks {ambiguous}", life.len());
             for (k, t) in life.iter().filter(|(_, t)| t.len() > 1).take(4) {

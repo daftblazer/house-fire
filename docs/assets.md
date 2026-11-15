@@ -1410,3 +1410,9 @@ each step. Past the last frame or before 0, the step sets done (+160 = 1):
 A track already stepped this frame (+52 = the frame) is kept as it is. `anim::track_step`
 gives every step on home-a17.log, place and done, to the bit: 482,150 in mode 0 and 49,841 in
 mode 1. 12 had already run that frame. No mode 2 occurs on this replay.
+A play's start (iteration 159). A track's animation (+120) carries its archive id at +4, its
+frames at +32 and its rate. A track takes its rate (+0) and end mode (+13) from the animation.
+The end mode is the animation's second flag byte (`Anim::end_mode`): 1 stops, 0 loops. On
+home-a17.log, all 690 play starts have the animation's frames, rate and end mode. The track's
+own speed (+72) at its first step is 1 for 670 of them, -1 for 10 (backward), 0 for 7
+(paused) and 5 for 3. Tying the speed to the Animate call that started the play is still to do.
