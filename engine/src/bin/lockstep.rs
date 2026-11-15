@@ -730,6 +730,7 @@ fn main() -> ExitCode {
                 let mut key = h;
                 key[2] = 0;
                 key[0] = 0;
+                key[5] &= 0xff00_0000; // +33 is the blend flag, +34 and +35 not the header
                 let hit = found.entry(key).or_insert_with(|| {
                     let start = h[1].checked_sub(227)?;
                     all.iter().enumerate().map(|(i, a)| (i, housefire::anim::stream_header(&a.bit_words, start))).find(|(_, x)| {
@@ -758,7 +759,7 @@ fn main() -> ExitCode {
             }
             println!("windows from the animation alone: {win:?}");
             // every read run through `anim::Stream` from the place alone; a stream whose address
-            // shows another header is rebound (`Stream::rebind`)
+            // shows another header (without the blend flag) is a new stream there
             let mut runs: HashMap<u32, ([u32; 13], housefire::anim::Stream)> = HashMap::new();
             let mut last_tick: HashMap<u32, u32> = HashMap::new();
             let mut run: BTreeMap<String, usize> = BTreeMap::new();
@@ -768,15 +769,19 @@ fn main() -> ExitCode {
                 let mut key = h;
                 key[2] = 0;
                 key[0] = 0;
+                key[5] &= 0xff00_0000; // +33 is the blend flag, +34 and +35 not the header
                 let Some(Some((ai, x))) = found.get(&key) else { continue };
                 let words = &all[*ai].bit_words;
                 let e = runs.entry(v.stream).or_insert_with(|| (key, housefire::anim::Stream::new(words, *x)));
                 let fresh = e.0 != key;
                 let first_seen = e.1.last_place == f32::MAX && e.1.key == 0 && !fresh;
                 if fresh {
-                    // another animation's data at this address: the stream rebound in place
-                    e.0 = key;
-                    e.1.rebind(words, *x);
+                    if std::env::var_os("LOCKSTEP_SHOW_NEW_STREAMS").is_some() && run.get("shown new streams").copied().unwrap_or(0) < 6 {
+                        *run.entry("shown new streams".into()).or_default() += 1;
+                        println!("  new stream at tick {} (last read tick {}): stream {:x}, first bit {} -> {}, keys {} -> {}", v.tick, last_tick.get(&v.stream).copied().unwrap_or(0), v.stream, e.0[1], key[1], e.0[3], key[3]);
+                    }
+                    // another animation's data at this address: a new stream there
+                    *e = (key, housefire::anim::Stream::new(words, *x));
                 }
                 let gap = v.tick.saturating_sub(*last_tick.get(&v.stream).unwrap_or(&v.tick));
                 last_tick.insert(v.stream, v.tick);

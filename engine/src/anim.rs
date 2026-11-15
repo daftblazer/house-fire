@@ -524,18 +524,6 @@ impl Stream {
         self.fill(words);
     }
 
-    /// The stream given another animation's data in place (a play changing animation): the
-    /// key and the last place are kept, the blend flag is cleared and the window is read anew
-    /// at that key.
-    pub fn rebind(&mut self, words: &[u32], header: StreamHeader) {
-        self.header = header;
-        self.key = self.key.min(header.keys.saturating_sub(2));
-        self.first = header.time(words, self.key);
-        self.last = header.time(words, self.key + 1);
-        self.mode = 0;
-        self.fill(words);
-    }
-
     /// One window on (801BC958): blended when the place moved a third of the window or more.
     fn forward(&mut self, words: &[u32], place: f32) {
         self.key += 1;
