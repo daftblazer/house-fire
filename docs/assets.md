@@ -1241,3 +1241,14 @@ is left. The size is the lot's (a virtual call, 39 on both lots). Home's last un
 move (tick 225: the cursor's x from 1.17 to the edge at 1, the target moving in y only) is that
 rule. `assets camlog` now explains all 164 of home's target moves (1 centring, 145 carried, 1 of
 them at the edge, 18 carried and pulled) and all 1,062 of the club's.
+
+The Sims' draws (iteration 111, `assets near`, `costumes`, `cardfile`). At tick 1,000 of
+home-d.log, every world matrix drawn within a tile of a Sim is a posed bone's: the outfit's parts
+(am_ub_1c_tight_01, af_ub_1c_robe_01, am_ub_jacket_leather, af_jw_mom, eyes, mouth, nose) and
+its shadow (shadow_adult), turned and lifted by the pose (the hips about 1.1 up). None of them is
+a root at the Sim's place, so the Sims' matrices need the skeleton posed (stage 4.4). Which parts
+a Sim wears: the parts are models by name hash (crc32 of the upper-case name, as the shaders').
+The hashes are not in the card's save. The base bodies are rows of CreateASim's `Sim::Costume`
+(136 rows of 44 bytes: the upper body at word 0, others at 2, 4, 6, 8, 10; am_ub_1c_tight_01 in
+rows 118, 126, 130). The robe, jacket and jewellery are in other tables: a Sim's outfit is
+layered, and how the save names it is still to read.

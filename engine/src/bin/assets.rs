@@ -1951,6 +1951,78 @@ fn main() -> ExitCode {
                 }
             }
         }
+        "near" => {
+            // (study) the orientations ('o') and world matrices (0xF1) of a tick within R tiles
+            // of a point, with the draw after each matrix
+            let (Some(log), Some(tick), Some(x), Some(y)) = (args.get(3).and_then(|p| read_log(p)), args.get(4).and_then(|t| t.parse::<u32>().ok()), args.get(5).and_then(|t| t.parse::<f32>().ok()), args.get(6).and_then(|t| t.parse::<f32>().ok())) else {
+                println!("usage: assets ISO near LOG TICK X Y [R]");
+                return ExitCode::FAILURE;
+            };
+            let r = args.get(7).and_then(|t| t.parse::<f32>().ok()).unwrap_or(1.0);
+            let close = |a: f32, b: f32| ((a - x).powi(2) + (b - y).powi(2)).sqrt() <= r;
+            for o in log.orients.iter().filter(|o| o.tick == tick) {
+                let m = &o.m;
+                if close(m[3], m[7]) {
+                    println!("orient {:08x}: {m:?}", o.model);
+                }
+            }
+            let recs = all_records(&d);
+            let mut owner: std::collections::HashMap<[u8; 32], (&str, &str)> = std::collections::HashMap::new();
+            for (entry, r) in &recs {
+                for nd in &r.nodes {
+                    for (_, sm) in &nd.subs {
+                        if let Some(p) = sm.positions.get(..32) {
+                            owner.entry(p.try_into().unwrap()).or_insert((entry, &r.name));
+                        }
+                        if let Some(l) = sm.list.as_ref().and_then(|l| l.2.get(..32)) {
+                            owner.entry(l.try_into().unwrap()).or_insert((entry, &r.name));
+                        }
+                    }
+                }
+            }
+            let mut n = 0;
+            let mut models: BTreeMap<String, usize> = BTreeMap::new();
+            for m in log.matrices.iter().filter(|m| m.id == 0xF1 && m.tick == tick && m.values.len() >= 12) {
+                if close(m.values[3], m.values[7]) {
+                    n += 1;
+                    let rec = log.strips.get(m.strips_before).and_then(|st| owner.get(&if st.words[0] >> 24 == 0x42 { st.at[6] } else { st.at[2] })).map_or("(not read)".to_string(), |(e, nm)| format!("{e}/{nm}"));
+                    *models.entry(rec).or_default() += 1;
+                }
+            }
+            for (k, v) in &models {
+                println!("  drawn after a matrix near: {k} x{v}");
+            }
+            // (and every matrix of a model named NEAR_MODEL that tick, anywhere)
+            if let Ok(want) = std::env::var("NEAR_MODEL") {
+                for m in log.matrices.iter().filter(|m| m.id == 0xF1 && m.tick == tick && m.values.len() >= 12) {
+                    let Some((_, nm)) = log.strips.get(m.strips_before).and_then(|st| owner.get(&if st.words[0] >> 24 == 0x42 { st.at[6] } else { st.at[2] })) else { continue };
+                    if *nm == want {
+                        println!("  {want}: {:?}", m.values);
+                    }
+                }
+            }
+            println!("world matrices near: {n}");
+        }
+        "costumes" => {
+            // (study) the Sim::Costume rows (CreateASim) holding every one of NAMES' hashes
+            let names: Vec<&String> = args.iter().skip(3).collect();
+            let q = d.read("quickdat.arc").unwrap_or_default();
+            let Some(img) = arc::entries(&q).unwrap_or_default().into_iter().find(|e| e.name == "CreateASim").and_then(|e| quickdata::Image::read(arc::bytes(&q, &e))) else {
+                return ExitCode::FAILURE;
+            };
+            let t = img.tables.get("Sim::Costume").copied();
+            println!("Sim::Costume {t:?}");
+            for (k, r) in img.rows("Sim::Costume").enumerate() {
+                let words: Vec<u32> = (0..11).filter_map(|i| img.u32(r + 4 * i)).collect();
+                let hits: Vec<&&String> = names.iter().filter(|n| words.contains(&shader::name_hash(n))).collect();
+                if !hits.is_empty() {
+                    println!("  row {k}: {words:08x?} holds {hits:?}");
+                }
+            }
+            for n in &names {
+                println!("  {n}: {:08x}", shader::name_hash(n));
+            }
+        }
         "qtable" => {
             // (study) the quick data table (of ENTRY) holding a word: its name and every row's
             // words, pointers to strings shown as the strings
@@ -2048,6 +2120,16 @@ fn main() -> ExitCode {
                     println!("tick {} object {:08x} res {:08x}: kind {} node {} light {:08x} at {:?} radius {} reach {} | {:08x} {}", o.tick, o.object, o.resources, l.kind, l.node, l.light, l.at, l.radius, l.reach, l.words[0], w[1..].join(" "));
                 }
             }
+        }
+        "cardfile" => {
+            // (study) a card's save file as the engine reads it, written to OUT
+            let (Some(card), Some(out)) = (args.get(3), args.get(4)) else {
+                println!("usage: assets ISO cardfile CARD OUT");
+                return ExitCode::FAILURE;
+            };
+            let f = housefire::save::memory_card_file(&std::fs::read(card).unwrap_or_default(), "G4ME69").unwrap_or_default();
+            println!("{} bytes", f.len());
+            let _ = std::fs::write(out, f);
         }
         "cardfind" => {
             // where a clock (hour, then minute and second 5 and 6 words on, i16 either order) is
