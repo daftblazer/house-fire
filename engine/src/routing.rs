@@ -1,7 +1,7 @@
 //! Routing: where a Sim can walk (`docs/simulation.md`, "Routing"). Measured on the recompiled
 //! Bustin' Out's home log (the Sims' places, 'P').
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 
 use crate::save::LotArray;
 use crate::world::World;
@@ -254,30 +254,40 @@ pub fn weighed_path(start: (i32, i32), goal: (i32, i32), obstacles: &[[i32; 5]],
         blocking.extend(walls.wall_rects(half));
     }
     let inside = |p: (i32, i32)| blocking.iter().any(|r| p.0 > r[0] && p.0 < r[2] && p.1 > r[1] && p.1 < r[3]);
+    // The nodes in the order found, each once.
     let mut nodes = vec![start, goal];
+    let mut seen: HashSet<(i32, i32)> = nodes.iter().copied().collect();
+    let mut add = |c: (i32, i32), nodes: &mut Vec<(i32, i32)>| {
+        if !inside(c) && seen.insert(c) {
+            nodes.push(c);
+        }
+    };
     for r in &blocking {
         for c in [(r[0], r[1]), (r[2], r[1]), (r[0], r[3]), (r[2], r[3])] {
-            if !inside(c) && !nodes.contains(&c) {
-                nodes.push(c);
-            }
+            add(c, &mut nodes);
         }
     }
     for r in paved {
         for c in [(r[0], r[1]), (r[2], r[1]), (r[0], r[3]), (r[2], r[3]), (r[0] + half, r[1] + half), (r[2] - half, r[1] + half), (r[0] + half, r[3] - half), (r[2] - half, r[3] - half)] {
-            if !inside(c) && !nodes.contains(&c) {
-                nodes.push(c);
-            }
+            add(c, &mut nodes);
         }
     }
-    let clear = |a: (i32, i32), b: (i32, i32)| !blocking.iter().any(|r| segment_enters(a, b, r)) && walls.line_open(a, b);
+    // A segment whose box does not overlap a rectangle's inside neither enters it nor has any
+    // length in it, so those tests are only made for the rectangles its box overlaps.
+    let box_misses = |a: (i32, i32), b: (i32, i32), r: &[i32; 4]| a.0.max(b.0) <= r[0] || a.0.min(b.0) >= r[2] || a.1.max(b.1) <= r[1] || a.1.min(b.1) >= r[3];
+    let clear = |a: (i32, i32), b: (i32, i32)| !blocking.iter().any(|r| !box_misses(a, b, r) && segment_enters(a, b, r)) && walls.line_open(a, b);
+    let length = |a: (i32, i32), b: (i32, i32)| (((b.0 - a.0).pow(2) + (b.1 - a.1).pow(2)) as f64).sqrt();
     let cost = |a: (i32, i32), b: (i32, i32)| {
-        let len = (((b.0 - a.0).pow(2) + (b.1 - a.1).pow(2)) as f64).sqrt();
+        let len = length(a, b);
         if paved.is_empty() {
             return len;
         }
-        let on = paved.iter().map(|r| inside_length(a, b, r)).sum::<f64>().min(len);
+        let on = paved.iter().map(|r| if box_misses(a, b, r) { 0.0 } else { inside_length(a, b, r) }).sum::<f64>().min(len);
         on + (len - on) * weight
     };
+    // With a weight of 1 or more no line costs less than its length (less a rounding's slack),
+    // so a node that the length alone cannot better is not costed.
+    let at_least_length = weight >= 1.0;
     let n = nodes.len();
     let mut dist = vec![f64::INFINITY; n];
     let mut prev = vec![usize::MAX; n];
@@ -290,6 +300,9 @@ pub fn weighed_path(start: (i32, i32), goal: (i32, i32), obstacles: &[[i32; 5]],
         done[u] = true;
         for v in 0..n {
             if done[v] || v == u {
+                continue;
+            }
+            if at_least_length && dist[u] + length(nodes[u], nodes[v]) * (1.0 - 1e-9) >= dist[v] {
                 continue;
             }
             let d = dist[u] + cost(nodes[u], nodes[v]);
@@ -502,6 +515,10 @@ pub struct Walls {
     patterns: Vec<[u8; 4]>,
     /// The windows' edges (`key` from the lower tile), as doors' are in `open`.
     windows: Vec<u32>,
+    /// Each closed wall edge (no door open in it) as the line it is, {x0, y0, x1, y1} in
+    /// sixteenths with x0 = x1 or y0 = y1, in the order of the grid (found once; the planner
+    /// grows them by its clearance, `wall_rects`).
+    closed_edges: Vec<[i32; 4]>,
 }
 
 impl Walls {
@@ -553,6 +570,7 @@ impl Walls {
             }
         }
         w.find_rooms();
+        w.closed_edges = w.find_closed_edges();
         w
     }
 
@@ -626,8 +644,6 @@ impl Walls {
         self.at(x, y) & leaving(dx, dy) != 0 || self.at(x + dx, y + dy) & entering(dx, dy) != 0
     }
 
-    /// Whether a Sim on tile (x, y) can step to its neighbour (x + dx, y + dy), one of dx and dy
-    /// 0 and the other ±1. Off the grid is open (the lot's edge is not a wall here).
     /// Whether a straight line between two places (sixteenths) crosses no wall: each tile it
     /// steps into from the last (stepped along it a sixteenth at a time) open from it, a diagonal
     /// step by either way round.
@@ -654,6 +670,8 @@ impl Walls {
         true
     }
 
+    /// Whether a Sim on tile (x, y) can step to its neighbour (x + dx, y + dy), one of dx and dy
+    /// 0 and the other ±1. Off the grid is open (the lot's edge is not a wall here).
     pub fn can_step(&self, x: i32, y: i32, dx: i32, dy: i32) -> bool {
         !self.wall_between(x, y, dx, dy)
             || self.open.contains(&key(x, y, leaving(dx, dy)))
@@ -719,17 +737,21 @@ impl Walls {
     /// {x0, y0, x1, y1} in sixteenths: the walls as the planner keeps clear of them. Diagonal
     /// walls are not among them.
     pub fn wall_rects(&self, half: i32) -> Vec<[i32; 4]> {
+        self.closed_edges.iter().map(|r| [r[0] - half, r[1] - half, r[2] + half, r[3] + half]).collect()
+    }
+
+    fn find_closed_edges(&self) -> Vec<[i32; 4]> {
         let mut out = Vec::new();
         for y in 0..self.height as i32 {
             for x in 0..self.width as i32 {
                 // the edges towards x + 1 and y + 1 (each wall once)
                 if x + 1 < self.width as i32 && !self.can_step(x, y, 1, 0) {
                     let e = (x + 1) * 16;
-                    out.push([e - half, y * 16 - half, e + half, (y + 1) * 16 + half]);
+                    out.push([e, y * 16, e, (y + 1) * 16]);
                 }
                 if y + 1 < self.height as i32 && !self.can_step(x, y, 0, 1) {
                     let e = (y + 1) * 16;
-                    out.push([x * 16 - half, e - half, (x + 1) * 16 + half, e + half]);
+                    out.push([x * 16, e, (x + 1) * 16, e]);
                 }
             }
         }
