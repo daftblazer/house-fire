@@ -918,3 +918,22 @@ A record without the object keeps its words. Home's outside record has an ambien
 Checked through the observer's '2' record (the two objects' factor, colour and direction
 before, the record's 20 words after) with `assets roomsun`: home's and club's 4,000 records each, word for word.
 Where the objects' colours, factors and direction come from (the time of day) is next.
+
+The time of day's light (`light::time_of_day`, the original's Light_TimeOfDay at 0x8004A1F4,
+called with the sun object, the ambient object, the hour, minute and second, and a pointer
+that receives the last value). The keys (`light::TIME_KEYS`) are ten entries: an hour (0, 4, 5,
+6, 7, 12, 17, 18, 19, 20), the sun's colour and factor, the ambient's colour and factor, and a
+last value. The original builds them in code (0x8004B784) into 0x802E60C4, so they are not on
+the disc. The key for an hour (0x8004A194) is the one at the hour, else the key before the first
+later one (wrapping round), else the last. Then:
+- t = (time since the key) / (span to the next key), each wrapped by 86,400 when below 0;
+- a colour is next × t + key × (1 − t);
+- a factor and the last value are next fused onto key × (1 − t).
+The objects take a new colour only when it moved (squared) more than 0, and are flagged changed
+(+136) when it moved more than 0.25 (a factor: 0.1). The sun's direction comes from a rotation
+by the time (0x801B3024) and is not ported yet.
+Checked through the observer's '3' record (the call's registers, the 100-word table, the sun
+object's factor, colour and direction after and the last value) with `assets timeofday`: the
+engine's keys equal the logged table. Home's 2,000 calls (from 7:04) and club's 2,000 (from
+18:15) give the sun's colour and factor and the last value bit for bit. The ambient's part follows
+the same code; the observer doesn't log its object yet.

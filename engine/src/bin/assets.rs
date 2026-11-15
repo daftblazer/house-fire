@@ -1965,6 +1965,38 @@ fn main() -> ExitCode {
                 }
             }
         }
+        "timeofday" => {
+            // the logged time of day calls (study): distinct tables, and each call's clock and out
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO timeofday LOG");
+                return ExitCode::FAILURE;
+            };
+            let f = |v: u32| f32::from_bits(v);
+            let tables: BTreeSet<&Vec<u32>> = log.times_of_day.iter().map(|t| &t.2).collect();
+            println!("calls {}, tables {}", log.times_of_day.len(), tables.len());
+            for t in &tables {
+                for e in t.chunks(10) {
+                    println!("  {} {:?}", e[0] as i32, e[1..].iter().map(|&v| f(v)).collect::<Vec<_>>());
+                }
+            }
+            let keys: Vec<u32> = housefire::light::TIME_KEYS.iter().flat_map(|(h, v)| std::iter::once(*h as u32).chain(v.iter().map(|x| x.to_bits()))).collect();
+            println!("the engine's keys the same as the logged table: {}", tables.iter().all(|t| **t == keys));
+            let (mut same, mut shown) = (0, 0);
+            for (tick, r, _, o) in &log.times_of_day {
+                let d = housefire::light::time_of_day(r[2] as i32, r[3] as i32, r[4] as i32);
+                let mine = [d.sun_factor.to_bits(), d.sun[0].to_bits(), d.sun[1].to_bits(), d.sun[2].to_bits(), d.extra.to_bits()];
+                if mine == [o[1], o[2], o[3], o[4], o[8]] {
+                    same += 1;
+                } else if shown < 5 {
+                    shown += 1;
+                    println!("  tick {tick} at {} {} {}: mine {d:?}, the log's factor {} colour {:?} extra {}", r[2] as i32, r[3] as i32, r[4] as i32, f(o[1]), [f(o[2]), f(o[3]), f(o[4])], f(o[8]));
+                }
+            }
+            println!("the engine's sun colour, factor and last value: {same}");
+            for (tick, r, _, o) in log.times_of_day.iter().take(args.get(4).and_then(|v| v.parse().ok()).unwrap_or(0)) {
+                println!("tick {tick} regs {r:08x?} ({} {} {}): +136 {} factor {} colour {:?} direction {:?} out {}", r[2] as i32, r[3] as i32, r[4] as i32, o[0], f(o[1]), [f(o[2]), f(o[3]), f(o[4])], [f(o[5]), f(o[6]), f(o[7])], f(o[8]));
+            }
+        }
         "roomsun" => {
             // each logged room record's ambient and sun against the engine's from its objects
             let Some(log) = args.get(3).and_then(|p| read_log(p)) else {

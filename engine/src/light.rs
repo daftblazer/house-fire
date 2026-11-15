@@ -138,6 +138,67 @@ pub fn window_light_places(tile: (i32, i32), facing: u8) -> Option<[(f32, f32); 
     Some([at(1.0), at(-1.0)])
 }
 
+/// The time of day's keys (the original builds them in code, 0x8004B784, into 0x802E60C4): an
+/// hour, the sun's colour and factor, the ambient's colour and factor, and a last value (`TimeOfDay::extra`).
+pub const TIME_KEYS: [(i32, [f32; 9]); 10] = [
+    (0, [0.7, 0.7, 1.0, 0.35, 0.3, 0.3, 1.0, 0.25, 0.35]),
+    (4, [0.7, 0.7, 1.0, 0.4, 0.5, 0.5, 1.0, 0.35, 0.2]),
+    (5, [1.0, 0.4, 0.8, 1.25, 0.6, 0.5, 1.0, 0.4, 0.01]),
+    (6, [1.0, 0.5, 0.6, 1.55, 0.5, 0.5, 1.0, 0.6, 0.35]),
+    (7, [1.0, 1.0, 0.7, 1.3, 0.8, 0.8, 1.0, 0.4, 0.5]),
+    (12, [1.0, 1.0, 0.7, 1.3, 0.8, 0.8, 1.0, 0.4, 0.65]),
+    (17, [1.0, 1.0, 0.7, 1.3, 0.8, 0.8, 1.0, 0.4, 0.5]),
+    (18, [1.0, 0.7, 0.25, 1.55, 0.6, 0.6, 0.8, 0.5, 0.5]),
+    (19, [1.0, 0.7, 0.25, 1.1, 0.6, 0.6, 0.8, 0.6, 0.01]),
+    (20, [0.7, 0.7, 1.0, 0.4, 0.5, 0.5, 1.0, 0.35, 0.2]),
+];
+
+/// A day's seconds: a span or elapsed time below 0 wraps by it.
+pub const DAY_SECONDS: f32 = 86400.0;
+
+/// The time of day's light at a clock time (the original's Light_TimeOfDay, 0x8004A1F4, its
+/// colour part; the sun's direction is not ported yet).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TimeOfDay {
+    pub sun: [f32; 3],
+    pub sun_factor: f32,
+    pub ambient: [f32; 3],
+    pub ambient_factor: f32,
+    /// The keys' last value at the time (given out through the call's last argument).
+    pub extra: f32,
+}
+
+/// The key for an hour (0x8004A194): the one at the hour, else the one before the first later
+/// key (wrapping round), else the last.
+pub fn time_key(hour: i32) -> usize {
+    for (i, (h, _)) in TIME_KEYS.iter().enumerate() {
+        if hour == *h {
+            return i;
+        }
+        if hour < *h {
+            return (i + 9) % 10;
+        }
+    }
+    9
+}
+
+/// The light at `hour`:`minute`:`second` (minute and second taken mod 60): t is the time since
+/// the key over the span to the next (each wrapped by a day when below 0); a colour is next x t +
+/// key x (1 - t), a factor and the last value next fused onto key x (1 - t).
+pub fn time_of_day(hour: i32, minute: i32, second: i32) -> TimeOfDay {
+    let i = time_key(hour);
+    let j = (i + 1) % 10;
+    let (a, b) = (&TIME_KEYS[i], &TIME_KEYS[j]);
+    let wrap = |v: f32| if v < 0.0 { v + DAY_SECONDS } else { v };
+    let span = wrap(((b.0 - a.0) * 3600) as f32);
+    let since = wrap(((hour - a.0) * 3600 + (minute % 60) * 60 + second % 60) as f32);
+    let t = since / span;
+    let u = 1.0 - t;
+    let colour = |k: usize| [b.1[k] * t + a.1[k] * u, b.1[k + 1] * t + a.1[k + 1] * u, b.1[k + 2] * t + a.1[k + 2] * u];
+    let fused = |k: usize| f64::from(b.1[k]).mul_add(f64::from(t), f64::from(a.1[k] * u)) as f32;
+    TimeOfDay { sun: colour(0), sun_factor: fused(3), ambient: colour(4), ambient_factor: fused(7), extra: fused(8) }
+}
+
 /// A room record's ambient and sun from its two light objects (the original's Light_RoomSun,
 /// 0x801696F0, by their get-lights 0x801631C8 and 0x801636B4): words 0-6 from the ambient (a
 /// position and reach of 0, then its colour x its factor), words 8-14 from the sun (its
@@ -415,6 +476,20 @@ mod tests {
         assert_eq!(entry_points(0x0005_0203), vec![(2, 5), (2, 6), (3, 5), (3, 6), (4, 5), (4, 6)]);
         // a leading half (0x40: on the row) and a trailing half (0x80: the row after)
         assert_eq!(entry_points(0x0005_4283), vec![(2, 5), (3, 5), (3, 6), (4, 6)]);
+    }
+
+    #[test]
+    fn the_time_of_day_runs_between_its_keys() {
+        assert_eq!(time_key(0), 0);
+        assert_eq!(time_key(3), 0);
+        assert_eq!(time_key(13), 5);
+        assert_eq!(time_key(23), 9);
+        // at a key, its own light
+        let d = time_of_day(7, 0, 0);
+        assert_eq!((d.sun, d.sun_factor, d.extra), ([1.0, 1.0, 0.7], 1.3, 0.5));
+        // 20:00 to 0:00 wraps over midnight: halfway at 22:00
+        let d = time_of_day(22, 0, 0);
+        assert!((d.extra - 0.275).abs() < 1e-6);
     }
 
     #[test]
