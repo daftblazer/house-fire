@@ -812,6 +812,9 @@ fn main() -> ExitCode {
                             // the frames of the run's first tick and the next, against the play's first
                             let of = |tick: u32| log.tracks.iter().filter(|t| t.tick == tick).map(|t| t.frame).collect::<BTreeSet<u32>>();
                             let first_frame = log.tracks.iter().find(|t| t.tick == p.1 && t.place[0] == 0.0).map(|t| t.frame);
+                            if let Some(t) = log.tracks.iter().find(|t| t.tick == p.1 && t.place[0] == 0.0) {
+                                println!("  anim pointer {name}: {:08x} (tick {})", t.anim, t.tick);
+                            }
                             // the first frame whose records come after the run's first step
                             let step_at = first_step.get(&(name.clone(), *first)).copied().unwrap_or(0);
                             let next_frame = log.tracks.iter().find(|t| t.after_steps > step_at).map(|t| t.frame);
@@ -870,6 +873,7 @@ fn main() -> ExitCode {
                     }
                 }
                 let mut tally: BTreeMap<&str, usize> = BTreeMap::new();
+                let mut early: BTreeMap<(String, u8, &str, i16), Vec<usize>> = BTreeMap::new();
                 let mut runs_in_order: Vec<&(String, u32, u32)> = each.iter().collect();
                 runs_in_order.sort_by_key(|e| e.1);
                 for (name, first, end) in runs_in_order {
@@ -891,6 +895,17 @@ fn main() -> ExitCode {
                         std::cmp::Ordering::Greater => "ends before the animation's end (an event or an interruption)",
                         std::cmp::Ordering::Less => "ends after it (NOT native)",
                     }).or_default() += 1;
+                    if predicted > *end {
+                        // an early end: the frames it played (from its first to its last step), the
+                        // branch, local 0 after it
+                        let last_i = steps.last().map(|e| e.1).unwrap_or(0);
+                        let played = frames.iter().filter(|f| f.2 > at && f.2 <= last_i).count();
+                        let ls = &log.steps[last_i];
+                        let node = step_object[last_i].and_then(|o| lib.tree(Some(o), ls.tree)).and_then(|t| lib.tree_at(t).nodes.get(ls.node as usize)).copied();
+                        let branch = node.map_or("?", |nd| if ls.after == nd.true_target as u16 { "true" } else if ls.after == nd.false_target as u16 { "false" } else { "other" });
+                        let flags = operand_of.get(&(name.clone(), *first)).map_or(0, |o| o[5]);
+                        early.entry((name.clone(), flags, branch, ls.locals_after.first().copied().unwrap_or(-1))).or_default().push(played);
+                    }
                     if predicted == *end && std::env::var_os("LOCKSTEP_ANIM_NATIVE_EACH").is_some() {
                         println!("  native {name} {first}..{end}; operand {:02x?}", operand_of.get(&(name.clone(), *first)));
                     }
@@ -899,6 +914,11 @@ fn main() -> ExitCode {
                     }
                 }
                 println!("animate runs natively (the load, the frames, the tick after): {tally:?}");
+                if std::env::var_os("LOCKSTEP_ANIM_EARLY").is_some() {
+                    for ((name, flags, branch, l0), played) in &early {
+                        println!("  early {name} flags {flags:02x} {branch} local0 {l0}: frames played {played:?}");
+                    }
+                }
             }
             println!("animate runs against the tracks: {by:?}; (track start - run start, run end - track done): runs {hits:?}");
         }

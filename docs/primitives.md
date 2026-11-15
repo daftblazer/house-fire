@@ -322,6 +322,18 @@ Of home's 166 runs, the 7 that last to their animation's end return on that tick
 backward approaches among them). The other 159 end before it, on an event (flag 0x20) or an
 interruption: next, from the animations' events. The frames' ticks are still the log's (the
 frame clock natively is the walkers' fitted phase).
+The early ends (iteration 125, `LOCKSTEP_ANIM_EARLY`: each early run's frames played, its
+branch and local 0 after). They repeat: `a2o-easel-paint` (flag 0x20) ends false with local 0
+101 after 7, 20, 14, 37, 31, 17 and 14 frames, over and over (the script calls it again to go
+on), and with 102 after 15, 12, 7. `a2o-eatloop-stand` ends after 16 or 17 frames (101), the
+fridge's with 62, the stove's with 198, the reaches with 16 or 0. So events at fixed frames of
+the play. They are not the animation's: EA's `EAnimController::ProcessEvents` (Bustin' Out
+`fn_80156E48`, 0.912; `AddEventRange` `fn_8015701C`, 0.982) reads the animation's event array
+(+144, +148 the count, 80 bytes each, the frame at +68), and that array is empty both in the
+archive (0 on all 4,013) and in memory (home's tick-1,000 snapshot of the 0x7E... region:
+a2o-fridge-getfood's struct, 121 frames, 0 events). The Sims 2's `SAnimator2::processEvents(
+AnimRef &, ...)` takes the AnimRef, so the events are the AnimRef row's (its second word, shared
+between paired animations, or its third, a name), still to read.
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object

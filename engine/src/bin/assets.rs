@@ -2273,6 +2273,14 @@ fn main() -> ExitCode {
                     }
                 }
             }
+            // (ANIMS_NAMED=a,b: those animations' scalar fields and bits, the set bits' places)
+            if let Ok(v) = std::env::var("ANIMS_NAMED") {
+                for want in v.split(',') {
+                    let Some(a) = es.iter().find(|e| e.name == want).and_then(|e| housefire::anim::read(arc::bytes(&b, e))) else { continue };
+                    let set: Vec<u32> = (0..a.bits).filter(|k| a.bit_words.get((k / 32) as usize).is_some_and(|w| w >> (31 - k % 32) & 1 != 0)).collect();
+                    println!("  {}: {} frames at {}, nodes {}, word {:08x}, constants {}, bits {} (set {}: {:?}), floats {:?}, byte {}, words {:08x?}, flags {:?}", a.name, a.frames, a.rate, a.nodes.len(), a.word, a.constants.len(), a.bits, set.len(), &set[..set.len().min(40)], a.floats, a.byte, a.words, a.flags);
+                }
+            }
             // (ANIMS_AT=I,J,...: the entries at those indices, by the archive's order, and by id order)
             if let Ok(v) = std::env::var("ANIMS_AT") {
                 let mut by_id: Vec<&arc::Entry> = es.iter().collect();
