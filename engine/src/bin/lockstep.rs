@@ -1470,6 +1470,8 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &DiscTab
                             }
                         }
                         println!("  objects per entry {per:?}");
+                        // the entries in the engine's axes with the engine's room of each
+                        println!("  entries (x, y: room) {:?}", tiles.iter().map(|t| (t.1, t.0, lw.walls.room(t.1, t.0))).collect::<Vec<_>>());
                         // the definition fields that are 8 for some object on the entry, counted per entry
                         let mut by_field: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
                         for t in &tiles {

@@ -1055,3 +1055,12 @@ With the engine's objects at tick 100, home's three rooms count 12, 7 and 4 open
 entry as the log's kinds (lockstep `LOCKSTEP_ROOM_WINDOWS=LOG,SNAPSHOT` with
 `LOCKSTEP_DUMP_PLACES=100` and `LOCKSTEP_DUMP_WALLS`). The rooms' tile lists themselves still
 come from the snapshot; the engine's rooms are next.
+
+Where the rooms' tile lists come from (iteration 96). In the engine's axes, a room's entries are
+a serpentine walk over its tiles, column pairs up and down. There are repeats, and some entries
+at the turns lie outside the room (the engine's room 0). It is the floor's strip order, not the
+room's tile set, so the window share counts some tiles twice and outside tiles too. A watch on
+a room's +4 at load named the setter `Room_SetTiles` 0x80235EF0 (a vector copy, 0x80236FA8). Its
+caller 0x80243C24 is the lot's room walk, about 3,000 instructions. The engine's rooms per tile
+(`routing::Walls::room`) agree with the entries inside the rooms: rooms 2, 3 and 4 are home's
+three. Porting the walk is next, checked against the snapshot's lists entry for entry.
