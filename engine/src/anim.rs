@@ -579,6 +579,33 @@ pub fn rotation_header(words: &[u32], at: u32) -> RotHeader {
     RotHeader { keys, gap_bits, bias_bits, point_bits, point_scale: scale(point_bits), bias_scale, first_record: p, record_bits }
 }
 
+/// A flag channel (a node's fourth word (+16), `Animate`'s state bit 0x10): one bit per frame in the
+/// animation's bit array, the stream being nothing but the bit its first frame sits at (801BD4C8
+/// stores the bits object and that bit; the node word is it negated, as the other channels').
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FlagStream {
+    pub start: u32,
+}
+
+impl FlagStream {
+    /// The flag stream a node's flag word names (`Channel::Stream`), if it does.
+    pub fn of(word: u32) -> Option<FlagStream> {
+        match Channel::of(word) {
+            Channel::Stream(start) => Some(FlagStream { start }),
+            _ => None,
+        }
+    }
+
+    /// The flag at `place` (801BD4D4): the bit at the start plus the place, the sum in single
+    /// precision, cut toward zero; a bit past the array's end, or before its start, is clear.
+    pub fn read(&self, words: &[u32], total_bits: u32, place: f32) -> bool {
+        // 802C38B0 is the double 2^52 + 2^31 the original's int-to-float trick subtracts: the
+        // start as an exact integer, then the float sum
+        let at = (self.start as i32 as f32 + place) as i32 as u32;
+        at < total_bits && words.get((at >> 5) as usize).is_some_and(|w| w >> (at & 31) & 1 != 0)
+    }
+}
+
 /// `width` bits at bit `at` as a signed field (801ADB4C): sign-extended from its top bit.
 fn signed_bits(words: &[u32], at: u32, width: u32) -> i32 {
     let v = bits(words, at, width);
@@ -1465,5 +1492,21 @@ mod tests {
         assert!(!l.ask(2, 5));
         assert!(l.ask(2, 6));
         assert!(l.ask(2, 7));
+    }
+
+    #[test]
+    fn a_flag_stream_reads_the_bit_at_its_start_plus_the_place() {
+        // bits 3 and 33 set in a 40-bit array; the stream starts at bit 2 (the word -2)
+        let w = [1u32 << 3, 1 << 1];
+        let f = FlagStream::of((-2i32) as u32).unwrap();
+        assert_eq!(f, FlagStream { start: 2 });
+        assert!(FlagStream::of(0).is_none() && FlagStream::of(5).is_none());
+        assert!(!f.read(&w, 40, 0.0));
+        assert!(f.read(&w, 40, 1.0) && f.read(&w, 40, 1.9));
+        assert!(f.read(&w, 40, 31.0));
+        assert!(!f.read(&w, 40, 32.0));
+        // past the end of the bits, and before the start of the array: clear
+        assert!(!f.read(&w, 33, 31.0));
+        assert!(!f.read(&w, 40, -3.0));
     }
 }
