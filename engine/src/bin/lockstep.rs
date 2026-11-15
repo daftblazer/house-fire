@@ -1110,6 +1110,30 @@ fn main() -> ExitCode {
                     // owing more
                     let mut counted: BTreeMap<u32, (usize, bool)> = BTreeMap::new();
                     let use_track_speed = std::env::var_os("LOCKSTEP_ANIM_TRACK_SPEED").is_some();
+                    let use_rule = std::env::var_os("LOCKSTEP_ANIM_RULE_SPEED").is_some();
+                    // the ticks with an Animate load miss (the engine's `anim::Loads` on the
+                    // original's asks in order) and the Sims they stop: the asker (the step before
+                    // the ask) and every Sim with an Animate step that tick
+                    let mut paused_at: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
+                    {
+                        let mut l2 = housefire::anim::Loads::with_sets(&refs, &ids);
+                        let mut animating: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
+                        for (i, st) in log.steps.iter().enumerate() {
+                            let node = step_object[i].and_then(|o| lib.tree(Some(o), st.tree)).and_then(|tr| lib.tree_at(tr).nodes.get(st.node as usize)).copied();
+                            if node.is_some_and(|n| n.opcode == 44) {
+                                animating.entry(st.tick).or_default().insert(st.sim);
+                            }
+                        }
+                        for q in log.loaded.iter().filter(|q| q.caller == 0x800A_C7E4) {
+                            if !l2.ask(q.id, q.tick) {
+                                let e = paused_at.entry(q.tick).or_default();
+                                if let Some(st) = log.steps.get(q.after_steps.saturating_sub(1)) {
+                                    e.insert(st.sim);
+                                }
+                                e.extend(animating.get(&q.tick).into_iter().flatten().copied());
+                            }
+                        }
+                    }
                     let mut started: BTreeMap<u32, Vec<(u32, f32)>> = BTreeMap::new();
                     let mut track_speed: BTreeMap<(u32, u32), f32> = BTreeMap::new();
                     for t in &log.tracks {
@@ -1230,6 +1254,9 @@ fn main() -> ExitCode {
                                 Some(&v) => v,
                                 None => speed,
                             };
+                            // (LOCKSTEP_ANIM_RULE_SPEED: the pause by the rule, iteration 136: a
+                            // tick with an Animate load miss stops its asker and its Animate Sims)
+                            let speed = if use_rule && paused_at.get(&frames[k0 + m].1).is_some_and(|p| p.contains(&sim)) { 0.0 } else { speed };
                             if place + step * speed > target + 1e-3 {
                                 break;
                             }

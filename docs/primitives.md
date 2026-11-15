@@ -451,6 +451,12 @@ for that tick's frames. Their steps may come before or after the miss, since the
 at the frame's update after the tick. Every other Sim keeps its speed. This holds on 12 of the
 13 ticks with a miss or a short pause. The one left is tick 1, the lot's first, where an
 object, not a Sim, asks and all are paused. No short pause comes without a miss.
+Iteration 137: the notes model with that rule in place of the logged tracks' pauses
+(`LOCKSTEP_ANIM_RULE_SPEED`). The misses come from the engine's `anim::Loads` on the asks in
+order, and the paused Sims are the asker plus that tick's Animate Sims. It gives 162 of 166 runs
+on the native tick, on home-a10.log and home-a11.log alike, the same as the tracks' own speeds.
+The fast-forward is still the logged one (its frames' ticks). Only a2o-flamingo-kick's 4 at-once
+calls are left.
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object
