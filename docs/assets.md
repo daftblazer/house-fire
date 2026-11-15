@@ -1017,3 +1017,19 @@ work/snap/home, ticks 1 to 6,000) hold the clock's globals as the log's '5' reco
 log has them (ticks 1, 100, 500 and 1,000), and the day/night table (0.3, 0.2) as logged. A run
 with ten snapshots came out 30 steps short of the full log, so snapshot runs give data only. The
 steps are counted from the log kept beside them.
+
+The window brightness's inputs, from the snapshots (iteration 93). A room object (the '6'
+record's r3) holds its tile entries between the pointers at +4 and +8. Each entry is 3 bytes (x,
+y, level), and some tiles appear more than once. The tile count the share divides by is +72 / 2
+(rounded towards 0, 0x80235EDC): home's rooms 219, 34 and 34, which with the logged brightness
+give whole window counts (12, 7, 4). For each entry, the loop:
+- looks the tile up in the manager's (r13 − 23124) 64 × 64 grid of s16 ids at +52 (row y × 128
+  + x × 2, 0x802031B0; the level byte is not used);
+- takes the id's entry in the table at +8332 (0x80203168, its +4);
+- counts the entry when that object's kind is 8: its virtual +872 (0x801F60D8), the s16 at +18
+  of the record its +232 points at.
+Those records live below 0x80000000 (0x7E81FAEC for one), outside the snapshots. Checked so far
+against the engine: the big room's 12 windows are the engine's 12 window objects on its tiles.
+The two small rooms are not (7 and 4 implied, against 4 and 0 windows, and no definition field
+at 8 fits). So the grid maps tiles to objects beyond those standing on them. Next: log each
+entry's grid id and kind in the observer (memory reads only).

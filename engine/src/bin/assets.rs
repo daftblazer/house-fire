@@ -2165,6 +2165,14 @@ fn main() -> ExitCode {
             for ((kind, d, n), c) in &kinds {
                 println!("  kind {kind}: day {} night {}: {c}", f(*d), f(*n));
             }
+            let mut rooms: BTreeMap<(u32, u32, u32, u32), (u32, u32)> = BTreeMap::new();
+            for w in &log.window_brightness {
+                let e = rooms.entry((w[1], w[2], w[3], w[4])).or_insert((w[0], w[0]));
+                e.1 = w[0];
+            }
+            for ((o, b, e, r), (t0, t1)) in &rooms {
+                println!("  room object {o:08x} tiles {b:#x}..{e:#x} ({}): brightness {} (ticks {t0}-{t1})", e.wrapping_sub(*b) / 3, f(*r));
+            }
             let bs: BTreeSet<u32> = log.window_brightness.iter().map(|w| w[4]).collect();
             println!("  brightness values {:?}", bs.iter().map(|b| f(*b)).collect::<Vec<_>>());
         }

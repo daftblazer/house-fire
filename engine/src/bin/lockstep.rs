@@ -1442,6 +1442,54 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &DiscTab
                     }
                     let _ = std::fs::write(&at, out);
                 }
+                // (study, LOCKSTEP_ROOM_WINDOWS=LOG,SNAPSHOT: each room's tile list from the
+                // snapshot (the '6' records' ranges of (x, y, level) bytes), its tile count (+72 / 2),
+                // the engine's window objects on those tiles, against the window share the log's
+                // brightness gives)
+                if let Some((lp, sp)) = std::env::var("LOCKSTEP_ROOM_WINDOWS").ok().and_then(|v| v.split_once(',').map(|(a, b)| (a.to_string(), b.to_string()))) {
+                    let (Some(log), Ok(m)) = (read_log(&lp), std::fs::read(&sp)) else { panic!("LOCKSTEP_ROOM_WINDOWS: unreadable") };
+                    let byte = |a: u32| a.checked_sub(0x8000_0000).and_then(|o| m.get(o as usize).copied());
+                    let word = |a: u32| (0..4).try_fold(0u32, |w, k| Some(w << 8 | u32::from(byte(a + k)?)));
+                    let mut rooms = std::collections::BTreeMap::new();
+                    for w in &log.window_brightness {
+                        rooms.insert(w[1], (w[2], w[3], w[4]));
+                    }
+                    for (o, (b, e, r)) in rooms {
+                        let tiles: Vec<(i32, i32, i32)> = (b..e).step_by(3).filter_map(|a| Some((i32::from(byte(a)?), i32::from(byte(a + 1)?), i32::from(byte(a + 2)?)))).collect();
+                        let count = word(o + 72).map_or(0, |v| (v as i32) / 2);
+                        let implied = (f32::from_bits(r) - 1.0) / 0.25 * count as f32;
+                        let windows: Vec<String> = lw.objects().filter(|w| w.window && w.on_lot()).filter(|w| tiles.contains(&(w.x16 >> 4, w.y16 >> 4, w.level))).map(|w| format!("{}@{},{},{} f{} lead{}", w.id(), w.x16 >> 4, w.y16 >> 4, w.level, w.facing(), w.leader == w.id())).collect();
+                        let all: Vec<String> = lw.objects().filter(|w| w.window && w.on_lot()).map(|w| format!("{},{},{}", w.x16 >> 4, w.y16 >> 4, w.level)).collect();
+                        println!("room {o:08x}: {} tile entries, count {count}, implied windows {implied}; the engine's window objects on them {}: {windows:?}", tiles.len(), windows.len());
+                        let _ = all;
+                        // every object on the room's tile entries, counted per entry (as the loop goes)
+                        let mut per: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+                        for t in &tiles {
+                            for w in lw.objects().filter(|w| w.on_lot() && (w.x16 >> 4, w.y16 >> 4, w.level) == *t) {
+                                *per.entry(w.file.map_or("?".into(), |f| lib.file(f).path.clone())).or_default() += 1;
+                            }
+                        }
+                        println!("  objects per entry {per:?}");
+                        // the definition fields that are 8 for some object on the entry, counted per entry
+                        let mut by_field: std::collections::BTreeMap<usize, usize> = std::collections::BTreeMap::new();
+                        for t in &tiles {
+                            let mut fields = std::collections::BTreeSet::new();
+                            for w in lw.objects().filter(|w| w.on_lot() && (w.x16 >> 4, w.y16 >> 4, w.level) == *t) {
+                                if let Some(d) = lw.definition(w) {
+                                    for (k, v) in d.fields.iter().enumerate() {
+                                        if *v == 8 {
+                                            fields.insert(k);
+                                        }
+                                    }
+                                }
+                            }
+                            for k in fields {
+                                *by_field.entry(k).or_default() += 1;
+                            }
+                        }
+                        println!("  entries with a field at 8, by field {by_field:?}");
+                    }
+                }
                 // (and the windows' lights, LOCKSTEP_WINDOW_LIGHTS=LOG: the engine's places for each
                 // window's leading object against the other lights of the log's last 't' record,
                 // x and y bit for bit, as sets)
