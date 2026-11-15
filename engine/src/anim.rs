@@ -276,6 +276,47 @@ impl Play {
     }
 }
 
+/// The Sims' plays, as the game keeps them: one a Sim, asked by its Animate steps and stepped by
+/// the frames, in the game's order. A Sim's play goes on across Animate calls of the same
+/// animation until it has given true; another animation, or a call after true, starts anew (once
+/// the animation is in memory: `Loads`).
+#[derive(Clone, Debug, Default)]
+pub struct Animator {
+    pub loads: Loads,
+    /// The notes of every animation, by id (`notes`).
+    pub notes: std::collections::BTreeMap<u32, Vec<Note>>,
+    plays: std::collections::BTreeMap<u32, (u32, Play, f32)>,
+}
+
+impl Animator {
+    pub fn new(loads: Loads, notes: std::collections::BTreeMap<u32, Vec<Note>>) -> Animator {
+        Animator { loads, notes, plays: Default::default() }
+    }
+
+    /// An Animate step of `sim` at `tick` for the animation `id` (`anim` its data), played
+    /// `backward` and asking `wanted` counted events. Pending while it waits to be in memory.
+    pub fn animate(&mut self, sim: u32, id: u32, anim: &Anim, backward: bool, wanted: i32, tick: u32) -> Poll {
+        if self.plays.get(&sim).is_some_and(|p| p.0 != id || p.1.finished()) {
+            self.plays.remove(&sim);
+        }
+        if !self.plays.contains_key(&sim) {
+            if !self.loads.ask(id, tick) {
+                return Poll::Pending;
+            }
+            let play = Play::new(anim, self.notes.get(&id).map_or(&[][..], |v| v.as_slice()), backward, wanted);
+            self.plays.insert(sim, (id, play, anim.rate));
+        }
+        self.plays.get_mut(&sim).map_or(Poll::Pending, |p| p.1.poll())
+    }
+
+    /// A frame: every play steps by 0.033 s × its rate × its Sim's `speed` this frame.
+    pub fn frame(&mut self, mut speed: impl FnMut(u32) -> f32) {
+        for (sim, p) in self.plays.iter_mut() {
+            p.1.frame(crate::routing::WALK_FRAME * p.2 * speed(*sim));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -351,6 +392,25 @@ mod tests {
         }
         // 3 frames to pass the last (3) after a still one
         assert_eq!(at, Some(5));
+    }
+
+    #[test]
+    fn an_animator_waits_for_the_load_then_plays_on_across_calls() {
+        let mut a = anim(4, 30.0);
+        a.rate = 1.0 / crate::routing::WALK_FRAME;
+        let mut m = Animator::new(Loads::default(), Default::default());
+        // not in memory at tick 1: pending, there at tick 2
+        assert_eq!(m.animate(7, 9, &a, false, 0, 1), Poll::Pending);
+        m.frame(|_| 1.0);
+        let mut t = 2;
+        while m.animate(7, 9, &a, false, 0, t) == Poll::Pending {
+            m.frame(|_| 1.0);
+            t += 1;
+        }
+        // frames 0..3 then past 3: done at the fourth ask after the start
+        assert_eq!(t, 6);
+        // after true, the same call starts a new play
+        assert_eq!(m.animate(7, 9, &a, false, 0, t + 1), Poll::Pending);
     }
 
     #[test]

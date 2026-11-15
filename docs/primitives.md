@@ -491,6 +491,13 @@ frame after the step that starts it, each frame by 0.033 s × the rate × that f
 `poll()` gives Pending, Event(value) or Done: notes over 99, the next counted event, the owed
 counted events past the end. `LOCKSTEP_ANIM_ENGINE` drives each Sim's play through it on the
 log's frames: 167 of 167 runs native on home-a10.log and home-a11.log.
+Iteration 142: the Sims' plays are kept by `anim::Animator` (one play a Sim, the loads, the
+notes), driven in the game's order: `animate()` for each Animate step (once a tick for a run;
+the runs that start on one tick, like the owed events at once, take its steps in turn) and
+`frame()` for each frame where it falls among the steps, each Sim at its speed. A name not
+found is false at once. Through it, 167 of 167 runs native on home-a10.log and home-a11.log.
+The replay's home.log is older and has no frame records ('k'), so the replay cannot run
+Animate natively on it; that needs the replay on home-a11.log's frames.
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object
