@@ -670,6 +670,8 @@ fn main() -> ExitCode {
         // each run's first step (its index among the steps)
         let mut first_step: BTreeMap<(String, u32), usize> = BTreeMap::new();
         let mut operand_of: BTreeMap<(String, u32), [u8; 8]> = BTreeMap::new();
+        // each run's steps: (tick, step index)
+        let mut steps_of: BTreeMap<(String, u32), Vec<(u32, usize)>> = BTreeMap::new();
         let mut ends: BTreeMap<u8, usize> = BTreeMap::new();
         for (i, s) in log.steps.iter().enumerate() {
             let node = step_object[i].and_then(|o| lib.tree(Some(o), s.tree)).and_then(|t| lib.tree_at(t).nodes.get(s.node as usize)).copied();
@@ -705,6 +707,7 @@ fn main() -> ExitCode {
                 first_step.entry((name.clone(), start)).or_insert(i);
                 operand_of.entry((name.clone(), start)).or_insert([n.operand[0], n.operand[1], n.operand[2], n.operand[3], n.operand[4], n.operand[5], n.operand[6], n.operand[7]]);
             }
+            steps_of.entry((name.clone(), start)).or_default().push((s.tick, i));
             if s.result == 1 {
                 open.insert(s.sim, (s.tree, s.node, s.frame, start, name));
             } else {
@@ -848,6 +851,54 @@ fn main() -> ExitCode {
             }
             if !starts.is_empty() {
                 println!("animate plays' starts: (after a run's end that tick, first frame in the next tick): {starts:?}");
+            }
+            // natively: the step that finds the animation loaded (`anim::Loads` from the lot's
+            // sets), the first frame after it, the frames to the last (the place's step a frame
+            // 0.033 x the rate), and the return the tick after that frame's
+            if std::env::var_os("LOCKSTEP_ANIM_NATIVE").is_some() {
+                let house: u32 = std::env::var("LOCKSTEP_HOUSE").ok().and_then(|v| v.parse().ok()).unwrap_or(1);
+                let ids: std::collections::HashSet<u32> = by_id.keys().copied().collect();
+                let ds = d.read("datasets.arc").unwrap_or_default();
+                let sets: Vec<Vec<u8>> = housefire::arc::entries(&ds).unwrap_or_default().iter().filter(|e| e.name == "House1Preload" || e.name == format!("housepre{house:02}")).map(|e| housefire::arc::bytes(&ds, e).to_vec()).collect();
+                let refs: Vec<&[u8]> = sets.iter().map(|v| v.as_slice()).collect();
+                let mut loads = housefire::anim::Loads::with_sets(&refs, &ids);
+                // the frames in order: (frame, its tick, the steps before its first record)
+                let mut frames: Vec<(u32, u32, usize)> = Vec::new();
+                for t in &log.tracks {
+                    if frames.last().is_none_or(|f| f.0 != t.frame) {
+                        frames.push((t.frame, t.tick, t.after_steps));
+                    }
+                }
+                let mut tally: BTreeMap<&str, usize> = BTreeMap::new();
+                let mut runs_in_order: Vec<&(String, u32, u32)> = each.iter().collect();
+                runs_in_order.sort_by_key(|e| e.1);
+                for (name, first, end) in runs_in_order {
+                    let (Some(a), Some(steps)) = (by_name.get(name), steps_of.get(&(name.clone(), *first))) else { continue };
+                    let Some(id) = by_id.iter().find(|(_, x)| x.name == a.name).map(|e| *e.0) else { continue };
+                    // the first of the run's steps whose ask finds it loaded (one ask a tick)
+                    let mut seen = BTreeSet::new();
+                    let Some(&(_, at)) = steps.iter().filter(|(t, _)| seen.insert(*t)).find(|(t, _)| loads.ask(id, *t)) else { continue };
+                    let want = housefire::routing::WALK_FRAME * a.rate;
+                    // played backward (operand byte 5's 0x02: the controller's speed -1, from the
+                    // last frame), the first frame stays put: one frame more
+                    let backward = operand_of.get(&(name.clone(), *first)).is_some_and(|o| o[5] & 2 != 0);
+                    let n = ((a.frames as f32 - 1.0) / want).floor() as usize + 1 + usize::from(backward);
+                    let Some(k) = frames.iter().position(|f| f.2 > at) else { continue };
+                    let Some(last) = frames.get(k + n - 1) else { continue };
+                    let predicted = last.1 + 1;
+                    *tally.entry(match predicted.cmp(end) {
+                        std::cmp::Ordering::Equal => "returns on the native tick",
+                        std::cmp::Ordering::Greater => "ends before the animation's end (an event or an interruption)",
+                        std::cmp::Ordering::Less => "ends after it (NOT native)",
+                    }).or_default() += 1;
+                    if predicted == *end && std::env::var_os("LOCKSTEP_ANIM_NATIVE_EACH").is_some() {
+                        println!("  native {name} {first}..{end}; operand {:02x?}", operand_of.get(&(name.clone(), *first)));
+                    }
+                    if predicted < *end && std::env::var_os("LOCKSTEP_ANIM_NATIVE_EACH").is_some() {
+                        println!("  later {name} {first}..{end}: native {predicted}; operand {:02x?}", operand_of.get(&(name.clone(), *first)));
+                    }
+                }
+                println!("animate runs natively (the load, the frames, the tick after): {tally:?}");
             }
             println!("animate runs against the tracks: {by:?}; (track start - run start, run end - track done): runs {hits:?}");
         }

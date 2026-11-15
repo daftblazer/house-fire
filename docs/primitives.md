@@ -311,6 +311,17 @@ memory asks for its load and is answered loaded from the next tick. Lockstep
 home-a10.log (TryAnimate's, 800AC7E4) in turn: 104 of 104 as the original's. With iteration
 119's rule (a track starts on the first frame after the step that finds its animation loaded),
 that gives each whole play's start.
+A run's return natively (iteration 124, lockstep `LOCKSTEP_ANIM_NATIVE` on home-a10.log):
+1. the run's first step whose ask finds the animation loaded (`anim::Loads`);
+2. the first frame after it;
+3. the frames to the last, (frames - 1) / (0.033 × rate) + 1, one more when operand byte 5 has
+   0x02 (played backward: the controller's speed -1, from the last frame, the first frame
+   staying put);
+4. the tick after that frame's.
+Of home's 166 runs, the 7 that last to their animation's end return on that tick, all 7 (two
+backward approaches among them). The other 159 end before it, on an event (flag 0x20) or an
+interruption: next, from the animations' events. The frames' ticks are still the log's (the
+frame clock natively is the walkers' fitted phase).
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object
