@@ -935,6 +935,27 @@ fn main() -> ExitCode {
                     println!("  tick {t}: {}", line.iter().map(|e| e.1.as_str()).collect::<Vec<_>>().join(", "));
                 }
             }
+            if std::env::var_os("LOCKSTEP_ANIM_EVENTS").is_some() {
+                // (the event messenger's CallNamedTree steps: tick, string index; against the
+                // speed spans)
+                for (i, st) in log.steps.iter().enumerate() {
+                    let Some(f) = step_object[i] else { continue };
+                    if !lib.file(f).path.ends_with("event_messenger.iff") {
+                        continue;
+                    }
+                    let Some(n) = lib.tree(Some(f), st.tree).and_then(|tr| lib.tree_at(tr).nodes.get(st.node as usize)).copied() else { continue };
+                    if n.opcode == 28 {
+                        println!("  event tick {} tree {:#x}: string {} result {}", st.tick, st.tree, n.operand[4], st.result);
+                    }
+                }
+            }
+            if std::env::var_os("LOCKSTEP_ANIM_EVENTS").is_some() {
+                for (a, b) in [(1000u32, 2047u32), (2048, 4911), (4912, 5629), (5630, 6839), (23, 84)] {
+                    let n = log.steps.iter().filter(|s| s.tick >= a && s.tick <= b).count();
+                    let sims: BTreeSet<u32> = log.steps.iter().filter(|s| s.tick >= a && s.tick <= b).map(|s| s.sim).collect();
+                    println!("  ticks {a}..{b}: {n} steps ({:.1} a tick), {} running", n as f64 / (b - a + 1) as f64, sims.len());
+                }
+            }
             if std::env::var_os("LOCKSTEP_ANIM_BY_OPERAND").is_some() {
                 // (Animate steps by operand source and index: results, and whether the Sim's next
                 // step comes the same tick)

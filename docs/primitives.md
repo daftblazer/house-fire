@@ -476,6 +476,15 @@ The engine reads its own pad on its own frames, so it needs only "R held: 5×", 
 offset. The other zero spans are not input: the lot's start (frames 1248 to 1326, ticks 23 to 84,
 with the A press of video 1601 inside it) and ticks 2048 to 4911 and from 5630 (no press after
 2104). They are the game's own states, still to find (a dialog, the lot's intro).
+Iteration 140: those spans are the game paused, not a pause of the animations alone. The
+log's ticks go on, but almost nothing runs: from 2048 to 4911, 3,159 steps (1.1 a tick, by 4
+objects) against about 200 a tick before and after; from 5630, 1,438 (2 objects); from 23 to 84,
+254 (3). The event messenger's checks every 12 ticks (STR# 303 18, "CT - Event - NPC Reminder -
+Resident scripted event", then 10, "Goal - Reminder", false each time) stop with them. The
+party controller calls "CT - Party - Override" at 2047. What pauses the game is not found from
+the steps; the engine runs the log's ticks as they are. No Animate runs inside a pause, so
+the animation clock needs only the speed of the ticks that run: 1, 5 with R held, and 0 for a
+load miss's Sims.
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object
