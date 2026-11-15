@@ -138,6 +138,22 @@ pub fn window_light_places(tile: (i32, i32), facing: u8) -> Option<[(f32, f32); 
     Some([at(1.0), at(-1.0)])
 }
 
+/// A room record's ambient and sun from its two light objects (the original's Light_RoomSun,
+/// 0x801696F0, by their get-lights 0x801631C8 and 0x801636B4): words 0-6 from the ambient (a
+/// position and reach of 0, then its colour x its factor), words 8-14 from the sun (its
+/// direction, a reach of 0, its colour x its factor). A record without one keeps its words.
+pub fn room_sun(record: &mut [f32; 20], ambient: Option<(f32, [f32; 3])>, sun: Option<(f32, [f32; 3], [f32; 3])>) {
+    if let Some((k, c)) = ambient {
+        record[..4].copy_from_slice(&[0.0; 4]);
+        record[4..7].copy_from_slice(&c.map(|v| v * k));
+    }
+    if let Some((k, c, dir)) = sun {
+        record[8..11].copy_from_slice(&dir);
+        record[11] = 0.0;
+        record[12..15].copy_from_slice(&c.map(|v| v * k));
+    }
+}
+
 /// A lamp's light from its light node (an object's animation node of kind 0: words 11-13 its
 /// colour, 14 a factor, 15 its radius): the colour is the node's times the factor, and the reach
 /// twice the radius (the light object's +208) times the get-light's quarter (0x80165A90).
@@ -399,6 +415,16 @@ mod tests {
         assert_eq!(entry_points(0x0005_0203), vec![(2, 5), (2, 6), (3, 5), (3, 6), (4, 5), (4, 6)]);
         // a leading half (0x40: on the row) and a trailing half (0x80: the row after)
         assert_eq!(entry_points(0x0005_4283), vec![(2, 5), (3, 5), (3, 6), (4, 6)]);
+    }
+
+    #[test]
+    fn a_rooms_sun_and_ambient_come_from_their_objects() {
+        let mut r = [9.0f32; 20];
+        room_sun(&mut r, Some((0.4, [0.8, 0.8, 1.0])), None);
+        assert_eq!(r[..7], [0.0, 0.0, 0.0, 0.0, 0.32000002, 0.32000002, 0.4]);
+        assert_eq!(r[7..], [9.0; 13]);
+        room_sun(&mut r, None, Some((1.3, [1.0, 1.0, 0.7], [0.8, -0.2, -0.5])));
+        assert_eq!(r[8..15], [0.8, -0.2, -0.5, 0.0, 1.3, 1.3, 0.90999997]);
     }
 
     #[test]

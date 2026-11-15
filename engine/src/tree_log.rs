@@ -540,6 +540,10 @@ pub struct Log {
     /// 'y': the window light objects (the object, side, reach, two colour fields, the game
     /// object, its kind (+0xC), then its first 64 words and its kind's key, +0x138).
     pub window_lights: Vec<(Vec<u32>, Vec<u32>)>,
+    /// '2': rooms' ambient and sun set: the tick, the record, the ambient object, its factor and
+    /// colour (and 3 words unused), the sun object, its factor, colour and direction, then the
+    /// record's 20 words after (all as words).
+    pub room_suns: Vec<(u32, u32, [u32; 16], [u32; 20])>,
     /// '1': objects' lights put at their nodes.
     pub object_lights: Vec<ObjectLightsRec>,
     /// 'z': the window lights' colours filled.
@@ -705,6 +709,21 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let room = [three(), three()];
                 let k = f32::from_bits(r.u32());
                 log.group_scales.push(GroupScaleRec { tick, group, base, scale, material, room, k });
+            }
+            b'2' => {
+                if !r.has(4 * 38) {
+                    break;
+                }
+                let (tick, rec) = (r.u32(), r.u32());
+                let mut objs = [0; 16];
+                for w in &mut objs {
+                    *w = r.u32();
+                }
+                let mut words = [0; 20];
+                for w in &mut words {
+                    *w = r.u32();
+                }
+                log.room_suns.push((tick, rec, objs, words));
             }
             b'1' => {
                 if !r.has(16) {

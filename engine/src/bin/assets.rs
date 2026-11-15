@@ -1965,6 +1965,38 @@ fn main() -> ExitCode {
                 }
             }
         }
+        "roomsun" => {
+            // each logged room record's ambient and sun against the engine's from its objects
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO roomsun LOG");
+                return ExitCode::FAILURE;
+            };
+            let f = |v: u32| f32::from_bits(v);
+            let (mut same, mut both, mut shown) = (0, 0, 0);
+            let mut seen = BTreeSet::new();
+            for (tick, rec, o, words) in &log.room_suns {
+                let (a, s) = (o[0] != 0, o[8] != 0);
+                both += usize::from(a && s);
+                let mut mine = words.map(f);
+                let ambient = a.then(|| (f(o[1]), [f(o[2]), f(o[3]), f(o[4])]));
+                let sun = s.then(|| (f(o[9]), [f(o[10]), f(o[11]), f(o[12])], [f(o[13]), f(o[14]), f(o[15])]));
+                // (the words the objects set, from the record's other words as logged)
+                for k in (0..7).filter(|_| a).chain((8..15).filter(|_| s)) {
+                    mine[k] = f32::NAN;
+                }
+                housefire::light::room_sun(&mut mine, ambient, sun);
+                if mine.map(f32::to_bits) == *words {
+                    same += 1;
+                } else if shown < 5 {
+                    shown += 1;
+                    println!("  tick {tick} record {rec:08x}: mine {mine:?}, the log's {:?}", words.map(f));
+                }
+                if seen.insert((*rec, words.map(f32::from_bits).map(|v| v.to_bits()))) && std::env::var_os("ASSETS_EACH").is_some() {
+                    println!("record {rec:08x} objects {o:08x?}: {:?}", words.map(f));
+                }
+            }
+            println!("room records set {} (with both objects {both}): the engine's words {same}", log.room_suns.len());
+        }
         "lamplights" => {
             // each rebuild's lamp lights against the engine's colour and reach from the light
             // object's node (the last '1' record for that light before the rebuild)

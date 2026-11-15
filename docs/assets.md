@@ -904,3 +904,17 @@ factor change: club's lamps go from (0.502, 0.502, 1) × 0.5 to white × 1 after
 ticks). Home's 418 lamp lights across the rebuilds and club's 494 kind 0 ones match on colour
 and reach bit for bit. Club's other 76 belong to an object whose list entry is not of kind 0
 (not read yet).
+
+A room record's ambient and sun (`light::room_sun`, the original's Light_RoomSun at 0x801696F0,
+run by Light_Rebuild for each record). The record keeps its ambient object at word 7 (+28) and
+its sun object at word 15 (+60).
+- The ambient's get-light (0x801631C8) gives words 0-3 as 0 (a position and reach) and words
+  4-6 as its colour (+152) × its factor (+148).
+- The sun's get-light (0x801636B4) gives words 8-10 as its direction (+180), word 11 as 0 and
+  words 12-14 as its colour × its factor.
+A record without the object keeps its words. Home's outside record has an ambient of
+(0.8, 0.8, 1) × 0.4 and a sun of (1, 1, 0.7) × 1.3, with the direction moving a little every tick
+(the time of day). The window fill's sun (record +0x5048) is the outside record's words 12-14.
+Checked through the observer's '2' record (the two objects' factor, colour and direction
+before, the record's 20 words after) with `assets roomsun`: home's and club's 4,000 records each, word for word.
+Where the objects' colours, factors and direction come from (the time of day) is next.
