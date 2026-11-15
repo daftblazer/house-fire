@@ -748,6 +748,30 @@ fn main() -> ExitCode {
                 }
             }
             println!("reads in their track's pose: {posed:?}; streams with one track {} of {}", owner.values().filter(|t| t.len() == 1).count(), owner.len());
+            // a pose against its track's steps: the pattern of steps (S) and poses (P) of the
+            // track that tick, and whether the pose's place is the last step's place after
+            let mut steps_of: HashMap<(u32, u32), Vec<&housefire::tree_log::TrackRec>> = HashMap::new();
+            for t in &log.tracks {
+                steps_of.entry((t.tick, t.track)).or_default().push(t);
+            }
+            let mut pattern: BTreeMap<String, usize> = BTreeMap::new();
+            let mut shown = 0;
+            for p in &log.poses {
+                let steps = steps_of.get(&(p.tick, p.track)).map(Vec::as_slice).unwrap_or(&[]);
+                let before: Vec<_> = steps.iter().filter(|t| t.at < p.at).collect();
+                let after = steps.len() - before.len();
+                let place_ok = match before.last() {
+                    Some(t) => t.place[1].to_bits() == p.place.to_bits(),
+                    None => steps.first().is_some_and(|t| t.place[0].to_bits() == p.place.to_bits()),
+                };
+                let what = format!("{}{} before, {} after: place {}", if p.tick == 0 { "(loading) " } else { "" }, before.len().min(2), after.min(2), if place_ok { "the last step's" } else if steps.is_empty() { "(no step)" } else { "OTHER" });
+                if what.ends_with("OTHER") && p.tick != 0 && shown < 6 {
+                    shown += 1;
+                    println!("  pose at tick {} place {}: steps {:?}", p.tick, p.place, steps.iter().map(|t| (t.at < p.at, t.place, t.ran, t.done)).collect::<Vec<_>>());
+                }
+                *pattern.entry(what).or_default() += 1;
+            }
+            println!("poses against their track's steps ({}): {pattern:?}", log.poses.len());
             let one = life.values().filter(|t| t.len() == 1).count();
             println!("streams following one track: {one} of {}; reads matching several tracks {ambiguous}", life.len());
             for (k, t) in life.iter().filter(|(_, t)| t.len() > 1).take(4) {

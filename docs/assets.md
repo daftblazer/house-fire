@@ -1385,3 +1385,10 @@ streams belong to one track; the others are addresses reused by a later play. A 
 bit array object (+0) is the animation + 88, and that animation is shared by Sims playing it.
 Of the reads, 146,334 come after their track's step that tick, 10,562 before it (posed first),
 and 853 at another place. The order of poses and steps within a tick is still to read.
+When a track is posed (iteration 156). With the log's records ordered by their offset
+(`TrackRec::at`, `PoseRec::at`), a track is posed after each of its steps, at its place then.
+Outside loading, all 477,899 poses on home-a15.log fit: 273,991 in ticks of one frame (step,
+pose) and 203,908 in ticks of two (step, pose, step, pose). 18 are poses of a track not
+stepped that tick, at its standing place. Iteration 155's "posed before the step" were the
+first pose of a two-frame tick. During loading (tick 0) the order differs (12 of 963 poses),
+which leaves the picture unchanged.

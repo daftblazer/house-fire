@@ -464,6 +464,8 @@ pub struct PlanRec {
 /// ran), +60 (its place in frames) and +160 (done) before and after.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct TrackRec {
+    /// Its place in the log (a byte offset), to order it against other records.
+    pub at: usize,
     pub tick: u32,
     /// The steps logged before it (its place among the steps).
     pub after_steps: usize,
@@ -488,6 +490,15 @@ pub struct SpeedRec {
     pub owner: u32,
     pub before: f32,
     pub after: f32,
+}
+
+/// A track posed ('(', Anim_Animate 801581C8): its place in the log, the track and its place.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PoseRec {
+    pub at: usize,
+    pub tick: u32,
+    pub track: u32,
+    pub place: f32,
 }
 
 /// A node's scale or translation stream read at a place ('%', Anim_Vec3Stream 801BC4E0): the
@@ -669,6 +680,8 @@ pub struct Log {
     pub speeds: Vec<SpeedRec>,
     /// The scale and translation streams read ('%', in newer logs, at most 300,000).
     pub vec_streams: Vec<Vec3StreamRec>,
+    /// The tracks posed ('(', Anim_Animate), in order.
+    pub poses: Vec<PoseRec>,
     pub res_asks: Vec<ResAskRec>,
     pub ticks: u32,
 }
@@ -1346,6 +1359,9 @@ pub fn read_log(path: &str) -> Option<Log> {
                     break;
                 }
                 posing = Some((r.u32(), f32::from_bits(r.u32())));
+                if let Some((track, place)) = posing {
+                    log.poses.push(PoseRec { at: r.p, tick: log.ticks, track, place });
+                }
             }
             b')' => posing = None,
             b'&' => {
@@ -1378,6 +1394,7 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let b = [0; 7].map(|_| r.u32());
                 let a = [0; 3].map(|_| r.u32());
                 log.tracks.push(TrackRec {
+                    at: r.p,
                     tick: log.ticks,
                     after_steps: log.steps.len(),
                     controller,
