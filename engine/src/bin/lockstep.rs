@@ -1379,6 +1379,50 @@ fn main() -> ExitCode {
                     *per.entry(fr.get(&tick).map_or(0, |f| f.len())).or_default() += 1;
                 }
                 println!("ticks by frames in them: {per:?}");
+                // a play run natively: each (controller, animation)'s records in order, the place
+                // carried by the engine from the play's first frame through `anim::track_step`
+                // with the animation's rate and end mode and the logged speeds (+72, the
+                // controller's +80); a play starts when its last record was not the frame before
+                let mut native: HashMap<(u32, u32, u32), (u32, f32)> = HashMap::new();
+                let mut run_tally: BTreeMap<String, usize> = BTreeMap::new();
+                for t in log.tracks.iter().filter(|t| t.head[1] != 0) {
+                    let Some(a) = by_id.get(&t.head[1]) else { continue };
+                    let key = (t.controller, t.track, t.head[1]);
+                    if t.tick == 0 {
+                        // (loading: the plays' places taken as they are)
+                        native.insert(key, (t.frame, t.place[1]));
+                        continue;
+                    }
+                    let carried = native.get(&key).filter(|(f, _)| f + 1 == t.frame || *f == t.frame).map(|e| e.1);
+                    let before = match carried {
+                        Some(p) => {
+                            *run_tally.entry(format!("carried place {}", if p.to_bits() == t.place[0].to_bits() { "the same" } else { "DIFFERENT" })).or_default() += 1;
+                            p
+                        }
+                        None if native.get(&key).is_some_and(|(_, p)| p.to_bits() == t.place[0].to_bits()) => {
+                            let gap = t.frame - native[&key].0;
+                            *run_tally.entry(format!("resumed after {} frame(s) without a step, place kept", (gap - 1).min(5))).or_default() += 1;
+                            t.place[0]
+                        }
+                        None => {
+                            let what = if t.place[0] == 0.0 { "0" } else if t.place[0].to_bits() == (a.frames as f32 - 1.0).to_bits() { "the last frame" } else { "elsewhere" };
+                            *run_tally.entry(format!("a play's first frame, place {what}")).or_default() += 1;
+                            if what == "elsewhere" && run_tally.get("(shown)").copied().unwrap_or(0) < 6 {
+                                *run_tally.entry("(shown)".into()).or_default() += 1;
+                                println!("  play first frame elsewhere: tick {} ctl {:x} track {:x} {} place {:?} speeds {:?} known {:?}", t.tick, t.controller, t.track, a.name, t.place, t.speeds, native.get(&key));
+                            }
+                            t.place[0]
+                        }
+                    };
+                    if t.ran[0] == t.frame {
+                        native.insert(key, (t.frame, before));
+                        continue;
+                    }
+                    let (after, _) = housefire::anim::track_step(before, 0.033, t.speeds[2], t.speeds[1], a.rate, a.frames as f32 - 1.0, a.end_mode());
+                    *run_tally.entry(format!("frame step {}", if after.to_bits() == t.place[1].to_bits() { "the same" } else { "DIFFERENT" })).or_default() += 1;
+                    native.insert(key, (t.frame, after));
+                }
+                println!("plays run natively from their first frame: {run_tally:?}");
                 let one = ctl_of.values().filter(|c| c.len() == 1).count();
                 println!("animate runs to their tracks (by animation id): {tally:?}; Sims on one controller {one} of {}", ctl_of.len());
             }

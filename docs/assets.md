@@ -1440,3 +1440,10 @@ play:
   as iteration 136's rule had it.
 - 4 were end ticks after the play was done.
 So a Sim's play steps once per frame, except on a tick its Animate's load misses.
+Plays run natively (iteration 163). Each track's play, (controller, track, animation), is carried
+by the engine from its first frame with `anim::track_step`. Its inputs are the animation's rate,
+frames and end mode, and the logged speeds (+72 and the controller's +80). On home-a17.log, all
+531,991 steps and 531,312 carried places are the same to the bit. A play starts at 0 (632), or
+at its last frame when it runs backward (12). It keeps its place over 1 or 2 frames without a
+step (47). One controller can hold the same animation on two tracks at once, so a play is keyed
+by its track too.
