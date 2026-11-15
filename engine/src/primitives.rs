@@ -519,8 +519,10 @@ pub fn run_functional_tree<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &
     let Some(o) = world.find(so) else { return PrimResult::Stop };
     let Some(tree) = world.function_tree(o, entry) else { return PrimResult::Stop };
     let file = world.get(o).file;
-    let temps: Vec<i16> = interp.defaults().iter().take(4).copied().collect();
-    if !interp.push(lib, tree, &temps) {
+    let mut temps = [0i16; 4];
+    let given = interp.defaults().len().min(temps.len());
+    temps[..given].copy_from_slice(&interp.defaults()[..given]);
+    if !interp.push(lib, tree, &temps[..given]) {
         return PrimResult::Stop;
     }
     interp.top().stack_object = so;

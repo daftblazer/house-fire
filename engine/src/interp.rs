@@ -90,7 +90,7 @@ pub trait Host: Trees {
     /// The parameters a call that gives none passes, as they are now: the running object's temps
     /// (the original's interpreter keeps a pointer to them, so a guard that writes a temp and then
     /// calls passes the new value). `None`: the interpreter's own copy (`set_defaults`).
-    fn default_params(&mut self) -> Option<Vec<i16>> {
+    fn default_params(&mut self) -> Option<[i16; 8]> {
         None
     }
 }
@@ -375,6 +375,11 @@ impl Interpreter {
     }
     pub fn set_defaults(&mut self, d: Vec<i16>) {
         self.defaults = d;
+    }
+    /// The same, copied into the buffer already held (a turn's, every tick).
+    pub fn copy_defaults(&mut self, d: &[i16]) {
+        self.defaults.clear();
+        self.defaults.extend_from_slice(d);
     }
 
     /// The stack's sleep (Idle).

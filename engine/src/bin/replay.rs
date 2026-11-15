@@ -527,8 +527,8 @@ impl Host for ReplayHost<'_, '_> {
         Some(&mut self.world.ad_range)
     }
 
-    fn default_params(&mut self) -> Option<Vec<i16>> {
-        Some(self.world.get(self.me).temps.to_vec())
+    fn default_params(&mut self) -> Option<[i16; 8]> {
+        Some(self.world.get(self.me).temps)
     }
 
     /// A check tree the engine runs, stepped natively through the log's steps of it.
