@@ -467,6 +467,15 @@ returns false at once. With it, all 167 runs return on the native tick on home-a
 home-a11.log: 121 at a note, 31 at the end, 8 owed at once, 5 not found, 2 at once. Still taken
 from the log: the frames (the frame clock), the fast-forward frames and the tick's Animate steps
 (which the engine's own run gives).
+Iteration 139, the fast-forward's input. The replay (work/inputs/mom-live/inputs.txt, by pad poll
+and video frame) holds R (button 0x0020, analog FF) from video frame 2104 to 2142, its only
+press after 1601. The game runs at 5 from track frame 1761 to 1796 (ticks 426 to 563): 36 game
+frames for R's 39 video frames, starting with the press (video frame − 343). The game loses 3
+frames during the fast-forward, so it ends at video − 347. So the speed answer −2 (5×) is R held.
+The engine reads its own pad on its own frames, so it needs only "R held: 5×", not this
+offset. The other zero spans are not input: the lot's start (frames 1248 to 1326, ticks 23 to 84,
+with the A press of video 1601 inside it) and ticks 2048 to 4911 and from 5630 (no press after
+2104). They are the game's own states, still to find (a dialog, the lot's intro).
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object

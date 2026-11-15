@@ -899,6 +899,11 @@ fn main() -> ExitCode {
                     *seen.entry(format!("{}", s.after)).or_default() += 1;
                 }
                 println!("  log: {} ticks, {} steps, {} speed updates {seen:?}", log.ticks, log.steps.len(), log.speeds.len());
+                // the track frames of the ticks at the speed spans' edges
+                let frame_of = |t: u32| log.tracks.iter().filter(|r| r.tick == t).map(|r| r.frame).collect::<BTreeSet<_>>();
+                for t in [1u32, 2, 22, 23, 84, 85, 425, 426, 563, 567, 2047, 2048, 4911, 4912] {
+                    println!("    tick {t}: track frames {:?}", frame_of(t));
+                }
                 // each animator's spans of one speed (first tick..last tick: speed, updates)
                 let mut spans: BTreeMap<u32, Vec<(u32, u32, String, usize)>> = BTreeMap::new();
                 for s in &log.speeds {
@@ -1185,7 +1190,8 @@ fn main() -> ExitCode {
                     // SAnimator2::Update sets +252 from the game's speed; a frame every ~4 ticks)
                     let fast_ticks: BTreeSet<u32> = log.tracks.iter().filter(|t| t.speeds[1].abs() == 5.0).map(|t| t.tick).collect();
                     if let (Some(a), Some(b)) = (fast_ticks.first(), fast_ticks.last()) {
-                        println!("  fast-forward frames: ticks {a}..{b} ({} frames)", fast_ticks.len());
+                        let ff: BTreeSet<u32> = log.tracks.iter().filter(|t| t.speeds[1].abs() == 5.0).map(|t| t.frame).collect();
+                        println!("  fast-forward frames: ticks {a}..{b} ({} frames; track frames {:?}..{:?}, {} of them)", fast_ticks.len(), ff.first(), ff.last(), ff.len());
                     }
                     let mut no_note: BTreeMap<(u8, &str, u8, i16, String), usize> = BTreeMap::new();
                     let mut no_note_by: BTreeMap<(String, String, &str), usize> = BTreeMap::new();
