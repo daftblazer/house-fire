@@ -693,7 +693,7 @@ fn main() -> ExitCode {
                     && x.value_bits == h[4] & 0xff
                     && x.scalar_bits == h[5] >> 24
                     && x.scale.iter().zip(&h[7..10]).all(|(a, b)| a.to_bits() == *b)
-                    && (x.scalar_bits == 0 || x.scalar_scale.to_bits() == h[6]);
+                    && x.scalar_scale.to_bits() == h[6];
                 *cmp.entry(if same { "every field the same" } else { "DIFFERENT" }).or_default() += 1;
                 // which node word names this start (study: its relation to the start bit)
                 if let Some(a) = all.iter().find(|a| housefire::anim::stream_header(&a.bit_words, start) == x) {
@@ -719,6 +719,44 @@ fn main() -> ExitCode {
                 }
             }
             println!("stream headers decoded from the bits: {cmp:?}");
+            // every logged window from the animation alone, given only its key (+8): the frames,
+            // the points, and the tangents (only fresh when the window was not blended, mode 0)
+            // (a stream's address is reused by later animations: found by its whole header)
+            let mut found: HashMap<[u32; 13], Option<(usize, housefire::anim::StreamHeader)>> = HashMap::new();
+            let mut win: BTreeMap<String, usize> = BTreeMap::new();
+            let mut shown = 0;
+            for v in &log.vec_streams {
+                let Some((h, _)) = v.header else { continue };
+                let mut key = h;
+                key[2] = 0;
+                key[0] = 0;
+                let hit = found.entry(key).or_insert_with(|| {
+                    let start = h[1].checked_sub(227)?;
+                    all.iter().enumerate().map(|(i, a)| (i, housefire::anim::stream_header(&a.bit_words, start))).find(|(_, x)| {
+                        x.keys == h[3] && x.first_record == h[1] && x.scale.iter().chain(&x.offset).zip(&h[7..13]).all(|(f, w)| f.to_bits() == *w)
+                    })
+                });
+                let Some((ai, x)) = hit.as_ref() else {
+                    *win.entry("stream not found".into()).or_default() += 1;
+                    continue;
+                };
+                let words = &all[*ai].bit_words;
+                let (first, last, w) = x.window(words, h[2]);
+                let eq = |a: &[f32], b: &[f32]| a.iter().zip(b).all(|(p, q)| p.to_bits() == q.to_bits());
+                let frames = first == v.first && last == v.last;
+                let points = eq(&w[0..3], &v.keys[0..3]) && eq(&w[9..12], &v.keys[9..12]);
+                let tangents = eq(&w[3..9], &v.keys[3..9]);
+                *win.entry(format!("frames {}", if frames { "same" } else { "DIFFERENT" })).or_default() += 1;
+                *win.entry(format!("points {}", if points { "same" } else { "DIFFERENT" })).or_default() += 1;
+                if v.mode == 0 {
+                    *win.entry(format!("tangents (mode 0) {}", if tangents { "same" } else { "DIFFERENT" })).or_default() += 1;
+                }
+                if (!frames || !points || (v.mode == 0 && !tangents)) && shown < 6 {
+                    shown += 1;
+                    println!("  window different: key {} of {}, logged ({}, {}, {:?}) mode {}; native ({first}, {last}, {w:?})", h[2], x.keys, v.first, v.last, v.keys, v.mode);
+                }
+            }
+            println!("windows from the animation alone: {win:?}");
             // (study: the logged starts in one animation, against a walk of headers from bit 0)
             if let Ok(name) = std::env::var("LOCKSTEP_ANIM_WALK")
                 && let Some(a) = all.iter().find(|a| a.name == name)

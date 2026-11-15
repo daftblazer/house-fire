@@ -331,7 +331,7 @@ impl Channel {
 /// animation's bits: the key count (20 bits), the widths of the frame gap, the key's scalar and
 /// each value (5 bits each; a value width of 0 is 32), then per value its range and minimum as
 /// 32-bit floats. A value is its field times range / (2^width - 1), plus the minimum; the
-/// scalar is its signed field over 2^(width - 1) - 1 (1 with no scalar).
+/// scalar is its signed field over 2^(width - 1) - 1 (0 with no scalar).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct StreamHeader {
     pub keys: u32,
@@ -357,6 +357,67 @@ impl StreamHeader {
     pub fn end(&self) -> u32 {
         self.first_record + self.keys * self.record_bits
     }
+
+    fn record(&self, k: u32) -> u32 {
+        self.first_record + k * self.record_bits
+    }
+
+    /// Key `k`'s frame: the gaps of keys 1..=k, each + 1 (key 0's gap is not used; 801BCD2C).
+    pub fn time(&self, words: &[u32], k: u32) -> i32 {
+        (1..=k).map(|j| bits(words, self.record(j), self.gap_bits) as i32 + 1).sum()
+    }
+
+    /// Key `k`'s scalar (a bias): its signed field times the header's factor (801ADB4C).
+    pub fn scalar(&self, words: &[u32], k: u32) -> f32 {
+        let w = self.scalar_bits;
+        if w == 0 {
+            return 0.0;
+        }
+        let v = bits(words, self.record(k) + self.gap_bits, w);
+        let v = if v >> (w - 1) & 1 != 0 && w < 32 { v | !0u32 << (w - 1) } else { v };
+        (v as i32 as f32) * self.scalar_scale
+    }
+
+    /// Key `k`'s three values (801BCE50, kind 2).
+    pub fn point(&self, words: &[u32], k: u32) -> [f32; 3] {
+        key3(words, self.record(k) + self.gap_bits + self.scalar_bits, self.value_bits, self.scale, self.offset)
+    }
+
+    /// Key `k`'s tangent (801BCEF4): `outgoing` towards key k + 1 (kind 1, a window's T0) or
+    /// incoming from key k - 1 (kind 0, its T1). Inside, the two differences weighted by
+    /// 1 + and 1 - the key's bias, times this side's frames over both sides'. At an end, the
+    /// one difference (two keys) or 1.5 x it - 0.5 x the next key's tangent.
+    pub fn tangent(&self, words: &[u32], outgoing: bool, k: u32) -> [f32; 3] {
+        let sub = |a: [f32; 3], b: [f32; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+        let end = |d: [f32; 3], next: [f32; 3]| [0, 1, 2].map(|i| d[i] * 1.5 - next[i] * 0.5);
+        let b = self.point(words, k);
+        if k == 0 {
+            let d = sub(self.point(words, 1), b);
+            return if self.keys == 2 { d } else { end(d, self.tangent(words, false, 1)) };
+        }
+        if k + 1 == self.keys {
+            let d = sub(b, self.point(words, k - 1));
+            return if self.keys == 2 { d } else { end(d, self.tangent(words, true, k - 1)) };
+        }
+        let (a, c) = (self.point(words, k - 1), self.point(words, k + 1));
+        let (ta, tb, tc) = (self.time(words, k - 1), self.time(words, k), self.time(words, k + 1));
+        let side = if outgoing { tc - tb } else { tb - ta };
+        let ratio = side as f32 / ((tb - ta) + (tc - tb)) as f32;
+        let s = self.scalar(words, k);
+        let (din, dout) = (sub(b, a), sub(c, b));
+        [0, 1, 2].map(|i| (din[i] * (s + 1.0) + dout[i] * (1.0 - s)) * ratio)
+    }
+
+    /// The window between keys `k` and k + 1 as the evaluator holds it: first and last frames
+    /// and P0, T0, T1, P1 (801BCBBC / 801BCCB0 at the start, 801BC958 stepping forward).
+    pub fn window(&self, words: &[u32], k: u32) -> (i32, i32, [f32; 12]) {
+        let mut w = [0.0; 12];
+        w[0..3].copy_from_slice(&self.point(words, k));
+        w[3..6].copy_from_slice(&self.tangent(words, true, k));
+        w[6..9].copy_from_slice(&self.tangent(words, false, k + 1));
+        w[9..12].copy_from_slice(&self.point(words, k + 1));
+        (self.time(words, k), self.time(words, k + 1), w)
+    }
 }
 
 /// The header of the stream at bit `at` of `words` (801BC318).
@@ -370,7 +431,7 @@ pub fn stream_header(words: &[u32], at: u32) -> StreamHeader {
     let keys = take(20);
     let gap_bits = take(5);
     let scalar_bits = take(5);
-    let scalar_scale = if scalar_bits == 0 { 1.0 } else { 1.0 / ((1i64 << (scalar_bits - 1)) - 1) as i32 as f32 };
+    let scalar_scale = if scalar_bits == 0 { 0.0 } else { 1.0 / ((1i64 << (scalar_bits - 1)) - 1) as i32 as f32 };
     let value_bits = match take(5) {
         0 => 32,
         w => w,
@@ -648,6 +709,42 @@ mod tests {
         let h = stream_header(&w, 0);
         assert_eq!((h.keys, h.gap_bits, h.scalar_bits, h.value_bits, h.record_bits, h.first_record), (2, 3, 0, 4, 15, 227));
         assert_eq!((h.scale, h.offset, h.frames(&w), h.end()), ([1.0, 0.0, 0.0], [1.0, 2.0, 3.0], 2 + 5, 227 + 30));
+    }
+
+    #[test]
+    fn a_window_has_its_keys_frames_and_tangents() {
+        // 3 keys at frames 0, 2 and 3 with x = 0, 4, 6 (8-bit values, range 255, no scalar)
+        let mut w = vec![0u32; 12];
+        let mut at = 0;
+        let mut put = |v: u32, n: u32| {
+            for i in 0..n {
+                if v >> i & 1 != 0 {
+                    w[((at + i) / 32) as usize] |= 1 << ((at + i) % 32);
+                }
+            }
+            at += n;
+        };
+        for (v, n) in [(3, 20), (2, 5), (0, 5), (8, 5)] {
+            put(v, n);
+        }
+        for (r, m) in [(255.0f32, 0.0f32), (0.0, 0.0), (0.0, 0.0)] {
+            put(r.to_bits(), 32);
+            put(m.to_bits(), 32);
+        }
+        for (gap, x) in [(0, 0), (1, 4), (0, 6)] {
+            put(gap, 2);
+            put(x, 8);
+            put(0, 16);
+        }
+        let h = stream_header(&w, 0);
+        // inside: (4 + 2) x this side's frames over both sides' (3)
+        assert_eq!(h.tangent(&w, true, 1)[0], 2.0);
+        assert_eq!(h.tangent(&w, false, 1)[0], 4.0);
+        // the ends: 1.5 x the difference - 0.5 x the next key's tangent
+        assert_eq!(h.tangent(&w, true, 0)[0], 1.5 * 4.0 - 0.5 * 4.0);
+        assert_eq!(h.tangent(&w, false, 2)[0], 1.5 * 2.0 - 0.5 * 2.0);
+        let (first, last, k) = h.window(&w, 1);
+        assert_eq!((first, last, k[0], k[3], k[6], k[9]), (2, 3, 4.0, 2.0, 2.0, 6.0));
     }
 
     #[test]

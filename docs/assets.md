@@ -1343,3 +1343,17 @@ set on most nodes, both signs (79,228 negative, 50,067 positive, 61,129 zero), s
 something else, maybe the bone's id. Words 5 and 6 are as rare as word 4 (199 and 215 positive,
 37 and 21 negative). The streams are not packed from bit 0: a walk of headers from 0 does not
 reach them, as the rotation streams (word 3, its own format) sit between.
+A window from the animation alone (iteration 152, `StreamHeader::window`). Key k's frame is
+the gaps of keys 1..=k, each + 1 (801BCD2C). Its scalar is a bias: a signed field times the
+header's factor, 0 with no scalar (802C3820 is 0.0, not 1). The window from key k holds frames
+time(k) and time(k + 1), P0 and P1 the two keys' points, T0 key k's outgoing tangent and T1
+key k + 1's incoming tangent (801BCEF4):
+- Inside: ((B - A)(1 + bias) + (C - B)(1 - bias)) x this side's frames / both sides' frames.
+- At an end: the one difference with two keys, otherwise 1.5 x it - 0.5 x the next key's tangent.
+Moving forward, a window is blended straight (mode 1, tangents not refreshed) when the place
+moved at least a third of the window's frames since the last read (802C3848 = 1/3). The start
+read's last place is FLT_MAX (802C385C), so the first window is curved.
+Check: given only each record's key (+8), all 157,750 logged windows on home-a13.log have the
+same frames and points, and all 51,150 curved ones the same tangents, to the bit. A stream's
+address is reused by later animations, so a record is matched to its animation by its whole
+header.
