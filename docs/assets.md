@@ -1608,3 +1608,14 @@ home-a23.log (562,616 steps; up to about tick 600) cover 851 streams, all in a t
 - 294,193 reads are mode 0 and 5,807 are mode 1 (the blend, as for the vec3 streams).
 - The window's four quaternions are not a plain slerp, nlerp, squad or Bezier of the place:
   the best fit is 21% within 1e-4. So the evaluation is to be read from the code.
+The rotation window (iteration 179). fn_801B5F48 steps its window like the vec3 streams (key
+times at +8/+12, t = (place - k0) / (k1 - k0)). In mode 0 it evaluates the window's four
+quaternions w0..w3 (+48, +64, +80, +96):
+- m = lerp(w1, w2, t);
+- the result is lerp(lerp(w0, m, t), lerp(m, w3, t), t), normalized.
+Each lerp is a + (b - a) * t in separate single operations. The normalization builds the
+squared length as y*y, then x*x, z*z and w*w fused in, each rounded to single. Then it takes
+sqrt (fn_8010DF80), k = 1 / length (802C35B4 = 1.0), and each component times k (a zero
+length leaves it as is). `anim::rotation_window` gives all 294,193 mode-0 reads on
+home-a23.log to the bit. A plain slerp, nlerp, squad or Bezier matched at best 21%, and a
+division instead of 1/length times only half. Mode 1, the blend, starts from w3 - w0.

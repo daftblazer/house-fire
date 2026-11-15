@@ -509,6 +509,22 @@ pub fn wrap_back(mut place: f32, last: f32) -> f32 {
 /// (a loop) comes back by the last frame (`wrap_back`), and the others stop at the last frame.
 /// Before 0, mode 0 goes on by the last frame until it is not below 0 (at most the last frame),
 /// and the others stop at 0. Gives the new place and whether an end was passed (+160 set).
+/// A rotation stream's window evaluated at `t` (fn_801B5F48, mode 0): four quaternions w0..w3,
+/// m = lerp(w1, w2), then lerp(lerp(w0, m), lerp(m, w3)), normalized. The length is the game's:
+/// y*y, then x, z and w fused in, each rounded to single; then 1/length times each component.
+pub fn rotation_window(w: [[f32; 4]; 4], t: f32) -> [f32; 4] {
+    let lerp = |a: [f32; 4], b: [f32; 4]| core::array::from_fn::<f32, 4, _>(|i| a[i] + (b[i] - a[i]) * t);
+    let m = lerp(w[1], w[2]);
+    let v = lerp(lerp(w[0], m), lerp(m, w[3]));
+    let fused = |a: f32, acc: f32| (a as f64).mul_add(a as f64, acc as f64) as f32;
+    let length = fused(v[3], fused(v[2], fused(v[0], v[1] * v[1]))).sqrt();
+    if length == 0.0 {
+        return v;
+    }
+    let k = 1.0 / length;
+    v.map(|x| x * k)
+}
+
 /// A Sim's animator speeds (EA's fn_800ABE20, fn_800B0ADC, fn_800AF06C): the animator runs at
 /// the game speed (0 paused, 1, 5 fast-forward). On a change it sets the new speed on its slot
 /// tracks: the base idle, walk, turn, the current action, the action blending out, the carry.
@@ -981,6 +997,17 @@ mod tests {
         // back near the start: from the first window again
         s.read(&w, 0.5);
         assert_eq!((s.key, s.first, s.last), (0, 0, 3));
+    }
+
+    #[test]
+    fn a_rotation_window_blends_its_four_quaternions() {
+        let id = [0.0, 0.0, 0.0, 1.0];
+        assert_eq!(rotation_window([id; 4], 0.3), id);
+        let x = [1.0, 0.0, 0.0, 0.0];
+        assert_eq!(rotation_window([id, id, x, x], 0.0), id);
+        assert_eq!(rotation_window([id, id, x, x], 1.0), x);
+        let mid = rotation_window([id, id, x, x], 0.5);
+        assert!((mid[0] - mid[3]).abs() < 1e-6 && (mid[0] * mid[0] + mid[3] * mid[3] - 1.0).abs() < 1e-6);
     }
 
     #[test]

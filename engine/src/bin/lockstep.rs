@@ -1704,38 +1704,17 @@ fn main() -> ExitCode {
                     }
                     let streams: BTreeSet<u32> = r.iter().map(|x| x.stream).collect();
                     println!("rotation reads: {} of {} streams, in a track's pose {}; by mode and result length {lens:?}", r.len(), streams.len(), r.iter().filter(|x| x.track.is_some()).count());
-                    // the window's evaluation: four quaternions and t from the window's keys
-                    let q = |w: &[u32; 16], i: usize| [f32::from_bits(w[4 * i]), f32::from_bits(w[4 * i + 1]), f32::from_bits(w[4 * i + 2]), f32::from_bits(w[4 * i + 3])];
-                    let dot = |a: [f32; 4], b: [f32; 4]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
-                    let slerp = |a: [f32; 4], b: [f32; 4], t: f32| {
-                        let mut d = dot(a, b);
-                        let mut b = b;
-                        if d < 0.0 { d = -d; b = b.map(|v| -v); }
-                        let (ka, kb) = if d > 0.9999 { (1.0 - t, t) } else { let th = d.acos(); ((th * (1.0 - t)).sin() / th.sin(), (th * t).sin() / th.sin()) };
-                        [ka * a[0] + kb * b[0], ka * a[1] + kb * b[1], ka * a[2] + kb * b[2], ka * a[3] + kb * b[3]]
-                    };
-                    let lerpn = |a: [f32; 4], b: [f32; 4], t: f32| { let v = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, a[3] + (b[3] - a[3]) * t]; let l = dot(v, v).sqrt(); v.map(|x| x / l) };
-                    let mut fits: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+                    // the window's evaluation (`anim::rotation_window`, t from the window's times)
+                    let mut exact: BTreeMap<String, usize> = BTreeMap::new();
                     for x in r.iter().filter(|x| x.mode == 0) {
                         let (k0, k1) = (x.head[2] as i32 as f32, x.head[3] as i32 as f32);
-                        if k1 <= k0 { continue; }
                         let t = (x.place - k0) / (k1 - k0);
-                        let w = &x.window;
-                        let cands: [(&str, [f32; 4]); 5] = [
-                            ("slerp w0 w3", slerp(q(w, 0), q(w, 3), t)),
-                            ("nlerp w0 w3", lerpn(q(w, 0), q(w, 3), t)),
-                            ("squad w0 w1 w2 w3", slerp(slerp(q(w, 0), q(w, 3), t), slerp(q(w, 1), q(w, 2), t), 2.0 * t * (1.0 - t))),
-                            ("slerp w0 w1", slerp(q(w, 0), q(w, 1), t)),
-                            ("bezier de casteljau slerp", { let a = slerp(q(w, 0), q(w, 1), t); let b = slerp(q(w, 1), q(w, 2), t); let c = slerp(q(w, 2), q(w, 3), t); slerp(slerp(a, b, t), slerp(b, c, t), t) }),
-                        ];
-                        for (name, v) in cands {
-                            let err = (0..4).map(|i| (v[i] - x.result[i]).abs().min((v[i] + x.result[i]).abs())).fold(0.0f32, f32::max);
-                            let e = fits.entry(name.to_string()).or_default();
-                            e.1 += 1;
-                            if err < 1e-4 { e.0 += 1; }
-                        }
+                        let w: [[f32; 4]; 4] = core::array::from_fn(|i| core::array::from_fn(|j| f32::from_bits(x.window[4 * i + j])));
+                        let v = housefire::anim::rotation_window(w, t);
+                        let same = (0..4).all(|i| v[i].to_bits() == x.result[i].to_bits());
+                        *exact.entry(if same { "the same to the bit".into() } else { format!("DIFFERENT (window {k0}..{k1})") }).or_default() += 1;
                     }
-                    println!("  rotation window fits (within 1e-4, of mode 0 reads): {fits:?}");
+                    println!("  mode 0 rotation reads from the window alone: {exact:?}");
                     for x in r.iter().step_by((r.len() / 4).max(1)).take(4) {
                         println!("  rot read tick {} place {} head {:08x?} mode {} window {:08x?} result {:?}", x.tick, x.place, x.head, x.mode, x.window, x.result);
                     }
