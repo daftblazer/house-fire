@@ -495,6 +495,18 @@ pub struct SpeedRec {
     pub after: f32,
 }
 
+/// A track speed set ('^', Anim_SetTrackSpeed 8015AB80): the controller, track id, speed, caller and the track found (0 if none).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SpeedSetRec {
+    pub at: usize,
+    pub tick: u32,
+    pub controller: u32,
+    pub id: u32,
+    pub speed: f32,
+    pub caller: u32,
+    pub track: u32,
+}
+
 /// A track posed ('(', Anim_Animate 801581C8): its place in the log, the track and its place.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct PoseRec {
@@ -685,6 +697,7 @@ pub struct Log {
     pub vec_streams: Vec<Vec3StreamRec>,
     /// The tracks posed ('(', Anim_Animate), in order.
     pub poses: Vec<PoseRec>,
+    pub speed_sets: Vec<SpeedSetRec>,
     pub res_asks: Vec<ResAskRec>,
     pub ticks: u32,
 }
@@ -1367,6 +1380,13 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
             }
             b')' => posing = None,
+            b'^' => {
+                if !r.has(20) {
+                    break;
+                }
+                let (controller, id, speed, caller, track) = (r.u32(), r.u32(), f32::from_bits(r.u32()), r.u32(), r.u32());
+                log.speed_sets.push(SpeedSetRec { at: r.p, tick: log.ticks, controller, id, speed, caller, track });
+            }
             b'*' => {
                 if !r.has(5) {
                     break;

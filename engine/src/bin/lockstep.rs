@@ -1528,6 +1528,69 @@ fn main() -> ExitCode {
                     *zt.entry(format!("{} ({name})", if z == n { "held its whole play" } else { "stopped part of its play" })).or_default() += z;
                 }
                 println!("Sims' tracks at +72 0: {zt:?}");
+                // the speed sets ('^'): by caller and speed, and each Sim track record's +72 against
+                // the last set on its track (or its start at 1 by the constructor)
+                let mut sets: BTreeMap<String, usize> = BTreeMap::new();
+                for x in &log.speed_sets {
+                    *sets.entry(format!("caller {:08x} speed {} {} {}", x.caller, x.speed, if x.track == 0 { "no track" } else { "a track" }, if sim_of.contains_key(&x.controller) { "Sim" } else { "object" })).or_default() += 1;
+                }
+                println!("speed sets: {sets:?}");
+                let mut last_set: HashMap<u32, f32> = HashMap::new();
+                let mut si = 0;
+                let mut by_set: BTreeMap<String, usize> = BTreeMap::new();
+                for t in log.tracks.iter().filter(|t| t.tick != 0) {
+                    while let Some(x) = log.speed_sets.get(si).filter(|x| x.at < t.at) {
+                        if x.track != 0 {
+                            last_set.insert(x.track, x.speed);
+                        }
+                        si += 1;
+                    }
+                    if !sim_of.contains_key(&t.controller) {
+                        continue;
+                    }
+                    let what = match last_set.get(&t.track) {
+                        None => format!("never set, +72 {}", t.speeds[1]),
+                        Some(v) if *v == t.speeds[1] => "+72 the last set's speed".to_string(),
+                        Some(v) if t.speeds[1] == 0.0 => format!("+72 0, last set {v}"),
+                        Some(_) => "+72 another (the animator's)".to_string(),
+                    };
+                    *by_set.entry(what).or_default() += 1;
+                }
+                println!("Sims' track records by the speed sets: {by_set:?}");
+                // the rule: a Sim track's +72 is the latest of its own set ('^') and its controller's
+                // animator speed ('#') since the track's play began; a track never set follows the
+                // animator, with the play's direction (a backward play the negative)
+                let mut ev: HashMap<u32, (usize, f32)> = HashMap::new(); // track -> (at, set speed)
+                let mut an: HashMap<u32, (usize, f32)> = HashMap::new(); // controller -> (at, speed)
+                let (mut si, mut ai) = (0, 0);
+                let mut rule2: BTreeMap<String, usize> = BTreeMap::new();
+                for t in log.tracks.iter().filter(|t| t.tick != 0) {
+                    while let Some(x) = log.speed_sets.get(si).filter(|x| x.at < t.at) {
+                        if x.track != 0 {
+                            ev.insert(x.track, (x.at, x.speed));
+                        }
+                        si += 1;
+                    }
+                    while let Some(sp) = log.speeds.get(ai).filter(|sp| sp.tick < t.tick || (sp.tick == t.tick && sp.after_steps <= t.after_steps)) {
+                        an.insert(sp.owner.wrapping_add(0x350), (sp.tick as usize, sp.after));
+                        ai += 1;
+                    }
+                    if !sim_of.contains_key(&t.controller) {
+                        continue;
+                    }
+                    let a = an.get(&t.controller).map(|x| x.1);
+                    let own = ev.get(&t.track).map(|x| x.1);
+                    let what = match (own, a) {
+                        (Some(o), _) if o == t.speeds[1] => "its own set",
+                        (_, Some(a)) if a == t.speeds[1].abs() => if own.is_some() { "the animator's, over an older own set" } else { "the animator's (never set)" },
+                        _ => "NEITHER",
+                    };
+                    *rule2.entry(what.to_string()).or_default() += 1;
+                    if what == "NEITHER" && rule2.get("NEITHER").copied() == Some(1) {
+                        println!("  neither: tick {} track {:x} +72 {} own {own:?} animator {a:?}", t.tick, t.track, t.speeds[1]);
+                    }
+                }
+                println!("Sims' track speeds, own set or animator: {rule2:?}");
                 let pairs: BTreeSet<(u32, u32)> = log.speeds.iter().map(|sp| (sp.animator, sp.owner)).collect();
                 println!("  speed records' (animator, owner): {:x?}; Sims {:x?}", pairs.iter().take(8).collect::<Vec<_>>(), sim_of);
                 println!("controller speeds: {ctl_tally:?}");

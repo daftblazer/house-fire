@@ -1458,3 +1458,13 @@ A track's speeds (iteration 164). On home-a17.log:
 - The other 6,565 Sim records hold +72 at 0: happyFace held its whole play, and walking,
   standing, carrying and sitting loops stopped for part of theirs.
 Where the hold and the stop come from is the next question.
+A track's speed set (iteration 165). The track speed (+72) is written in three places: the
+track constructor (fn_80156340, 1), Anim_SetTrackSpeed (8015AB80: the controller, a track id
+looked up at the controller's +44, the speed) and the stack locals of the blend code. The
+observer now logs '^' for every Anim_SetTrackSpeed call (home-a18.log, 562,616 steps as
+home-a17's). All 172 calls on the replay come through fn_801C22C8 (return 801C2334). It sets
+the speed only when it differs from the track's current one, and some of those calls go to
+objects' tracks. On the 58,944 Sim track records, +72 is:
+- its own last set: 54,030, all the 0s among them (happyFace's hold, the loops' stops);
+- the animator's speed on a track never set: 4,362;
+- the animator's speed over an older own set: 552.
