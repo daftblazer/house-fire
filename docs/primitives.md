@@ -332,8 +332,21 @@ the play. They are not the animation's: EA's `EAnimController::ProcessEvents` (B
 (+144, +148 the count, 80 bytes each, the frame at +68), and that array is empty both in the
 archive (0 on all 4,013) and in memory (home's tick-1,000 snapshot of the 0x7E... region:
 a2o-fridge-getfood's struct, 121 frames, 0 events). The Sims 2's `SAnimator2::processEvents(
-AnimRef &, ...)` takes the AnimRef, so the events are the AnimRef row's (its second word, shared
-between paired animations, or its third, a name), still to read.
+AnimRef &, ...)` takes the AnimRef, so the events are the AnimRef row's.
+They are (iteration 126). The AnimRef row (12 bytes) is the animation's id, its length in ms
+(0x176F, 5,999, for a2o-easel-paint's 361 frames at 60; shared by paired animations of one
+length) and a pointer to its notes, with their count in the word before it (`assets ISO
+animnotes NAME...`). A note is three words: its time in ms, a type (6 on all seen) and its
+value, the event the script sees. a2o-easel-paint's 10: 101 at 200, 833 and 1,333 ms, 102 at
+1,866, 2,233 and 2,500, 101 at 3,733, 4,766, 5,333 and 5,833: the order of its early ends
+(three 101s, three 102s, four 101s, at 7, 20, 14, 15, 12, 7, 37, 31, 17 and 14 frames, about the
+gaps' 200, 633, 500, 533, 367, 267, 1,233, 1,033, 567 and 500 ms at 33 ms a frame).
+a2o-eatloop-stand's one: 101 at 500 ms, its ends after 16 or 17 frames. a2o-stove-cook has 8
+(101 to 108), a2o-reach-tableht 2 (100 at 866, 0 at 900), a2o-fridge-getfood 1 (0 at 1,500). The
+Sims 2 fires a type-5 note 150 ms early. The note file's layout follows The Sims 2's
+`EAnimNote`, but Bustin' Out keeps it in the quick data, not in the animation (whose note array
+`ERAnim::Load` would copy is absent from `OldLoad`'s layout, which these files use). Next, each
+early end's frame exactly against its notes, from the tracks' places ('8').
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object

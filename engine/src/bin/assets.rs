@@ -1509,6 +1509,40 @@ fn main() -> ExitCode {
                 println!("  animation {a:08x} ({n} steps): {}", h.iter().map(|w| format!("{w:08x}")).collect::<Vec<_>>().join(" "));
             }
         }
+        "animnotes" => {
+            // (study) an AnimRef row's notes: the third word's pointer, the words around it
+            let q = d.read("quickdat.arc").unwrap_or_default();
+            let Some(img) = arc::entries(&q).unwrap_or_default().into_iter().find(|e| e.name == "SimsObjects").and_then(|e| quickdata::Image::read(arc::bytes(&q, &e))) else { return ExitCode::FAILURE };
+            let anims = d.read("animatio.arc").unwrap_or_default();
+            let names: BTreeMap<u32, String> = arc::entries(&anims).unwrap_or_default().into_iter().map(|e| (e.id, e.name)).collect();
+            for r in img.rows("AnimRef") {
+                let id = img.u32(r).unwrap_or(0);
+                let name = names.get(&id).cloned().unwrap_or_default();
+                if !args[3..].contains(&name) {
+                    continue;
+                }
+                let len = img.u32(r + 4).unwrap_or(0);
+                match img.ptr(r + 8) {
+                    Some(p) => {
+                        let before: Vec<String> = (1..=3).rev().map(|k| format!("{:08x}", img.u32(p - 4 * k).unwrap_or(0))).collect();
+                        let words: Vec<i32> = (0..36).map(|k| img.u32(p + 4 * k).unwrap_or(0) as i32).collect();
+                        println!("{name}: length {len} ms, notes at {p:x} (before: {}): {:?}", before.join(" "), words.chunks(3).collect::<Vec<_>>());
+                    }
+                    None => println!("{name}: length {len} ms, no notes"),
+                }
+            }
+        }
+        "sameids" => {
+            // (study) the archives' entries whose ids are animatio.arc entries' ids
+            let anims = d.read("animatio.arc").unwrap_or_default();
+            let ids: BTreeMap<u32, String> = arc::entries(&anims).unwrap_or_default().into_iter().map(|e| (e.id, e.name)).collect();
+            for f in d.files().iter().filter(|(f, (_, size))| f.ends_with(".arc") && !f.ends_with("animatio.arc") && *size < 200_000_000).map(|(f, _)| f.clone()).collect::<Vec<_>>() {
+                let b = d.read(&f).unwrap_or_default();
+                let es = arc::entries(&b).unwrap_or_default();
+                let same: Vec<String> = es.iter().filter(|e| ids.contains_key(&e.id)).map(|e| format!("{} ({} bytes)", e.name, e.size)).collect();
+                println!("{f}: {} entries, {} with an animation's id {:?}", es.len(), same.len(), &same[..same.len().min(6)]);
+            }
+        }
         "setwhere" => {
             // (study) where datasets.arc entries' ids appear: the quick data's tables and the
             // disc's other files (aligned or not), for the sets named (or all housepre/Preload)
