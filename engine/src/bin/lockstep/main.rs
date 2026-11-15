@@ -668,6 +668,10 @@ fn main() -> ExitCode {
     if std::env::var_os("LOCKSTEP_ANIM_BONES").is_some() {
         anim::bones(&log, &d);
     }
+    // (LOCKSTEP_ANIM_DRAWS: the drawn world matrices against the bone matrices of their tick)
+    if std::env::var_os("LOCKSTEP_ANIM_DRAWS").is_some() {
+        anim::draws(&log);
+    }
     // (LOCKSTEP_ANIM_POSES: each pose's node states ('=') against the native local pose from
     // the channels and its fold into the state before)
     if std::env::var_os("LOCKSTEP_ANIM_POSES").is_some() {
