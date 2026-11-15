@@ -646,31 +646,69 @@ fn main() -> ExitCode {
             .and_then(|e| housefire::quickdata::Image::read(housefire::arc::bytes(&quick, &e)))
             .map(|img| img.rows("AnimRef").filter_map(|r| img.u32(r)).collect())
             .unwrap_or_default();
-        // per Sim: (tree, node, frame, first tick, the animation's row)
-        let mut open: BTreeMap<u32, (u16, u16, u32, u32, usize)> = BTreeMap::new();
-        let mut runs: BTreeMap<usize, BTreeMap<u32, usize>> = BTreeMap::new();
+        let _ = &refs;
+        let by_name: BTreeMap<String, &housefire::anim::Anim> = by_id.values().map(|a| (a.name.to_ascii_lowercase(), a)).collect();
+        // a tree's file (the one whose trees hold it)
+        let mut tree_file: BTreeMap<housefire::TreeId, housefire::FileId> = BTreeMap::new();
+        for (k, f) in lib.files().iter().enumerate() {
+            for t in f.trees.values() {
+                tree_file.insert(*t, housefire::FileId(k as u32));
+            }
+        }
+        // an anim table's entry: the file's STR# (129 adult), its index'th string's base name
+        let name_in = |f: Option<housefire::FileId>, table: u16, k: usize| -> Option<String> {
+            let path = lib.file(f?).strings.get(&table)?.get(k)?;
+            let base = path.rsplit(['\\', '/']).next()?;
+            Some(base.trim_end_matches(".max").trim_end_matches(".MAX").to_ascii_lowercase())
+        };
+        let (mut named, mut unnamed, mut by_source) = (0, 0, BTreeMap::<u8, (usize, usize)>::new());
+        // per Sim: (tree, node, frame, first tick, the animation's name)
+        let mut open: BTreeMap<u32, (u16, u16, u32, u32, String)> = BTreeMap::new();
+        let mut runs: BTreeMap<String, BTreeMap<u32, usize>> = BTreeMap::new();
         let mut ends: BTreeMap<u8, usize> = BTreeMap::new();
         for (i, s) in log.steps.iter().enumerate() {
             let node = step_object[i].and_then(|o| lib.tree(Some(o), s.tree)).and_then(|t| lib.tree_at(t).nodes.get(s.node as usize)).copied();
             let Some(n) = node.filter(|n| n.opcode == 44) else { continue };
-            let row = n.operand16(0) as usize;
+            let index = n.operand16(0) as usize;
+            let source = n.operand[4];
+            let tree = step_object[i].and_then(|o| lib.tree(Some(o), s.tree));
+            let file = match source {
+                0 => tree.and_then(|t| tree_file.get(&t).copied()),
+                1 => lib.global(),
+                2 => step_object[i],
+                _ => None,
+            };
+            let name = if n.operand[5] & 4 != 0 { None } else { name_in(file, 129, index) };
+            let e = by_source.entry(source).or_default();
+            match &name {
+                Some(nm) if by_name.contains_key(nm) => {
+                    named += 1;
+                    e.0 += 1;
+                }
+                _ => {
+                    unnamed += 1;
+                    e.1 += 1;
+                }
+            }
+            let name = name.unwrap_or_else(|| format!("(source {source} index {index})"));
             let key = (s.tree, s.node, s.frame);
             let start = match open.get(&s.sim) {
-                Some(&(t, nd, f, first, r)) if (t, nd, f) == key && r == row => first,
+                Some((t, nd, f, first, r)) if (*t, *nd, *f) == key && *r == name => *first,
                 _ => s.tick,
             };
             if s.result == 1 {
-                open.insert(s.sim, (s.tree, s.node, s.frame, start, row));
+                open.insert(s.sim, (s.tree, s.node, s.frame, start, name));
             } else {
                 open.remove(&s.sim);
                 *ends.entry(s.result).or_default() += 1;
-                *runs.entry(row).or_default().entry(s.tick - start).or_default() += 1;
+                *runs.entry(name).or_default().entry(s.tick - start).or_default() += 1;
             }
         }
         let (mut fixed, mut total) = (0, 0);
         let mut fits: BTreeMap<String, usize> = BTreeMap::new();
+        println!("animate steps: named an animation {named}, not {unnamed}; by source (named, not) {by_source:?}");
         for (row, ticks) in &runs {
-            let Some(a) = refs.get(*row).and_then(|id| by_id.get(id)) else { continue };
+            let Some(a) = by_name.get(row) else { continue };
             total += 1;
             if ticks.len() == 1 {
                 fixed += 1;

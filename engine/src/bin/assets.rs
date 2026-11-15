@@ -2116,6 +2116,88 @@ fn main() -> ExitCode {
                 }
             }
         }
+        "qrows" => {
+            // (study) a quick data table's first N rows as words: a pointer shown as ->table[row]
+            // (or ->@offset when in no table), followed one level when it points at no table row
+            let (Some(entry), Some(table)) = (args.get(3), args.get(4)) else {
+                println!("usage: assets ISO qrows ENTRY TABLE [N]");
+                return ExitCode::FAILURE;
+            };
+            let n = args.get(5).and_then(|v| v.parse::<usize>().ok()).unwrap_or(4);
+            let q = d.read("quickdat.arc").unwrap_or_default();
+            let Some(img) = arc::entries(&q).unwrap_or_default().into_iter().find(|e| &e.name == entry).and_then(|e| quickdata::Image::read(arc::bytes(&q, &e))) else {
+                return ExitCode::FAILURE;
+            };
+            let Some(t) = img.tables.get(table.as_str()).copied() else { return ExitCode::FAILURE };
+            let place = |p: usize| img.tables.iter().find(|(_, t)| p >= t.rows && p < t.rows + t.count * t.row_size).map_or(format!("@{p:x}"), |(nm, t)| format!("{nm}[{}]", (p - t.rows) / t.row_size));
+            for r in img.rows(table).take(n) {
+                let words: Vec<String> = (0..t.row_size / 4)
+                    .map(|k| match img.ptr(r + 4 * k) {
+                        Some(p) => {
+                            let at = place(p);
+                            if at.starts_with('@') {
+                                let inner: Vec<String> = (0..6).map(|j| img.ptr(p + 4 * j).map_or(format!("{:08x}", img.u32(p + 4 * j).unwrap_or(0)), |q| format!("->{}", place(q)))).collect();
+                                format!("->{at}[{}]", inner.join(" "))
+                            } else {
+                                format!("->{at}")
+                            }
+                        }
+                        None => format!("{:08x}", img.u32(r + 4 * k).unwrap_or(0)),
+                    })
+                    .collect();
+                println!("{}", words.join(" "));
+            }
+        }
+        "qrefs" => {
+            // (study) where the image points into TABLE: by the holder's table (or runs of words
+            // outside the tables, by their first offset), with a few samples
+            let (Some(entry), Some(table)) = (args.get(3), args.get(4)) else {
+                println!("usage: assets ISO qrefs ENTRY TABLE");
+                return ExitCode::FAILURE;
+            };
+            let q = d.read("quickdat.arc").unwrap_or_default();
+            let Some(img) = arc::entries(&q).unwrap_or_default().into_iter().find(|e| &e.name == entry).and_then(|e| quickdata::Image::read(arc::bytes(&q, &e))) else {
+                return ExitCode::FAILURE;
+            };
+            let Some(t) = img.tables.get(table.as_str()).copied() else { return ExitCode::FAILURE };
+            let inside = |p: usize| p >= t.rows && p < t.rows + t.count * t.row_size;
+            let holder = |o: usize| img.tables.iter().find(|(_, t)| o >= t.rows && o < t.rows + t.count * t.row_size).map(|(n, _)| n.clone());
+            let mut by: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+            let mut run_start = None;
+            let mut last = 0;
+            for o in (0..img.data.len() / 4).map(|k| 4 * k) {
+                let Some(p) = img.ptr(o).filter(|&p| inside(p)) else { continue };
+                let _ = p;
+                let key = holder(o).unwrap_or_else(|| {
+                    if run_start.is_none() || o > last + 64 {
+                        run_start = Some(o);
+                    }
+                    format!("@{:x}", run_start.unwrap())
+                });
+                last = o;
+                by.entry(key).or_default().push(o);
+            }
+            println!("pointers into {table}: {} places", by.len());
+            for (k, v) in by.iter().take(40) {
+                let first = v[0];
+                let words: Vec<String> = (0..8).map(|j| img.ptr(first + 4 * j).map_or(format!("{:08x}", img.u32(first + 4 * j).unwrap_or(0)), |q| if inside(q) { format!("[{}]", (q - t.rows) / t.row_size) } else { format!("->@{q:x}") })).collect();
+                println!("  {k}: {} pointers; at {first:x}: {}", v.len(), words.join(" "));
+            }
+        }
+        "qtables" => {
+            // (study) a quick data entry's tables: name, rows, row size
+            let Some(entry) = args.get(3) else {
+                println!("usage: assets ISO qtables ENTRY");
+                return ExitCode::FAILURE;
+            };
+            let q = d.read("quickdat.arc").unwrap_or_default();
+            let Some(img) = arc::entries(&q).unwrap_or_default().into_iter().find(|e| &e.name == entry).and_then(|e| quickdata::Image::read(arc::bytes(&q, &e))) else {
+                return ExitCode::FAILURE;
+            };
+            for (name, t) in &img.tables {
+                println!("{name}: {} rows of {} bytes at {:x}", t.count, t.row_size, t.rows);
+            }
+        }
         "qtable" => {
             // (study) the quick data table (of ENTRY) holding a word: its name and every row's
             // words, pointers to strings shown as the strings

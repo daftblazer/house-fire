@@ -201,7 +201,25 @@ earlier search, on the index read one entry off, found it not the archive's own 
 CRC-32, FNV-1/1a, djb, sdbm, ELF or a ×31/37/131/65599 hash of the name (as is, lower or
 upper case, with or without an extension), and the row's value does not follow the run's
 length (0xA6A for 16 ticks, 0x514 for 17). Castaway's ELF has `EAnimManager` (resources by
-32-bit id) to read it from. But the operand's first 16 bits are not that table's row: read
+32-bit id) to read it from. How an operand names its animation (iteration 114, The Sims 2's
+`SAnimator2::resolveSkillForPrimitive(StackElem *, AnimateNewParam *, AnimRef *&)` and the
+`Get*AnimRef` it calls, disassembled from its ELF):
+- bytes 0-1 (s16) are an index, taken from a parameter instead when byte 5 has 4 set;
+- byte 4 is the source: 0 the object's anim table (`GetObjectAnimRef`: the ObjSelector's adult,
+  child, adult-to-child or child-to-adult table, by the Sim's age and the target's), 1 a global
+  table (`GetGlobalAnimRef`), 2 the person's stock table (`GetPersonStockAnimRef`), 3 a misc one
+  (`GetMiscAnimRef`).
+An object's anim tables are its STR# 129 (`a2o`) and 130 (`c2o`): strings of the original
+`.max` paths (`..\..\Characters\ANIMATIONS\ConvertedFromMaxis\a2o-fridge-open.max`; string
+0 a note). An entry's base name is an `animatio.arc` entry's name. Through the tree's file's
+STR# 129, home's Animate steps from source 0 name 2,363 animations, all of them entries
+(fridge, stove, eating, easel). 751 are not named that way: index by parameter, a child table,
+or the table of another file than the tree's. Source 3's 913 and source 2's 1 are not read yet
+(lockstep `LOCKSTEP_ANIM_RUNS`). A run's ticks follow the animation's length loosely: the runs
+that always last the same take about 26 ticks a second (a2o-easel-startpaint, 0.5 s: 13 ticks;
+a2o-starteat-stand, 0.483 s: 13). The exact rule needs the original's clock (ticks against
+frames).
+Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object
 (the object's or the Sim's own list into AnimRef, by the operand's source byte), still to read.
