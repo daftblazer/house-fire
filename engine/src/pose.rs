@@ -205,6 +205,19 @@ pub fn fix_root(pose: &mut Pose, track_flags: u32, values: [f32; 3]) {
     }
 }
 
+/// The weight Animate works with for a track (80158224 to 80158278): a track of weight 0 does
+/// nothing at all; otherwise the first track that is not a layer to pose a skeleton's node
+/// states after they were reset is their base and counts as weight 1, whatever its own (and
+/// marks the states `based`, the game's +88 word of the states, cleared when they are reset at
+/// 80157E40).
+pub fn base_weight(track_weight: f32, layer: bool, based: &mut bool) -> f32 {
+    if track_weight == 0.0 || *based || layer {
+        return track_weight;
+    }
+    *based = true;
+    1.0
+}
+
 /// How a pose is folded into a node state.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Fold {
