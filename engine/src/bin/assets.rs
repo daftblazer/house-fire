@@ -2250,11 +2250,36 @@ fn main() -> ExitCode {
             let f = |v: u32| f32::from_bits(v);
             let (mut outside, mut same, mut shown) = (0, 0, 0);
             let mut inside: BTreeMap<u32, BTreeSet<[u32; 4]>> = BTreeMap::new();
+            let (mut inside_n, mut inside_same, mut factor_seen) = (0, 0, 0);
             for (tick, rec, o, words) in &log.room_suns {
                 let Some((_, r, _, _)) = log.times_of_day.iter().rev().find(|t| t.0 <= *tick) else { continue };
                 if o[0] != r[1] || o[8] != r[0] {
                     if o[0] != 0 {
                         inside.entry(*rec).or_default().insert([o[1], o[2], o[3], o[4]]);
+                        // an inside room: words 0-6 from its own ambient object (factor, colour),
+                        // the rest as they were (no sun object unless o[8])
+                        let mut mine = words.map(f);
+                        for v in mine.iter_mut().take(7) {
+                            *v = f32::NAN;
+                        }
+                        let sun = (o[8] != 0).then(|| (f(o[9]), [f(o[10]), f(o[11]), f(o[12])], [f(o[13]), f(o[14]), f(o[15])]));
+                        if sun.is_some() {
+                            for v in mine.iter_mut().skip(8).take(7) {
+                                *v = f32::NAN;
+                            }
+                        }
+                        housefire::light::room_sun(&mut mine, Some((f(o[1]), [f(o[2]), f(o[3]), f(o[4])])), sun);
+                        inside_n += 1;
+                        if mine.map(f32::to_bits) == *words {
+                            inside_same += 1;
+                        } else if shown < 3 {
+                            shown += 1;
+                            println!("  inside tick {tick} record {rec:08x}: mine {mine:?}, the log's {:?}, objects {o:08x?}", words.map(f));
+                        }
+                        // and its factor one the inside rooms' ambient ('5') gave by then
+                        if log.room_ambients.iter().any(|a| a[0] <= *tick && a[9] == o[1]) {
+                            factor_seen += 1;
+                        }
                     }
                     continue;
                 }
@@ -2276,6 +2301,7 @@ fn main() -> ExitCode {
                 }
             }
             println!("outside records {outside}: the engine's from the clock {same}");
+            println!("inside records {inside_n}: from their ambient objects {inside_same}; their factor a logged inside ambient (by then) {factor_seen}");
             for (rec, vals) in &inside {
                 println!("inside record {rec:08x}: its ambient (factor, colour) {:?}", vals.iter().map(|v| v.map(f)).collect::<Vec<_>>());
             }

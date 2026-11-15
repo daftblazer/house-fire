@@ -1147,3 +1147,13 @@ values), lockstep `LOCKSTEP_ROOM_AMBIENT=LOG,SNAPSHOT` gives:
 - all 4,000 ambient factors.
 (The persons' places come from the log, since lockstep's world does not walk them. The grid
 follows a Sim's place a tick late.)
+
+The inside rooms' records (iteration 103, `assets roomclock`). An inside room's '2' record
+takes words 0-6 from its own ambient object through `room_sun`: zeros, then its colour times its
+factor. The rest stays as it was (no sun object). Bit for bit:
+- home: 3,000 inside records (and the outside's 1,000 from the clock);
+- the club: 3,333 inside records (and the outside's 667), from work/logs/club-rooms.log.
+Every inside record's factor is one the logged room ambient ('5') gave by then. So the whole
+inside chain is the engine's: clock, day/night blend, the room walk's lists, the openings,
+brightness, and the record. (club-l.log, recorded in iteration 91, holds a single '3' call
+and no '2' records; club-rooms.log holds them all.)
