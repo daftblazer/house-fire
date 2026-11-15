@@ -2270,6 +2270,51 @@ fn main() -> ExitCode {
                 println!("{:08x} {}", e.id, e.name);
             }
         }
+        "animnodes" => {
+            // the node words as the original's EAnimController::Animate (fn_801581C8) reads its
+            // channels: 0 none, > 0 an index into the constants, < 0 a stream. Each word's sign
+            // tallied, and the three constants a positive word points at (docs/assets.md: word 1
+            // the scale, 2 the translation, 3 the rotation, 4 a fourth channel)
+            let b = d.read("animatio.arc").unwrap_or_default();
+            let es = arc::entries(&b).unwrap_or_default();
+            let mut signs: BTreeMap<(usize, &str), usize> = BTreeMap::new();
+            let mut fits: BTreeMap<(usize, bool), usize> = BTreeMap::new();
+            let mut scales: BTreeMap<String, usize> = BTreeMap::new();
+            let mut first_words: BTreeMap<u32, usize> = BTreeMap::new();
+            for e in &es {
+                let Some(a) = housefire::anim::read(arc::bytes(&b, e)) else { continue };
+                for nd in &a.nodes {
+                    *first_words.entry(nd[0].min(1000)).or_default() += 1;
+                    for (w, word) in nd.iter().enumerate().skip(1).take(4) {
+                        let v = *word as i32;
+                        *signs.entry((w, if v == 0 { "0" } else if v > 0 { "+" } else { "-" })).or_default() += 1;
+                        if v > 0 {
+                            let n = 3;
+                            let k = v as usize;
+                            let ok = k + n <= a.constants.len();
+                            *fits.entry((w, ok)).or_default() += 1;
+                            if ok && w == 1 {
+                                *scales.entry(format!("w1 {:.2?}", &a.constants[k..k + 3])).or_default() += 1;
+                            }
+                            if ok && w == 4 {
+                                *scales.entry(format!("w4 {:.2?}", &a.constants[k..k + 3])).or_default() += 1;
+                            }
+                            if ok && w == 2 {
+                                *scales.entry(format!("w2 {:.2?}", &a.constants[k..k + 3])).or_default() += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            println!("node words by sign (word, sign): {signs:?}");
+            println!("positive words whose constants fit (word, fits): {fits:?}");
+            let mut sv: Vec<_> = scales.into_iter().collect();
+            sv.sort_by_key(|e| std::cmp::Reverse(e.1));
+            for pre in ["w1", "w2", "w4"] {
+                println!("constants of {pre} (most seen): {:?}", sv.iter().filter(|e| e.0.starts_with(pre)).take(6).collect::<Vec<_>>());
+            }
+            println!("first words (capped at 1000): {} values, the most {:?}", first_words.len(), first_words.iter().max_by_key(|e| e.1));
+        }
         "anims" => {
             // every animatio.arc entry through `anim::read`: how many fill their entry exactly,
             // the nodes, constants and events in all, the rates and frame counts seen

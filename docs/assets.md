@@ -1277,3 +1277,21 @@ The quick data's `AnimRef` rows (SimsObjects, 2,891) name animations by the entr
 row's id is an `animatio.arc` entry's (`assets anims`; iteration 113). The row's second word
 is not the length: paired rows share it (an apology's accept and reject, 0xB32 for 86 frames),
 and 0xEF9 stands beside a 116-frame entry.
+
+### Animation channels (stage 4.4, iteration 147)
+
+Bustin' Out's evaluator is fn_801581C8, EA's `EAnimController::Animate(EACTrack *,
+EACNodeState *)`. It was found by the order of its neighbours against The Sims 2's map: after
+`FixAccumulationForRootNode` (0x44 in both, 80158184), before `Blend` (0x190, 801587D4) and
+`Layer` (0x1FC, 80158964). For each node it reads four channel words. 0 is no channel (an
+identity, the constants at 802B7F38/7F3C). Positive is an index into the animation's
+constants. Negative is a stream, read at the track's place (+60) by a decoder:
+- rotation: fn_801B5F48;
+- scale and translation: fn_801BC4E0;
+- the fourth channel: fn_801BD4D4.
+The file's node words (`assets animnodes`, all 4,013 entries) give each channel. Word 1 is the
+scale: 4,200 constant (uniform triples like 1.61, 1.15, 0.10), the rest none. Word 2 is the
+translation: 16,003 constant, 20,690 a stream. Word 3 is the rotation, a stream on every one of
+the 190,424 nodes (the pool table's -1 - 66k). Word 4 is a fourth channel: 186 constant (triples
+in 0 to 1), 50 streams. Every positive word's three constants are inside the animation's. The
+streams' encoding (the bit array, the "-1 - 66k" indices) is the decoders' and still to read.
