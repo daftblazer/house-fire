@@ -2212,6 +2212,22 @@ fn main() -> ExitCode {
                     println!("  room {:08x}: (kind, id): entries {by:?}", w[1]);
                 }
             }
+            // (ASSETS_ENTRY_CHANGES: the entries whose grid id or kind changes between a room's
+            // records, with the log's ids)
+            if std::env::var_os("ASSETS_ENTRY_CHANGES").is_some() {
+                let mut last: BTreeMap<u32, &Vec<[u32; 3]>> = BTreeMap::new();
+                for (w, (_, ents)) in log.window_brightness.iter().zip(&log.window_entries) {
+                    if let Some(prev) = last.insert(w[1], ents) {
+                        let list = log.lists.iter().rev().find(|l| l.tick <= w[0]);
+                        let id = |p: u32| list.and_then(|l| l.objects.iter().position(|o| *o == p.wrapping_add(112)).map(|k| l.ids[k]));
+                        for (k, (a, b)) in prev.iter().zip(ents).enumerate() {
+                            if a != b {
+                                println!("  tick {} room {:08x} entry {k}: grid {} kind {} id {:?} -> grid {} kind {} id {:?}", w[0], w[1], a[0] as i32, a[2] as i32, id(a[1]), b[0] as i32, b[2] as i32, id(b[1]));
+                            }
+                        }
+                    }
+                }
+            }
             let mut rooms: BTreeMap<(u32, u32, u32, u32), (u32, u32)> = BTreeMap::new();
             for w in &log.window_brightness {
                 let e = rooms.entry((w[1], w[2], w[3], w[4])).or_insert((w[0], w[0]));

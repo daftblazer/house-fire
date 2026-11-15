@@ -232,14 +232,16 @@ pub fn window_brightness(windows: u32, tiles: i32) -> f32 {
 
 /// What a tile counts as in a room's window share (`window_brightness`): the original looks the
 /// tile up in its grid of one object id per tile (0x802031B0) and counts it when that object is
-/// of kind 8, a door or a window. The grid holds the tile's floor object when there is one (not
-/// a person, not a door or window, not on another object), so an opening counts only on a tile
-/// with nothing standing on its floor. Each item is (door or window, person, on another object).
+/// of kind 8, a door or a window. The grid holds the tile's floor object when there is one (a
+/// person standing there too, kind 2; not a door or window, not an object on another), so an
+/// opening counts only on a tile with nothing standing on its floor. Measured: a Sim in an
+/// archway (home's ticks 508-535) takes both its entries. Each item is (door or window,
+/// person, on another object).
 pub fn tile_counts_as_opening(objects: impl IntoIterator<Item = (bool, bool, bool)>) -> bool {
     let (mut opening, mut floor) = (false, false);
     for (door_or_window, person, contained) in objects {
         opening |= door_or_window;
-        floor |= !door_or_window && !person && !contained;
+        floor |= person || (!door_or_window && !contained);
     }
     opening && !floor
 }
@@ -910,7 +912,8 @@ mod tests {
     #[test]
     fn an_opening_counts_unless_something_stands_on_its_floor() {
         assert!(tile_counts_as_opening([(true, false, false)]));
-        assert!(tile_counts_as_opening([(true, false, false), (false, false, true), (false, true, false)]));
+        assert!(tile_counts_as_opening([(true, false, false), (false, false, true)]));
+        assert!(!tile_counts_as_opening([(true, false, false), (false, true, false)]));
         assert!(!tile_counts_as_opening([(true, false, false), (false, false, false)]));
         assert!(!tile_counts_as_opening([(false, false, false)]));
     }

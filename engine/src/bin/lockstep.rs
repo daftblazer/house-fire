@@ -1374,7 +1374,80 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &DiscTab
     // one a line, then its multi-tile leader (0: none), for the assets tool's check of the original's world matrices
     let dump_at = std::env::var("LOCKSTEP_DUMP_PLACES").ok().and_then(|v| v.parse::<u32>().ok());
     let mut dumped = false;
+    // (LOCKSTEP_ROOM_AMBIENT=LOG,SNAPSHOT: each tick's inside room ambient factors from the
+    // engine's world as the step loop reaches the tick: the walk's lists, the openings rule on
+    // the objects then, `window_brightness`, `room_ambient` with the '5' record's clock and
+    // day/night values; against every '6' brightness and '5' result of the LOG (the same
+    // replay), its room objects paired with the engine's lists through the snapshot's)
+    let ambient_study = std::env::var("LOCKSTEP_ROOM_AMBIENT").ok().and_then(|v| {
+        let (a, b) = v.split_once(',')?;
+        Some((read_log(a)?, std::fs::read(b).ok()?))
+    });
+    let mut ambient_lists: Option<(Vec<Vec<(i32, i32)>>, std::collections::BTreeMap<u32, usize>)> = None;
+    let (mut amb_k, mut amb_tick, mut amb_counts) = (0usize, u32::MAX, [0usize; 4]);
+    let mut amb_shown = 0;
     for (i, s) in log.steps.iter().enumerate() {
+        if let Some((alog, snap)) = &ambient_study
+            && s.tick != amb_tick
+        {
+            amb_tick = s.tick;
+            let (lists, by_room) = ambient_lists.get_or_insert_with(|| {
+                let open = |x: i32, y: i32, dx: i32, dy: i32| !lw.walls.wall_into(x, y, dx, dy) || matches!(lw.walls.style(x, y, dx, dy), 2 | 12 | 13 | 14);
+                let lists = housefire::light::room_tile_lists((39, 39), |x, y| lw.walls.diagonal_bits(x, y), open);
+                let byte = |a: u32| a.checked_sub(0x8000_0000).and_then(|o| snap.get(o as usize).copied());
+                let mut by_room = std::collections::BTreeMap::new();
+                for w in &alog.window_brightness {
+                    if let (Some(y), Some(x)) = (byte(w[2]), byte(w[2] + 1))
+                        && let Some(k) = lists.iter().position(|l| l.first() == Some(&(i32::from(x), i32::from(y))))
+                    {
+                        by_room.insert(w[1], k);
+                    }
+                }
+                (lists, by_room)
+            });
+            while amb_k < alog.window_brightness.len() && alog.window_brightness[amb_k][0] <= s.tick {
+                let w = alog.window_brightness[amb_k];
+                if w[0] == s.tick
+                    && let Some(&k) = by_room.get(&w[1])
+                {
+                    let m = &lists[k];
+                    let halves: i32 = m.iter().map(|&(x, y)| if lw.walls.diagonal_bits(x, y) != 0 { 1 } else { 2 }).sum();
+                    // (the persons where the log's places put them before this tick: lockstep's
+                    // world does not walk them)
+                    let person_at = |id: i16| alog.places.iter().rev().find(|p| p.id == id && p.tick < s.tick).map(|p| (p.x >> 4, p.y >> 4, p.level));
+                    let openings = m
+                        .iter()
+                        .filter(|&&(x, y)| {
+                            housefire::light::tile_counts_as_opening(
+                                lw.objects()
+                                    .filter(|o| o.on_lot() && if o.person { person_at(o.id()) == Some((x, y, 1)) } else { o.level == 1 && (o.x16 >> 4, o.y16 >> 4) == (x, y) })
+                                    .map(|o| (o.door || o.window, o.person, o.data.get(housefire::world::DATA_CONTAINER).copied().unwrap_or(0) != 0)),
+                            )
+                        })
+                        .count() as u32;
+                    let b = housefire::light::window_brightness(openings, halves / 2);
+                    amb_counts[0] += 1;
+                    if b.to_bits() == w[4] {
+                        amb_counts[1] += 1;
+                    } else if amb_shown < 5 {
+                        amb_shown += 1;
+                        println!("room ambient: tick {} room {:08x}: brightness {b}, the log's {}", w[0], w[1], f32::from_bits(w[4]));
+                    }
+                    if let Some(a) = alog.room_ambients.get(amb_k) {
+                        let f = f32::from_bits;
+                        let mine = housefire::light::room_ambient(f(a[4]), f(a[5]), a[6] as i32, a[7] as i32, a[8] as i32, b);
+                        amb_counts[2] += 1;
+                        if mine.to_bits() == a[9] {
+                            amb_counts[3] += 1;
+                        }
+                    }
+                }
+                amb_k += 1;
+            }
+        }
+        if ambient_study.is_some() && i + 1 == log.steps.len() {
+            println!("room ambient: brightness from the engine {} of {}; ambient factors {} of {}", amb_counts[1], amb_counts[0], amb_counts[3], amb_counts[2]);
+        }
         if let Some(t) = dump_at
             && !dumped
             && s.tick >= t

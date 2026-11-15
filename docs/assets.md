@@ -1135,3 +1135,15 @@ and `window_brightness`, home's three rooms give the log's brightness bit for bi
 `LOCKSTEP_ROOM_BRIGHTNESS=LOG`). The club's room objects differ between its two recordings, so
 they pair up by value instead. The engine's five inside rooms give 1.0277778, 1.0056962 and 1.0
 (three one-tile rooms), the log's three values exactly. The outside is not lit this way.
+
+The inside rooms' ambient factors over the whole home replay (iteration 102). The grid holds
+persons too, as kind 2. The log's per-entry kinds show Sim 12 taking the archway at (18, 15)
+(both its entries) from tick 508 to 535, so the brightness fell to 1.0114155. The openings rule
+now counts a person as standing on the floor (`light::tile_counts_as_opening`). Each tick, with
+the engine's room lists, objects and the openings rule, the persons on the tiles of their places
+before the tick, `window_brightness` and `room_ambient` (the '5' records' clock and day/night
+values), lockstep `LOCKSTEP_ROOM_AMBIENT=LOG,SNAPSHOT` gives:
+- all 4,000 logged brightness values bit for bit;
+- all 4,000 ambient factors.
+(The persons' places come from the log, since lockstep's world does not walk them. The grid
+follows a Sim's place a tick late.)
