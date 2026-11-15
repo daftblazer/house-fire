@@ -757,6 +757,59 @@ fn main() -> ExitCode {
                 }
             }
             println!("windows from the animation alone: {win:?}");
+            // every read run through `anim::Stream` from the place alone; a stream whose address
+            // shows another header is rebound (`Stream::rebind`)
+            let mut runs: HashMap<u32, ([u32; 13], housefire::anim::Stream)> = HashMap::new();
+            let mut last_tick: HashMap<u32, u32> = HashMap::new();
+            let mut run: BTreeMap<String, usize> = BTreeMap::new();
+            let mut shown = 0;
+            for v in &log.vec_streams {
+                let Some((h, _)) = v.header else { continue };
+                let mut key = h;
+                key[2] = 0;
+                key[0] = 0;
+                let Some(Some((ai, x))) = found.get(&key) else { continue };
+                let words = &all[*ai].bit_words;
+                let e = runs.entry(v.stream).or_insert_with(|| (key, housefire::anim::Stream::new(words, *x)));
+                let fresh = e.0 != key;
+                let first_seen = e.1.last_place == f32::MAX && e.1.key == 0 && !fresh;
+                if fresh {
+                    // another animation's data at this address: the stream rebound in place
+                    e.0 = key;
+                    e.1.rebind(words, *x);
+                }
+                let gap = v.tick.saturating_sub(*last_tick.get(&v.stream).unwrap_or(&v.tick));
+                last_tick.insert(v.stream, v.tick);
+                let kind = if fresh { "after another header" } else if first_seen { "first at its address" } else { "running" };
+                let before = e.1.clone();
+                let got = e.1.read(words, v.place);
+                let st = e.1.clone();
+                let same_window = st.key == h[2] && st.first == v.first && st.last == v.last && st.mode == v.mode;
+                let same = got.iter().zip(&v.result).all(|(a, b)| a.to_bits() == b.to_bits());
+                let what = match (same_window, same) {
+                    (true, true) => "window and result the same",
+                    (true, false) => "window the same, result DIFFERENT",
+                    _ => "window DIFFERENT",
+                };
+                *run.entry(format!("{what} ({kind})")).or_default() += 1;
+                if what != "window and result the same" {
+                    // resync to the log's window (a start the log does not show)
+                    let words_here = words;
+                    let mut fixed = housefire::anim::Stream::new(words_here, *x);
+                    fixed.key = h[2];
+                    fixed.first = v.first;
+                    fixed.last = v.last;
+                    fixed.mode = v.mode;
+                    fixed.window = v.keys;
+                    fixed.last_place = v.place;
+                    if let Some(e) = runs.get_mut(&v.stream) { e.1 = fixed; }
+                    if shown < 8 {
+                        shown += 1;
+                        println!("  read different (ticks since {gap}): place {} logged key {} ({}, {}) mode {}; native key {} ({}, {}) mode {}; before key {} ({}, {}) last place {}", v.place, h[2], v.first, v.last, v.mode, st.key, st.first, st.last, st.mode, before.key, before.first, before.last, before.last_place);
+                    }
+                }
+            }
+            println!("reads from the place alone: {run:?}");
             // (study: the logged starts in one animation, against a walk of headers from bit 0)
             if let Ok(name) = std::env::var("LOCKSTEP_ANIM_WALK")
                 && let Some(a) = all.iter().find(|a| a.name == name)

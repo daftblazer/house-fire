@@ -478,6 +478,126 @@ pub fn channel3(first: i32, last: i32, mode: u8, keys: &[f32; 12], place: f32) -
     [0, 1, 2].map(|i| ((p0[i] * h00 + t0[i] * h10) + p1[i] * h01) + t1[i] * h11)
 }
 
+/// A scale or translation stream as the evaluator runs it (801BC4E0): its window between keys
+/// `key` and `key` + 1, the blend flag, and the place of the last read.
+#[derive(Clone, Debug)]
+pub struct Stream {
+    pub header: StreamHeader,
+    pub key: u32,
+    pub first: i32,
+    pub last: i32,
+    /// 1: the window is blended straight (moved a third of it or more since the last read).
+    pub mode: u8,
+    pub last_place: f32,
+    pub window: [f32; 12],
+}
+
+impl Stream {
+    /// A stream at its start (801BC318 then 801BCBBC): the first window, curved.
+    pub fn new(words: &[u32], header: StreamHeader) -> Stream {
+        let mut s = Stream { header, key: 0, first: 0, last: 0, mode: 0, last_place: 0.0, window: [0.0; 12] };
+        s.reset(words);
+        s
+    }
+
+    fn fill(&mut self, words: &[u32]) {
+        self.window = self.header.window(words, self.key).2;
+    }
+
+    /// Back to the first window (801BCBBC); the last place is FLT_MAX, the flag is kept.
+    fn reset(&mut self, words: &[u32]) {
+        self.key = 0;
+        self.first = 0;
+        self.last = self.header.time(words, 1);
+        self.last_place = f32::MAX;
+        self.fill(words);
+    }
+
+    /// To the last window (801BCC28): it ends at the stream's frames - 1; the last place is
+    /// -FLT_MAX.
+    fn jump_to_end(&mut self, words: &[u32]) {
+        let h = &self.header;
+        self.key = h.keys - 2;
+        self.last = h.frames(words) as i32 - 1;
+        self.first = self.last - (h.time(words, h.keys - 1) - h.time(words, h.keys - 2));
+        self.last_place = -f32::MAX;
+        self.fill(words);
+    }
+
+    /// The stream given another animation's data in place (a play changing animation): the
+    /// key and the last place are kept, the blend flag is cleared and the window is read anew
+    /// at that key.
+    pub fn rebind(&mut self, words: &[u32], header: StreamHeader) {
+        self.header = header;
+        self.key = self.key.min(header.keys.saturating_sub(2));
+        self.first = header.time(words, self.key);
+        self.last = header.time(words, self.key + 1);
+        self.mode = 0;
+        self.fill(words);
+    }
+
+    /// One window on (801BC958): blended when the place moved a third of the window or more.
+    fn forward(&mut self, words: &[u32], place: f32) {
+        self.key += 1;
+        self.first = self.last;
+        self.last = self.header.time(words, self.key + 1);
+        self.mode = ((place - self.last_place) >= (self.last - self.first) as f32 * (1.0 / 3.0)) as u8;
+        let p1 = [self.window[9], self.window[10], self.window[11]];
+        self.window[0..3].copy_from_slice(&p1);
+        if self.mode == 0 {
+            self.window[3..6].copy_from_slice(&self.header.tangent(words, true, self.key));
+            self.window[6..9].copy_from_slice(&self.header.tangent(words, false, self.key + 1));
+        }
+        self.window[9..12].copy_from_slice(&self.header.point(words, self.key + 1));
+    }
+
+    /// One window back (801BCA8C), the same rule the other way.
+    fn back(&mut self, words: &[u32], place: f32) {
+        self.key -= 1;
+        self.last = self.first;
+        self.first = self.header.time(words, self.key);
+        self.mode = ((self.last_place - place) >= (self.last - self.first) as f32 * (1.0 / 3.0)) as u8;
+        let p0 = [self.window[0], self.window[1], self.window[2]];
+        self.window[9..12].copy_from_slice(&p0);
+        if self.mode == 0 {
+            self.window[3..6].copy_from_slice(&self.header.tangent(words, true, self.key));
+            self.window[6..9].copy_from_slice(&self.header.tangent(words, false, self.key + 1));
+        }
+        self.window[0..3].copy_from_slice(&self.header.point(words, self.key));
+    }
+
+    /// The value at `place` (801BC4E0): the window moved to hold it (stepping, or from the
+    /// nearer end when that is closer), then curved or blended.
+    pub fn read(&mut self, words: &[u32], place: f32) -> [f32; 3] {
+        let (first, last) = (self.first as f32, self.last as f32);
+        if place > last {
+            if place - last <= (self.header.frames(words) as i32 - 1) as f32 - place {
+                while place > self.last as f32 {
+                    self.forward(words, place);
+                }
+            } else {
+                self.jump_to_end(words);
+                while place < self.first as f32 {
+                    self.back(words, place);
+                }
+            }
+        } else if place < first {
+            if first - place <= place {
+                while place < self.first as f32 {
+                    self.back(words, place);
+                }
+            } else {
+                self.reset(words);
+                while place > self.last as f32 {
+                    self.forward(words, place);
+                }
+            }
+        }
+        self.last_place = place;
+        channel3(self.first, self.last, self.mode, &self.window, place)
+    }
+}
+
 /// The Sims' plays, as the game keeps them: one a Sim, asked by its Animate steps and stepped by
 /// the frames, in the game's order. A Sim's play goes on across Animate calls of the same
 /// animation until it has given true; another animation, or a call after true, starts anew (once
@@ -745,6 +865,47 @@ mod tests {
         assert_eq!(h.tangent(&w, false, 2)[0], 1.5 * 2.0 - 0.5 * 2.0);
         let (first, last, k) = h.window(&w, 1);
         assert_eq!((first, last, k[0], k[3], k[6], k[9]), (2, 3, 4.0, 2.0, 2.0, 6.0));
+    }
+
+    #[test]
+    fn a_stream_steps_its_window_and_blends_on_a_jump() {
+        // 4 keys at frames 0, 3, 6 and 9 with x = 0, 3, 6, 9 (8-bit values, no scalar)
+        let mut w = vec![0u32; 12];
+        let mut at = 0;
+        let mut put = |v: u32, n: u32| {
+            for i in 0..n {
+                if v >> i & 1 != 0 {
+                    w[((at + i) / 32) as usize] |= 1 << ((at + i) % 32);
+                }
+            }
+            at += n;
+        };
+        for (v, n) in [(4, 20), (2, 5), (0, 5), (8, 5)] {
+            put(v, n);
+        }
+        for (r, m) in [(255.0f32, 0.0f32), (0.0, 0.0), (0.0, 0.0)] {
+            put(r.to_bits(), 32);
+            put(m.to_bits(), 32);
+        }
+        for (gap, x) in [(0, 0), (2, 3), (2, 6), (2, 9)] {
+            put(gap, 2);
+            put(x, 8);
+            put(0, 16);
+        }
+        let h = stream_header(&w, 0);
+        let mut s = Stream::new(&w, h);
+        // a small step: the next window, curved
+        assert!((s.read(&w, 1.0)[0] - 1.0).abs() < 1e-5);
+        s.read(&w, 2.9);
+        s.read(&w, 3.5);
+        assert_eq!((s.key, s.first, s.last, s.mode), (1, 3, 6, 0));
+        // a jump of a third of the window or more: blended straight
+        s.read(&w, 7.0);
+        assert_eq!((s.key, s.first, s.last, s.mode), (2, 6, 9, 1));
+        assert_eq!(s.read(&w, 7.5)[0], 7.5);
+        // back near the start: from the first window again
+        s.read(&w, 0.5);
+        assert_eq!((s.key, s.first, s.last), (0, 0, 3));
     }
 
     #[test]

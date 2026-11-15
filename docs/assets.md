@@ -1357,3 +1357,21 @@ Check: given only each record's key (+8), all 157,750 logged windows on home-a13
 same frames and points, and all 51,150 curved ones the same tangents, to the bit. A stream's
 address is reused by later animations, so a record is matched to its animation by its whole
 header.
+A stream run from the place alone (iteration 153, `anim::Stream`). The evaluator (801BC4E0)
+moves the window to hold the place, then stores the place at +40 and evaluates:
+- Past the last frame: step forward (801BC958) while the place is past the window, when the
+  place is nearer the window than the stream's end (frames - 1). Otherwise jump to the last
+  window (801BCC28: it ends at frames - 1, the last place is -FLT_MAX) and step back (801BCA8C).
+- Before the first frame: step back while it is nearer than frame 0. Otherwise start again
+  (801BCBBC: key 0, the last place FLT_MAX) and step forward.
+A step back blends when the last place - the place is a third of the window or more (802C3858
+= 1/3), and keeps P1 = the old P0. A start or jump keeps the blend flag.
+When a stream's address shows another animation's header, the stream is rebound in place
+(`Stream::rebind`): the key and the last place are kept, the flag is cleared, and the window
+is read anew at that key. That code path is not found yet: only the init (801BC318) writes the
+header. The rule comes from the data: 3,643 of the 3,652 header changes on home-a14.log. The 9
+others behave like new streams (key 0, last place FLT_MAX), and the tick gap since the
+address's last read does not tell them apart. Of the 157,750 reads, 157,741 have the same key,
+window, flag and result to the bit, given only the places. home-a14.log is home-a13 again
+with the observer logging every read whatever the result's address. It has the same 157,750
+reads, so none had been skipped, and the same 562,616 steps.
