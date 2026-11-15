@@ -199,6 +199,53 @@ pub fn time_of_day(hour: i32, minute: i32, second: i32) -> TimeOfDay {
     TimeOfDay { sun: colour(0), sun_factor: fused(3), ambient: colour(4), ambient_factor: fused(7), extra: fused(8) }
 }
 
+/// The sun's angle at a clock time (Light_TimeOfDay): a turn over the day from midnight, a
+/// quarter by 4:00, three quarters by 20:00 (the hours between taken at even speed: 4:00 to
+/// 20:00 over pi, the nights over pi/2 each), with the code's own pi and pi/2.
+pub fn sun_angle(hour: i32, minute: i32, second: i32) -> f32 {
+    let (m, sec) = (minute % 60, second % 60);
+    let f = f32::from_bits;
+    let at = |h0: i32| (((hour - h0) * 60 + m) * 60 + sec) as f32;
+    if (hour - 4) as u16 <= 15 {
+        at(4) * f(0x4049_0fd0) / f(0x4761_0000) + f(0x3fc9_0fd0)
+    } else if hour <= 3 {
+        at(0) * f(0x3fc9_0fd0) / f(0x4661_0000)
+    } else {
+        at(20) * f(0x3fc9_0fd0) / f(0x4661_0000) + f(0x4096_cbdc)
+    }
+}
+
+/// The sun's direction at a clock time (Light_TimeOfDay): straight up (0, 0, 1) turned by the
+/// sun's angle about the axis (0.5, 0.5, 0.2) normalised (0x801B3024's rotation, the game's own
+/// sine and cosine), normalised, pointed down (z made negative) and kept between z -0.8 and
+/// -0.2. `None` only if the angle were beyond the game's sine's reach (never, the angle being
+/// under 2 pi).
+pub fn sun_direction(hour: i32, minute: i32, second: i32) -> Option<[f32; 3]> {
+    let a = sun_angle(hour, minute, second);
+    let axis = crate::mathf::normalize([0.5, 0.5, f32::from_bits(0x3e4c_cccd)]);
+    let (sn, cs) = (crate::mathf::sin(a)?, crate::mathf::cos(a)?);
+    let [x, y, z] = axis;
+    let t = 1.0 - cs;
+    let fma = |a: f32, b: f32, c: f32| f64::from(a).mul_add(f64::from(b), f64::from(c)) as f32;
+    // the matrix's third row (what (0, 0, 1) turns to)
+    let m20 = (x * z) * t + y * sn;
+    let m21 = (y * z) * t - x * sn;
+    let m22 = fma(z * z, t, cs);
+    // (the original's product with (0, 0, 1) gives the row itself)
+    let mut v = crate::mathf::normalize([m20, m21, m22]);
+    if v[2] > 0.0 {
+        v[2] = -v[2];
+    }
+    let (hi, lo) = (f32::from_bits(0xbe4c_cccd), f32::from_bits(0xbf4c_cccd));
+    if v[2] > hi {
+        v[2] = hi;
+    }
+    if v[2] < lo {
+        v[2] = lo;
+    }
+    Some(v)
+}
+
 /// A room record's ambient and sun from its two light objects (the original's Light_RoomSun,
 /// 0x801696F0, by their get-lights 0x801631C8 and 0x801636B4): words 0-6 from the ambient (a
 /// position and reach of 0, then its colour x its factor), words 8-14 from the sun (its
@@ -476,6 +523,17 @@ mod tests {
         assert_eq!(entry_points(0x0005_0203), vec![(2, 5), (2, 6), (3, 5), (3, 6), (4, 5), (4, 6)]);
         // a leading half (0x40: on the row) and a trailing half (0x80: the row after)
         assert_eq!(entry_points(0x0005_4283), vec![(2, 5), (3, 5), (3, 6), (4, 6)]);
+    }
+
+    #[test]
+    fn the_sun_turns_over_the_day_and_points_down() {
+        assert_eq!(sun_angle(0, 0, 0), 0.0);
+        assert_eq!(sun_angle(4, 0, 0), f32::from_bits(0x3fc9_0fd0));
+        assert!((sun_angle(12, 0, 0) - std::f32::consts::PI).abs() < 1e-5);
+        for h in 0..24 {
+            let d = sun_direction(h, 30, 0).unwrap();
+            assert!((-0.8..=-0.2).contains(&d[2]), "{h}: {d:?}");
+        }
     }
 
     #[test]

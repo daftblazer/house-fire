@@ -1993,6 +1993,17 @@ fn main() -> ExitCode {
                 }
             }
             println!("the engine's sun colour, factor and last value: {same}");
+            let (mut dirs, mut shown) = (0, 0);
+            for (tick, r, _, o) in &log.times_of_day {
+                let d = housefire::light::sun_direction(r[2] as i32, r[3] as i32, r[4] as i32);
+                if d.map(|d| d.map(f32::to_bits)) == Some([o[5], o[6], o[7]]) {
+                    dirs += 1;
+                } else if shown < 5 {
+                    shown += 1;
+                    println!("  tick {tick} at {} {} {}: mine {d:?}, the log's {:?}", r[2] as i32, r[3] as i32, r[4] as i32, [f(o[5]), f(o[6]), f(o[7])]);
+                }
+            }
+            println!("the engine's sun direction: {dirs}");
             for (tick, r, _, o) in log.times_of_day.iter().take(args.get(4).and_then(|v| v.parse().ok()).unwrap_or(0)) {
                 println!("tick {tick} regs {r:08x?} ({} {} {}): +136 {} factor {} colour {:?} direction {:?} out {}", r[2] as i32, r[3] as i32, r[4] as i32, o[0], f(o[1]), [f(o[2]), f(o[3]), f(o[4])], [f(o[5]), f(o[6]), f(o[7])], f(o[8]));
             }

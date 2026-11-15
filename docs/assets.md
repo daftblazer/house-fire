@@ -937,3 +937,18 @@ object's factor, colour and direction after and the last value) with `assets tim
 engine's keys equal the logged table. Home's 2,000 calls (from 7:04) and club's 2,000 (from
 18:15) give the sun's colour and factor and the last value bit for bit. The ambient's part follows
 the same code; the observer doesn't log its object yet.
+
+The sun's direction (`light::sun_angle`, `light::sun_direction`, with `mathf`):
+- The angle runs over the day from 0 at midnight, at even speed within each span: 0:00 to 4:00
+  covers 0 to π/2, 4:00 to 20:00 covers π/2 to 3π/2, and 20:00 to 24:00 the rest. The code uses
+  its own π (0x40490FD0) and π/2 (0x3FC90FD0).
+- (0, 0, 1) is turned by the angle about the axis (0.5, 0.5, 0.2), normalised (0x801B3024's
+  rotation: the matrix's third row).
+- The result is normalised, its z made negative, and z kept between −0.8 and −0.2.
+The sine and cosine are the game's own: fdlibm's float sinf and cosf (0x8010E450, 0x8010E288,
+the kernels 0x8010E698 and 0x8010E5AC, the reduction 0x8010E958), ported step for step in
+`mathf` (each step rounded to single, the code's fused steps fused). The normalise is the paired
+one (0x801221E4). The recomp gives its reciprocal-square-root estimate as an exact 1/√x, and the
+engine matches the recomp there. Checked with `assets timeofday` on the '3' records: home's
+2,000 calls (7:04: angle 2.17, the reduction's short path) and club's 2,000 (18:15: angle 4.37,
+its middle path) give the direction bit for bit.
