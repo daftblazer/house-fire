@@ -1658,3 +1658,16 @@ with the weight (the track's +76 times its +152 entry for the node) skips it at 
 (Layer 80158964) when the track's +8 has bit 0x100, copies it at weight 1, else blends it (Blend
 801587D4) into the node state (64 bytes a node). The observer's '=' records (home-a25.log, the
 first 40,000 poses) hold every node state before and after the pose.
+The bones (iteration 186, `skeleton.rs`, `LOCKSTEP_ANIM_BONES`). EAnimController::ComputeMatrices
+(80158B60) turns the final node states into one matrix a node. A character node (180 bytes,
+from characte.arc by name) holds +0 the parent, +16 the rest translation, +28 the rest rotation
+(x, y, z, w), +44 and +108 two matrices (the second the rest matrix), +172 a flag word. A state's
+flags: bit 0 posed (else the node takes its parent's matrix), bit 1 a scale, bit 2 the rest path.
+A posed node's local matrix is its rotation (801B48D0), rows scaled by the state's scale
+(801B28F0), moved by minus the rest translation (801B2988) and then by the rest translation plus
+the state's (801B345C); node = local x parent (801B2888, PSMTX44Concat), node 0's parent the root
+matrix; the 3x3 times the controller's scale (+84) when it is not 1 (801B28B8). ComputeMatrices
+writes the matrices' translations back over the states' words 5-7. All 262,948 nodes of the
+20,000 bone records on home-a26.log come out to the bit, and all 36 logged skeletons are
+characte.arc's. The rest path (state bit 2) is not met on the home replay, and the controller's
+scale (seven powers of two, 2^-17 to 2^-11) and mode word (+96) are inferred, not logged.
