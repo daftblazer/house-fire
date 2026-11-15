@@ -465,6 +465,8 @@ pub struct PlanRec {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct TrackRec {
     pub tick: u32,
+    /// The steps logged before it (its place among the steps).
+    pub after_steps: usize,
     pub controller: u32,
     pub track: u32,
     pub anim: u32,
@@ -1258,6 +1260,7 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let a = [0; 3].map(|_| r.u32());
                 log.tracks.push(TrackRec {
                     tick: log.ticks,
+                    after_steps: log.steps.len(),
                     controller,
                     track,
                     anim,

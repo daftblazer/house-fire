@@ -260,6 +260,14 @@ from one start frame) of its animation's rate starting within two ticks (lockste
   of 5). The rest end earlier, on an event (flag 0x20), with the track still going.
 So the two 15-frame starts' extra tick is that last tick plus the start: from the first tick, the
 frames by the clock, and one more.
+Where a play starts (iteration 118; each '8' record keeps its place among the steps). 15 of the
+21 whole plays start on the first frame logged after the run's first Animate step. The other 6
+skip that frame and start on the first frame of the next tick (1483 against 1484, 2613 against
+2615). The operand does not tell them apart: eatloop's same operand is late once, on time three
+times. All 6 late starts are an animation's first use on the log, and no repeated use is late
+(8 of 8). But 7 first uses start on time (the fridge's, the reaches, the approach), which looks
+like an animation loaded ahead of its step (`SAnimator2::loadSkillAnim`, `PreloadEvents`)
+against one loaded at it. Which animations are loaded ahead is still open.
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object

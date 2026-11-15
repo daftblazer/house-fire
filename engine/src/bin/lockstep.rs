@@ -667,6 +667,9 @@ fn main() -> ExitCode {
         let mut runs: BTreeMap<String, BTreeMap<u32, usize>> = BTreeMap::new();
         // each run: (name, first tick, end tick)
         let mut each: Vec<(String, u32, u32)> = Vec::new();
+        // each run's first step (its index among the steps)
+        let mut first_step: BTreeMap<(String, u32), usize> = BTreeMap::new();
+        let mut operand_of: BTreeMap<(String, u32), [u8; 8]> = BTreeMap::new();
         let mut ends: BTreeMap<u8, usize> = BTreeMap::new();
         for (i, s) in log.steps.iter().enumerate() {
             let node = step_object[i].and_then(|o| lib.tree(Some(o), s.tree)).and_then(|t| lib.tree_at(t).nodes.get(s.node as usize)).copied();
@@ -698,6 +701,10 @@ fn main() -> ExitCode {
                 Some((t, nd, f, first, r)) if (*t, *nd, *f) == key && *r == name => *first,
                 _ => s.tick,
             };
+            if start == s.tick {
+                first_step.entry((name.clone(), start)).or_insert(i);
+                operand_of.entry((name.clone(), start)).or_insert([n.operand[0], n.operand[1], n.operand[2], n.operand[3], n.operand[4], n.operand[5], n.operand[6], n.operand[7]]);
+            }
             if s.result == 1 {
                 open.insert(s.sim, (s.tree, s.node, s.frame, start, name));
             } else {
@@ -783,6 +790,7 @@ fn main() -> ExitCode {
             }
             let mut by: BTreeMap<String, usize> = BTreeMap::new();
             let mut hits: BTreeMap<(i32, i32), usize> = BTreeMap::new();
+            let mut starts: BTreeMap<(bool, bool), usize> = BTreeMap::new();
             for (name, first, end) in &each {
                 let Some(a) = by_name.get(name) else { continue };
                 if end == first {
@@ -797,6 +805,21 @@ fn main() -> ExitCode {
                     Some(p) => {
                         *by.entry("found".into()).or_default() += 1;
                         let predicted = ((a.frames as f32 - 1.0) / want).floor() as u32 + 1;
+                        if p.3 == predicted && std::env::var_os("LOCKSTEP_ANIM_TRACKS_START").is_some() {
+                            // the frames of the run's first tick and the next, against the play's first
+                            let of = |tick: u32| log.tracks.iter().filter(|t| t.tick == tick).map(|t| t.frame).collect::<BTreeSet<u32>>();
+                            let first_frame = log.tracks.iter().find(|t| t.tick == p.1 && t.place[0] == 0.0).map(|t| t.frame);
+                            // the first frame whose records come after the run's first step
+                            let step_at = first_step.get(&(name.clone(), *first)).copied().unwrap_or(0);
+                            let next_frame = log.tracks.iter().find(|t| t.after_steps > step_at).map(|t| t.frame);
+                            let first_use = !each.iter().any(|e| e.0 == *name && e.1 < *first);
+                            *by.entry(format!("start: (first use {first_use}, late {})", next_frame != first_frame)).or_default() += 1;
+                            *by.entry(if next_frame == first_frame { "first frame: the first after the step".into() } else { format!("first frame: not the first after the step ({next_frame:?} against {first_frame:?})") }).or_default() += 1;
+                            let chained = each.iter().any(|e| e.2 == *first);
+                            let late = first_frame.is_some_and(|f| !of(*first).contains(&f));
+                            *starts.entry((chained, late)).or_default() += 1;
+                            println!("  start {name} run {first}..{end} (after a run's end that tick: {chained}): frames of its tick {:?}, of the next {:?}; the play's first frame {first_frame:?} (start frame {:?}); done at tick {}", of(*first), of(first + 1), log.tracks.iter().find(|t| t.tick == p.1).map(|t| t.ran[1]), p.2);
+                        }
                         if p.3 == predicted {
                             *by.entry("played whole (the predicted frames)".into()).or_default() += 1;
                             *hits.entry((p.1 as i32 - *first as i32, *end as i32 - p.2 as i32)).or_default() += 1;
@@ -815,6 +838,9 @@ fn main() -> ExitCode {
                         println!("    tick {} ctl {:08x} track {:08x} anim {:08x} place {:.3}->{:.3} done {}->{} speeds {:?} frame {} ran {:?}", t.tick, t.controller, t.track, t.anim, t.place[0], t.place[1], t.done[0], t.done[1], t.speeds, t.frame, t.ran);
                     }
                 }
+            }
+            if !starts.is_empty() {
+                println!("animate plays' starts: (after a run's end that tick, first frame in the next tick): {starts:?}");
             }
             println!("animate runs against the tracks: {by:?}; (track start - run start, run end - track done): runs {hits:?}");
         }
