@@ -1064,3 +1064,14 @@ a room's +4 at load named the setter `Room_SetTiles` 0x80235EF0 (a vector copy, 
 caller 0x80243C24 is the lot's room walk, about 3,000 instructions. The engine's rooms per tile
 (`routing::Walls::room`) agree with the entries inside the rooms: rooms 2, 3 and 4 are home's
 three. Porting the walk is next, checked against the snapshot's lists entry for entry.
+
+The rooms' tile lists as a check target (iteration 97). The observer's '7' record
+(`Room_SetTiles`, after it) logs each room's list as set: room, its +72 (still 0 then; set
+later) and the entries (y, x, level). `assets roomtiles LOG` lists them in the engine's axes.
+The club's (work/logs/club-rooms.log, a data-only log 510 steps short; the rooms are set at tick
+0) has six rooms: the outside (over 2,048 entries, the record's cap), three one-tile rooms of 3
+entries ((10, 13), (11, 13), (10, 13): the tile, its east neighbour, the tile again), one of 36
+and one of 400. Home's three are in the snapshots. Each list starts with a tile, its east
+neighbour, the tile's north, that one's east, then the first tile again, and goes on in pairs up
+the column, adding a third tile where the room widens. The walk that builds them (inside
+0x80243C24, before `Room_SetTiles`) is next to port, checked against these lists.

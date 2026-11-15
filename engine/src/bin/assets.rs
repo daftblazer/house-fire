@@ -2134,6 +2134,18 @@ fn main() -> ExitCode {
                 println!("tick {t}: clock {clock:?}, the log's around it {:?}: {}; day/night table as logged: {}", near.first().map(|n| n.1), if near.is_empty() { "no record to compare" } else if matches { "same" } else { "DIFFERENT" }, Some(table) == logged);
             }
         }
+        "roomtiles" => {
+            // the rooms' tile lists as set ('7'), in the engine's axes (x, y, level)
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO roomtiles LOG");
+                return ExitCode::FAILURE;
+            };
+            println!("rooms set {}", log.room_tiles.len());
+            for (tick, room, half, ents) in &log.room_tiles {
+                let t: Vec<(u32, u32, u32)> = ents.iter().map(|e| ((e >> 8) & 0xff, e >> 16, e & 0xff)).collect();
+                println!("  tick {tick} room {room:08x}: +72 {half}, {} entries {:?}", t.len(), &t[..t.len().min(48)]);
+            }
+        }
         "roomambient" => {
             // the inside rooms' ambient factors ('5') from their logged inputs and window
             // brightness ('6', the call made inside), and the brightness values seen (study)

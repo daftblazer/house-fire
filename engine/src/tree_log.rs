@@ -561,6 +561,9 @@ pub struct Log {
     /// Beside each '6' (logs with them): the room's +72 (twice its tile count) and its tile
     /// entries as the loop looks them up: grid id, the table's object, its kind (-1 unread).
     pub window_entries: Vec<(u32, Vec<[u32; 3]>)>,
+    /// '7': rooms' tile lists as set (`Room_SetTiles`): tick, room, its +72, the entries (y, x,
+    /// level bytes packed as 0x00YYXXLL).
+    pub room_tiles: Vec<(u32, u32, u32, Vec<u32>)>,
     /// '4': where main memory held the clock as the globals do, at the first time of day call.
     pub clock_places: Vec<u32>,
     /// '1': objects' lights put at their nodes.
@@ -748,6 +751,16 @@ pub fn read_log(path: &str) -> Option<Log> {
                     }
                     log.window_entries.push((half, (0..n).map(|_| std::array::from_fn(|_| r.u32())).collect()));
                 }
+            }
+            b'7' => {
+                if !r.has(16) {
+                    break;
+                }
+                let (tick, room, half, n) = (r.u32(), r.u32(), r.u32(), r.u32() as usize);
+                if n > 2048 || !r.has(4 * n) {
+                    break;
+                }
+                log.room_tiles.push((tick, room, half, (0..n).map(|_| r.u32()).collect()));
             }
             b'4' => {
                 if !r.has(4) {
