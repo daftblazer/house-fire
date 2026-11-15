@@ -29,6 +29,24 @@ pub fn draws(log: &Log, d: &Disc) {
     }
     let worlds: Vec<&MatrixRec> = log.matrices.iter().filter(|m| !m.projection && m.id == 0xF1 && m.values.len() >= 12).collect();
     let ticks: BTreeSet<u32> = worlds.iter().map(|m| m.tick).collect();
+    let mut by_id: BTreeMap<(bool, u8), usize> = BTreeMap::new();
+    for m in &log.matrices {
+        *by_id.entry((m.projection, m.id)).or_default() += 1;
+    }
+    println!("matrix records by (projection, id): {by_id:?}");
+    // the CPU-skinned primitives' bone matrices ('$') against the bone matrices of their tick
+    let mut skin_counts: BTreeMap<String, usize> = BTreeMap::new();
+    for k in &log.skins {
+        let used = k.weights.iter().filter(|&&w| w != 0).count().max(1);
+        for (j, m) in k.bones.iter().enumerate().take(used) {
+            let hit = log.bones.iter().filter(|b| b.tick == k.tick).flat_map(|b| b.matrices.iter()).any(|bm| [false, true].iter().any(|&t| as_rows(bm, t) == *m));
+            let near = !hit && log.bones.iter().filter(|b| b.tick.abs_diff(k.tick) <= 2).flat_map(|b| b.matrices.iter()).any(|bm| [false, true].iter().any(|&t| as_rows(bm, t) == *m));
+            let ever = !hit && !near && log.bones.iter().flat_map(|b| b.matrices.iter()).any(|bm| [false, true].iter().any(|&t| as_rows(bm, t) == *m));
+            let kind = if hit { "a bone's of the tick, to the bit" } else if near { "a bone's within 2 ticks" } else if ever { "a bone's of another tick" } else { "no bone's" };
+            *skin_counts.entry(format!("matrix {j}: {kind}")).or_default() += 1;
+        }
+    }
+    println!("skinned primitives ({}): {skin_counts:?}", log.skins.len());
     println!("draws: {} world matrices over ticks {:?}..{:?}; bone records over ticks {:?}..{:?}", worlds.len(), ticks.first(), ticks.last(), bones_at.keys().next(), bones_at.keys().last());
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
     let (mut shown, mut shown_near) = (0, 0);

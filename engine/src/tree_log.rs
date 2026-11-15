@@ -574,6 +574,16 @@ pub struct BonesRec {
     pub mode: u32,
 }
 
+/// A primitive the CPU skinned ('$', fn_801A6ADC's loop at 801A6C48, in the draw window): the tick, the vertex count, the device's four bone matrices (+0x4548, 3x4 rows), the first vertex's four weight bytes, and how many strip records came before it.
+#[derive(Clone, Copy, Debug)]
+pub struct SkinRec {
+    pub tick: u32,
+    pub count: u32,
+    pub bones: [[f32; 12]; 4],
+    pub weights: [u8; 4],
+    pub strips_before: usize,
+}
+
 /// A track speed set ('^', Anim_SetTrackSpeed 8015AB80): the controller, track id, speed, caller, the track found (0 if none) and the wrapper's caller.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SpeedSetRec {
@@ -785,6 +795,7 @@ pub struct Log {
     pub node_states: Vec<NodeStatesRec>,
     pub skeletons: Vec<SkeletonRec>,
     pub bones: Vec<BonesRec>,
+    pub skins: Vec<SkinRec>,
     pub scalar_streams: Vec<ScalarStreamRec>,
     pub res_asks: Vec<ResAskRec>,
     pub ticks: u32,
@@ -1540,6 +1551,15 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
                 let (scale, mode) = (f32::from_bits(r.u32()), r.u32());
                 log.bones.push(BonesRec { tick: log.ticks, controller, root, skeleton, states, matrices, scale, mode });
+            }
+            b'$' => {
+                if !r.has(4 * 51) {
+                    break;
+                }
+                let (tick, count) = (r.u32(), r.u32());
+                let bones = core::array::from_fn(|_| core::array::from_fn(|_| f32::from_bits(r.u32())));
+                let weights = r.u32().to_be_bytes();
+                log.skins.push(SkinRec { tick, count, bones, weights, strips_before: log.strips.len() });
             }
             b'~' => {
                 if !r.has(4 * 7) {
