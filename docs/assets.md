@@ -1567,3 +1567,18 @@ Otherwise the speed level, the s16 at +1088 (fn_80238468, +76), picks one of fiv
 0, -1, -2, -3 or other. The update returns early when r13 - 28672 is 0, the same flag
 fn_801C22C8 tests. These are global, not per Sim. So a dip of one Sim but not the other means
 the state changes between the two Sims' updates in the tick.
+The animator's stop rule (iteration 175). Anim_SpeedUpdate has a second path (L_800ABB58),
+taken when r13 - 28672 is 0, which it is on every record. That path stops the animator
+(+124 = the 802A8BC4 constant, 0) when:
+- the global count at r13 - 31628 is above 0 (loads pending),
+- and the animator is not exempt: its +16 is not 1 and its +28 is not 5.
+
+Otherwise the game state's stop tests and speed level apply, as on the first path. The '#'
+record now logs the mode, the count, and the animator's +16 and +28, as they were before the
+update (home-a22.log, 562,616 steps). With the game speed from the pausable controllers, this
+predicts all 17,198 '#' records:
+- 30 records stop with loads pending and the animator not exempt;
+- 10 run on with loads pending because the animator is exempt.
+
+So a Sim stops on another Sim's load miss unless it is exempt. That explains the dips of both
+Sims and of one.
