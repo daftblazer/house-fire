@@ -94,7 +94,8 @@ pub struct TrackStreams {
 }
 
 #[derive(Clone, Debug, Default)]
-struct NodeStreams {
+/// One node's readers (opaque: `TrackStreams::save` and `restore` hand it round).
+pub struct NodeStreams {
     rotation: Option<RotStream>,
     /// Words 1, 2 and 4.
     vectors: [Option<Stream>; 3],
@@ -122,6 +123,35 @@ impl TrackStreams {
             })
             .collect();
         TrackStreams { nodes }
+    }
+
+    /// Node `i`'s streams as they stand, to read them again from there (`restore`).
+    pub fn save(&self, i: usize) -> NodeStreams {
+        self.nodes[i].clone()
+    }
+
+    /// Node `i`'s streams back as `save` took them.
+    pub fn restore(&mut self, i: usize, saved: NodeStreams) {
+        self.nodes[i] = saved;
+    }
+
+    /// Which of node `i`'s streams (0 the rotation, 1 to 3 the vectors of `VECTOR_WORDS`) no
+    /// window step has set the blend flag of yet: the game leaves their flag as its memory held
+    /// it (`Stream::mode_set`).
+    pub fn unset_modes(&self, i: usize) -> Vec<usize> {
+        let n = &self.nodes[i];
+        let rotation = n.rotation.iter().filter(|s| !s.mode_set).map(|_| 0);
+        let vectors = n.vectors.iter().enumerate().filter(|(_, s)| s.as_ref().is_some_and(|s| !s.mode_set)).map(|(k, _)| k + 1);
+        rotation.chain(vectors).collect()
+    }
+
+    /// Sets the blend flag of stream `stream` (as `unset_modes` numbers them) of node `i`.
+    pub fn set_mode(&mut self, i: usize, stream: usize, mode: u8) {
+        let n = &mut self.nodes[i];
+        match stream {
+            0 => n.rotation.iter_mut().for_each(|s| s.mode = mode),
+            k => n.vectors[k - 1].iter_mut().for_each(|s| s.mode = mode),
+        }
     }
 
     /// Node `i`'s local pose at `place` (801582F4 to 8015869C). `state_flags` is the node

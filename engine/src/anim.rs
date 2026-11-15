@@ -725,6 +725,10 @@ pub struct RotStream {
     pub last: i32,
     /// 1: the window is blended straight (moved a third of it or more since the last read).
     pub mode: u8,
+    /// Whether a window step has set `mode` yet: the game's constructor leaves the flag as the
+    /// memory held it (the native one starts at 0), so a read that steps no window uses a flag
+    /// this does not know.
+    pub mode_set: bool,
     pub last_place: f32,
     pub window: [[f32; 4]; 4],
 }
@@ -732,7 +736,7 @@ pub struct RotStream {
 impl RotStream {
     /// A stream at its start (801B68AC): the first window.
     pub fn new(words: &[u32], header: RotHeader) -> RotStream {
-        let mut s = RotStream { header, key: 0, first: 0, last: 0, mode: 0, last_place: 0.0, window: [[0.0; 4]; 4] };
+        let mut s = RotStream { header, key: 0, first: 0, last: 0, mode: 0, mode_set: false, last_place: 0.0, window: [[0.0; 4]; 4] };
         s.reset(words);
         s
     }
@@ -767,6 +771,7 @@ impl RotStream {
         self.key += 1;
         self.first = self.last;
         self.last = self.header.time(words, self.key + 1);
+        self.mode_set = true;
         self.mode = ((place - self.last_place) >= (self.last - self.first) as f32 * (1.0 / 3.0)) as u8;
         if self.mode == 0 {
             self.window[1] = self.header.control(words, self.key, true);
@@ -781,6 +786,7 @@ impl RotStream {
         self.key -= 1;
         self.last = self.first;
         self.first = self.header.time(words, self.key);
+        self.mode_set = true;
         self.mode = ((self.last_place - place) >= (self.last - self.first) as f32 * (1.0 / 3.0)) as u8;
         if self.mode == 0 {
             self.window[1] = self.header.control(words, self.key, true);
@@ -890,6 +896,10 @@ pub struct Stream {
     pub last: i32,
     /// 1: the window is blended straight (moved a third of it or more since the last read).
     pub mode: u8,
+    /// Whether a window step has set `mode` yet: the game's constructor leaves the flag as the
+    /// memory held it (the native one starts at 0), so a read that steps no window uses a flag
+    /// this does not know.
+    pub mode_set: bool,
     pub last_place: f32,
     pub window: [f32; 12],
 }
@@ -897,7 +907,7 @@ pub struct Stream {
 impl Stream {
     /// A stream at its start (801BC318 then 801BCBBC): the first window, curved.
     pub fn new(words: &[u32], header: StreamHeader) -> Stream {
-        let mut s = Stream { header, key: 0, first: 0, last: 0, mode: 0, last_place: 0.0, window: [0.0; 12] };
+        let mut s = Stream { header, key: 0, first: 0, last: 0, mode: 0, mode_set: false, last_place: 0.0, window: [0.0; 12] };
         s.reset(words);
         s
     }
@@ -931,6 +941,7 @@ impl Stream {
         self.key += 1;
         self.first = self.last;
         self.last = self.header.time(words, self.key + 1);
+        self.mode_set = true;
         self.mode = ((place - self.last_place) >= (self.last - self.first) as f32 * (1.0 / 3.0)) as u8;
         let p1 = [self.window[9], self.window[10], self.window[11]];
         self.window[0..3].copy_from_slice(&p1);
@@ -946,6 +957,7 @@ impl Stream {
         self.key -= 1;
         self.last = self.first;
         self.first = self.header.time(words, self.key);
+        self.mode_set = true;
         self.mode = ((self.last_place - place) >= (self.last - self.first) as f32 * (1.0 / 3.0)) as u8;
         let p0 = [self.window[0], self.window[1], self.window[2]];
         self.window[9..12].copy_from_slice(&p0);

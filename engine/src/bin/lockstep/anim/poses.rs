@@ -19,6 +19,8 @@ const TRACK_ROOT_FIX: u32 = 0x7;
 struct Play {
     at: usize,
     anim: u32,
+    /// The track's place at that step.
+    place: f32,
     /// Where in the log the play began: the last step that found the track at place 0 (a new
     /// play builds its streams anew).
     began: usize,
@@ -31,10 +33,11 @@ pub fn poses(log: &housefire::tree_log::Log, d: &Disc) {
     for t in &log.tracks {
         let v = plays.entry(t.track).or_default();
         let began = match v.last() {
-            Some(last) if t.place[0] != 0.0 && last.anim == t.head[1] => last.began,
+            // a step at place 0 starts a new play, unless the track was at place 0 already
+            Some(last) if last.anim == t.head[1] && (t.place[0] != 0.0 || last.place == 0.0) => last.began,
             _ => t.at,
         };
-        v.push(Play { at: t.at, anim: t.head[1], began });
+        v.push(Play { at: t.at, anim: t.head[1], place: t.place[0], began });
     }
     let mut streams: HashMap<(u32, usize), TrackStreams> = HashMap::new();
     let mut next = 0;
@@ -46,15 +49,16 @@ pub fn poses(log: &housefire::tree_log::Log, d: &Disc) {
     let (mut copy_nodes, mut copy_different) = (0, 0);
     let mut folds: BTreeMap<String, usize> = BTreeMap::new();
     let mut skipped: BTreeMap<String, usize> = BTreeMap::new();
-    let (mut root_fixed_nodes, mut records, mut shown) = (0, 0, 0);
+    let (mut root_fixed_nodes, mut stale_flags, mut records, mut shown) = (0, 0, 0, 0);
     for p in &log.poses {
         let Some(rec) = log.node_states.get(next).filter(|r| r.tick == p.tick && r.track.is_some_and(|(t, pl)| t == p.track && pl.to_bits() == p.place.to_bits())) else {
             *skipped.entry("pose without a record (after the log's first 40,000)".into()).or_default() += 1;
             continue;
         };
         next += 1;
-        // the track's play: the last step before the pose
-        let play = plays.get(&p.track).and_then(|v| v.iter().rev().find(|x| x.at < p.at)).copied();
+        // the track's play: the last step before the pose, or for a track the log first shows
+        // after its first pose, its first step
+        let play = plays.get(&p.track).and_then(|v| v.iter().rev().find(|x| x.at < p.at).or(v.first())).copied();
         let Some((play, anim)) = play.and_then(|x| Some((x, by_id.get(&x.anim)?))) else {
             *skipped.entry("nodes of a track whose animation the log does not name".into()).or_default() += rec.before.len();
             continue;
@@ -78,20 +82,42 @@ pub fn poses(log: &housefire::tree_log::Log, d: &Disc) {
             let node_weight = rec.node_weights.as_ref().map_or(1.0, |w| w[i]);
             let weight = track_weight * node_weight;
             let fold = Fold::of(weight, layer);
-            let mut local = match ts.local(anim, i, p.place, before[0]) {
-                Ok(l) => l,
-                Err(pose::Unsupported::ScalarStream) => {
-                    *skipped.entry("nodes with a scalar stream (not decoded)".into()).or_default() += 1;
-                    continue;
-                }
-            };
             // the root node's fix: the components the track's flags name take the track's values.
             // Only +124 (the first) is logged; the other two are taken from the state after
             let root_fixed = i == 0 && rec.flags & TRACK_ROOT_FIX != 0;
-            if root_fixed {
-                root_fixed_nodes += 1;
-                pose::fix_root(&mut local, rec.flags, [f32::from_bits(rec.word124), f32::from_bits(after[6]), f32::from_bits(after[7])]);
+            let attempt = |ts: &mut TrackStreams| -> Result<(Pose, bool), pose::Unsupported> {
+                let mut local = ts.local(anim, i, p.place, before[0])?;
+                if root_fixed {
+                    pose::fix_root(&mut local, rec.flags, [f32::from_bits(rec.word124), f32::from_bits(after[6]), f32::from_bits(after[7])]);
+                }
+                Ok((local, pose::fold(&Pose::from_words(before), &local, fold).to_words() == *after))
+            };
+            let (saved, unset) = (ts.save(i), ts.unset_modes(i));
+            let Ok((mut local, mut same)) = attempt(ts) else {
+                *skipped.entry("nodes with a scalar stream (not decoded)".into()).or_default() += 1;
+                continue;
+            };
+            // a stream's blend flag is the memory's leftover until a window step sets it: if the
+            // node differs, try its unset streams with each flag
+            let mut stale = false;
+            if !same {
+                for flags in 1..1usize << unset.len() {
+                    ts.restore(i, saved.clone());
+                    for (bit, &stream) in unset.iter().enumerate() {
+                        ts.set_mode(i, stream, (flags >> bit & 1) as u8);
+                    }
+                    if let Ok((l, true)) = attempt(ts) {
+                        (local, same, stale) = (l, true, true);
+                        break;
+                    }
+                }
+                if !same {
+                    ts.restore(i, saved);
+                    local = attempt(ts).map_or(local, |(l, _)| l);
+                }
             }
+            stale_flags += usize::from(stale);
+            root_fixed_nodes += usize::from(root_fixed);
             let name = match fold {
                 Fold::Skip => "weight 0 (the state unchanged)",
                 Fold::Copy => "copy (weight 1)",
@@ -106,12 +132,12 @@ pub fn poses(log: &housefire::tree_log::Log, d: &Disc) {
             *folds.entry(if same { name.to_string() } else { format!("DIFFERENT {name}{}", if root_fixed { " (root fix)" } else { "" }) }).or_default() += 1;
             if !same && shown < 30 {
                 shown += 1;
-                println!("  tick {} node {i} anim {} place {} {name} weight {} * {node_weight} flags {:x} root fix {root_fixed}: local {:x?}\n    before {before:x?}\n    after  {after:x?}", rec.tick, anim.name, p.place, rec.weight, rec.flags, local.to_words());
+                println!("  tick {} track {:x} node {i} anim {} place {} {name} weight {} * {node_weight} flags {:x} root fix {root_fixed}: local {:x?}\n    before {before:x?}\n    after  {after:x?}", rec.tick, p.track, anim.name, p.place, rec.weight, rec.flags, local.to_words());
             }
         }
     }
     let different: usize = folds.iter().filter(|(k, _)| k.starts_with("DIFFERENT")).map(|(_, n)| n).sum();
     println!("local poses from the channels (the weight-1 copies, {copy_nodes} nodes): DIFFERENT -> {copy_different}");
     println!("node states after the pose (logged weights; {records} poses, every node, all 16 words): DIFFERENT -> {different}; {folds:?}");
-    println!("  root-node fix (track flags bits 0 to 2 set on the pose's node 0): {root_fixed_nodes} nodes; not compared: {skipped:?}");
+    println!("  root-node fix (track flags bits 0 to 2 set on the pose's node 0): {root_fixed_nodes} nodes; nodes whose first read of a stream used a blend flag the constructor leaves stale (the other value, as logged): {stale_flags}; not compared: {skipped:?}");
 }
