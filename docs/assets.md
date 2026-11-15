@@ -1181,5 +1181,16 @@ keeps its halves' floors elsewhere, so it is skipped. A group on no floor takes 
 terrain. With the floors from lockstep's `LOCKSTEP_DUMP_FLOORS`:
 - home: all 1,200 relit groups are their tiles' material (100 the terrain, terrain_mom_house);
 - the club: all 869 (67 the terrain, terrain_club_rubb; club-rooms.log).
-No group spans two materials. Which terrain shader a lot takes is not read yet; both lots'
-candidates carry the same material.
+No group spans two materials.
+
+A lot's terrain (iteration 106, `quickdata::houses`). SimsUI's `HouseData` table has 17 rows of
+44 bytes, row k being house number k (the lot's global 10). Word 9 is the outer lot model (the
+surroundings, `models.arc`) and word 10 the terrain shader (the lot's bare ground). Home is house
+1: outer_lot_mom_house, terrain_mom_house. The club (the disc's lot 15) is house 16:
+outer_lot_freeplay_03, terrain_freeplay_3. That shader's colour layer is
+terrain_mimi_house_color, and the outer lot model's own ground is terrain_club_rubb. The club
+log's set-up textures hold both colours. Home's hold terrain_mom_house_color only. With the
+house's terrain, `assets floormaterials LOG FLOORS HOUSE` gives every relit group's material
+as before: home's 1,200 (100 terrain) and the club's 869 (67). The terrain shaders all carry
+the 1.25 material, so the textures are what tells the row apart. `replay`'s
+`REPLAY_SHOW_LOT_CLOCKS` now also prints each lot's house number.

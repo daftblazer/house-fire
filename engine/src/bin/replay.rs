@@ -5604,7 +5604,7 @@ fn main() -> ExitCode {
     if has("REPLAY_SHOW_LOT_CLOCKS") {
         // study: each lot's clock (globals 0, 5, 6: the hour, minute and second)
         for (k, g) in lot_globals.iter().enumerate() {
-            println!("lot {k}: {:?}", [0, 5, 6].map(|i| g.get(i).copied()));
+            println!("lot {k}: {:?}, house number (global 10) {:?}", [0, 5, 6].map(|i| g.get(i).copied()), g.get(10));
         }
     }
     // the disc's copy of the lot (its house: walls and floors a save may not keep)

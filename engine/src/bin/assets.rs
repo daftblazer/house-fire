@@ -1897,6 +1897,80 @@ fn main() -> ExitCode {
                 println!("{} id {:08x} offset {:x} size {:x} (+{:x})", e.name, e.id, e.offset, e.size, at - e.offset as usize);
             }
         }
+        "discfind" => {
+            // (study) every disc file and archive entry holding a string or a word (HEX: big
+            // endian, either the id or the name hash); prints where
+            let Some(q) = args.get(3) else {
+                println!("usage: assets ISO discfind TEXT|0xHEX");
+                return ExitCode::FAILURE;
+            };
+            let pats: Vec<Vec<u8>> = match q.strip_prefix("0x").and_then(|h| u32::from_str_radix(h, 16).ok()) {
+                Some(w) => vec![w.to_be_bytes().to_vec(), w.to_le_bytes().to_vec()],
+                None => vec![q.as_bytes().to_vec(), q.to_ascii_uppercase().into_bytes()],
+            };
+            let find = |b: &[u8]| -> Vec<usize> { pats.iter().flat_map(|p| b.windows(p.len()).enumerate().filter(|(_, w)| w == &p.as_slice()).map(|(i, _)| i).collect::<Vec<_>>()).collect() };
+            for path in d.files().keys() {
+                let Some(b) = d.read(path) else { continue };
+                if let Some(es) = arc::entries(&b) {
+                    for e in &es {
+                        let hits = find(arc::bytes(&b, e));
+                        if !hits.is_empty() {
+                            println!("{path} : {} ({:08x}): {} at {:x?}", e.name, e.id, hits.len(), &hits[..hits.len().min(6)]);
+                        }
+                    }
+                } else {
+                    let hits = find(&b);
+                    if !hits.is_empty() {
+                        println!("{path}: {} at {:x?}", hits.len(), &hits[..hits.len().min(6)]);
+                    }
+                }
+            }
+        }
+        "shaderof" => {
+            // (study) a shader's name and its layers' textures, by id
+            let Some(id) = args.get(3).and_then(|g| u32::from_str_radix(g, 16).ok()) else {
+                println!("usage: assets ISO shaderof HEXID");
+                return ExitCode::FAILURE;
+            };
+            let sh = d.read("shaders.arc").unwrap_or_default();
+            let tx = d.read("textures.arc").unwrap_or_default();
+            let names: BTreeMap<u32, String> = arc::entries(&tx).unwrap_or_default().into_iter().map(|e| (e.id, e.name)).collect();
+            for e in arc::entries(&sh).unwrap_or_default().iter().filter(|e| e.id == id) {
+                if let Some(s) = shader::read(arc::bytes(&sh, e)) {
+                    println!("{id:08x} {}: material {:?}, layers {:?}", s.name, s.material(), s.layers.iter().map(|l| names.get(&l.texture).cloned().unwrap_or(format!("{:08x}", l.texture))).collect::<Vec<_>>());
+                }
+            }
+        }
+        "qtable" => {
+            // (study) the quick data table (of ENTRY) holding a word: its name and every row's
+            // words, pointers to strings shown as the strings
+            let (Some(entry), Some(v)) = (args.get(3), args.get(4).and_then(|g| u32::from_str_radix(g, 16).ok())) else {
+                println!("usage: assets ISO qtable ENTRY HEXWORD");
+                return ExitCode::FAILURE;
+            };
+            let q = d.read("quickdat.arc").unwrap_or_default();
+            let Some(img) = arc::entries(&q).unwrap_or_default().into_iter().find(|e| &e.name == entry).and_then(|e| quickdata::Image::read(arc::bytes(&q, &e))) else {
+                return ExitCode::FAILURE;
+            };
+            let hits: Vec<usize> = (0..img.data.len() / 4).map(|k| 4 * k).filter(|&o| img.u32(o) == Some(v)).collect();
+            let text = |o: usize| -> Option<String> {
+                let p = img.ptr(o)?;
+                let b = img.data.get(p..)?;
+                let n = b.iter().position(|&c| c == 0)?;
+                (n > 0 && b[..n].iter().all(|c| c.is_ascii_graphic() || *c == b' ')).then(|| String::from_utf8_lossy(&b[..n]).into_owned())
+            };
+            for &h in &hits {
+                let Some((name, t)) = img.tables.iter().find(|(_, t)| h >= t.rows && h < t.rows + t.count * t.row_size) else {
+                    println!("{h:x}: in no table");
+                    continue;
+                };
+                println!("{h:x}: table {name} ({} rows of {} bytes), row {}", t.count, t.row_size, (h - t.rows) / t.row_size);
+                for r in img.rows(name) {
+                    let words: Vec<String> = (0..t.row_size / 4).map(|k| text(r + 4 * k).map(|s| format!("\"{s}\"")).unwrap_or_else(|| format!("{:08x}", img.u32(r + 4 * k).unwrap_or(0)))).collect();
+                    println!("  {}", words.join(" "));
+                }
+            }
+        }
         "qfind" => {
             // which SimsObjects table rows hold a word (study): the table, row, word index, and
             // the row's words
@@ -2722,7 +2796,7 @@ fn main() -> ExitCode {
             // shader (lockstep's LOCKSTEP_DUMP_FLOORS: x y value shader), or the terrain's
             // where the tiles have no floor
             let (Some(log), Some(floors)) = (args.get(3).and_then(|p| read_log(p)), args.get(4).and_then(|p| std::fs::read_to_string(p).ok())) else {
-                println!("usage: assets ISO floormaterials LOG FLOORS [TERRAIN]");
+                println!("usage: assets ISO floormaterials LOG FLOORS [HOUSE]");
                 return ExitCode::FAILURE;
             };
             let sh = d.read("shaders.arc").unwrap_or_default();
@@ -2734,17 +2808,17 @@ fn main() -> ExitCode {
                     Some(((f.first()?.parse().ok()?, f.get(1)?.parse().ok()?), u32::from_str_radix(f.get(3)?, 16).ok()?))
                 })
                 .collect();
-            // the lot's terrain shader by name (TERRAIN, e.g. terrain_mom_house): which one a lot
-            // takes is not read yet
-            let terrain = args.get(5).map(String::as_str).unwrap_or("terrain_mom_house");
-            let terrains: BTreeSet<[u32; 6]> = shaders.values().filter(|s| s.name == terrain).filter_map(|s| s.material()).map(|(a, b)| [a[0], a[1], a[2], b[0], b[1], b[2]].map(f32::to_bits)).collect();
-            let other: BTreeMap<String, usize> = shaders.values().filter(|s| s.name.starts_with("terrain_")).filter_map(|s| Some((s.material()?, s.name.clone()))).fold(BTreeMap::new(), |mut m, (mat, n)| {
-                if mat.0[0] != 1.25 && (mat.0[0] - 1.25).abs() > 1e-3 {
-                    *m.entry(n).or_default() += 1;
-                }
-                m
-            });
-            println!("terrain shaders without the 1.25 material: {:?}", other.keys().collect::<Vec<_>>());
+            // the lot's terrain shader: its house number's (HOUSE, the lot's global 10) HouseData row
+            let house = args.get(5).and_then(|h| h.parse::<usize>().ok()).unwrap_or(1);
+            let quick = d.read("quickdat.arc").unwrap_or_default();
+            let houses = arc::entries(&quick).unwrap_or_default().into_iter().find(|e| e.name == "SimsUI").and_then(|e| quickdata::Image::read(arc::bytes(&quick, &e))).map(|img| quickdata::houses(&img)).unwrap_or_default();
+            let Some(h) = houses.get(house).copied() else {
+                println!("no house {house} (of {})", houses.len());
+                return ExitCode::FAILURE;
+            };
+            let terrain = shaders.get(&h.terrain).map_or("?", |s| s.name.as_str());
+            let terrains: BTreeSet<[u32; 6]> = shaders.get(&h.terrain).and_then(|s| s.material()).map(|(a, b)| [a[0], a[1], a[2], b[0], b[1], b[2]].map(f32::to_bits)).into_iter().collect();
+            println!("house {house}: outer lot {:08x}, terrain {:08x} {terrain}", h.outer_lot, h.terrain);
             let (mut groups, mut same, mut by_terrain, mut mixed, mut shown) = (0, 0, 0, 0, 0);
             for rf in &log.room_floors {
                 let first = rf.scales_before.checked_sub(rf.groups.len());
@@ -3334,6 +3408,11 @@ fn main() -> ExitCode {
                 }
             }
             println!("setups {}, images {}", log.textures.len(), images.len());
+            // (ASSETS_TEX_NAMED=TEXT: the set-up textures whose names hold TEXT)
+            if let Ok(t) = std::env::var("ASSETS_TEX_NAMED") {
+                let names: BTreeSet<&String> = images.values().filter_map(|x| by_hash.get(&x.hash)).flat_map(|v| v.iter().map(|e| &e.0)).filter(|n| n.contains(t.as_str())).collect();
+                println!("textures named *{t}*: {names:?}");
+            }
             for (k, n) in &found {
                 println!("  found in textures.arc: {n:5} {k}");
             }

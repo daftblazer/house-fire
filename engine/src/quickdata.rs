@@ -157,6 +157,24 @@ pub struct FloorPattern {
     pub kind: u32,
 }
 
+/// A house's models, from `SimsUI`'s `HouseData` (17 rows of 44 bytes, one a house number, the
+/// lot's global 10): its outer lot model (the surroundings, `models.arc` by id, word 9) and its
+/// terrain shader (the lot's bare ground, `shaders.arc` by id, word 10).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct House {
+    pub outer_lot: u32,
+    pub terrain: u32,
+}
+
+/// The houses by house number (row k is house k).
+pub fn houses(img: &Image) -> Vec<House> {
+    let Some(t) = img.tables.get("HouseData").copied() else { return Vec::new() };
+    if t.row_size < 44 {
+        return Vec::new();
+    }
+    img.rows("HouseData").filter_map(|r| Some(House { outer_lot: img.u32(r + 36)?, terrain: img.u32(r + 40)? })).collect()
+}
+
 /// The floor patterns, from `SimsTiles`: its one `FloorSet` row points at a list of `FloorTile`
 /// rows (24 bytes: a value, a name, a value, the shader's archive id at +12, the kind at +16, a
 /// last word), a tile's floor (the lot's first array) an index into it.
