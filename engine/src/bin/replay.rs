@@ -55,11 +55,20 @@ use housefire::tree_log::{Log, PassRec, PlanRec, StepRec, read_log, same_shape};
 use housefire::world::{DATA_OBJECT_ID, PORTAL_FUNCTION, SIT_FUNCTION, Object, ObjectKey, ScriptVariables, World};
 use housefire::{FileId, TreeId};
 
+/// The study switches (`REPLAY_*`, `HF_*`) as the environment had them at the start, read once:
+/// the checks ask for theirs at every step, and a lookup through libc's environment is a scan.
+/// Usually there are none, and a lookup is one test.
+fn switches() -> &'static [(String, String)] {
+    static SWITCHES: std::sync::OnceLock<Vec<(String, String)>> = std::sync::OnceLock::new();
+    SWITCHES.get_or_init(|| {
+        std::env::vars().filter(|(k, _)| k.starts_with("REPLAY_") || k.starts_with("HF_")).collect()
+    })
+}
 fn env(name: &str) -> Option<String> {
-    std::env::var(name).ok()
+    switches().iter().find(|(k, _)| k == name).map(|(_, v)| v.clone())
 }
 fn has(name: &str) -> bool {
-    std::env::var_os(name).is_some()
+    switches().iter().any(|(k, _)| k == name)
 }
 /// atoi: the leading integer of a string, 0 if none.
 fn atoi(s: &str) -> i64 {
@@ -300,7 +309,7 @@ impl AnimReplay {
         if has("REPLAY_SHOW_SPEEDS") {
             println!("  owners: {owner_of:x?}");
         }
-        if let Some((c, a, b)) = std::env::var("REPLAY_SHOW_TRACKS").ok().and_then(|v| {
+        if let Some((c, a, b)) = env("REPLAY_SHOW_TRACKS").and_then(|v| {
             let p: Vec<u32> = v.split(',').filter_map(|x| u32::from_str_radix(x, 16).ok()).collect();
             (p.len() == 3).then(|| (p[0], p[1], p[2]))
         }) {
@@ -581,7 +590,7 @@ impl Host for ReplayHost<'_, '_> {
             let ni = self.nested[self.nested_pos];
             self.nested_pos += 1;
             let ns = &log.steps[ni];
-            if trace && std::env::var("REPLAY_TRACE_CHECK").ok().and_then(|v| v.parse::<i16>().ok()).is_none_or(|w| w == self.me_id()) {
+            if trace && env("REPLAY_TRACE_CHECK").and_then(|v| v.parse::<i16>().ok()).is_none_or(|w| w == self.me_id()) {
                 println!(
                     "  check {}: native {tid}:{tnode} depth {}; log {}:{}->{} {}",
                     lib.tree_at(t).id,
@@ -675,7 +684,7 @@ impl Host for ReplayHost<'_, '_> {
                 Lookup::Unknown => None,
             };
             let logged_true = s.result != 1 && s.after == n.true_target as u16;
-            if std::env::var("REPLAY_TRACE_ANIM_SIM").ok().is_some_and(|v| u32::from_str_radix(&v, 16).ok() == Some(s.sim)) && s.tick <= std::env::var("REPLAY_TRACE_ANIM_TO").ok().and_then(|v| v.parse().ok()).unwrap_or(u32::MAX) {
+            if env("REPLAY_TRACE_ANIM_SIM").is_some_and(|v| u32::from_str_radix(&v, 16).ok() == Some(s.sim)) && s.tick <= env("REPLAY_TRACE_ANIM_TO").and_then(|v| v.parse().ok()).unwrap_or(u32::MAX) {
                 let st = ar.m.play(s.sim).map(|(id, p)| format!("{id:x} {p:?}"));
                 println!("  anim trace t {} step {} tree {} node {} op {:02x?} result {} after {} (t {} f {}): native {native:?}; play {}", s.tick, self.step, s.tree, s.node, n.operand, s.result, s.after, n.true_target, n.false_target, st.map(|x| x.chars().take(200).collect::<String>()).unwrap_or_default());
             }
@@ -1098,7 +1107,7 @@ impl Host for ReplayHost<'_, '_> {
                 let next = |id: i16| self.log.places.iter().find(|p| p.id == id && p.tick >= s.tick).map(|p| (p.tick, p.x, p.y, p.level));
                 println!("undone {name} tick {} by {me_id} so {so} operand {:02x?} -> {}: me {:?} next {:?}; so {:?} next {:?}", s.tick, n.operand, s.after, at(me_id), next(me_id), at(so), next(so));
             }
-            if let Ok(w) = std::env::var("REPLAY_WATCH_ID")
+            if let Some(w) = env("REPLAY_WATCH_ID")
                 && let Ok(w) = w.parse::<i16>()
                 && (me_id == w || so == w)
             {
@@ -3418,7 +3427,7 @@ fn run(log: &Log, lib: &Library, lot: (&LotChunks, Option<&LotChunks>), globals:
                 // Idle's waking) carries over
                 interp.sleep().wake();
             }
-            if let Ok(w) = std::env::var("REPLAY_WATCH_ID")
+            if let Some(w) = env("REPLAY_WATCH_ID")
                 && let Ok(w) = w.parse::<i16>()
                 && let Some(o) = h.world.find_object(w)
             {
@@ -5848,7 +5857,7 @@ fn main() -> ExitCode {
         }
     }
     if !bench {
-        let Some((counts, _)) = run(&log, &lib, (the_lot, house), the_globals, &neighbours, None, RunWith { card_lot, cat: (!log.tracks.is_empty()).then(|| housefire::anim::Catalog::read(&d, std::env::var("REPLAY_HOUSE").ok().and_then(|v| v.parse().ok()).unwrap_or(1))) }) else { return ExitCode::from(1) };
+        let Some((counts, _)) = run(&log, &lib, (the_lot, house), the_globals, &neighbours, None, RunWith { card_lot, cat: (!log.tracks.is_empty()).then(|| housefire::anim::Catalog::read(&d, env("REPLAY_HOUSE").and_then(|v| v.parse().ok()).unwrap_or(1))) }) else { return ExitCode::from(1) };
         for (k, n) in &counts.map {
             println!("  {k:<66} {n}");
         }
@@ -5909,7 +5918,7 @@ fn check_time_of_day(log: &housefire::tree_log::Log, t: u32, world: &housefire::
     }
     let g = |k: usize| world.globals.get(k).copied().unwrap_or(0) as i32;
     let (hour, minute, second) = (g(0), g(5), g(6));
-    if std::env::var_os("REPLAY_CLOCK").is_some() && t < 3 {
+    if has("REPLAY_CLOCK") && t < 3 {
         println!("  tick {t}: globals 0-8 {:?}", &world.globals[..world.globals.len().min(9)]);
     }
     while *at < log.times_of_day.len() && log.times_of_day[*at].0 == t {
@@ -5917,7 +5926,7 @@ fn check_time_of_day(log: &housefire::tree_log::Log, t: u32, world: &housefire::
         *at += 1;
         if [r[2] as i32, r[3] as i32, r[4] as i32] != [hour, minute, second] {
             counts.note("light: time of day: DIFFERENT clock");
-            if std::env::var_os("REPLAY_CLOCK").is_some() {
+            if has("REPLAY_CLOCK") {
                 println!("  tick {t}: the engine's clock {hour}:{minute}:{second}, the log's {}:{}:{} (globals {:?})", r[2] as i32, r[3] as i32, r[4] as i32, world.globals);
             }
             continue;
