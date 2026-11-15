@@ -547,6 +547,24 @@ pub struct NodeStatesRec {
     pub after: Vec<[u32; 16]>,
 }
 
+/// A skeleton the first time its bones are computed ('>'): its address and each character node's 45 words (180 bytes; +0 the parent).
+#[derive(Clone, Debug, Default)]
+pub struct SkeletonRec {
+    pub skeleton: u32,
+    pub nodes: Vec<[u32; 45]>,
+}
+
+/// A controller's bones ('<', after Anim_ComputeMatrices 80158B60, the first 20,000 calls): the root matrix, the skeleton, and per node the final state and its matrix (16 words each).
+#[derive(Clone, Debug, Default)]
+pub struct BonesRec {
+    pub tick: u32,
+    pub controller: u32,
+    pub root: [u32; 16],
+    pub skeleton: u32,
+    pub states: Vec<[u32; 16]>,
+    pub matrices: Vec<[u32; 16]>,
+}
+
 /// A track speed set ('^', Anim_SetTrackSpeed 8015AB80): the controller, track id, speed, caller, the track found (0 if none) and the wrapper's caller.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SpeedSetRec {
@@ -756,6 +774,8 @@ pub struct Log {
     pub rot_streams: Vec<RotStreamRec>,
     pub flag_streams: Vec<FlagStreamRec>,
     pub node_states: Vec<NodeStatesRec>,
+    pub skeletons: Vec<SkeletonRec>,
+    pub bones: Vec<BonesRec>,
     pub scalar_streams: Vec<ScalarStreamRec>,
     pub res_asks: Vec<ResAskRec>,
     pub ticks: u32,
@@ -1473,6 +1493,34 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let before = read(&mut r);
                 let after = read(&mut r);
                 log.node_states.push(NodeStatesRec { tick: log.ticks, states, array, track: last_posed, before, after });
+            }
+            b'>' => {
+                if !r.has(8) {
+                    break;
+                }
+                let (skeleton, n) = (r.u32(), r.u32() as usize);
+                if !r.has(n * 180) {
+                    break;
+                }
+                let nodes = (0..n).map(|_| core::array::from_fn(|_| r.u32())).collect();
+                log.skeletons.push(SkeletonRec { skeleton, nodes });
+            }
+            b'<' => {
+                if !r.has(4 * 19) {
+                    break;
+                }
+                let controller = r.u32();
+                let root = core::array::from_fn(|_| r.u32());
+                let (skeleton, n) = (r.u32(), r.u32() as usize);
+                if !r.has(n * 128) {
+                    break;
+                }
+                let (mut states, mut matrices) = (Vec::with_capacity(n), Vec::with_capacity(n));
+                for _ in 0..n {
+                    states.push(core::array::from_fn(|_| r.u32()));
+                    matrices.push(core::array::from_fn(|_| r.u32()));
+                }
+                log.bones.push(BonesRec { tick: log.ticks, controller, root, skeleton, states, matrices });
             }
             b'~' => {
                 if !r.has(4 * 7) {

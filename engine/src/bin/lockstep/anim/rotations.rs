@@ -39,6 +39,7 @@ pub fn rotations(log: &housefire::tree_log::Log, d: &Disc) {
     println!("rotation reads: {} in {} animations", log.rot_streams.len(), all.len());
     let flag_set = log.flag_streams.iter().filter(|f| f.result != 0).count();
     println!("node state records: {} ({} nodes in all)", log.node_states.len(), log.node_states.iter().map(|n| n.before.len()).sum::<usize>());
+    println!("bone records: {} ({} skeletons, {} nodes in all)", log.bones.len(), log.skeletons.len(), log.bones.iter().map(|b| b.states.len()).sum::<usize>());
     println!("flag channel reads: {} ({} set, {} streams); scalar channel reads: {} ({} streams)", log.flag_streams.len(), flag_set, log.flag_streams.iter().map(|f| f.stream).collect::<std::collections::BTreeSet<_>>().len(), log.scalar_streams.len(), log.scalar_streams.iter().map(|f| f.stream).collect::<std::collections::BTreeSet<_>>().len());
     // every animation's streams named by a node word: the rotation header at that bit
     let mut named: HashMap<(u32, u32), Vec<(usize, usize)>> = HashMap::new();
