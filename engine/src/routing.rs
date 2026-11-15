@@ -590,6 +590,12 @@ impl Walls {
         if self.inside(x, y) { self.edges[y as usize * self.width as usize + x as usize] } else { 0 }
     }
 
+    /// Whether the neighbour (x + dx, y + dy) has a wall on its edge towards (x, y): the one side
+    /// the original's room walk tests (its masks 8, 2, 4, 1 for −x, +x, −y, +y).
+    pub fn wall_into(&self, x: i32, y: i32, dx: i32, dy: i32) -> bool {
+        self.at(x + dx, y + dy) & entering(dx, dy) != 0
+    }
+
     /// The style of the wall between tile (x, y) and its neighbour (x + dx, y + dy) (one of dx
     /// and dy ±1): kept by the tile on the edge's +x or +y side, 0 off the lot.
     pub fn style(&self, x: i32, y: i32, dx: i32, dy: i32) -> u8 {

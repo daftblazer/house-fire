@@ -244,44 +244,158 @@ pub fn tile_counts_as_opening(objects: impl IntoIterator<Item = (bool, bool, boo
     opening && !floor
 }
 
+/// The room walk's half rooms: per split tile, (room a, side a, room b, side b), None free.
+type HalfMap = std::collections::BTreeMap<(i32, i32), (Option<usize>, u8, Option<usize>, u8)>;
+
 /// The rooms' tile lists (the original's room walk inside 0x80243C24, before `Room_SetTiles`),
-/// in the order the rooms are made. Tiles are taken in rows (y outer, x inner). A tile not yet
-/// in a room starts one, walked depth first: a stack, popped from the back. The first pop of
-/// the seed appends it and pushes it back. Every pop then marks the tile done and tries the four
-/// directions −x, +x, −y, +y. `size` is the lot's (39 square on both logged lots, from a virtual
-/// call not read yet), not the wall grid's 64. An open neighbour (`open`) not yet done is appended to the list and
-/// pushed, again if it is already waiting on the stack: hence the repeats. Diagonal tiles
-/// (`whole` false) are left out here. The original walks them half by half, not ported yet.
-pub fn room_tile_lists(size: (i32, i32), whole: impl Fn(i32, i32) -> bool, open: impl Fn(i32, i32, i32, i32) -> bool) -> Vec<Vec<(i32, i32)>> {
+/// in the order the rooms are made, with the engine's room for each list's tiles kept nowhere
+/// (the walk's own ids). Tiles are taken in rows (y outer, x inner) over the lot (`size`: 39
+/// square on both logged lots, from a virtual call not read yet, not the wall grid's 64). A tile
+/// with a half free starts a room, walked depth first: a stack popped from the back.
+///
+/// A tile's state: not reached, reached (on the stack), one diagonal half reached (`HalfA`:
+/// 0x10's −x/−y side or 0x20's +x/−y side; `HalfB` the other), shared (a half kept by an
+/// earlier room in `halves`), or done. A pop of a tile not reached (a seed) marks it, pushes it
+/// back and appends it. A reached tile is done. A half reached is set in `halves` (the setter
+/// 0x80234588): the tile is done when the other half is the same room, shared otherwise. A
+/// shared tile whose other half is free is appended and its half taken. Then the four
+/// directions −x, +x, −y, +y, as the half's sides allow. An open neighbour (`open`) not done is
+/// appended and pushed, again if it is already waiting: hence the repeats. Into a diagonal
+/// tile, it goes to the half facing it. That half is skipped if it is taken, and the tile
+/// becomes whole when its other half is already reached in this walk.
+pub fn room_tile_lists(size: (i32, i32), diagonal: impl Fn(i32, i32) -> u8, open: impl Fn(i32, i32, i32, i32) -> bool) -> Vec<Vec<(i32, i32)>> {
+    #[derive(Clone, Copy, PartialEq)]
+    enum S {
+        Free,
+        Reached,
+        HalfA,
+        HalfB,
+        Shared,
+        Done,
+    }
     const DIRS: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+    // a half side's two open directions (by index into DIRS), sides 1 to 4
+    const SIDE_OPEN: [[usize; 2]; 4] = [[1, 2], [1, 3], [0, 3], [0, 2]];
+    let opposite = |k: u8| [3, 4, 1, 2][(k - 1) as usize];
     let (w, h) = size;
     let at = |x: i32, y: i32| (y * w + x) as usize;
-    // 0: not reached, 1: reached (on the stack), 2: done
-    let mut state = vec![0u8; (w * h).max(0) as usize];
-    let mut rooms = Vec::new();
+    let mut state = vec![S::Free; (w * h).max(0) as usize];
+    // per tile: (room a, side a, room b, side b), None for a free room
+    let mut halves: HalfMap = std::collections::BTreeMap::new();
+    let mut rooms: Vec<Vec<(i32, i32)>> = Vec::new();
     for y0 in 0..h {
         for x0 in 0..w {
-            if state[at(x0, y0)] != 0 || !whole(x0, y0) {
-                continue;
+            match state[at(x0, y0)] {
+                S::Free | S::HalfA | S::HalfB => {}
+                S::Shared if halves.get(&(x0, y0)).is_some_and(|e| e.2.is_none()) => {}
+                _ => continue,
             }
+            let room = rooms.len();
             let mut list = Vec::new();
             let mut stack = vec![(x0, y0)];
             while let Some((x, y)) = stack.pop() {
+                let d = diagonal(x, y);
+                let mut allowed = [true; 4];
+                let side = |k: u8| -> [bool; 4] {
+                    let mut a = [false; 4];
+                    for i in SIDE_OPEN[(k - 1) as usize] {
+                        a[i] = true;
+                    }
+                    a
+                };
+                // the half setter: true when the tile stays shared
+                let set_half = |halves: &mut HalfMap, k: u8| -> bool {
+                    match halves.get_mut(&(x, y)) {
+                        None => {
+                            halves.insert((x, y), (Some(room), k, None, opposite(k)));
+                            true
+                        }
+                        Some(e) if e.0 == Some(room) => {
+                            halves.remove(&(x, y));
+                            false
+                        }
+                        Some(e) => {
+                            e.2 = Some(room);
+                            e.3 = k;
+                            true
+                        }
+                    }
+                };
                 match state[at(x, y)] {
-                    2 => continue,
-                    0 => {
-                        state[at(x, y)] = 1;
+                    S::Done => continue,
+                    S::Reached => state[at(x, y)] = S::Done,
+                    S::Free => {
+                        state[at(x, y)] = match d {
+                            0x10 => S::HalfA,
+                            0x20 => S::HalfB,
+                            _ => S::Reached,
+                        };
+                        if d == 0x10 {
+                            allowed = side(4);
+                        } else if d == 0x20 {
+                            allowed = side(3);
+                        }
                         stack.push((x, y));
                         list.push((x, y));
                     }
-                    _ => state[at(x, y)] = 2,
+                    s @ (S::HalfA | S::HalfB) => {
+                        let k = match (d, s) {
+                            (0x10, S::HalfA) => 4,
+                            (0x10, _) => 2,
+                            (_, S::HalfA) => 1,
+                            _ => 3,
+                        };
+                        allowed = side(k);
+                        state[at(x, y)] = if set_half(&mut halves, k) { S::Shared } else { S::Done };
+                    }
+                    S::Shared => {
+                        let Some(&(_, _, b, sb)) = halves.get(&(x, y)) else { continue };
+                        if b == Some(room) {
+                            continue;
+                        }
+                        if b.is_none() {
+                            list.push((x, y));
+                        }
+                        allowed = side(sb);
+                        state[at(x, y)] = if set_half(&mut halves, sb) { S::Shared } else { S::Done };
+                    }
                 }
-                for (dx, dy) in DIRS {
+                for (i, (dx, dy)) in DIRS.into_iter().enumerate() {
                     let (nx, ny) = (x + dx, y + dy);
-                    if nx < 0 || ny < 0 || nx >= w || ny >= h || state[at(nx, ny)] == 2 || !whole(nx, ny) || !open(x, y, dx, dy) {
+                    if !allowed[i] || nx < 0 || ny < 0 || nx >= w || ny >= h || !open(x, y, dx, dy) {
                         continue;
                     }
-                    state[at(nx, ny)] = 1;
+                    let sn = state[at(nx, ny)];
+                    if sn == S::Done {
+                        continue;
+                    }
+                    let dn = diagonal(nx, ny);
+                    let new = if dn == 0 {
+                        S::Reached
+                    } else {
+                        // the half facing the step: its side, and its state and the other's
+                        let k: u8 = match (dn, i) {
+                            (0x10, 0 | 2) => 2,
+                            (0x10, _) => 4,
+                            (_, 0 | 3) => 1,
+                            _ => 3,
+                        };
+                        let (this, other) = if matches!(k, 4 | 1) { (S::HalfA, S::HalfB) } else { (S::HalfB, S::HalfA) };
+                        match sn {
+                            S::Free => this,
+                            s if s == other => S::Reached,
+                            S::Shared => {
+                                let e = halves.get(&(nx, ny));
+                                if e.is_some_and(|e| (e.1 == k && e.0.is_none()) || (e.3 == k && e.2.is_none())) {
+                                    S::Shared
+                                } else {
+                                    continue;
+                                }
+                            }
+                            _ => continue,
+                        }
+                    };
+                    state[at(nx, ny)] = new;
                     list.push((nx, ny));
                     stack.push((nx, ny));
                 }
@@ -804,8 +918,19 @@ mod tests {
 
     #[test]
     fn the_room_walk_repeats_tiles_reached_again() {
-        let lists = room_tile_lists((2, 2), |_, _| true, |_, _, _, _| true);
+        let lists = room_tile_lists((2, 2), |_, _| 0, |_, _, _, _| true);
         assert_eq!(lists, vec![vec![(0, 0), (1, 0), (0, 1), (1, 1), (0, 0), (1, 0), (1, 1)]]);
+    }
+
+
+    #[test]
+    fn a_diagonal_tile_is_walked_half_by_half() {
+        // a 2 x 1 lot whose west tile is split (0x10): the seed's half opens −x and −y only, so
+        // the east tile starts its own room, entering the split tile's other half (appended on
+        // the step and again on its pop, its half still free then; that half opens +x, back to
+        // the east tile still waiting)
+        let lists = room_tile_lists((2, 1), |x, _| if x == 0 { 0x10 } else { 0 }, |_, _, _, _| true);
+        assert_eq!(lists, vec![vec![(0, 0)], vec![(1, 0), (0, 0), (0, 0), (1, 0)]]);
     }
 
 }

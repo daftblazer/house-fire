@@ -1100,10 +1100,29 @@ The room walk for whole tiles (iteration 99, `light::room_tile_lists`). A pop of
 reached (only ever the seed) marks it, pushes it back and appends it. Any other pop marks the
 tile done. Either way the four directions follow, in the order −x, +x, −y, +y. A neighbour on
 the lot (39 × 39 on both logged lots), not done and not diagonal is appended and pushed if its
-edge is open. It is pushed even when it is already on the stack. An edge is open when no wall
-stands on it (`Walls::wall_between`), or the wall's pattern on either side is 2, 12, 13 or 14.
+edge is open. It is pushed even when it is already on the stack. An edge is open when the
+neighbour has no wall on its side of it (`Walls::wall_into`: the original tests only that
+byte, masks 8, 2, 4, 1), or the wall's style is 2, 12, 13 or 14 (`Walls::style`).
 Against the original (lockstep `LOCKSTEP_ROOM_LISTS=LOG[,SNAPSHOT]` with `LOCKSTEP_DUMP_PLACES`
 and `LOCKSTEP_DUMP_WALLS`), five of the nine logged rooms come out entry for entry: home's
 34-entry room, and the club's 36-entry room and three one-tile rooms. The other four (home's big
 room and kitchen, the club's outside and 400-entry room) first differ at a diagonal tile, and
 the walk's halves are next.
+
+The walk's diagonal halves (iteration 100). The half rooms are a map by tile: room and side
+for each half, a side 1 to 4 naming the two directions it opens (1: +x, −y; 2: +x, +y; 3: −x,
++y; 4: −x, −y), its other half's side opposite (1 and 3, 2 and 4). The setter 0x80234588
+inserts the half with the other one free. It removes the entry when the second half is the
+same room, and the tile is then done; otherwise it records the second room. Every pop opens all
+four directions, except:
+- a seed's first pop on a split tile (0x10: side 4; 0x20: side 3);
+- a reached half's pop (0x10: 4 or 2, 0x20: 1 or 3);
+- a shared tile's pop (its other half's side; appended when that half is free).
+A step into a split tile enters the half facing it (0x10: 2 from −x or −y, 4 from +x or +y;
+0x20: 1 from −x or +y, 3 from +x or −y). The tile becomes whole when its other half is reached
+in this walk. A shared tile is entered only into its free half. A shared tile with a free half
+seeds a room as well. The edge test was mended too, to the original's own: the neighbour's
+wall bit and the wall's style (was: both sides' walls and patterns).
+With both, all nine logged rooms come out entry for entry (lockstep `LOCKSTEP_ROOM_LISTS`):
+- home's three: 224, 34 and 35 entries;
+- the club's six, its outside the same up to the record's cap of 2,048.

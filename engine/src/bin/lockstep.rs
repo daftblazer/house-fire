@@ -1459,11 +1459,8 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &DiscTab
                             }
                         }
                     }
-                    let open = |x: i32, y: i32, dx: i32, dy: i32| {
-                        let through = |p: u8| matches!(p, 2 | 12 | 13 | 14);
-                        !lw.walls.wall_between(x, y, dx, dy) || through(lw.walls.pattern(x, y, dx, dy)) || through(lw.walls.pattern(x + dx, y + dy, -dx, -dy))
-                    };
-                    let mine = housefire::light::room_tile_lists((39, 39), |x, y| !lw.walls.diagonal(x, y), open);
+                    let open = |x: i32, y: i32, dx: i32, dy: i32| !lw.walls.wall_into(x, y, dx, dy) || matches!(lw.walls.style(x, y, dx, dy), 2 | 12 | 13 | 14);
+                    let mine = housefire::light::room_tile_lists((39, 39), |x, y| lw.walls.diagonal_bits(x, y), open);
                     println!("room lists: the engine's {}, the original's {}", mine.len(), theirs.len());
                     for t in &theirs {
                         let Some(m) = t.first().and_then(|f| mine.iter().find(|m| m.first() == Some(f))) else {
@@ -1471,6 +1468,15 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &DiscTab
                             continue;
                         };
                         let first_diff = t.iter().zip(m).position(|(a, b)| a != b);
+                        if let Some(k) = first_diff.filter(|_| std::env::var_os("LOCKSTEP_ROOM_LISTS_AROUND").is_some()) {
+                            let lo = k.saturating_sub(12);
+                            println!("    the original's {lo}..: {:?}", &t[lo..(k + 6).min(t.len())]);
+                            println!("    the engine's   {lo}..: {:?}", &m[lo..(k + 6).min(m.len())]);
+                            for &(x, y) in &t[lo..(k + 6).min(t.len())] {
+                                print!(" ({x},{y}): d{:#x} w{:?}", lw.walls.diagonal_bits(x, y), [(-1, 0), (1, 0), (0, -1), (0, 1)].map(|(dx, dy)| (lw.walls.wall_between(x, y, dx, dy), lw.walls.pattern(x, y, dx, dy))));
+                            }
+                            println!();
+                        }
                         println!("  from {:?}: the original's {} entries, the engine's {}{}", t.first(), t.len(), m.len(), match first_diff {
                             None if t.len() == m.len() => " (the same)".to_string(),
                             None => " (the same as far as the shorter)".to_string(),
