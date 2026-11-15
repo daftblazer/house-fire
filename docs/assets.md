@@ -1710,3 +1710,14 @@ game skins them on the CPU (fn_801A6ADC, the loop at 801A6C48), blending each po
 up to four bone matrices at the device's +0x4548 (3x4 rows) by the vertex's four weight bytes,
 the normal by the heaviest bone's. All 4,712 matrices the 2,926 logged primitives use are bone
 matrices to the bit: 4,416 of their tick, 296 of a bone set within 2 ticks.
+The reference skinner (iteration 196, tools only: `lockstep/anim/skin.rs`, `LOCKSTEP_ANIM_SKIN`).
+The engine will skin on the GPU (plan.md, "Optimized as it is written"); the original's CPU
+loop (fn_801A6ADC at 801A6C48) is kept as a reference in the lockstep tool. A position is the
+sum over the vertex's nonzero weight bytes of each bone's row r, fma(m[r][2], z, m[r][0] x) +
+fma(m[r][3], 1, m[r][1] y), times the weight w / 255 (802C1890), fused into the sum; the normal is
+turned by the heaviest bone (the first largest weight, carried from the vertex before when it has
+none), normalized by a reciprocal square root and one Newton step (0.5, 3.0), times 127 (802C1898)
+and stored as s8 (clamped, truncated). Sent per vertex: three big-endian floats, three s8, then
+the colour, texture coordinate and generated ones as present. On home-a32.log all 200,127
+vertices of 2,926 primitives come out to the bit, positions and normals. Not compared: colours
+and texture coordinates (inputs not logged) and the sphere-mapped coordinates (none here).
