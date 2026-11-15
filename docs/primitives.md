@@ -431,6 +431,20 @@ So the speed is the game's, read by each Sim's Update in turn, and a pause is th
 being "other" on a frame. A Sim updated while it holds pauses for that frame, and a Sim updated
 earlier does not: the other Sim on a load miss. Next: the game state's +72 answer around a load
 miss, and the Sims' update order.
+Iteration 135: the observer's new '#' record logs each `Anim_SpeedUpdate` (the animator, its +8,
+the speed before and after), on home-a11.log. That log is 30 ticks shorter than home-a10.log
+(6,840 ticks, cut at the end), the same before that, and lockstep 0. There are three animators
+(owners 80f56cf0, 80f59990 for the chips Sim 80f594bc, 80ffe850 for the cook 80ffe378); the
+first stops updating after tick 465.
+- All three are at 0 for ticks 23 to 84 (the lot's start) and both Sims for 2048 to 4911 and from
+  5630 (other screens). All are at 5 from 426 (the first only to 465).
+- Every Animate load miss pauses the Sim asking, on that tick's frames: the chips Sim at 18, 1418
+  and 1618, the cook at 1700. At 208, 994, 1007 and 5013 both pause. On each of those, the other
+  Sim also runs an Animate step that tick.
+- The pause is not in the track records when the paused Sim's tracks were not moving (iteration
+  133's "5 misses pause nobody").
+Next: the exact rule (the tick's Animate steps against the miss, and the speed source's three
+checks) and the speed natively.
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object

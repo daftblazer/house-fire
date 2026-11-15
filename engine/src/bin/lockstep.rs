@@ -878,6 +878,45 @@ fn main() -> ExitCode {
                     }
                 }
             }
+            if std::env::var_os("LOCKSTEP_ANIM_SPEEDREC").is_some() {
+                // (the animators' speed updates, '#': the speeds seen; each tick with a speed other
+                // than 1, its updates in order with that tick's load asks among them)
+                let mut seen: BTreeMap<String, usize> = BTreeMap::new();
+                for s in &log.speeds {
+                    *seen.entry(format!("{}", s.after)).or_default() += 1;
+                }
+                println!("  log: {} ticks, {} steps, {} speed updates {seen:?}", log.ticks, log.steps.len(), log.speeds.len());
+                // each animator's spans of one speed (first tick..last tick: speed, updates)
+                let mut spans: BTreeMap<u32, Vec<(u32, u32, String, usize)>> = BTreeMap::new();
+                for s in &log.speeds {
+                    let v = spans.entry(s.animator).or_default();
+                    let sp = format!("{}", s.after);
+                    match v.last_mut() {
+                        Some(l) if l.2 == sp => {
+                            l.1 = s.tick;
+                            l.3 += 1;
+                        }
+                        _ => v.push((s.tick, s.tick, sp, 1)),
+                    }
+                }
+                for (a, v) in &spans {
+                    println!("  animator {a:08x} (owner {:08x}): {}", log.speeds.iter().find(|s| s.animator == *a).map_or(0, |s| s.owner), v.iter().map(|e| format!("{}..{}:{}({})", e.0, e.1, e.2, e.3)).collect::<Vec<_>>().join(" "));
+                }
+                let odd: BTreeSet<u32> = log.speeds.iter().filter(|s| s.after != 1.0).map(|s| s.tick).collect();
+                let want: Vec<u32> = std::env::var("LOCKSTEP_ANIM_SPEEDREC_TICKS").unwrap_or_default().split(',').filter_map(|t| t.parse().ok()).collect();
+                for &t in odd.iter().filter(|t| want.iter().any(|w| *w == **t || *w + 1 == **t || **t + 1 == *w)) {
+                    let mut line: Vec<(usize, String)> = log.speeds.iter().filter(|s| s.tick == t).map(|s| (s.after_steps, format!("{:x}:{}", s.animator & 0xffff, s.after))).collect();
+                    line.extend(log.loaded.iter().filter(|l| l.tick == t && l.caller == 0x800A_C7E4).map(|l| (l.after_steps, format!("ask {:08x} {}", l.id, l.loaded))));
+                    // the frames' track steps as markers
+                    let mut fr: BTreeMap<u32, usize> = BTreeMap::new();
+                    for tr in log.tracks.iter().filter(|r| r.tick == t) {
+                        fr.entry(tr.frame).or_insert(tr.after_steps);
+                    }
+                    line.extend(fr.iter().map(|(f, a)| (*a, format!("[frame {f}]"))));
+                    line.sort_by_key(|e| e.0);
+                    println!("  tick {t}: {}", line.iter().map(|e| e.1.as_str()).collect::<Vec<_>>().join(", "));
+                }
+            }
             if std::env::var_os("LOCKSTEP_ANIM_PAUSES").is_some() {
                 // (each controller's paused frames: all its tracks with a rate at speed 0 on a
                 // frame while some had moved the frame before; with that tick's load asks)

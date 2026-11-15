@@ -478,6 +478,18 @@ pub struct TrackRec {
     pub done: [u32; 2],
 }
 
+/// An animator's speed update ('#', Anim_SpeedUpdate 800AB820, EA's SAnimator2::Update): the
+/// animator, its +8, its speed (+124) before and after; in the order the Sims update.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SpeedRec {
+    pub tick: u32,
+    pub after_steps: usize,
+    pub animator: u32,
+    pub owner: u32,
+    pub before: f32,
+    pub after: f32,
+}
+
 /// A resource asked whether it is loaded ('9', Res_IsLoaded 80177B24, EA's
 /// EResourceManager::IsLoaded): its id, the answer, the caller, and its place among the steps.
 #[derive(Clone, Copy, Debug, Default)]
@@ -632,6 +644,8 @@ pub struct Log {
     pub follows: Vec<FollowRec>,
     pub tracks: Vec<TrackRec>,
     pub loaded: Vec<LoadedRec>,
+    /// The animators' speed updates ('#'), in order.
+    pub speeds: Vec<SpeedRec>,
     pub res_asks: Vec<ResAskRec>,
     pub ticks: u32,
 }
@@ -1282,6 +1296,13 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let kind = r.u8();
                 let (id, result, caller) = (r.u32(), r.u32(), r.u32());
                 log.res_asks.push(ResAskRec { tick: log.ticks, after_steps: log.steps.len(), kind, id, result, caller });
+            }
+            b'#' => {
+                if !r.has(16) {
+                    break;
+                }
+                let (animator, owner, before, after) = (r.u32(), r.u32(), f32::from_bits(r.u32()), f32::from_bits(r.u32()));
+                log.speeds.push(SpeedRec { tick: log.ticks, after_steps: log.steps.len(), animator, owner, before, after });
             }
             b'9' => {
                 if !r.has(12) {
