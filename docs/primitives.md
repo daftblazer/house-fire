@@ -347,6 +347,17 @@ Sims 2 fires a type-5 note 150 ms early. The note file's layout follows The Sims
 `EAnimNote`, but Bustin' Out keeps it in the quick data, not in the animation (whose note array
 `ERAnim::Load` would copy is absent from `OldLoad`'s layout, which these files use). Next, each
 early end's frame exactly against its notes, from the tracks' places ('8').
+An event end natively (iteration 127, lockstep `LOCKSTEP_ANIM_NOTES` on home-a10.log). A run
+with operand byte 5's 0x20 returns on the tick after the frame whose place passes its play's next
+note (the note's ms × the rate / 1000, in frames). Forward the place runs 0 to the last frame,
+backward (0x02) the other way after a still first frame. A later Animate of the animation the Sim
+is still playing (left at a note, not at its end) goes on with that play and waits for the note
+after, whatever came between. Otherwise it starts a new play (the load, the first frame after
+the step that finds it loaded). Of the 60 note ends, 59 return on that tick. The one left is
+a2o-stove-cook's last note (6,100 ms, 366 frames, near its 418-frame end), two ticks later. Of the
+runs left to their end, 21 return on the native tick, 1 later, and 70 end earlier with no note
+due (an interruption, or other flags: the fridge's 0x11 ends with 62 in local 0). 14 end on
+their first tick.
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object
