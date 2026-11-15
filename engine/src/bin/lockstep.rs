@@ -1091,6 +1091,8 @@ fn main() -> ExitCode {
         // each run's first step (its index among the steps)
         let mut first_step: BTreeMap<(String, u32), usize> = BTreeMap::new();
         let mut operand_of: BTreeMap<(String, u32), [u8; 8]> = BTreeMap::new();
+        // every Animate run's start by Sim, its operand flags (named or by a variable)
+        let mut start_flags: BTreeMap<(u32, u32), u8> = BTreeMap::new();
         // each run's steps: (tick, step index)
         let mut steps_of: BTreeMap<(String, u32), Vec<(u32, usize)>> = BTreeMap::new();
         let mut ends: BTreeMap<u8, usize> = BTreeMap::new();
@@ -1136,6 +1138,7 @@ fn main() -> ExitCode {
             if start == s.tick {
                 first_step.entry((name.clone(), start)).or_insert(i);
                 operand_of.entry((name.clone(), start)).or_insert([n.operand[0], n.operand[1], n.operand[2], n.operand[3], n.operand[4], n.operand[5], n.operand[6], n.operand[7]]);
+                start_flags.insert((s.sim, start), n.operand[5]);
             }
             steps_of.entry((name.clone(), start)).or_default().push((s.tick, i));
             if s.result == 1 {
@@ -1656,7 +1659,15 @@ fn main() -> ExitCode {
                     if new_play {
                         // (the Animate's operand: flags bit 2 backward, by the run's start tick)
                         // (the latest Animate run of the animation started at or before the play)
-                        let backward = operand_of.range((info.name.clone(), 0)..=(info.name.clone(), t.tick)).next_back().is_some_and(|(_, o)| o[5] & 2 != 0);
+                        // (or, for an Animate naming its animation by a variable, the Sim's latest run)
+                        let named = operand_of.range((info.name.clone(), 0)..=(info.name.clone(), t.tick)).next_back().map(|(k, o)| (k.1, o[5]));
+                        let sim = sim_of[&t.controller];
+                        let by_sim = start_flags.range((sim, t.tick.saturating_sub(2))..=(sim, t.tick)).next_back().map(|(k, f)| (k.1, *f));
+                        let latest = match (named, by_sim) {
+                            (Some(a), Some(b)) => Some(if b.0 > a.0 { b } else { a }),
+                            (a, b) => a.or(b),
+                        };
+                        let backward = latest.is_some_and(|(_, f)| f & 2 != 0);
                         let v = if info.name == "happyFace" { housefire::anim::FACE_SPEED } else { a.action_speed(backward) };
                         spd.insert(key, v);
                     }

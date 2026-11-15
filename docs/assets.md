@@ -1517,3 +1517,14 @@ controllers. Of the 58,944 Sim track records:
 - 225 are backward idle transitions (a2o-idle-neutral-trans-*). They come from the idle code,
   not an Animate, so they have no operand.
 - 3 are an eat loop's direction, and 22 are short holds at 0 (standing, carry, sit, stove).
+The direction of every Animate (iteration 170). fn_800B0ADC has one caller: the Animate
+primitive (fn_800AC854, 800ACE4C), with r5 = its operand's flags bit 2. The idle transitions
+are Animates too, ones naming their animation by a variable (flags bit 4). Their direction is
+the operand of the Sim's own Animate run started up to 10 ticks before the play. Walks and
+turns come from routing, not from Animate, so they always run forward. The engine's animator
+now matches 58,447 of the 58,944 Sim track records on home-a19.log. Left:
+- 441 at game speed changes. A one-frame lookahead of the objects' speed makes it worse
+  (455), so the Sims' change frame is not simply the next frame.
+- 31 idle transitions.
+- 3 of an eat loop.
+- 22 short holds at 0.
