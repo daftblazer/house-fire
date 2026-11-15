@@ -95,7 +95,7 @@ pub struct MatrixRec {
 }
 
 /// A time of day call ('3'): the tick, r3 to r9, the keyframe table's 100 words and the outs.
-pub type TimeOfDayRec = (u32, [u32; 7], Vec<u32>, [u32; 9]);
+pub type TimeOfDayRec = (u32, [u32; 7], Vec<u32>, [u32; 13]);
 
 /// An object's lights put at its nodes ('1'): the object, its definition's resources, and each
 /// light: its kind and node (the definition's list), the light object, the node's 16 words, the
@@ -549,7 +549,8 @@ pub struct Log {
     pub room_suns: Vec<(u32, u32, [u32; 16], [u32; 20])>,
     /// '3': the time of day's light: the tick, r3 to r9 (the sun object, ?, hours, minutes,
     /// seconds, ?, an out pointer), the keyframe table's 100 words, then the object's +136,
-    /// +148, +152 (3), +180 (3) and the out word (all as words).
+    /// +148, +152 (3), +180 (3), the out word and the ambient object's +148 and +152 (3), all
+    /// as words.
     pub times_of_day: Vec<TimeOfDayRec>,
     /// '1': objects' lights put at their nodes.
     pub object_lights: Vec<ObjectLightsRec>,
@@ -718,7 +719,7 @@ pub fn read_log(path: &str) -> Option<Log> {
                 log.group_scales.push(GroupScaleRec { tick, group, base, scale, material, room, k });
             }
             b'3' => {
-                if !r.has(4 * 117) {
+                if !r.has(4 * 121) {
                     break;
                 }
                 let tick = r.u32();
@@ -727,7 +728,7 @@ pub fn read_log(path: &str) -> Option<Log> {
                     *w = r.u32();
                 }
                 let table = (0..100).map(|_| r.u32()).collect();
-                let mut out = [0; 9];
+                let mut out = [0; 13];
                 for w in &mut out {
                     *w = r.u32();
                 }

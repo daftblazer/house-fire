@@ -952,3 +952,15 @@ one (0x801221E4). The recomp gives its reciprocal-square-root estimate as an exa
 engine matches the recomp there. Checked with `assets timeofday` on the '3' records: home's
 2,000 calls (7:04: angle 2.17, the reduction's short path) and club's 2,000 (18:15: angle 4.37,
 its middle path) give the direction bit for bit.
+
+The time of day from the engine's own clock. The original's caller (0x8004A91C) reads the hour,
+minute and second from globals 0, 5 and 6. The engine's clock (`World::clock_pass`) gives the
+second as 2 per pass counted. `replay`, on a light log, checks each tick's '3' calls against the
+engine's clock after the tick and against the light it gives (`time_of_day`, `sun_direction`).
+At home all 2,000 calls match: the clock, and the sun's colour, factor and direction, the last
+value and the ambient's colour and factor, bit for bit. At club the hour and minute match from
+tick 1 (set from the log), but the second does not: the original starts at 18:15:24, and no lot
+in the save has that time. The club lot (15) says 19:27:40, and home's lot 0 says 7:04:00, which
+home starts at. The original's minute turns at tick 18 there, the engine's at 30; replay setting
+the globals to the log's hides it (club's "scope 0 different" notes). The source of a visit's
+start time is still to find.

@@ -2190,6 +2190,11 @@ fn run(log: &Log, lib: &Library, lot: (&LotChunks, Option<&LotChunks>), globals:
     let mut shown_motives = 0;
     let ev_env = env("REPLAY_EVALUATION");
     let mut engine_list_at = 1;
+    // The time of day's light ('3' records, a light log's) from the engine's own clock: the
+    // hour (global 0), the minute (global 5) and two seconds a pass counted (`clock_pass`), each
+    // tick's calls against the clock after the tick (tick 0's before the first).
+    let mut time_at = 0;
+    check_time_of_day(log, 0, &h.world, &mut time_at, &mut h.counts);
     for t in 1..=log.ticks {
         let mut tick_us = 0.0;
         while place_at < log.places.len() && log.places[place_at].tick < t {
@@ -3348,6 +3353,7 @@ fn run(log: &Log, lib: &Library, lot: (&LotChunks, Option<&LotChunks>), globals:
         sim.end_pass(&mut h.world, if have_passes { pass.stopped_at as i16 } else { 0 });
         // the clock: the minute every 30 passes that ran to their end
         h.world.clock_pass(stopped);
+        check_time_of_day(log, t, &h.world, &mut time_at, &mut h.counts);
         // The persons' motives after the tick against the log's ('N' records), then set to the
         // log's (what the scripts not native yet wrote).
         while motive_at < log.motives.len() && log.motives[motive_at].tick < t {
@@ -5595,6 +5601,12 @@ fn main() -> ExitCode {
     let lot_globals = read_lot_globals(&ngh).expect("the lots' globals");
     let the_globals: &[i16] = if lot_index < 0 || lot_index as usize >= lot_globals.len() { lot_globals.last().map_or(&[], |g| g) } else { &lot_globals[lot_index as usize] };
     let card_lot = card_path.is_some();
+    if has("REPLAY_SHOW_LOT_CLOCKS") {
+        // study: each lot's clock (globals 0, 5, 6: the hour, minute and second)
+        for (k, g) in lot_globals.iter().enumerate() {
+            println!("lot {k}: {:?}", [0, 5, 6].map(|i| g.get(i).copied()));
+        }
+    }
     // the disc's copy of the lot (its house: walls and floors a save may not keep)
     let disc_lots = if card_lot && !has("REPLAY_NO_DISC_HOUSE") { read_lots(&d.read("Runtime/default.ngh").unwrap_or_default()).unwrap_or_default() } else { Vec::new() };
     let house = usize::try_from(lot_index).ok().and_then(|i| disc_lots.get(i));
@@ -5667,3 +5679,33 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+
+/// The '3' records of tick `t` against the engine's clock and the light it gives
+/// (`light::time_of_day`, `light::sun_direction`).
+fn check_time_of_day(log: &housefire::tree_log::Log, t: u32, world: &housefire::world::World, at: &mut usize, counts: &mut Counts) {
+    while *at < log.times_of_day.len() && log.times_of_day[*at].0 < t {
+        *at += 1;
+    }
+    let g = |k: usize| world.globals.get(k).copied().unwrap_or(0) as i32;
+    let (hour, minute, second) = (g(0), g(5), 2 * world.clock_passes as i32);
+    if std::env::var_os("REPLAY_CLOCK").is_some() && t < 3 {
+        println!("  tick {t}: globals 0-8 {:?}, passes {}", &world.globals[..world.globals.len().min(9)], world.clock_passes);
+    }
+    while *at < log.times_of_day.len() && log.times_of_day[*at].0 == t {
+        let (_, r, _, o) = &log.times_of_day[*at];
+        *at += 1;
+        if [r[2] as i32, r[3] as i32, r[4] as i32] != [hour, minute, second] {
+            counts.note("light: time of day: DIFFERENT clock");
+            if std::env::var_os("REPLAY_CLOCK").is_some() {
+                println!("  tick {t}: the engine's clock {hour}:{minute}:{second}, the log's {}:{}:{} (globals {:?})", r[2] as i32, r[3] as i32, r[4] as i32, world.globals);
+            }
+            continue;
+        }
+        counts.note("light: time of day: the clock as the log's");
+        let d = housefire::light::time_of_day(hour, minute, second);
+        let dir = housefire::light::sun_direction(hour, minute, second).unwrap_or([f32::NAN; 3]);
+        let mine = [d.sun_factor, d.sun[0], d.sun[1], d.sun[2], dir[0], dir[1], dir[2], d.extra, d.ambient_factor, d.ambient[0], d.ambient[1], d.ambient[2]].map(f32::to_bits);
+        let theirs = [o[1], o[2], o[3], o[4], o[5], o[6], o[7], o[8], o[9], o[10], o[11], o[12]];
+        counts.note(if mine == theirs { "light: time of day: the sun and ambient as the log's" } else { "light: time of day: DIFFERENT sun or ambient" });
+    }
+}

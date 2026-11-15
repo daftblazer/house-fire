@@ -2004,6 +2004,11 @@ fn main() -> ExitCode {
                 }
             }
             println!("the engine's sun direction: {dirs}");
+            let ambient = log.times_of_day.iter().filter(|(_, r, _, o)| {
+                let d = housefire::light::time_of_day(r[2] as i32, r[3] as i32, r[4] as i32);
+                [d.ambient_factor.to_bits(), d.ambient[0].to_bits(), d.ambient[1].to_bits(), d.ambient[2].to_bits()] == [o[9], o[10], o[11], o[12]]
+            });
+            println!("the engine's ambient colour and factor: {}", ambient.count());
             for (tick, r, _, o) in log.times_of_day.iter().take(args.get(4).and_then(|v| v.parse().ok()).unwrap_or(0)) {
                 println!("tick {tick} regs {r:08x?} ({} {} {}): +136 {} factor {} colour {:?} direction {:?} out {}", r[2] as i32, r[3] as i32, r[4] as i32, o[0], f(o[1]), [f(o[2]), f(o[3]), f(o[4])], [f(o[5]), f(o[6]), f(o[7])], f(o[8]));
             }
