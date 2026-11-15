@@ -457,6 +457,16 @@ order, and the paused Sims are the asker plus that tick's Animate Sims. It gives
 on the native tick, on home-a10.log and home-a11.log alike, the same as the tracks' own speeds.
 The fast-forward is still the logged one (its frames' ticks). Only a2o-flamingo-kick's 4 at-once
 calls are left.
+Iteration 138: those are a name the original does not find. Global.iff's STR# 129 entry 0 is
+"A2O-flamingo-kick" (capitals), and animatio.arc only has "a2o-flamingo-kick". The four Animate
+steps from the global table (source 1, index 0: the fridge, the chips and the food processor
+"break" calls) return false at once, with no load ask ('9', '0'). The lookup is case-sensitive,
+so the call fails as TryAnimate does when it cannot resolve an animation. This is a bug of the
+original's data that the engine keeps: an Animate whose table name is not an entry as written
+returns false at once. With it, all 167 runs return on the native tick on home-a10.log and
+home-a11.log: 121 at a note, 31 at the end, 8 owed at once, 5 not found, 2 at once. Still taken
+from the log: the frames (the frame clock), the fast-forward frames and the tick's Animate steps
+(which the engine's own run gives).
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object

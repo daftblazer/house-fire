@@ -662,6 +662,10 @@ fn main() -> ExitCode {
             Some(base.trim_end_matches(".max").trim_end_matches(".MAX").to_ascii_lowercase())
         };
         let (mut named, mut unnamed, mut by_source) = (0, 0, BTreeMap::<u8, (usize, usize)>::new());
+        let exact_names: BTreeSet<String> = by_id.values().map(|a| a.name.clone()).collect();
+        let mut case_misses: BTreeMap<String, usize> = BTreeMap::new();
+        // the Animate steps whose name is not found as written
+        let mut not_found: BTreeSet<usize> = BTreeSet::new();
         // per Sim: (tree, node, frame, first tick, the animation's name)
         let mut open: BTreeMap<u32, (u16, u16, u32, u32, String)> = BTreeMap::new();
         let mut runs: BTreeMap<String, BTreeMap<u32, usize>> = BTreeMap::new();
@@ -688,6 +692,15 @@ fn main() -> ExitCode {
                 _ => None,
             };
             let name = if n.operand[5] & 4 != 0 { None } else { name_in(file, 129, index) };
+            // the table's name as written: one whose case is not an archive entry's is not found
+            // (Global's "A2O-flamingo-kick"; animatio.arc has "a2o-flamingo-kick")
+            if n.operand[5] & 4 == 0
+                && let Some(raw) = file.and_then(|f| lib.file(f).strings.get(&129)).and_then(|t| t.get(index)).and_then(|p| p.rsplit(['\\', '/']).next().map(|b| b.trim_end_matches(".max").trim_end_matches(".MAX").to_string()))
+                && !exact_names.contains(&raw)
+            {
+                *case_misses.entry(raw).or_default() += 1;
+                not_found.insert(i);
+            }
             let e = by_source.entry(source).or_default();
             match &name {
                 Some(nm) if by_name.contains_key(nm) => {
@@ -915,6 +928,33 @@ fn main() -> ExitCode {
                     line.extend(fr.iter().map(|(f, a)| (*a, format!("[frame {f}]"))));
                     line.sort_by_key(|e| e.0);
                     println!("  tick {t}: {}", line.iter().map(|e| e.1.as_str()).collect::<Vec<_>>().join(", "));
+                }
+            }
+            if std::env::var_os("LOCKSTEP_ANIM_BY_OPERAND").is_some() {
+                // (Animate steps by operand source and index: results, and whether the Sim's next
+                // step comes the same tick)
+                let mut t: BTreeMap<(u8, u16, u8), (usize, usize, usize)> = BTreeMap::new();
+                for (i, st) in log.steps.iter().enumerate() {
+                    let Some(n) = step_object[i].and_then(|o| lib.tree(Some(o), st.tree)).and_then(|tr| lib.tree_at(tr).nodes.get(st.node as usize)).copied() else { continue };
+                    if n.opcode != 44 || n.operand[4] != 1 {
+                        continue;
+                    }
+                    let e = t.entry((n.operand[4], u16::from_le_bytes([n.operand[0], n.operand[1]]), st.result)).or_default();
+                    e.0 += 1;
+                    let next = log.steps[i + 1..].iter().find(|x| x.sim == st.sim);
+                    if next.is_some_and(|x| x.tick == st.tick) { e.1 += 1 } else { e.2 += 1 }
+                }
+                // the load asks ('9', '0') on the ticks of those steps
+                for (i, st) in log.steps.iter().enumerate() {
+                    let Some(n) = step_object[i].and_then(|o| lib.tree(Some(o), st.tree)).and_then(|tr| lib.tree_at(tr).nodes.get(st.node as usize)).copied() else { continue };
+                    if n.opcode == 44 && n.operand[4] == 1 {
+                        let asks: Vec<String> = log.loaded.iter().filter(|l| l.after_steps == i + 1 || l.after_steps == i).map(|l| format!("{:08x} {} from {:08x}", l.id, l.loaded, l.caller)).collect();
+                        let reqs: Vec<String> = log.res_asks.iter().filter(|q| q.after_steps == i + 1 || q.after_steps == i).map(|q| format!("{} {:08x} from {:08x}", q.kind, q.id, q.caller)).collect();
+                        println!("  global-table Animate at tick {}: asks {asks:?}, requests {reqs:?}", st.tick);
+                    }
+                }
+                for ((src, idx, res), (n, same, later)) in &t {
+                    println!("  animate source {src} index {idx} result {res}: {n} (next step the same tick {same}, later {later})");
                 }
             }
             if std::env::var_os("LOCKSTEP_ANIM_PAUSE_RULE").is_some() && !log.speeds.is_empty() {
@@ -1165,6 +1205,12 @@ fn main() -> ExitCode {
                             *t2.entry("at once, left out".to_string()).or_default() += 1;
                             continue;
                         }
+                        // an animation not found as written: false at once, no play
+                        if first_step.get(&(name.clone(), *first)).is_some_and(|i| not_found.contains(i)) {
+                            let key = if end == first { "not found, at once, on the native tick" } else { "not found, at once (NOT native)" };
+                            *t2.entry(key.to_string()).or_default() += 1;
+                            continue;
+                        }
                         let go_on = play.get(&sim).is_some_and(|p| p.0 == *name && p.3 != u32::MAX);
                         // the counted events (notes of value 0..99) the operand's byte 6 asks for
                         let wanted = operand_of.get(&(name.clone(), *first)).map_or(0, |o| o[6] as i8 as i32);
@@ -1307,6 +1353,7 @@ fn main() -> ExitCode {
             println!("animate runs against the tracks: {by:?}; (track start - run start, run end - track done): runs {hits:?}");
         }
         println!("animate runs by the frames: fixed runs against the frame clock's spans {rule:?}; all runs against the longest span {all:?}");
+        println!("animate names not found as written (case): {case_misses:?}");
         println!("animate runs: {} animations ({fixed} always the same ticks), ends by result {ends:?}; ticks over frames (at 30) of the fixed ones {fits:?}", total);
     }
     // (LOCKSTEP_ANIM_LOADS: the engine's animations in memory, `anim::Loads`, from the lot's
