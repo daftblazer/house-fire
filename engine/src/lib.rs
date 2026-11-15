@@ -13,6 +13,7 @@ pub mod library;
 pub mod model;
 pub mod motives;
 pub mod planner;
+pub mod pose;
 pub mod primitives;
 pub mod rle_texture;
 pub mod quickdata;

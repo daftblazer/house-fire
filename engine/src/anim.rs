@@ -626,7 +626,7 @@ fn quat_scale(a: [f32; 4], s: f32) -> [f32; 4] {
 
 /// A quaternion made unit length as 801B6C44 does it (the length and division of
 /// `normalize_quat`); a zero length gives the identity (801B52F8).
-fn unit_or_identity(v: [f32; 4]) -> [f32; 4] {
+pub fn unit_or_identity(v: [f32; 4]) -> [f32; 4] {
     let fused = |a: f32, acc: f32| (a as f64).mul_add(a as f64, acc as f64) as f32;
     let length = fused(v[3], fused(v[2], fused(v[0], v[1] * v[1]))).sqrt();
     if length == 0.0 {
