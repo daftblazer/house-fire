@@ -69,6 +69,10 @@ pub fn poses(log: &housefire::tree_log::Log, d: &Disc) {
             if what == "DIFFERENT" && local.to_words()[1..] == after[1..] {
                 *tally.entry(format!("  flags only: before {:x} local {:x} after {:x} node0 {}", before[0], local.flags, after[0], i == 0)).or_default() += 1;
             }
+            if what == "DIFFERENT" {
+                let mask: String = (0..16).map(|k| if local.to_words()[k] == after[k] { '.' } else { 'x' }).collect();
+                *tally.entry(format!("  different: node0 {} layer {layer:?} words {mask}", i == 0)).or_default() += 1;
+            }
             if what == "DIFFERENT" && shown < 12 {
                 shown += 1;
                 println!("  tick {} node {i} anim {} place {} layer {layer:?}: local {:x?}\n    before {before:x?}\n    after  {after:x?}", rec.tick, anim.name, p.place, local.to_words());
@@ -94,8 +98,14 @@ fn weights(state: &Pose, local: &Pose, after: &Pose) -> Vec<f32> {
     // the rotation's share of the way: the blend's angle from the state over the angle between
     // the two, the layer's angle (twice the arccosine of w) over the pose's
     let (a, b, c) = (state.rotation.map(f64::from), local.rotation.map(f64::from), after.rotation.map(f64::from));
-    let dot = |p: [f64; 4], q: [f64; 4]| p.iter().zip(&q).map(|(x, y)| x * y).sum::<f64>().abs().min(1.0);
-    ratios.push((dot(a, c).acos() / dot(a, b).acos()) as f32);
+    // (the angle between unit quaternions from the perpendicular part, which stays exact
+    // where the arccosine of a dot near 1 does not)
+    let angle = |p: [f64; 4], q: [f64; 4]| {
+        let dot: f64 = p.iter().zip(&q).map(|(x, y)| x * y).sum();
+        let perpendicular = (0..4).map(|i| (q[i] - dot * p[i]).powi(2)).sum::<f64>().sqrt();
+        perpendicular.atan2(dot.abs())
+    };
+    ratios.push((angle(a, c) / angle(a, b)) as f32);
     let conj = [-a[0], -a[1], -a[2], a[3]];
     let t = [
         c[3] * conj[0] + c[0] * conj[3] + c[1] * conj[2] - c[2] * conj[1],
@@ -103,7 +113,7 @@ fn weights(state: &Pose, local: &Pose, after: &Pose) -> Vec<f32> {
         c[3] * conj[2] + c[0] * conj[1] - c[1] * conj[0] + c[2] * conj[3],
         c[3] * conj[3] - c[0] * conj[0] - c[1] * conj[1] - c[2] * conj[2],
     ];
-    ratios.push((t[3].abs().min(1.0).acos() / b[3].abs().min(1.0).acos()) as f32);
+    ratios.push((angle([0.0, 0.0, 0.0, 1.0], t) / angle([0.0, 0.0, 0.0, 1.0], b)) as f32);
     let mut out = Vec::new();
     for r in ratios.into_iter().filter(|r| r.is_finite() && (0.0..=4.0).contains(r)) {
         for d in -3000i32..=3000 {
