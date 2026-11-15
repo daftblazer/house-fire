@@ -445,6 +445,12 @@ first stops updating after tick 465.
   133's "5 misses pause nobody").
 Next: the exact rule (the tick's Animate steps against the miss, and the speed source's three
 checks) and the speed natively.
+Iteration 136, the pause rule (`LOCKSTEP_ANIM_PAUSE_RULE` on home-a11.log). On a tick with an
+Animate load miss, the asking Sim and every Sim with an Animate step that tick are at speed 0
+for that tick's frames. Their steps may come before or after the miss, since the speed is read
+at the frame's update after the tick. Every other Sim keeps its speed. This holds on 12 of the
+13 ticks with a miss or a short pause. The one left is tick 1, the lot's first, where an
+object, not a Sim, asks and all are paused. No short pause comes without a miss.
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object

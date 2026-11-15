@@ -917,6 +917,45 @@ fn main() -> ExitCode {
                     println!("  tick {t}: {}", line.iter().map(|e| e.1.as_str()).collect::<Vec<_>>().join(", "));
                 }
             }
+            if std::env::var_os("LOCKSTEP_ANIM_PAUSE_RULE").is_some() && !log.speeds.is_empty() {
+                // (each short pause, a Sim's speed 0 on a tick outside the long spans, against that
+                // tick's load misses and the Sims with Animate steps that tick, before and after
+                // the miss; the Sim of an animator is the logged Sim just below its owner)
+                let sims: BTreeSet<u32> = log.steps.iter().map(|s| s.sim).collect();
+                let sim_of = |owner: u32| sims.range(..owner).next_back().copied().filter(|s| owner - s < 0x1000).unwrap_or(0);
+                let mut zero: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
+                let mut any: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
+                for s in &log.speeds {
+                    any.entry(s.tick).or_default().insert(sim_of(s.owner));
+                    if s.after == 0.0 {
+                        zero.entry(s.tick).or_default().insert(sim_of(s.owner));
+                    }
+                }
+                let short: BTreeSet<u32> = zero.iter().filter(|(t, z)| any.get(t).is_some_and(|a| z.len() < a.len() || (!zero.contains_key(&(*t - 1)) && !zero.contains_key(&(*t + 1))))).map(|e| *e.0).collect();
+                let mut tally: BTreeMap<String, usize> = BTreeMap::new();
+                for t in short.iter().copied().chain(log.loaded.iter().filter(|l| l.caller == 0x800A_C7E4 && !l.loaded).map(|l| l.tick)).collect::<BTreeSet<_>>() {
+                    let miss: Vec<&_> = log.loaded.iter().filter(|l| l.tick == t && l.caller == 0x800A_C7E4 && !l.loaded).collect();
+                    let first_miss = miss.first().map(|l| l.after_steps);
+                    let mut animate: BTreeMap<u32, (bool, bool)> = BTreeMap::new();
+                    for (i, st) in log.steps.iter().enumerate().filter(|(_, st)| st.tick == t) {
+                        let node = step_object[i].and_then(|o| lib.tree(Some(o), st.tree)).and_then(|tr| lib.tree_at(tr).nodes.get(st.node as usize)).copied();
+                        if node.is_some_and(|n| n.opcode == 44) {
+                            let e = animate.entry(st.sim).or_default();
+                            if first_miss.is_some_and(|m| i < m) { e.0 = true } else { e.1 = true }
+                        }
+                    }
+                    let paused = zero.get(&t).cloned().unwrap_or_default();
+                    let askers: BTreeSet<u32> = miss.iter().filter_map(|l| log.steps.get(l.after_steps.saturating_sub(1)).map(|s| s.sim)).collect();
+                    // prediction: the asker, and every Sim with an Animate step that tick
+                    let predicted: BTreeSet<u32> = askers.iter().copied().chain(animate.keys().copied()).filter(|s| any.get(&t).is_some_and(|a| a.contains(s))).collect();
+                    let key = if predicted == paused { "the asker and the tick's Animates: native" } else { "NOT native" };
+                    *tally.entry(key.into()).or_default() += 1;
+                    if predicted != paused {
+                        println!("  tick {t}: paused {paused:x?}, misses {}, askers {askers:x?}, Animate steps (before, after the miss) {animate:x?}, updated {:x?}", miss.len(), any.get(&t));
+                    }
+                }
+                println!("  pause rule: {tally:?}");
+            }
             if std::env::var_os("LOCKSTEP_ANIM_PAUSES").is_some() {
                 // (each controller's paused frames: all its tracks with a rate at speed 0 on a
                 // frame while some had moved the frame before; with that tick's load asks)
