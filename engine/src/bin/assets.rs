@@ -2262,6 +2262,14 @@ fn main() -> ExitCode {
                 println!("  {n}: {:08x}", shader::name_hash(n));
             }
         }
+        "animid" => {
+            // (study) the animatio.arc entries' names for the ids given (hex)
+            let b = d.read("animatio.arc").unwrap_or_default();
+            let want: Vec<u32> = args[3..].iter().filter_map(|a| u32::from_str_radix(a, 16).ok()).collect();
+            for e in arc::entries(&b).unwrap_or_default().into_iter().filter(|e| want.contains(&e.id)) {
+                println!("{:08x} {}", e.id, e.name);
+            }
+        }
         "anims" => {
             // every animatio.arc entry through `anim::read`: how many fill their entry exactly,
             // the nodes, constants and events in all, the rates and frame counts seen

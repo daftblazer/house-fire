@@ -878,6 +878,43 @@ fn main() -> ExitCode {
                     }
                 }
             }
+            if std::env::var_os("LOCKSTEP_ANIM_PAUSES").is_some() {
+                // (each controller's paused frames: all its tracks with a rate at speed 0 on a
+                // frame while some had moved the frame before; with that tick's load asks)
+                let mut by_frame: BTreeMap<(u32, u32), (u32, usize, usize)> = BTreeMap::new();
+                for t in log.tracks.iter().filter(|t| t.speeds[0] != 0.0 && t.anim != 0x7e04_f99c) {
+                    let e = by_frame.entry((t.controller, t.frame)).or_insert((t.tick, 0, 0));
+                    e.1 += 1;
+                    if t.speeds[1] == 0.0 {
+                        e.2 += 1;
+                    }
+                }
+                let mut was: BTreeMap<u32, bool> = BTreeMap::new();
+                for (&(ctl, frame), &(tick, n, zero)) in &by_frame {
+                    let paused = zero == n;
+                    if paused && was.get(&ctl) == Some(&false) {
+                        let asks: Vec<String> = log.loaded.iter().filter(|l| l.tick + 1 >= tick && l.tick <= tick).map(|l| format!("t{} {:08x} {} from {:08x}", l.tick, l.id, l.loaded, l.caller)).collect();
+                        let reqs: Vec<String> = log.res_asks.iter().filter(|q| q.tick + 1 >= tick && q.tick <= tick).map(|q| format!("t{} {} {:08x} from {:08x}", q.tick, q.kind, q.id, q.caller)).collect();
+                        println!("  pause: controller {ctl:08x} frame {frame} tick {tick} ({n} tracks); asks {asks:?}; requests {reqs:?}");
+                    }
+                    was.insert(ctl, paused);
+                }
+                // the Animate load asks that miss (800AC7E4, false), with and without a pause that tick
+                let pause_ticks: BTreeSet<u32> = {
+                    let mut w: BTreeMap<u32, bool> = BTreeMap::new();
+                    let mut t = BTreeSet::new();
+                    for (&(ctl, _), &(tick, n, zero)) in &by_frame {
+                        if zero == n && w.get(&ctl) == Some(&false) {
+                            t.insert(tick);
+                        }
+                        w.insert(ctl, zero == n);
+                    }
+                    t
+                };
+                let misses: BTreeSet<u32> = log.loaded.iter().filter(|l| l.caller == 0x800A_C7E4 && !l.loaded).map(|l| l.tick).collect();
+                println!("  pauses: {} ticks; load misses {} ticks, {} of them with a pause; pauses without a miss {:?}", pause_ticks.len(), misses.len(), misses.intersection(&pause_ticks).count(), pause_ticks.difference(&misses).collect::<Vec<_>>());
+                println!("  misses without a pause (with that tick's track records): {:?}", misses.difference(&pause_ticks).map(|t| (*t, log.tracks.iter().filter(|r| r.tick == *t).count(), log.tracks.iter().filter(|r| r.tick == *t + 1).count())).collect::<Vec<_>>());
+            }
             if let Ok(want) = std::env::var("LOCKSTEP_ANIM_TRACK_STEPS") {
                 // (a track's steps whose place moves other than its usual step: the tracks
                 // set done at tick LOCKSTEP_ANIM_TRACK_STEPS)

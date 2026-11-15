@@ -408,6 +408,14 @@ runs return on the native tick. 121 return at a note, 31 at the end, 8 owed at o
 food prep's fast-forward comes out of the same speeds. Only a2o-flamingo-kick's 4 at-once calls
 are left. The speeds are still read from the log: what pauses a Sim, and the fast-forward, are
 next to make native.
+Iteration 133 (`LOCKSTEP_ANIM_PAUSES`): the pauses come with Animate load misses. Of 11 ticks where
+a controller's tracks all stop, 8 are ticks when an Animate asked for an animation not yet in
+memory (`IsLoaded` false from 800AC7E4, then `AddRefAsync`). It is the other Sim that pauses, not
+the one asking: at 994 the chips Sim asks for a2o-starteat-stand and the cook's tracks stop, at
+208 the cook asks for a2o-counter-foodprep and the other Sim stops. 5 misses (ticks 18, 1418,
+1618, 1632 and 1700, all logged) pause nobody, and 3 pauses (23, 2048, 5630) come with no miss
+(2048 with two other loads, 80256088). New `assets animid ID...` names animation ids. Still
+open: which loads pause whom (the loader's stall, a shared track or the camera's Sim).
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object
