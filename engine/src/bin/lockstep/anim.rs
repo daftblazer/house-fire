@@ -7,6 +7,7 @@ mod loads;
 mod poses;
 mod rotations;
 mod runs;
+mod skin;
 mod streams;
 
 pub use bones::bones;
@@ -16,4 +17,5 @@ pub use loads::loads;
 pub use poses::poses;
 pub use rotations::rotations;
 pub use runs::runs;
+pub use skin::skin_study;
 pub use streams::channels;
