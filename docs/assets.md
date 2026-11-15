@@ -1304,6 +1304,22 @@ again from the start (fn_801BCC28, fn_801BCBBC). Inside the window t = (place - 
 Otherwise it takes a cubic Hermite curve with the tangents T0 (+56) and T1 (+68):
 P0 (2t³ - 3t² + 1) + T0 (t³ - 2t² + t) + P1 (-2t³ + 3t², one fused multiply-add) + T1 (t³ - t²),
 summed in that order. The engine's `anim::channel3` does the same f32 steps. Checked by the
-observer's new '%' records (the window as the call leaves it, and the result) on home-a12.log:
+observer's new '%' records (the window as the call leaves it, and the result) on home-a12.log (now home-a13.log):
 157,750 reads, every one the same to the bit (51,150 curves, 106,600 straight). How the keys
 come out of the stream's bits (the stepping functions) is next.
+The keys (iteration 149). A stream steps its window forward with fn_801BC958. The old last frame
+becomes the first, and the new last is the old last + 1 + the frame gap of the record two keys
+on. The old P1 becomes P0, and the new P1 is key (+8) + 1. The mode byte is set when the place
+moved since the last read (+40) by at least the window's frames × the constant at 802C3848.
+So a jump (fast-forward) blends straight, and otherwise the two tangents are worked out from
+the neighbouring keys (fn_801BCEF4 kinds 0 and 1: differences scaled by 802C3878 and 387C,
+with a case for streams of 2 keys at +24). The tangents are not stored. A stream's bits are an
+array of big-endian words: the +0 object's first word points at it, in the game's 0x7E000000
+virtual memory. Fields are read low bits first and run on into the next word (fn_801ADA74,
+`anim::bits`). A key's record starts at bit +4 + key × the record's bits (s16 +28): the frame
+gap (+30 bits), a signed scalar (+32 bits, times +36), then the three values (+31 bits each,
+unsigned). Each value is the field times its scale (+92, +96, +100) plus its offset (+104, +108,
++112), one fused multiply-add (fn_801BCE50, `anim::key3`). Checked through the observer's '&'
+records (the stream's header, and four words of its bits at P1) on home-a13.log: all 157,750
+P1s the same to the bit. Where the header comes from (EAnimController::CreateStreams, from the
+node's words, its constants and the bit array) is next.

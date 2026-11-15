@@ -296,6 +296,24 @@ impl Play {
     }
 }
 
+/// `width` bits of `words` from bit `at`, the low bits first, a field running on into the next
+/// word (Bustin' Out's 801ADA74; 0 for a width of 0).
+pub fn bits(words: &[u32], at: u32, width: u32) -> u32 {
+    if width == 0 {
+        return 0;
+    }
+    let (w, s) = ((at >> 5) as usize, at & 31);
+    let lo = words.get(w).copied().unwrap_or(0) >> s;
+    let v = if s + width > 32 { lo | words.get(w + 1).copied().unwrap_or(0) << (32 - s) } else { lo };
+    if width >= 32 { v } else { v & ((1 << width) - 1) }
+}
+
+/// A key's three values in a stream's bits (801BCE50): `width`-bit unsigned fields from bit
+/// `at`, each times its scale plus its offset (one fused multiply-add).
+pub fn key3(words: &[u32], at: u32, width: u32, scale: [f32; 3], offset: [f32; 3]) -> [f32; 3] {
+    [0, 1, 2].map(|i| (bits(words, at + i as u32 * width, width) as f32).mul_add(scale[i], offset[i]))
+}
+
 /// A scale or translation channel's value inside its stream's window (Bustin' Out's 801BC4E0,
 /// called from EAnimController::Animate): the window's key frames `first` and `last`, its
 /// `keys` (P0, T0, T1, P1: the two keys and their tangents), at `place` (in frames). A
@@ -517,6 +535,15 @@ mod tests {
         }
         // 3 frames to pass the last (3) after a still one
         assert_eq!(at, Some(5));
+    }
+
+    #[test]
+    fn bits_run_on_into_the_next_word() {
+        let w = [0xF000_0000u32, 0x0000_0005];
+        assert_eq!(bits(&w, 28, 4), 0xF);
+        assert_eq!(bits(&w, 30, 4), 0b0111);
+        assert_eq!(bits(&w, 32, 3), 5);
+        assert_eq!(key3(&[0x0000_0201], 0, 4, [0.5; 3], [1.0; 3]), [1.5, 1.0, 2.0]);
     }
 
     #[test]

@@ -649,6 +649,24 @@ fn main() -> ExitCode {
             }
         }
         println!("scale and translation reads ({}), by (mode, result): {tally:?}", log.vec_streams.len());
+        // P1 from the stream's bits ('&'): key (+8) + 1's values through `anim::key3`
+        let mut keys: BTreeMap<&str, usize> = BTreeMap::new();
+        let mut shown = 0;
+        for v in &log.vec_streams {
+            let Some((h, words)) = v.header else { continue };
+            let stride = (h[4] >> 16) as i16 as i32;
+            let (w30, w31, w32) = ((h[4] >> 8) as u8 as i8 as i32, h[4] as u8 as i8 as i32, (h[5] >> 24) as u8 as i8 as i32);
+            let at = h[1] as i32 + (h[2] as i32 + 1) * stride + w30 + w32;
+            let f = |i: usize| f32::from_bits(h[i]);
+            let got = housefire::anim::key3(&words, (at & 31) as u32, w31 as u32, [f(7), f(8), f(9)], [f(10), f(11), f(12)]);
+            let same = got.iter().zip(&v.keys[9..12]).all(|(a, b)| a.to_bits() == b.to_bits());
+            *keys.entry(if same { "the same bits" } else { "DIFFERENT" }).or_default() += 1;
+            if !same && shown < 6 {
+                shown += 1;
+                println!("  key different: header {h:x?} words {words:x?}: native {got:?}, P1 {:?}", &v.keys[9..12]);
+            }
+        }
+        println!("P1 from the stream's bits: {keys:?}");
     }
 
     // (LOCKSTEP_ANIM_RUNS: each Animate (opcode 44) run, a Sim's steps on one node and frame

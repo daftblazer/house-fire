@@ -503,6 +503,9 @@ pub struct Vec3StreamRec {
     pub mode: u8,
     pub keys: [f32; 12],
     pub result: [f32; 3],
+    /// The stream's header and four words of its bits at P1's values ('&', in newer logs):
+    /// words +0, +4, +8, +24, +28, +32, +36, +92 to +112.
+    pub header: Option<([u32; 13], [u32; 4])>,
 }
 
 /// A resource asked whether it is loaded ('9', Res_IsLoaded 80177B24, EA's
@@ -1331,7 +1334,20 @@ pub fn read_log(path: &str) -> Option<Log> {
                     *k = f32::from_bits(r.u32());
                 }
                 let result = [f32::from_bits(r.u32()), f32::from_bits(r.u32()), f32::from_bits(r.u32())];
-                log.vec_streams.push(Vec3StreamRec { tick: log.ticks, stream, place, first, last, mode, keys, result });
+                log.vec_streams.push(Vec3StreamRec { tick: log.ticks, stream, place, first, last, mode, keys, result, header: None });
+            }
+            b'&' => {
+                if !r.has(17 * 4) {
+                    break;
+                }
+                let mut h = [0u32; 13];
+                for w in &mut h {
+                    *w = r.u32();
+                }
+                let b = [r.u32(), r.u32(), r.u32(), r.u32()];
+                if let Some(v) = log.vec_streams.last_mut() {
+                    v.header = Some((h, b));
+                }
             }
             b'9' => {
                 if !r.has(12) {
