@@ -1210,3 +1210,13 @@ which is also why an inside light's fill adds the outside's sun. Checked by lock
 over the engine's other-side room at the grid build before each fill. All 3,916 fills after a
 build get the fill's list, light for light. The 84 fills before any build (each light's first,
 at tick 0) read lists not made yet.
+
+The other lights' array from the engine (iteration 108). Each window (leading object, the
+list's order) gives two lights, front then behind (`window_light_places`). Each light is in the
+room under its own place, with the room under the other as its other side. `sort_lights` takes
+them room by room, giving the array's order. The height and reach are `window_light_params` by
+the window's kind (`window_kind`) and whether the light's own room is inside. Checked by lockstep
+(`LOCKSTEP_WINDOW_LIGHTS=LOG`) against the log's last rebuild: home's 28 lights in order, each
+place, height and reach bit for bit. The club has none, as the engine gives. The lights'
+colours are the window fill's (iteration 82). They need the nearest lamps, whose places follow
+the objects' poses (stage 4.4).

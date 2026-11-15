@@ -1742,6 +1742,45 @@ fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &DiscTab
                             }
                         }
                         println!("window lights' kinds: {n} found, the engine's (by its resources' key) {same_kind}");
+                        // (and the other lights' array whole: each window in list order, its two
+                        // lights (front, behind), each in the room under its own place and facing
+                        // the other's; sorted room by room (`sort_lights`); its x, y, height and
+                        // reach against the rebuild's lights in order)
+                        let mut objs = Vec::new();
+                        let mut info = Vec::new();
+                        for o in lw.objects().filter(|o| o.window && o.on_lot() && o.leader == o.id()) {
+                            let Some(places) = housefire::light::window_light_places((o.x16 >> 4, o.y16 >> 4), o.facing() as u8) else { continue };
+                            let model = lw.objects().filter(|p| p.leader == o.id()).find_map(|p| tiles.3.get(&p.guid)).map(|r| r.key);
+                            let kind = model.map_or(0, housefire::light::window_kind);
+                            let room_at = |(x, y): (f32, f32)| i32::from(walls.room(x.floor() as i32, y.floor() as i32).wrapping_sub(1));
+                            for side in 0..2 {
+                                let (me, other) = (room_at(places[side]), room_at(places[1 - side]));
+                                objs.push((housefire::light::LightKind::Window, me, other));
+                                info.push((places[side], kind, me));
+                            }
+                        }
+                        let rooms = b.rooms as usize;
+                        let (_, order, _) = housefire::light::sort_lights(rooms, &objs);
+                        let theirs = &b.lights[..b.other as usize];
+                        let (mut placed, mut heights, mut reaches) = (0, 0, 0);
+                        for (k, &i) in order.iter().enumerate() {
+                            let ((x, y), kind, me) = info[i];
+                            let Some(t) = theirs.get(k) else { break };
+                            if (t[0], t[1]) == (x.to_bits(), y.to_bits()) {
+                                placed += 1;
+                            }
+                            if let Some((reach, _, h)) = housefire::light::window_light_params(kind, me != 0) {
+                                if h.map(f32::to_bits) == Some(t[2]) {
+                                    heights += 1;
+                                }
+                                if reach.to_bits() == t[3] {
+                                    reaches += 1;
+                                } else if std::env::var_os("LOCKSTEP_NEAREST_SHOW").is_some() {
+                                    println!("  other light {k}: reach {reach}, the log's {} (kind {kind}, room {me})", f32::from_bits(t[3]));
+                                }
+                            }
+                        }
+                        println!("other lights' array: the engine's {}, the log's {}; in order the same place {placed}, height {heights}, reach {reaches}", order.len(), theirs.len());
                         println!("window lights' nearest lights: {fills} fills after a build ({first_fills} before any), from the other side's room {near_same}");
                     }
                 }
