@@ -538,6 +538,265 @@ fn normalize_quat(v: [f32; 4]) -> [f32; 4] {
     v.map(|x| x * k)
 }
 
+/// A rotation stream's header, as Bustin' Out's 801B5DC8 reads it from the animation's bits:
+/// the key count (20 bits), the widths of the frame gap, of the bias and of each point
+/// component (5 bits each; a point width of 0 is 32). A record is its gap, its bias and the
+/// point's y, z and w, each a signed field, then one sign bit for x. The point's fields are
+/// scaled by 1 / (2^(width - 1) - 1), the bias likewise (0 with no bias).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RotHeader {
+    pub keys: u32,
+    pub gap_bits: u32,
+    pub bias_bits: u32,
+    pub point_bits: u32,
+    pub point_scale: f32,
+    pub bias_scale: f32,
+    /// The first key's record: the bit after the header.
+    pub first_record: u32,
+    /// A record's bits.
+    pub record_bits: u32,
+}
+
+/// The header of the rotation stream at bit `at` of `words` (801B5DC8).
+pub fn rotation_header(words: &[u32], at: u32) -> RotHeader {
+    let mut p = at;
+    let mut take = |w: u32| {
+        let v = bits(words, p, w);
+        p += w;
+        v
+    };
+    let keys = take(20);
+    let gap_bits = take(5);
+    let bias_bits = take(5);
+    let point_bits = match take(5) {
+        0 => 32,
+        w => w,
+    };
+    // 801ADBCC: 1 / the largest signed field, in single precision
+    let scale = |w: u32| 1.0 / ((1i64 << (w - 1)) - 1) as i32 as f32;
+    let bias_scale = if bias_bits == 0 { 0.0 } else { scale(bias_bits) };
+    let record_bits = gap_bits + bias_bits + 3 * point_bits + 1;
+    RotHeader { keys, gap_bits, bias_bits, point_bits, point_scale: scale(point_bits), bias_scale, first_record: p, record_bits }
+}
+
+/// `width` bits at bit `at` as a signed field (801ADB4C): sign-extended from its top bit.
+fn signed_bits(words: &[u32], at: u32, width: u32) -> i32 {
+    let v = bits(words, at, width);
+    if width != 0 && width < 32 && v >> (width - 1) & 1 != 0 { (v | !0u32 << (width - 1)) as i32 } else { v as i32 }
+}
+
+fn quat_add(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+    core::array::from_fn(|i| a[i] + b[i])
+}
+
+fn quat_sub(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+    core::array::from_fn(|i| a[i] - b[i])
+}
+
+fn quat_scale(a: [f32; 4], s: f32) -> [f32; 4] {
+    a.map(|v| s * v)
+}
+
+/// A quaternion made unit length as 801B6C44 does it (the length and division of
+/// `normalize_quat`); a zero length gives the identity (801B52F8).
+fn unit_or_identity(v: [f32; 4]) -> [f32; 4] {
+    let fused = |a: f32, acc: f32| (a as f64).mul_add(a as f64, acc as f64) as f32;
+    let length = fused(v[3], fused(v[2], fused(v[0], v[1] * v[1]))).sqrt();
+    if length == 0.0 {
+        return [0.0, 0.0, 0.0, 1.0];
+    }
+    let k = 1.0 / length;
+    v.map(|x| x * k)
+}
+
+impl RotHeader {
+    fn record(&self, k: u32) -> u32 {
+        self.first_record + k * self.record_bits
+    }
+
+    /// The bit after the stream's last record.
+    pub fn end(&self) -> u32 {
+        self.record(self.keys)
+    }
+
+    /// The frames the keys span: the sum of their gaps + 1 (801B5DC8's +16).
+    pub fn frames(&self, words: &[u32]) -> u32 {
+        (0..self.keys).map(|k| bits(words, self.record(k), self.gap_bits) + 1).sum()
+    }
+
+    /// Key `k`'s frame: the gaps of keys 1..=k, each + 1 (801B6A1C).
+    pub fn time(&self, words: &[u32], k: u32) -> i32 {
+        (1..=k).map(|j| bits(words, self.record(j), self.gap_bits) as i32 + 1).sum()
+    }
+
+    /// Key `k`'s bias: its signed field times the header's factor (801B6A1C).
+    pub fn bias(&self, words: &[u32], k: u32) -> f32 {
+        let v = signed_bits(words, self.record(k) + self.gap_bits, self.bias_bits);
+        self.bias_scale * (v as f32)
+    }
+
+    /// Key `k`'s quaternion x, y, z, w (801B6B40): y, z and w are fields; x is the root of what
+    /// is left of 1 (0 when nothing is), negative when the record's last bit is set. The
+    /// squares are summed z first, then y and w fused in, each rounded to single.
+    pub fn point(&self, words: &[u32], k: u32) -> [f32; 4] {
+        let at = self.record(k) + self.gap_bits + self.bias_bits;
+        let field = |i: u32| self.point_scale * (signed_bits(words, at + i * self.point_bits, self.point_bits) as f32);
+        let (y, z, w) = (field(0), field(1), field(2));
+        let fused = |a: f32, acc: f32| (a as f64).mul_add(a as f64, acc as f64) as f32;
+        let left = 1.0 - fused(w, fused(y, z * z));
+        let x = if left <= 0.0 {
+            0.0
+        } else if bits(words, at + 3 * self.point_bits, 1) != 0 {
+            -left.sqrt()
+        } else {
+            left.sqrt()
+        };
+        [x, y, z, w]
+    }
+
+    /// The control point of key `k` (801B6C44, slots 1 and 0): `outgoing` towards key k + 1 (a
+    /// window's w1) or incoming from key k - 1 (the w2 of the window before). At the first key
+    /// the key moves (1 + its bias) / 2 of the way to key 1, at the last (1 - its bias) / 2 of
+    /// the way to the one before. Between them it moves that way to each neighbour (X, Y), M
+    /// is the unit mean of the two, and the control point is the key moved from M by 2 x
+    /// this side's frames over both sides'. Each result is made unit length.
+    pub fn control(&self, words: &[u32], k: u32, outgoing: bool) -> [f32; 4] {
+        let a = self.point(words, k);
+        let bias = self.bias(words, k);
+        let moved = |to: [f32; 4], weight: f32| unit_or_identity(quat_add(a, quat_scale(quat_sub(to, a), weight)));
+        if k == 0 {
+            return moved(self.point(words, 1), (bias + 1.0) * 0.5);
+        }
+        if k + 1 == self.keys {
+            return moved(self.point(words, k - 1), (1.0 - bias) * 0.5);
+        }
+        let (before, after) = (self.time(words, k) - self.time(words, k - 1), self.time(words, k + 1) - self.time(words, k));
+        let (side, sign) = if outgoing { (after, -1.0f32) } else { (before, 1.0f32) };
+        let ratio = side as f32 / (before + after) as f32;
+        let x = moved(self.point(words, k - 1), -((bias + 1.0) * 0.5));
+        let y = moved(self.point(words, k + 1), (1.0 - bias) * 0.5);
+        let m = unit_or_identity(quat_add(x, quat_scale(quat_sub(y, x), 0.5)));
+        moved(m, (sign * ratio) * -2.0)
+    }
+
+    /// The window between keys `k` and k + 1 as the evaluator holds it: first and last frames
+    /// and the quaternions w0 (key k), w1 (its outgoing control point), w2 (key k + 1's
+    /// incoming control point) and w3 (key k + 1) (801B69A0).
+    pub fn window(&self, words: &[u32], k: u32) -> (i32, i32, [[f32; 4]; 4]) {
+        let w = [self.point(words, k), self.control(words, k, true), self.control(words, k + 1, false), self.point(words, k + 1)];
+        (self.time(words, k), self.time(words, k + 1), w)
+    }
+}
+
+/// A rotation stream as the evaluator runs it (Anim_RotStream 801B5F48): the vec3 `Stream`'s
+/// stepping, on quaternion windows.
+#[derive(Clone, Debug)]
+pub struct RotStream {
+    pub header: RotHeader,
+    pub key: u32,
+    pub first: i32,
+    pub last: i32,
+    /// 1: the window is blended straight (moved a third of it or more since the last read).
+    pub mode: u8,
+    pub last_place: f32,
+    pub window: [[f32; 4]; 4],
+}
+
+impl RotStream {
+    /// A stream at its start (801B68AC): the first window.
+    pub fn new(words: &[u32], header: RotHeader) -> RotStream {
+        let mut s = RotStream { header, key: 0, first: 0, last: 0, mode: 0, last_place: 0.0, window: [[0.0; 4]; 4] };
+        s.reset(words);
+        s
+    }
+
+    fn fill(&mut self, words: &[u32]) {
+        self.window = self.header.window(words, self.key).2;
+    }
+
+    /// Back to the first window (801B68AC); the last place is FLT_MAX, the flag is kept.
+    fn reset(&mut self, words: &[u32]) {
+        self.key = 0;
+        self.first = 0;
+        self.last = self.header.time(words, 1);
+        self.last_place = f32::MAX;
+        self.fill(words);
+    }
+
+    /// To the last window (801B6918): it ends at the stream's frames - 1; the last place is
+    /// -FLT_MAX.
+    fn jump_to_end(&mut self, words: &[u32]) {
+        let h = &self.header;
+        self.key = h.keys - 2;
+        self.last = h.frames(words) as i32 - 1;
+        self.first = self.last - (h.time(words, h.keys - 1) - h.time(words, h.keys - 2));
+        self.last_place = -f32::MAX;
+        self.fill(words);
+    }
+
+    /// One window on (801B6638): blended when the place moved a third of the window or more,
+    /// else its control points are made again.
+    fn forward(&mut self, words: &[u32], place: f32) {
+        self.key += 1;
+        self.first = self.last;
+        self.last = self.header.time(words, self.key + 1);
+        self.mode = ((place - self.last_place) >= (self.last - self.first) as f32 * (1.0 / 3.0)) as u8;
+        if self.mode == 0 {
+            self.window[1] = self.header.control(words, self.key, true);
+            self.window[2] = self.header.control(words, self.key + 1, false);
+        }
+        self.window[0] = self.window[3];
+        self.window[3] = self.header.point(words, self.key + 1);
+    }
+
+    /// One window back (801B6774), the same rule the other way.
+    fn back(&mut self, words: &[u32], place: f32) {
+        self.key -= 1;
+        self.last = self.first;
+        self.first = self.header.time(words, self.key);
+        self.mode = ((self.last_place - place) >= (self.last - self.first) as f32 * (1.0 / 3.0)) as u8;
+        if self.mode == 0 {
+            self.window[1] = self.header.control(words, self.key, true);
+            self.window[2] = self.header.control(words, self.key + 1, false);
+        }
+        self.window[3] = self.window[0];
+        self.window[0] = self.header.point(words, self.key);
+    }
+
+    /// The rotation at `place` (801B5F48): the window moved to hold it (stepping, or from the
+    /// nearer end when that is closer), then evaluated or blended.
+    pub fn read(&mut self, words: &[u32], place: f32) -> [f32; 4] {
+        let (first, last) = (self.first as f32, self.last as f32);
+        if place > last {
+            if place - last <= (self.header.frames(words) as i32 - 1) as f32 - place {
+                while place > self.last as f32 {
+                    self.forward(words, place);
+                }
+            } else {
+                self.jump_to_end(words);
+                while place < self.first as f32 {
+                    self.back(words, place);
+                }
+            }
+        } else if place < first {
+            if first - place <= place {
+                while place < self.first as f32 {
+                    self.back(words, place);
+                }
+            } else {
+                self.reset(words);
+                while place > self.last as f32 {
+                    self.forward(words, place);
+                }
+            }
+        }
+        self.last_place = place;
+        let (first, last) = (self.first as f32, self.last as f32);
+        let t = (place - first) / (last - first);
+        if self.mode == 0 { rotation_window(self.window, t) } else { rotation_blend(self.window, t) }
+    }
+}
+
 /// A Sim's animator speeds (EA's fn_800ABE20, fn_800B0ADC, fn_800AF06C): the animator runs at
 /// the game speed (0 paused, 1, 5 fast-forward). On a change it sets the new speed on its slot
 /// tracks: the base idle, walk, turn, the current action, the action blending out, the carry.
@@ -1022,6 +1281,91 @@ mod tests {
         assert_eq!(rotation_blend([id, x, x, x], 1.0), x);
         let mid = rotation_window([id, id, x, x], 0.5);
         assert!((mid[0] - mid[3]).abs() < 1e-6 && (mid[0] * mid[0] + mid[3] * mid[3] - 1.0).abs() < 1e-6);
+    }
+
+    /// A rotation stream's bits: 3 keys at frames 0, 2 and 5 (gaps 0, 1, 2 of 2 bits), biases of
+    /// 4 bits and points of 8 bits: identity, a turn by y = 1 and one with y = 63 and x negative.
+    fn rotation_bits() -> Vec<u32> {
+        let mut w = vec![0u32; 8];
+        let mut at = 0;
+        let mut put = |v: u32, n: u32| {
+            for i in 0..n {
+                if v >> i & 1 != 0 {
+                    w[((at + i) / 32) as usize] |= 1 << ((at + i) % 32);
+                }
+            }
+            at += n;
+        };
+        for (v, n) in [(3, 20), (2, 5), (4, 5), (8, 5)] {
+            put(v, n);
+        }
+        // gap, bias, y, z, w, the sign of x
+        for (gap, bias, y, z, ww, neg) in [(0, 0, 0, 0, 0, 0), (1, 0, 127, 0, 0, 0), (2, 7, 63, 0, 0, 1)] {
+            put(gap, 2);
+            put(bias, 4);
+            put(y, 8);
+            put(z, 8);
+            put(ww, 8);
+            put(neg, 1);
+        }
+        w
+    }
+
+    #[test]
+    fn a_rotation_header_and_its_keys_are_read_from_the_bits() {
+        let w = rotation_bits();
+        let h = rotation_header(&w, 0);
+        assert_eq!((h.keys, h.gap_bits, h.bias_bits, h.point_bits, h.first_record, h.record_bits), (3, 2, 4, 8, 35, 2 + 4 + 24 + 1));
+        assert_eq!((h.point_scale, h.bias_scale), (1.0 / 127.0, 1.0 / 7.0));
+        assert_eq!((h.frames(&w), h.time(&w, 0), h.time(&w, 1), h.time(&w, 2), h.end()), (1 + 2 + 3, 0, 2, 5, 35 + 3 * 31));
+        assert_eq!((h.bias(&w, 1), h.bias(&w, 2)), (0.0, 1.0));
+        assert_eq!(h.point(&w, 0), [1.0, 0.0, 0.0, 0.0]);
+        // y = 1 leaves nothing for x
+        assert_eq!(h.point(&w, 1), [0.0, 1.0, 0.0, 0.0]);
+        let p = h.point(&w, 2);
+        assert!(p[0] < 0.0 && (p[0] * p[0] + p[1] * p[1] - 1.0).abs() < 1e-5);
+        // no bias bits: a bias of 0 whatever follows
+        let mut none = rotation_header(&w, 0);
+        none.bias_bits = 0;
+        none.bias_scale = 0.0;
+        assert_eq!(none.bias(&w, 2), 0.0);
+    }
+
+    #[test]
+    fn a_rotation_windows_control_points_move_by_the_bias_and_the_frames() {
+        let w = rotation_bits();
+        let h = rotation_header(&w, 0);
+        let near = |a: [f32; 4], b: [f32; 4]| a.iter().zip(&b).all(|(p, q)| (p - q).abs() < 1e-5);
+        let s = std::f32::consts::FRAC_1_SQRT_2;
+        // the first key, bias 0: half way to key 1, made unit length
+        assert!(near(h.control(&w, 0, true), [s, s, 0.0, 0.0]));
+        // the last key, bias 1: not at all towards the key before
+        assert!(near(h.control(&w, 2, false), h.point(&w, 2)));
+        // between them every control point is a unit quaternion
+        for outgoing in [true, false] {
+            let c = h.control(&w, 1, outgoing);
+            assert!((c.iter().map(|v| v * v).sum::<f32>() - 1.0).abs() < 1e-5);
+        }
+        let (first, last, win) = h.window(&w, 0);
+        assert_eq!((first, last, win[0], win[3]), (0, 2, h.point(&w, 0), h.point(&w, 1)));
+        assert_eq!((win[1], win[2]), (h.control(&w, 0, true), h.control(&w, 1, false)));
+    }
+
+    #[test]
+    fn a_rotation_stream_steps_its_window_and_blends_on_a_jump() {
+        let w = rotation_bits();
+        let mut s = RotStream::new(&w, rotation_header(&w, 0));
+        assert_eq!(s.read(&w, 0.0), [1.0, 0.0, 0.0, 0.0]);
+        // a small step inside the window, then one of a third of a window or more into the
+        // next (the last one): blended straight
+        s.read(&w, 1.0);
+        assert_eq!((s.key, s.first, s.last, s.mode), (0, 0, 2, 0));
+        let r = s.read(&w, 2.5);
+        assert_eq!((s.key, s.first, s.last, s.mode), (1, 2, 5, 1));
+        assert!((r.iter().map(|v| v * v).sum::<f32>() - 1.0).abs() < 1e-5);
+        // back near the start: from the first window again
+        s.read(&w, 0.2);
+        assert_eq!((s.key, s.first, s.last), (0, 0, 2));
     }
 
     #[test]

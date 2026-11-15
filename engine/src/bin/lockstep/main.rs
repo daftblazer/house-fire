@@ -653,6 +653,11 @@ fn main() -> ExitCode {
     if std::env::var_os("LOCKSTEP_ANIM_RUNS").is_some() {
         anim::runs(&lib, &log, &d, &step_object);
     }
+    // (LOCKSTEP_ANIM_ROTATIONS: each rotation read ('!') against the stream decoded from the
+    // animation's bits alone: its header, its window, and the read from the place alone)
+    if std::env::var_os("LOCKSTEP_ANIM_ROTATIONS").is_some() {
+        anim::rotations(&log, &d);
+    }
     // (LOCKSTEP_ANIM_LOADS: the engine's animations in memory, `anim::Loads`, from the lot's
     // preload sets (house n, LOCKSTEP_HOUSE, default 1: House1Preload and housepre<n>), against
     // each of the original's Animate load asks ('9', from TryAnimate at 800AC7E4) in turn)
