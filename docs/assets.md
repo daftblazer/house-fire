@@ -1671,3 +1671,16 @@ writes the matrices' translations back over the states' words 5-7. All 262,948 n
 20,000 bone records on home-a26.log come out to the bit, and all 36 logged skeletons are
 characte.arc's. The rest path (state bit 2) is not met on the home replay, and the controller's
 scale (seven powers of two, 2^-17 to 2^-11) and mode word (+96) are inferred, not logged.
+Posing (iteration 187, `pose.rs`, `LOCKSTEP_ANIM_POSES`). The 64-byte node state: flags, the
+rotation (x, y, z, w; channel 0), the translation (channel 2, default 0), the scale (channel 1,
+default 1), a vector (channel 4, default 1) and two scalars (channels 5 and 6, defaults 1 and 10,
+802B7F40). Flag bits: 0x1 rotation and translation, 0x8 scale, 0x10 uneven scale, 0x100 the
+flag channel's (the stream's bit inverted, 80158540; the channel is read when the state's 0x10
+is clear), 0x20/0x40/0x80 channels 4/5/6. The fold (801586B4): weight 0 skips, the track's +8
+bit 0x100 layers (Layer 80158964), weight 1 copies, else Blend (801587D4). Blend ORs the flags,
+turns the rotation the shorter way and takes a + (b - a) w normalized when the dot is >= 0.999
+(802C3578), else a slerp (801B4B50; sin and acos, 8010DB14, fdlibm's in single); translation
+and scale s + (l - s) w, words 11-15 untouched. Layer ORs the flags, rotation slerp(identity,
+q, w) (801B5154) times the state's, translation s + w l, scale s + (s l - s) w. A track's
+animation can change within a tick, so a pose's is the one of its last step. On home-a25.log,
+with the weights found from the states, 618,836 of 618,895 node states come out to the bit.
