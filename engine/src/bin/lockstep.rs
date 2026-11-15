@@ -772,6 +772,35 @@ fn main() -> ExitCode {
                 *pattern.entry(what).or_default() += 1;
             }
             println!("poses against their track's steps ({}): {pattern:?}", log.poses.len());
+            let g = 0.033f32;
+            // every moved step through `anim::track_advance`, the end included: past the last
+            // frame (the animation's +32 frames - 1) a play stops there or wraps back by it
+            // (`anim::wrap_back`); G is the frame time (r13-29720, 0.033)
+            let mut ends: BTreeMap<String, usize> = BTreeMap::new();
+            for t in log.tracks.iter().filter(|t| t.tick != 0 && t.place[1] != t.place[0]) {
+                let [s0, s72, c80] = t.speeds;
+                let next = housefire::anim::track_advance(t.place[0], g, c80, s72, s0);
+                let last = t.head[8] as f32 - 1.0;
+                let what = if next.to_bits() == t.place[1].to_bits() {
+                    "on, exact"
+                } else if next > last && t.place[1].to_bits() == last.to_bits() {
+                    "past the end: stopped at the last frame"
+                } else if next > last && t.place[1].to_bits() == housefire::anim::wrap_back(next, last).to_bits() {
+                    "past the end: wrapped back by the last frame (repeatedly)"
+                } else if next < 0.0 && t.place[1].to_bits() == (next + last).to_bits() {
+                    "before the start: wrapped by the last frame"
+                } else if next < 0.0 && t.place[1] == 0.0 {
+                    "before the start: stopped at 0"
+                } else {
+                    "OTHER"
+                };
+                *ends.entry(format!("{what} (done {:?})", t.done)).or_default() += 1;
+                if what == "OTHER" && ends.get("(shown)").copied().unwrap_or(0) < 6 {
+                    *ends.entry("(shown)".into()).or_default() += 1;
+                    println!("  step other: place {:?} speeds {:?} head {:x?} done {:?}: next {next}", t.place, t.speeds, t.head, t.done);
+                }
+            }
+            println!("track steps with their ends: {ends:?}");
             let one = life.values().filter(|t| t.len() == 1).count();
             println!("streams following one track: {one} of {}; reads matching several tracks {ambiguous}", life.len());
             for (k, t) in life.iter().filter(|(_, t)| t.len() > 1).take(4) {

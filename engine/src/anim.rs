@@ -478,6 +478,24 @@ pub fn channel3(first: i32, last: i32, mode: u8, keys: &[f32; 12], place: f32) -
     [0, 1, 2].map(|i| ((p0[i] * h00 + t0[i] * h10) + p1[i] * h01) + t1[i] * h11)
 }
 
+/// A track's place one frame on (Bustin' Out's Anim_UpdateTrack, 80157318): the frame time
+/// (`frame_time`, the game's r13-29720, 0.033) times the controller's speed (+80, 5 in
+/// fast-forward) times the track's +72, then a fused multiply-add of that by the track's +0 (its
+/// rate) onto the place, in double precision rounded to single as the game's fmadd/frsp does.
+pub fn track_advance(place: f32, frame_time: f32, controller_speed: f32, track_speed: f32, rate: f32) -> f32 {
+    let step = (frame_time * controller_speed) * track_speed;
+    (step as f64).mul_add(rate as f64, place as f64) as f32
+}
+
+/// A looping track's place past its last frame, brought back by the last frame as many times as
+/// it takes (Anim_UpdateTrack's end).
+pub fn wrap_back(mut place: f32, last: f32) -> f32 {
+    while place > last && last > 0.0 {
+        place -= last;
+    }
+    place
+}
+
 /// A scale or translation stream as the evaluator runs it (801BC4E0): its window between keys
 /// `key` and `key` + 1, the blend flag, and the place of the last read.
 #[derive(Clone, Debug)]
@@ -894,6 +912,17 @@ mod tests {
         // back near the start: from the first window again
         s.read(&w, 0.5);
         assert_eq!((s.key, s.first, s.last), (0, 0, 3));
+    }
+
+    #[test]
+    fn a_track_moves_by_the_frame_time_and_wraps_by_its_last_frame() {
+        // 30 frames a second, 0.033 s a frame: 0.99 a frame, 4.95 in fast-forward
+        assert_eq!(track_advance(0.0, 0.033, 1.0, 1.0, 30.0), (0.033f32 as f64 * 30.0) as f32);
+        // the double-precision fused step, not two single roundings (a logged fast-forward step)
+        assert_eq!(track_advance(23.348824, 0.033, 5.0, 1.0, 30.0), 28.298822);
+        // a two-frame loop (last frame 1): 2.92 comes back to 0.92
+        assert!((wrap_back(2.92, 1.0) - 0.92).abs() < 1e-5);
+        assert_eq!(wrap_back(0.5, 1.0), 0.5);
     }
 
     #[test]

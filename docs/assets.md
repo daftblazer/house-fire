@@ -1392,3 +1392,13 @@ pose) and 203,908 in ticks of two (step, pose, step, pose). 18 are poses of a tr
 stepped that tick, at its standing place. Iteration 155's "posed before the step" were the
 first pose of a two-frame tick. During loading (tick 0) the order differs (12 of 963 poses),
 which leaves the picture unchanged.
+A track's step (iteration 157, Anim_UpdateTrack 80157318). Once a frame, the place +60 becomes
+(float) fma((frame time x the controller's +80) x the track's +72, the track's +0, place).
+The fma is double precision with one rounding to single (fmadd then frsp). The frame time is
+r13-29720 = 0.033; the controller's speed is 5 in fast-forward; +0 is the rate. Past the last
+frame (the animation's +32 frames - 1) a play stops there or, looping, comes back by the last
+frame as many times as it takes. Before 0 it stops at 0. `anim::track_advance` and
+`anim::wrap_back` give all 186,272 moved steps on home-a16.log to the bit: 145,219 on, 82
+stopped, 40,960 wrapped, 11 stopped at 0. Two separate single roundings miss 616 of them. The
+observer now reads the animation's head from the 0x7E virtual memory too (home-a16.log: the
+same 562,616 steps).
