@@ -281,6 +281,22 @@ impl Camera {
 
     /// A cursor off the screen's middle pulled back towards the wanted target (the original's
     /// fn_80006C58, once a frame in the usual mode): by the cursor's speed for `dt` seconds.
+    /// The cursor moved by a (turned) stick step at the lot's edge (the original's cursor step,
+    /// fn_80029BF8): each axis that leaves 1..=size - 1 is clamped there and its part of the move
+    /// dropped. Returns the cursor and the move the camera carries (`CursorMoved`).
+    pub fn move_cursor(cursor: [f32; 2], step: [f32; 2], size: i32) -> ([f32; 2], [f32; 2]) {
+        let limit = (size - 1) as f32;
+        let mut at = [cursor[0] + step[0], cursor[1] + step[1]];
+        let mut carried = step;
+        for k in 0..2 {
+            if !(at[k] >= 1.0 && at[k] <= limit) {
+                carried[k] = 0.0;
+            }
+            at[k] = if at[k] < 1.0 { 1.0 } else if at[k] > limit { limit } else { at[k] };
+        }
+        (at, carried)
+    }
+
     pub fn pull_cursor(&self, cursor: [f32; 2], dt: f32) -> [f32; 2] {
         let d = [self.target[0] - cursor[0], self.target[1] - cursor[1]];
         let n = (d[0] * d[0] + d[1] * d[1]).sqrt();
@@ -474,6 +490,15 @@ mod tests {
         let got = c.pull_cursor([0.0, 0.0], 0.033);
         assert!((got[0] - 0.165).abs() < 1e-6 && got[1] == 0.0, "{got:?}");
         assert!((Camera::cursor_speed(35.0) - 15.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_cursor_stops_at_the_lots_edge() {
+        // home's tick 225: the cursor's x runs past 1, so only its y move is carried
+        let (at, carried) = Camera::move_cursor([1.171_155_6, 3.033_541_2], [-0.2, 0.052_340_5], 39);
+        assert_eq!(at[0], 1.0);
+        assert_eq!(carried, [0.0, 0.052_340_5]);
+        assert_eq!(Camera::move_cursor([37.9, 5.0], [0.2, 0.0], 39), ([38.0, 5.0], [0.0, 0.0]));
     }
 
     #[test]

@@ -1591,7 +1591,7 @@ fn main() -> ExitCode {
             // the wanted target: when it moves, the engine's centring on the cursor (put on the
             // followed Sim) by the look just before (the last record's wanted target and eye);
             // at every record, 2 from the cursor along the level
-            let (mut moves, mut centred, mut two_off, mut records, mut with_cursor, mut with_pull) = (0, 0, 0, 0, 0, 0);
+            let (mut moves, mut centred, mut two_off, mut records, mut with_cursor, mut with_pull, mut with_edge) = (0, 0, 0, 0, 0, 0, 0);
             for w in log.cams.windows(2) {
                 if w[1].cursor == 0 || w[0].camera != w[1].camera {
                     continue;
@@ -1612,6 +1612,16 @@ fn main() -> ExitCode {
                 // or the cursor's move carried over (CursorMoved, the cursor off the screen's box)
                 let q = w[0].cursor_at;
                 let carried = !ok && ((t[0] - w[0].wanted[0]) - (p[0] - q[0])).abs() <= 1e-4 && ((t[1] - w[0].wanted[1]) - (p[1] - q[1])).abs() <= 1e-4;
+                // (or at the lot's edge: an axis the cursor was clamped on, at 1 or the size less
+                // 1, carries nothing; `Camera::move_cursor`, the lot 39)
+                let edge = !ok && !carried && {
+                    let limit = 38.0;
+                    let on_edge = |v: f32| v == 1.0 || v == limit;
+                    let d = [t[0] - w[0].wanted[0], t[1] - w[0].wanted[1]];
+                    (0..2).all(|k| if on_edge(p[k]) && (p[k] - q[k]).abs() > 1e-6 { d[k] == 0.0 } else { (d[k] - (p[k] - q[k])).abs() <= 1e-4 })
+                };
+                with_edge += usize::from(edge);
+                let carried = carried || edge;
                 // (and the cursor then pulled back towards the target, fn_80006C58: by the
                 // zoom's cursor speed a second, 5 at the near end to 15 at the far)
                 let pulled = !ok && !carried && {
@@ -1623,7 +1633,7 @@ fn main() -> ExitCode {
                 with_cursor += usize::from(carried);
                 let ok = ok || carried || pulled;
                 if !ok && std::env::var_os("ASSETS_EACH").is_some() {
-                    println!("  target tick {}: wanted {:?} -> {:?} cursor {:?} eye {:?}", w[1].tick, w[0].wanted, t, p, w[0].eye);
+                    println!("  target tick {}: wanted {:?} -> {:?} cursor {:?} -> {p:?} eye {:?} dt {}", w[1].tick, w[0].wanted, t, w[0].cursor_at, w[0].eye, w[1].dt);
                 }
             }
             // the projection: the engine's for each tick's wanted distance against the lot's
@@ -1669,7 +1679,7 @@ fn main() -> ExitCode {
                 }
             }
             println!("cursor moves {cursor_moves}: carried exactly when off the screen's middle {box_ok}");
-            println!("wanted target: moves {moves}, the engine's centring on the cursor gives it {centred}, the cursor's move carried over {with_cursor}, and the cursor pulled back {with_pull}; records {records}, the target 2 from the cursor {two_off}");
+            println!("wanted target: moves {moves}, the engine's centring on the cursor gives it {centred}, the cursor's move carried over {with_cursor}, and the cursor pulled back {with_pull} ({with_edge} of the carried at the lot's edge); records {records}, the target 2 from the cursor {two_off}");
             println!("wanted: zooms {zooms}, the engine's zoom gives the logged distance and tilt {zoom_ok}; turns {turns}, by a stick within -1..1 {turn_ok}");
             println!("easing: {eased} records, the engine's live parameters against the log's: largest difference {worst:.6} (record {at}); {after_still} after a still stretch matched by its last steps; {placed} placed at once");
         }

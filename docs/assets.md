@@ -1232,3 +1232,12 @@ build:
 - home: 1,296 cells' rooms all the same, and all 1,364 cell rooms' lights;
 - the club (club-rooms.log, no windows): 1,296 and 1,386, all the same.
 (`LOCKSTEP_WINDOW_LIGHTS=LOG`; club-l.log has no rebuild with rooms to check against.)
+
+The cursor at the lot's edge (`scene::Camera::move_cursor`, the original's fn_80029BF8, iteration
+110). The cursor's step (the stick squared, times the zoom's cursor speed and dt, turned by the
+camera's angle) is added to the cursor. An axis that leaves 1 ..= size - 1 has its part of the
+move dropped, and the cursor is clamped there. The camera's CursorMoved then carries only what
+is left. The size is the lot's (a virtual call, 39 on both lots). Home's last unexplained target
+move (tick 225: the cursor's x from 1.17 to the edge at 1, the target moving in y only) is that
+rule. `assets camlog` now explains all 164 of home's target moves (1 centring, 145 carried, 1 of
+them at the edge, 18 carried and pulled) and all 1,062 of the club's.
