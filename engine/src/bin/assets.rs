@@ -1477,6 +1477,36 @@ fn main() -> ExitCode {
                 println!("  not found: {missing:?}");
             }
         }
+        "frameticks" => {
+            // (study) the frames (the camera's own step a frame, which 0) against the ticks: how
+            // many frames each tick spans, and the ticks a frame
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO frameticks LOG");
+                return ExitCode::FAILURE;
+            };
+            let which: BTreeMap<u32, usize> = log.cams.iter().fold(BTreeMap::new(), |mut m, c| { *m.entry(c.which).or_default() += 1; m });
+            println!("camera records by which {which:?}");
+            let frames: Vec<(u32, f32)> = log.cams.iter().filter(|c| c.which == *which.keys().next().unwrap_or(&0)).map(|c| (c.tick, c.dt)).collect();
+            let mut per_tick: BTreeMap<u32, usize> = BTreeMap::new();
+            for (t, _) in &frames {
+                *per_tick.entry(*t).or_default() += 1;
+            }
+            let mut hist: BTreeMap<usize, usize> = BTreeMap::new();
+            for n in per_tick.values() {
+                *hist.entry(*n).or_default() += 1;
+            }
+            let dts: BTreeSet<u32> = frames.iter().map(|f| f.1.to_bits()).collect();
+            let (first, last) = (frames.first().map(|f| f.0), frames.last().map(|f| f.0));
+            println!("frames {} over ticks {first:?}..{last:?}; frames a tick (frames: ticks) {hist:?}; dt {:?}", frames.len(), dts.iter().map(|b| f32::from_bits(*b)).collect::<Vec<_>>());
+            if let (Some(a), Some(b)) = (first, last) {
+                println!("ticks a frame on average {:.4}", (b - a) as f32 / frames.len().max(1) as f32);
+            }
+            let gaps: BTreeMap<u32, usize> = frames.windows(2).fold(BTreeMap::new(), |mut m, w| {
+                *m.entry(w[1].0 - w[0].0).or_default() += 1;
+                m
+            });
+            println!("tick steps between frames: {gaps:?}");
+        }
         "camlog" => {
             // the camera's records ('c'): each, and the engine's eye from its live parameters
             // against the logged eye

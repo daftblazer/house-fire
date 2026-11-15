@@ -710,6 +710,10 @@ fn main() -> ExitCode {
         for (row, ticks) in &runs {
             let Some(a) = by_name.get(row) else { continue };
             total += 1;
+            if ticks.len() == 1 && std::env::var_os("LOCKSTEP_ANIM_RUNS_FIXED").is_some() {
+                let t = *ticks.keys().next().unwrap();
+                println!("  fixed {row}: {} ticks ({} runs), {:.4} s, ceil(s / 0.04) {}", t, ticks.values().next().unwrap(), a.seconds(), (a.seconds() / 0.04).ceil());
+            }
             if ticks.len() == 1 {
                 fixed += 1;
                 let t = *ticks.keys().next().unwrap();

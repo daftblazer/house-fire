@@ -215,10 +215,25 @@ An object's anim tables are its STR# 129 (`a2o`) and 130 (`c2o`): strings of the
 STR# 129, home's Animate steps from source 0 name 2,363 animations, all of them entries
 (fridge, stove, eating, easel). 751 are not named that way: index by parameter, a child table,
 or the table of another file than the tree's. Source 3's 913 and source 2's 1 are not read yet
-(lockstep `LOCKSTEP_ANIM_RUNS`). A run's ticks follow the animation's length loosely: the runs
-that always last the same take about 26 ticks a second (a2o-easel-startpaint, 0.5 s: 13 ticks;
-a2o-starteat-stand, 0.483 s: 13). The exact rule needs the original's clock (ticks against
-frames).
+(lockstep `LOCKSTEP_ANIM_RUNS`). On the club, tree and tree3 logs every source-0 step is named (club 18,528).
+A run's ticks follow the animation's length, not the frames: the original's ticks a frame vary
+(home about 0.5 a camera record, the club 1.3; `assets frameticks`), while the runs that always
+last the same take about 24 ticks a second on every log (iteration 115):
+
+| Animation | Seconds | Ticks |
+|---|---|---|
+| a2o-stopeat-stand | 0.450 | 12 |
+| a2o-starteat-stand | 0.483 | 13 |
+| a2o-easel-startpaint | 0.500 | 13 |
+| a2o_bar_enter_bar | 0.683 | 17 |
+| a2o-fridge-look | 1.933 | 46 |
+| a2o_dj_start_spinning | 2.883 | 69 |
+| a2o_dance_floor_dance_outgoing01 | 6.350 | 151 |
+
+The long ones fit 23.8 ticks a second; the short ones run a tick or two over. So the animation
+advances a fixed time a tick (about 0.042 s), with something at the ends (a blend, or the
+step's first and last ticks). The exact rule needs the original's animation time each tick
+(an observer record of the Sim's animation clock).
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object
