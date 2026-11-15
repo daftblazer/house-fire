@@ -552,6 +552,8 @@ pub struct Log {
     /// +148, +152 (3), +180 (3), the out word and the ambient object's +148 and +152 (3), all
     /// as words.
     pub times_of_day: Vec<TimeOfDayRec>,
+    /// '4': where main memory held the clock as the globals do, at the first time of day call.
+    pub clock_places: Vec<u32>,
     /// '1': objects' lights put at their nodes.
     pub object_lights: Vec<ObjectLightsRec>,
     /// 'z': the window lights' colours filled.
@@ -717,6 +719,16 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let room = [three(), three()];
                 let k = f32::from_bits(r.u32());
                 log.group_scales.push(GroupScaleRec { tick, group, base, scale, material, room, k });
+            }
+            b'4' => {
+                if !r.has(4) {
+                    break;
+                }
+                let n = r.u32() as usize;
+                if n > 16 || !r.has(4 * n) {
+                    break;
+                }
+                log.clock_places = (0..n).map(|_| r.u32()).collect();
             }
             b'3' => {
                 if !r.has(4 * 121) {

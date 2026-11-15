@@ -5600,6 +5600,13 @@ fn main() -> ExitCode {
     let the_lot = if lot_index < 0 || lot_index as usize >= lots.len() { lots.last().unwrap() } else { &lots[lot_index as usize] };
     let lot_globals = read_lot_globals(&ngh).expect("the lots' globals");
     let the_globals: &[i16] = if lot_index < 0 || lot_index as usize >= lot_globals.len() { lot_globals.last().map_or(&[], |g| g) } else { &lot_globals[lot_index as usize] };
+    // (study: the lot's globals from the disc's neighbourhood file, as the club visit's clock
+    // shows the original takes them: 18:15:24, the disc's lot 15, where the save's says 19:27:40)
+    let disc_globals = if has("REPLAY_DISC_GLOBALS") { read_lot_globals(&d.read("Runtime/default.ngh").unwrap_or_default()).unwrap_or_default() } else { Vec::new() };
+    let the_globals: &[i16] = match usize::try_from(lot_index).ok().and_then(|i| disc_globals.get(i)) {
+        Some(g) => g,
+        None => the_globals,
+    };
     let card_lot = card_path.is_some();
     if has("REPLAY_SHOW_LOT_CLOCKS") {
         // study: each lot's clock (globals 0, 5, 6: the hour, minute and second)
@@ -5687,9 +5694,9 @@ fn check_time_of_day(log: &housefire::tree_log::Log, t: u32, world: &housefire::
         *at += 1;
     }
     let g = |k: usize| world.globals.get(k).copied().unwrap_or(0) as i32;
-    let (hour, minute, second) = (g(0), g(5), 2 * world.clock_passes as i32);
+    let (hour, minute, second) = (g(0), g(5), g(6));
     if std::env::var_os("REPLAY_CLOCK").is_some() && t < 3 {
-        println!("  tick {t}: globals 0-8 {:?}, passes {}", &world.globals[..world.globals.len().min(9)], world.clock_passes);
+        println!("  tick {t}: globals 0-8 {:?}", &world.globals[..world.globals.len().min(9)]);
     }
     while *at < log.times_of_day.len() && log.times_of_day[*at].0 == t {
         let (_, r, _, o) = &log.times_of_day[*at];

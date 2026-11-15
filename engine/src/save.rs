@@ -197,7 +197,7 @@ pub fn read_neighbourhood(f: &[u8]) -> Result<Vec<NeighbourhoodBlock>> {
 
 /// A block's chunk table (a lot's, the neighbourhood's): n FourCCs (backwards), n offsets from
 /// the block's start in the file (header included), n sizes.
-fn chunk_table(b: &NeighbourhoodBlock) -> Result<LotChunks> {
+pub fn chunk_table(b: &NeighbourhoodBlock) -> Result<LotChunks> {
     let d = &b.data;
     let mut n = 0;
     while 4 * n + 4 <= d.len() && d[4 * n..4 * n + 4].iter().all(u8::is_ascii_alphabetic) {

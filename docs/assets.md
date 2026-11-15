@@ -962,5 +962,15 @@ value and the ambient's colour and factor, bit for bit. At club the hour and min
 tick 1 (set from the log), but the second does not: the original starts at 18:15:24, and no lot
 in the save has that time. The club lot (15) says 19:27:40, and home's lot 0 says 7:04:00, which
 home starts at. The original's minute turns at tick 18 there, the engine's at 30; replay setting
-the globals to the log's hides it (club's "scope 0 different" notes). The source of a visit's
-start time is still to find.
+the globals to the log's hides it (club's "scope 0 different" notes).
+Found (iteration 88): the observer's '4' record (a one-time scan of main memory for the clock at
+the first time of day call) put the globals at 0x80ECE114. A `-DGCN_WATCH` build watching
+global 6 then named the clock's tick (0x80237D18: +2 a pass, 0x80237D60: back to 0 at 60) and
+the loader that set 24: the SIMI reader 0x80237810. It reads 32, 42 or 48 globals by the chunk's
+version (up to 63, up to 68, after) into the lot object's +1056, through 0x80230530 and
+0x80230370. The 18:15:24 is the disc's `default.ngh` lot 15 SIMI (`assets cardfind disc 18 15
+24`); the save's lot 15 says 19:27:40, and home's 7:04:00 is the save's lot 0 (the disc's says
+6:30:00). So the club visit takes its globals from the disc, and home from the save. With
+`REPLAY_DISC_GLOBALS` (the disc's), the club's 2,000 calls match end to end like home's. What
+decides disc or save is still to find. The engine's clock now keeps the second as global 6
+(`World::clock_pass`), as the original does.

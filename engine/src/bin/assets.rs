@@ -1965,6 +1965,56 @@ fn main() -> ExitCode {
                 }
             }
         }
+        "cardfind" => {
+            // where a clock (hour, then minute and second 5 and 6 words on, i16 either order) is
+            // in a card's save file (study)
+            let (Some(card), Some(h), Some(m), Some(sec)) = (args.get(3), args.get(4).and_then(|v| v.parse::<i16>().ok()), args.get(5).and_then(|v| v.parse::<i16>().ok()), args.get(6).and_then(|v| v.parse::<i16>().ok())) else {
+                println!("usage: assets ISO cardfind CARD HOUR MINUTE SECOND");
+                return ExitCode::FAILURE;
+            };
+            // (a card, or "disc" for the disc's own neighbourhood file)
+            let f = if card == "disc" { d.read("Runtime/default.ngh").unwrap_or_default() } else { housefire::save::memory_card_file(&std::fs::read(card).unwrap_or_default(), "G4ME69").unwrap_or_default() };
+            println!("save file {} bytes", f.len());
+            // (each block's chunks, as the engine reads them)
+            for (bi, b) in housefire::save::read_neighbourhood(&f).unwrap_or_default().iter().enumerate() {
+                let Ok(t) = housefire::save::chunk_table(b) else { continue };
+                for (tag, c) in &t.chunks {
+                    for at in 0..c.len().saturating_sub(14) {
+                        let le = |k: usize| i16::from_le_bytes([c[at + 2 * k], c[at + 2 * k + 1]]);
+                        let be = |k: usize| i16::from_be_bytes([c[at + 2 * k], c[at + 2 * k + 1]]);
+                        if (le(0), le(5), le(6)) == (h, m, sec) || (be(0), be(5), be(6)) == (h, m, sec) {
+                            println!("  block {bi} (section {}) chunk {tag} at {at:#x} of {}: le {:?} be {:?}", b.section, c.len(), (0..10).map(le).collect::<Vec<_>>(), (0..10).map(be).collect::<Vec<_>>());
+                        }
+                    }
+                }
+            }
+            for at in 0..f.len().saturating_sub(14) {
+                let le = |k: usize| i16::from_le_bytes([f[at + 2 * k], f[at + 2 * k + 1]]);
+                let be = |k: usize| i16::from_be_bytes([f[at + 2 * k], f[at + 2 * k + 1]]);
+                if (le(0), le(5), le(6)) == (h, m, sec) {
+                    println!("  le at {at:#x}: {:?}", (0..12).map(le).collect::<Vec<_>>());
+                }
+                if (be(0), be(5), be(6)) == (h, m, sec) {
+                    println!("  be at {at:#x}: {:?}", (0..12).map(be).collect::<Vec<_>>());
+                }
+            }
+        }
+        "globalptrs" => {
+            // the pointers the log's global reads (scope 0) went through, by global (study)
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO globalptrs LOG");
+                return ExitCode::FAILURE;
+            };
+            let mut by: BTreeMap<i16, BTreeSet<u32>> = BTreeMap::new();
+            for s in &log.steps {
+                for l in s.lookups.iter().filter(|l| l.scope == 0) {
+                    by.entry(l.data).or_default().insert(l.ptr);
+                }
+            }
+            for (g, p) in &by {
+                println!("global {g}: {p:08x?}");
+            }
+        }
         "timeofday" => {
             // the logged time of day calls (study): distinct tables, and each call's clock and out
             let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
@@ -1973,7 +2023,7 @@ fn main() -> ExitCode {
             };
             let f = |v: u32| f32::from_bits(v);
             let tables: BTreeSet<&Vec<u32>> = log.times_of_day.iter().map(|t| &t.2).collect();
-            println!("calls {}, tables {}", log.times_of_day.len(), tables.len());
+            println!("calls {}, tables {}; the clock's places {:08x?}", log.times_of_day.len(), tables.len(), log.clock_places);
             for t in &tables {
                 for e in t.chunks(10) {
                     println!("  {} {:?}", e[0] as i32, e[1..].iter().map(|&v| f(v)).collect::<Vec<_>>());

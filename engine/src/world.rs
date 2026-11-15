@@ -216,8 +216,6 @@ pub struct World<'lib> {
     pub motives_run: bool,
     /// Scope 6.
     pub globals: Vec<i16>,
-    /// Passes run since the clock's minute last went up (`clock_pass`).
-    pub clock_passes: u32,
     /// Scope 34.
     pub neighbourhood: Vec<i16>,
     /// The neighbourhood's, in id order (read_neighbours).
@@ -244,7 +242,6 @@ impl<'lib> World<'lib> {
             hour: 12,
             motives_run: true,
             globals: Vec::new(),
-            clock_passes: 0,
             neighbourhood: Vec::new(),
             neighbours: Vec::new(),
             ad_range: Vec::new(),
@@ -586,23 +583,25 @@ impl<'lib> World<'lib> {
     }
 
     /// The next id: the lowest not in use (a removed object's id comes back first).
-    /// The clock after a tick's pass: a pass stopped at a dialog does not count; every 30 that
-    /// ran the minute (global 5) goes up, at 60 back to 0 and the hour (global 0) up. Measured:
-    /// the home log's minute rises after the 30th unstopped pass (tick 93, the passes of 22-83
+    /// The clock after a tick's pass (the original's 0x80237D18 and 0x80237D60): a pass stopped
+    /// at a dialog does not count; one that ran puts the second (global 6) up by 2, at 60 back to
+    /// 0 and the minute (global 5) up, at 60 back to 0 and the hour (global 0) up. Measured: the
+    /// home log's minute rises after the 30th unstopped pass (tick 93, the passes of 22-83
     /// stopped at the opening dialog), and stands still for the 2,864 stopped at the later one;
-    /// the club's every 30 ticks. (The day and midnight are not reached in the logs.)
+    /// the club's (from 18:15:24) at tick 18, then every 30. The time of day's light reads the
+    /// three (`light::time_of_day`). (The day and midnight are not reached in the logs.)
     pub fn clock_pass(&mut self, stopped: bool) {
         if stopped {
             return;
         }
-        self.clock_passes += 1;
-        if self.clock_passes < 30 {
+        if self.globals.len() <= 6 {
+            self.globals.resize(7, 0);
+        }
+        self.globals[6] += 2;
+        if self.globals[6] < 60 {
             return;
         }
-        self.clock_passes = 0;
-        if self.globals.len() <= 5 {
-            self.globals.resize(6, 0);
-        }
+        self.globals[6] = 0;
         self.globals[5] += 1;
         if self.globals[5] >= 60 {
             self.globals[5] = 0;
