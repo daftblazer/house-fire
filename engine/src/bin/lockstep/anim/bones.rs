@@ -155,6 +155,8 @@ fn bone_matrices(log: &Log) {
             // the mode word matters only if some node goes through its rest
             *counts.entry(format!("same ({}; pose {})", if rest { "mode word not 0" } else { "either mode word" }, if rank == 0 { "the latest" } else { "an earlier" })).or_default() += 1;
             *scales.entry(set.scale.to_bits()).or_default() += 1;
+            // the logged scale (+84) against the one found
+            *counts.entry(if set.scale == b.scale { "the found scale the logged one".into() } else { format!("the found scale not the logged one ({:e} vs {:e})", set.scale, b.scale) }).or_default() += 1;
         } else {
             different += 1;
             *counts.entry("DIFFERENT".into()).or_default() += 1;

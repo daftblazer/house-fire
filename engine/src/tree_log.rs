@@ -554,7 +554,7 @@ pub struct SkeletonRec {
     pub nodes: Vec<[u32; 45]>,
 }
 
-/// A controller's bones ('<', after Anim_ComputeMatrices 80158B60, the first 20,000 calls): the root matrix, the skeleton, and per node the final state and its matrix (16 words each).
+/// A controller's bones ('<', after Anim_ComputeMatrices 80158B60, the first 20,000 calls): the root matrix, the skeleton, and per node the final state and its matrix (16 words each), the controller's scale and mode word.
 #[derive(Clone, Debug, Default)]
 pub struct BonesRec {
     pub tick: u32,
@@ -563,6 +563,9 @@ pub struct BonesRec {
     pub skeleton: u32,
     pub states: Vec<[u32; 16]>,
     pub matrices: Vec<[u32; 16]>,
+    /// The controller's scale (+84) and mode word (+96).
+    pub scale: f32,
+    pub mode: u32,
 }
 
 /// A track speed set ('^', Anim_SetTrackSpeed 8015AB80): the controller, track id, speed, caller, the track found (0 if none) and the wrapper's caller.
@@ -1520,7 +1523,11 @@ pub fn read_log(path: &str) -> Option<Log> {
                     states.push(core::array::from_fn(|_| r.u32()));
                     matrices.push(core::array::from_fn(|_| r.u32()));
                 }
-                log.bones.push(BonesRec { tick: log.ticks, controller, root, skeleton, states, matrices });
+                if !r.has(8) {
+                    break;
+                }
+                let (scale, mode) = (f32::from_bits(r.u32()), r.u32());
+                log.bones.push(BonesRec { tick: log.ticks, controller, root, skeleton, states, matrices, scale, mode });
             }
             b'~' => {
                 if !r.has(4 * 7) {
