@@ -646,3 +646,15 @@ in the archive. The not-found name returns **true** at once, not false: the five
 "A2O-flamingo-kick" steps go their node's true way (the tick checks before could not tell).
 The event's value is not checked yet: it is not always local 0 (16 there at tick 164 where the
 note's value is 100). The log's result is still the one taken.
+Iteration 144: the tables. Operand byte 4 picks the name's table: 0 the tree's file's STR# 129,
+or, for a semi-global's tree (whose file has no names), the stack object's own file's; 1
+Global's STR# 129; 2 the Sim's file's; 3 Global's STR# 156, the adult list of 307 (157 is the
+same list for children, "c2o-..."). With them, 4,024 of the 4,032 Animate steps of home-a11.log
+are modelled. 4,024 answer natively as the log's (3,758 yields, 92 true, 174 false with an
+event) and 7 do not. The game's pause stops the Sims' plays: from tick 23 to 84 the Sims' speed
+updates ('#') are all 0 while the objects' tracks go on, and a play over it keeps its place
+(the replay takes those ticks from the log, like the fast-forward). The 7 left: one Sim's own
+pause (a 30-frame backward play lasting 45 ticks from 186; a per-Sim speed, the '#' record's
+owner to its Sim, still to map); a2o-sit-left after the long pause at 5065, with flag 0x40;
+one flag 0x10 call that returns false at once (tick 1791). On home-a10.log (no '#' records)
+9 differ.

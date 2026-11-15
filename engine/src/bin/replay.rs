@@ -262,6 +262,9 @@ struct AnimReplay {
     misses: BTreeMap<u32, BTreeSet<u32>>,
     animating: BTreeMap<u32, BTreeSet<u32>>,
     fast: BTreeSet<u32>,
+    /// The ticks of the game paused for the Sims: their speed updates all left at 0 (the
+    /// log's '#' records, like the fast-forward; The Sims 2's SAnimator2::Update).
+    paused: BTreeSet<u32>,
     tree_file: HashMap<TreeId, FileId>,
 }
 
@@ -278,6 +281,11 @@ impl AnimReplay {
                 frames.push((t.tick, t.after_steps));
             }
         }
+        let mut moving: BTreeMap<u32, bool> = BTreeMap::new();
+        for r in &log.speeds {
+            *moving.entry(r.tick).or_default() |= r.after != 0.0;
+        }
+        let paused = moving.into_iter().filter(|e| !e.1).map(|e| e.0).collect();
         let mut misses: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
         let mut loads = cat.loads();
         for q in log.loaded.iter().filter(|q| q.caller == 0x800A_C7E4) {
@@ -295,8 +303,15 @@ impl AnimReplay {
                 tree_file.insert(*t, FileId(k as u32));
             }
         }
+        if has("REPLAY_SHOW_SPEEDS") {
+            for t in [20u32, 22, 23, 24, 50, 84, 85, 86] {
+                let v: BTreeSet<(u32, u32, String)> = log.speeds.iter().filter(|r| r.tick == t).map(|r| (r.animator, r.owner, format!("{}->{}", r.before, r.after))).collect();
+                let tr: BTreeSet<String> = log.tracks.iter().filter(|r| r.tick == t).map(|r| format!("{:x}:{}", r.controller, r.speeds[1])).collect();
+                println!("  speeds tick {t}: {v:x?}; tracks {tr:?}");
+            }
+        }
         let m = cat.animator();
-        Some(AnimReplay { cat, m, frames, next: 0, misses, animating: BTreeMap::new(), fast, tree_file })
+        Some(AnimReplay { cat, m, frames, next: 0, misses, animating: BTreeMap::new(), fast, paused, tree_file })
     }
 
     /// The frames before log step `step`.
@@ -305,8 +320,9 @@ impl AnimReplay {
             let stopped = self.misses.get(&tick);
             let animating = self.animating.get(&tick);
             let fast = self.fast.contains(&tick);
+            let all_paused = self.paused.contains(&tick);
             self.m.frame(|sim| {
-                if stopped.is_some_and(|st| st.contains(&sim) || animating.is_some_and(|a| a.contains(&sim))) {
+                if all_paused || stopped.is_some_and(|st| st.contains(&sim) || animating.is_some_and(|a| a.contains(&sim))) {
                     0.0
                 } else if fast {
                     5.0
@@ -397,6 +413,11 @@ fn sync_variables(world: &mut World, counts: &mut Counts, shown: &mut Shown, me:
         note!(counts, "variables: scope {}: different (set to the log's)", v.scope);
         vars.set(v.scope as u8, v.data, v.value);
     }
+}
+
+/// True the first time `what` is asked.
+fn shown_once(shown: &mut Shown, what: &'static str) -> bool {
+    shown.next(what, 1)
 }
 
 /// Whether a native Animate answer differs from the log's step (for REPLAY_SHOW_ANIMATE).
@@ -596,14 +617,23 @@ impl Host for ReplayHost<'_, '_> {
             // with an event in local 0); the log's result taken
             ar.frames_to(self.step);
             ar.animating.entry(s.tick).or_default().insert(s.sim);
-            let file = match n.operand[4] {
-                0 => interp.top().tree.and_then(|t| ar.tree_file.get(&t).copied()),
-                1 => lib.global(),
-                2 => self.world.get(me).file,
-                _ => None,
+            // source 0 in a tree whose file has no names (a semi-global's): the stack object's
+            // own file
+            let stack_file = self.world.by_id().get(&interp.top().stack_object).and_then(|k| self.world.get(*k).file);
+            let tree_file = interp.top().tree.and_then(|t| ar.tree_file.get(&t).copied());
+            // the table (operand byte 4): 0 the tree's file's STR# 129 (the stack object's, for
+            // a semi-global's tree), 1 Global's, 2 the Sim's,
+            // 3 Global's STR# 156 (the adult list; 157 the child's)
+            let (file, table) = match n.operand[4] {
+                0 if tree_file.is_some_and(|f| lib.file(f).strings.get(&129).is_none_or(|t| t.iter().all(|x| x.is_empty()))) => (stack_file, 129),
+                0 => (tree_file, 129),
+                1 => (lib.global(), 129),
+                2 => (self.world.get(me).file, 129),
+                3 => (lib.global(), 156),
+                _ => (None, 129),
             };
             use housefire::anim::{Lookup, Poll};
-            let native = match ar.cat.lookup(lib, file, &n.operand) {
+            let native = match ar.cat.lookup(lib, file, table, &n.operand) {
                 Lookup::Found(id) => {
                     let a = &ar.cat.by_id[&id];
                     Some(ar.m.animate(s.sim, id, a, n.operand[5] & 2 != 0, n.operand[6] as i8 as i32, s.tick))
@@ -612,6 +642,29 @@ impl Host for ReplayHost<'_, '_> {
                 Lookup::Unknown => None,
             };
             let logged_true = s.result != 1 && s.after == n.true_target as u16;
+            if std::env::var("REPLAY_TRACE_ANIM_SIM").ok().is_some_and(|v| u32::from_str_radix(&v, 16).ok() == Some(s.sim)) && s.tick <= std::env::var("REPLAY_TRACE_ANIM_TO").ok().and_then(|v| v.parse().ok()).unwrap_or(u32::MAX) {
+                let st = ar.m.play(s.sim).map(|(id, p)| format!("{id:x} {p:?}"));
+                println!("  anim trace t {} step {} tree {} node {} op {:02x?} result {} after {} (t {} f {}): native {native:?}; play {}", s.tick, self.step, s.tree, s.node, n.operand, s.result, s.after, n.true_target, n.false_target, st.map(|x| x.chars().take(200).collect::<String>()).unwrap_or_default());
+            }
+            if native.is_none() && has("REPLAY_SHOW_ANIMATE_UNKNOWN") {
+                let raw = file.and_then(|f| lib.file(f).strings.get(&table)).and_then(|t| t.get(n.operand16(0) as usize)).cloned();
+                note!(self.counts, "study animate unknown: source {} flags {:#04x} file {:?} name {:?} operand {:02x?}", n.operand[4], n.operand[5], file.map(|f| lib.file(f).path.rsplit('/').next().unwrap_or("").to_string()), raw, n.operand);
+                if n.operand[4] == 3 && shown_once(&mut self.shown, "anim tables") {
+                    for (k, f) in [("global", lib.global()), ("me", self.world.get(me).file), ("stack", file)] {
+                        if let Some(f) = f {
+                            let t: Vec<_> = lib.file(f).strings.iter().filter(|(_, v)| v.iter().any(|x| x.to_ascii_lowercase().contains("a2o") || x.contains(".max") || x.to_ascii_lowercase().starts_with("a-") || x.to_ascii_lowercase().starts_with("a2a"))).map(|(id, v)| (*id, v.len(), v.first().cloned())).collect();
+                            println!("  anim tables of {k} {}: {t:?}", lib.file(f).path);
+                            if k == "global" {
+                                for tb in [130u16, 156, 157] {
+                                    let v = lib.file(f).strings.get(&tb);
+                                    let at: Vec<_> = [0x0a, 0x0b, 0x14, 0x19, 0x24, 0x39, 0x48, 0x49, 0xbb, 0x11a, 0x11c].iter().map(|&i| v.and_then(|v| v.get(i)).cloned()).collect();
+                                    println!("    STR# {tb}: {at:?}");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             self.counts.note(match native {
                 None => "primitives: Animate: not modelled (no archive animation), the log's",
                 Some(Poll::Pending) if s.result == 1 => "primitives: Animate: yields natively as the log's",
@@ -620,8 +673,8 @@ impl Host for ReplayHost<'_, '_> {
                 _ => "primitives: Animate: DIFFERENT (the log's taken)",
             });
             if has("REPLAY_SHOW_ANIMATE") && native.is_some() && animate_differs(&native, s, logged_true) {
-                let name = file.and_then(|f| lib.file(f).strings.get(&129).map(|t| (lib.file(f).path.clone(), t.get(n.operand16(0) as usize).cloned())));
-                println!("animate different: tick {} sim {:x} tree {} node {} result {} local0 {:?}: native {native:?}; source {} {name:?}; targets {} {}", s.tick, s.sim, s.tree, s.node, s.result, s.locals_after.first(), n.operand[4], n.true_target, n.false_target);
+                let name = file.and_then(|f| lib.file(f).strings.get(&table).map(|t| (lib.file(f).path.rsplit('/').next().unwrap_or("").to_string(), t.get(n.operand16(0) as usize).map(|p| p.rsplit('\\').next().unwrap_or("").to_string()))));
+                println!("animate different: tick {} sim {:x} tree {} node {} result {} local0 {:?}: native {native:?}; source {} {name:?}; targets {} {}; operand {:02x?}", s.tick, s.sim, s.tree, s.node, s.result, s.locals_after.first(), n.operand[4], n.true_target, n.false_target, n.operand);
             }
             return self.logged(s, n);
         }

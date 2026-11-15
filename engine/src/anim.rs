@@ -232,7 +232,7 @@ impl Play {
         }
     }
 
-    /// Whether the play has been asked to its end (true given).
+    /// Whether the play is over (true given, or its last event given past its end).
     pub fn finished(&self) -> bool {
         self.done
     }
@@ -254,12 +254,17 @@ impl Play {
                 break;
             }
             self.next += 1;
-            if value > 99 {
-                return Poll::Event(value);
-            }
             let e = self.expected();
-            if (0..self.wanted).contains(&e) && value == e {
-                self.counted += 1;
+            let given = value > 99 || ((0..self.wanted).contains(&e) && value == e);
+            if given {
+                if value <= 99 {
+                    self.counted += 1;
+                }
+                // its last note given past its end, nothing owed: the play is over (the next
+                // call starts it anew)
+                if self.next >= self.notes.len() && self.place > self.last + EPS && self.counted >= self.wanted {
+                    self.done = true;
+                }
                 return Poll::Event(value);
             }
         }
@@ -307,6 +312,11 @@ impl Animator {
             self.plays.insert(sim, (id, play, anim.rate));
         }
         self.plays.get_mut(&sim).map_or(Poll::Pending, |p| p.1.poll())
+    }
+
+    /// `sim`'s play: its animation's id and the play.
+    pub fn play(&self, sim: u32) -> Option<(u32, &Play)> {
+        self.plays.get(&sim).map(|p| (p.0, &p.1))
     }
 
     /// A frame: every play steps by 0.033 s × its rate × its Sim's `speed` this frame.
@@ -369,14 +379,14 @@ impl Catalog {
         Loads::with_sets(&refs, &ids)
     }
 
-    /// The animation of an Animate `operand` whose table is `file`'s (bytes 0-1 the index;
-    /// byte 5's 0x04 no name).
-    pub fn lookup(&self, lib: &crate::library::Library, file: Option<crate::FileId>, operand: &[u8; 8]) -> Lookup {
+    /// The animation of an Animate `operand` whose table is `file`'s STR# `table` (bytes 0-1
+    /// the index; byte 5's 0x04 no name).
+    pub fn lookup(&self, lib: &crate::library::Library, file: Option<crate::FileId>, table: u16, operand: &[u8; 8]) -> Lookup {
         if operand[5] & 4 != 0 {
             return Lookup::Unknown;
         }
         let index = u16::from_le_bytes([operand[0], operand[1]]) as usize;
-        let Some(path) = file.and_then(|f| lib.file(f).strings.get(&129)).and_then(|t| t.get(index)) else { return Lookup::Unknown };
+        let Some(path) = file.and_then(|f| lib.file(f).strings.get(&table)).and_then(|t| t.get(index)) else { return Lookup::Unknown };
         let base = path.rsplit(['\\', '/']).next().unwrap_or("").trim_end_matches(".max").trim_end_matches(".MAX");
         match self.exact.get(base) {
             Some(id) => Lookup::Found(*id),
