@@ -1528,3 +1528,13 @@ now matches 58,447 of the 58,944 Sim track records on home-a19.log. Left:
 - 31 idle transitions.
 - 3 of an eat loop.
 - 22 short holds at 0.
+The animator's speed in the log's order (iteration 171). Drive each Sim's `SimAnimator` from its
+own speed records ('#', the owner + 0x350, at their place in the log) instead of the objects'
+controllers. Then all 58,944 Sim track records on home-a19.log have the right +72, including
+the 441 at game speed changes, the idle transitions and the short holds. The 17,759 records
+change only:
+- at the game speed changes: pause 1-2, 23-85 and 2048-4912, fast-forward 426-567;
+- on one-tick dips to 0 for a single Sim, at 18, 208, 994, 1007, 1208, 1418, 1553, 1618, 1632,
+  1700, 5013, 5026 and others. These are the ticks its Animate's load misses (iteration 162):
+  the animator stops while its animation loads.
+So a Sim's animator speed is the game speed, and 0 on a tick its Animate waits on a load.

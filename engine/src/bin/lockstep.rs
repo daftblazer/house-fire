@@ -1631,18 +1631,25 @@ fn main() -> ExitCode {
                 let mut model: BTreeMap<String, usize> = BTreeMap::new();
                 let mut cur_frame = u32::MAX;
                 let mut g_now = 1.0f32;
+                let mut hi = 0;
                 for t in log.tracks.iter().filter(|t| t.tick != 0) {
                     if t.frame != cur_frame {
                         cur_frame = t.frame;
                         if let Some(g) = game.get(&t.frame).filter(|g| g.len() == 1) {
                             g_now = f32::from_bits(*g.iter().next().unwrap());
                         }
-                        for (c, a) in anim_of.iter_mut() {
-                            if a.follow(g_now) {
+                    }
+                    // the animator's speed as the game sets it ('#', in the log's order)
+                    while let Some(sp) = log.speeds.get(hi).filter(|sp| sp.tick < t.tick || (sp.tick == t.tick && sp.after_steps <= t.after_steps)) {
+                        hi += 1;
+                        let c = sp.owner.wrapping_add(0x350);
+                        let a = anim_of.entry(c).or_insert_with(|| housefire::anim::SimAnimator { speed: sp.before });
+                        {
+                            if a.follow(sp.after) {
                                 // the slot tracks: the Sim's tracks stepped in the last frames, but the face
                                 for (k, (id, f)) in &seen {
                                     let face = by_id.get(id).is_some_and(|x| x.name == "happyFace");
-                                    if k.0 == *c && !face && *f <= cur_frame {
+                                    if k.0 == c && !face && *f <= cur_frame {
                                         spd.insert(*k, a.speed);
                                     }
                                 }
@@ -1686,6 +1693,7 @@ fn main() -> ExitCode {
                     *model.entry(k).or_default() += 1;
                 }
                 println!("Sims' track speeds from the engine's animator: {model:?}");
+                println!("  the animators' speed changes (of {} records): {:?}", log.speeds.len(), log.speeds.iter().filter(|sp| sp.before != sp.after).map(|sp| (sp.tick, sp.owner.wrapping_add(0x350) & 0xfffff, sp.before, sp.after)).collect::<Vec<_>>());
                 // the Sims' still tracks against the game speed that frame (the objects' +80)
                 let mut still: BTreeMap<String, usize> = BTreeMap::new();
                 for t in log.tracks.iter().filter(|t| t.tick != 0 && sim_of.contains_key(&t.controller)) {
