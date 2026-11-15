@@ -513,9 +513,22 @@ pub fn wrap_back(mut place: f32, last: f32) -> f32 {
 /// m = lerp(w1, w2), then lerp(lerp(w0, m), lerp(m, w3)), normalized. The length is the game's:
 /// y*y, then x, z and w fused in, each rounded to single; then 1/length times each component.
 pub fn rotation_window(w: [[f32; 4]; 4], t: f32) -> [f32; 4] {
-    let lerp = |a: [f32; 4], b: [f32; 4]| core::array::from_fn::<f32, 4, _>(|i| a[i] + (b[i] - a[i]) * t);
+    let lerp = |a: [f32; 4], b: [f32; 4]| quat_lerp(a, b, t);
     let m = lerp(w[1], w[2]);
-    let v = lerp(lerp(w[0], m), lerp(m, w[3]));
+    normalize_quat(lerp(lerp(w[0], m), lerp(m, w[3])))
+}
+
+/// The rotation stream's blend (fn_801B5F48, mode 1, after a jump): lerp(w0, w3, t) normalized
+/// as the window is.
+pub fn rotation_blend(w: [[f32; 4]; 4], t: f32) -> [f32; 4] {
+    normalize_quat(quat_lerp(w[0], w[3], t))
+}
+
+fn quat_lerp(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
+    core::array::from_fn(|i| a[i] + (b[i] - a[i]) * t)
+}
+
+fn normalize_quat(v: [f32; 4]) -> [f32; 4] {
     let fused = |a: f32, acc: f32| (a as f64).mul_add(a as f64, acc as f64) as f32;
     let length = fused(v[3], fused(v[2], fused(v[0], v[1] * v[1]))).sqrt();
     if length == 0.0 {
@@ -1006,6 +1019,7 @@ mod tests {
         let x = [1.0, 0.0, 0.0, 0.0];
         assert_eq!(rotation_window([id, id, x, x], 0.0), id);
         assert_eq!(rotation_window([id, id, x, x], 1.0), x);
+        assert_eq!(rotation_blend([id, x, x, x], 1.0), x);
         let mid = rotation_window([id, id, x, x], 0.5);
         assert!((mid[0] - mid[3]).abs() < 1e-6 && (mid[0] * mid[0] + mid[3] * mid[3] - 1.0).abs() < 1e-6);
     }

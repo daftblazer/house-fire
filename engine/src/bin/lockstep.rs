@@ -1706,15 +1706,15 @@ fn main() -> ExitCode {
                     println!("rotation reads: {} of {} streams, in a track's pose {}; by mode and result length {lens:?}", r.len(), streams.len(), r.iter().filter(|x| x.track.is_some()).count());
                     // the window's evaluation (`anim::rotation_window`, t from the window's times)
                     let mut exact: BTreeMap<String, usize> = BTreeMap::new();
-                    for x in r.iter().filter(|x| x.mode == 0) {
+                    for x in r {
                         let (k0, k1) = (x.head[2] as i32 as f32, x.head[3] as i32 as f32);
                         let t = (x.place - k0) / (k1 - k0);
                         let w: [[f32; 4]; 4] = core::array::from_fn(|i| core::array::from_fn(|j| f32::from_bits(x.window[4 * i + j])));
-                        let v = housefire::anim::rotation_window(w, t);
+                        let v = if x.mode == 0 { housefire::anim::rotation_window(w, t) } else { housefire::anim::rotation_blend(w, t) };
                         let same = (0..4).all(|i| v[i].to_bits() == x.result[i].to_bits());
-                        *exact.entry(if same { "the same to the bit".into() } else { format!("DIFFERENT (window {k0}..{k1})") }).or_default() += 1;
+                        *exact.entry(format!("mode {}: {}", x.mode, if same { "the same to the bit" } else { "DIFFERENT" })).or_default() += 1;
                     }
-                    println!("  mode 0 rotation reads from the window alone: {exact:?}");
+                    println!("  rotation reads from the window alone: {exact:?}");
                     for x in r.iter().step_by((r.len() / 4).max(1)).take(4) {
                         println!("  rot read tick {} place {} head {:08x?} mode {} window {:08x?} result {:?}", x.tick, x.place, x.head, x.mode, x.window, x.result);
                     }

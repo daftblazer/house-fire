@@ -1619,3 +1619,7 @@ sqrt (fn_8010DF80), k = 1 / length (802C35B4 = 1.0), and each component times k 
 length leaves it as is). `anim::rotation_window` gives all 294,193 mode-0 reads on
 home-a23.log to the bit. A plain slerp, nlerp, squad or Bezier matched at best 21%, and a
 division instead of 1/length times only half. Mode 1, the blend, starts from w3 - w0.
+The rotation blend (iteration 180). Mode 1 (after a jump, as for the vec3 streams) is
+lerp(w0, w3, t), normalized the same way as the window (fn_801B5320 scales the difference by t
+in single operations). `anim::rotation_blend` gives all 5,807 mode-1 reads on home-a23.log
+to the bit. With `rotation_window`, every one of the 300,000 rotation reads is the game's.
