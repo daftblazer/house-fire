@@ -1423,6 +1423,114 @@ fn main() -> ExitCode {
                     native.insert(key, (t.frame, after));
                 }
                 println!("plays run natively from their first frame: {run_tally:?}");
+                // the controller's speed (+80) against the animators' speed updates ('#'): which
+                // record (animator or owner the controller) and which value
+                let mut last_speed: HashMap<u32, (f32, f32)> = HashMap::new();
+                let mut si = 0;
+                let mut ctl_tally: BTreeMap<String, usize> = BTreeMap::new();
+                let mut cand: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
+                for t in log.tracks.iter().filter(|t| t.tick != 0) {
+                    while let Some(sp) = log.speeds.get(si).filter(|sp| sp.tick < t.tick || (sp.tick == t.tick && sp.after_steps <= t.after_steps)) {
+                        last_speed.insert(sp.animator, (sp.before, sp.after));
+                        last_speed.insert(sp.owner | 1, (sp.before, sp.after));
+                        si += 1;
+                    }
+                    let c80 = t.speeds[2];
+                    let fits: BTreeSet<u32> = last_speed.iter().filter(|(k, v)| *k & 1 == 0 && v.1 == c80).map(|(k, _)| *k).collect();
+                    let e = cand.entry(t.controller).or_insert_with(|| fits.clone());
+                    *e = e.intersection(&fits).copied().collect();
+                    *ctl_tally.entry(format!("ctl80 {c80}")).or_default() += 1;
+                }
+                // per frame: the controllers' +80 values, and the tracks' +72 values
+                let mut per_frame: BTreeMap<u32, (BTreeSet<u32>, BTreeSet<u32>)> = BTreeMap::new();
+                for t in log.tracks.iter().filter(|t| t.tick != 0) {
+                    let e = per_frame.entry(t.frame).or_default();
+                    e.0.insert(t.speeds[2].to_bits());
+                    e.1.insert(t.speeds[1].to_bits());
+                }
+                let mut kinds: BTreeMap<String, usize> = BTreeMap::new();
+                for (c80s, s72s) in per_frame.values() {
+                    let f = |v: &BTreeSet<u32>| v.iter().map(|b| f32::from_bits(*b)).collect::<Vec<_>>();
+                    *kinds.entry(format!("ctl80 {:?} / +72 {:?}", f(c80s), f(s72s))).or_default() += 1;
+                }
+                println!("frames by speed values: {kinds:?}");
+                // a controller's +80 over time: its runs of one value (value, frames)
+                let mut by_ctl: BTreeMap<u32, Vec<(u32, u32, u32)>> = BTreeMap::new();
+                for t in log.tracks.iter().filter(|t| t.tick != 0) {
+                    let v = by_ctl.entry(t.controller).or_default();
+                    match v.last_mut() {
+                        Some(l) if l.0 == t.speeds[2].to_bits() => l.2 = t.tick,
+                        _ => v.push((t.speeds[2].to_bits(), t.tick, t.tick)),
+                    }
+                }
+                for (c, v) in by_ctl.iter().take(6) {
+                    println!("  controller {c:x} +80 spans: {:?}", v.iter().take(10).map(|x| (f32::from_bits(x.0), x.1, x.2)).collect::<Vec<_>>());
+                }
+                let _ = &cand;
+                // the game speed a frame: the objects' controllers' +80 (all the same); the Sims'
+                // controllers (ctl_of) hold 1 at +80 and carry it in the track speed +72
+                let sims: BTreeSet<u32> = ctl_of.values().flatten().copied().collect();
+                let mut game: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
+                for t in log.tracks.iter().filter(|t| t.tick != 0 && !sims.contains(&t.controller)) {
+                    game.entry(t.frame).or_default().insert(t.speeds[2].to_bits());
+                }
+                let mut rule: BTreeMap<String, usize> = BTreeMap::new();
+                for t in log.tracks.iter().filter(|t| t.tick != 0) {
+                    let Some(g) = game.get(&t.frame).filter(|g| g.len() == 1).map(|g| f32::from_bits(*g.iter().next().unwrap())) else {
+                        *rule.entry("frame without one game speed".into()).or_default() += 1;
+                        continue;
+                    };
+                    let what = if sims.contains(&t.controller) {
+                        format!("Sim: +80 {}, +72 {}", if t.speeds[2] == 1.0 { "1" } else { "OTHER" }, if t.speeds[1] == g { "the game speed" } else if t.speeds[1] == -g { "minus the game speed" } else if t.speeds[1] == 0.0 { "0 (game speed not)" } else { "OTHER" })
+                    } else {
+                        format!("object: +80 the game speed, +72 {}", t.speeds[1])
+                    };
+                    *rule.entry(what).or_default() += 1;
+                }
+                println!("speeds by the game speed: {rule:?}");
+                // a Sim's +72 against its animator's last speed ('#', owner the Sim)
+                let sim_of: HashMap<u32, u32> = ctl_of.iter().filter(|(_, c)| c.len() == 1).map(|(sim, c)| (*c.iter().next().unwrap(), *sim)).collect();
+                let mut last: HashMap<u32, f32> = HashMap::new();
+                let mut si = 0;
+                let mut sim_rule: BTreeMap<String, usize> = BTreeMap::new();
+                for t in log.tracks.iter().filter(|t| t.tick != 0) {
+                    while let Some(sp) = log.speeds.get(si).filter(|sp| sp.tick < t.tick || (sp.tick == t.tick && sp.after_steps <= t.after_steps)) {
+                        // (the animator's owner is the controller's object, 0x350 before it)
+                        last.insert(sp.owner.wrapping_add(0x350), sp.after);
+                        si += 1;
+                    }
+                    if !sim_of.contains_key(&t.controller) {
+                        continue;
+                    }
+                    let what = match last.get(&t.controller) {
+                        None => "no speed record for the Sim yet".to_string(),
+                        Some(v) if t.speeds[1].abs() == *v => "|+72| the Sim's animator speed".to_string(),
+                        Some(v) => format!("OTHER (+72 {}, animator {v})", t.speeds[1]),
+                    };
+                    *sim_rule.entry(what).or_default() += 1;
+                }
+                println!("Sims' track speeds by their animators: {sim_rule:?}");
+                // the zeros: a track held still its whole play, or stopped part of it
+                let mut plays_z: HashMap<(u32, u32, u32), (usize, usize)> = HashMap::new();
+                for t in log.tracks.iter().filter(|t| t.tick != 0 && sim_of.contains_key(&t.controller)) {
+                    let e = plays_z.entry((t.track, t.head[1], t.ran[1])).or_default();
+                    e.0 += 1;
+                    if t.speeds[1] == 0.0 {
+                        e.1 += 1;
+                    }
+                }
+                let mut zt: BTreeMap<String, usize> = BTreeMap::new();
+                for (k, (n, z)) in &plays_z {
+                    if *z == 0 {
+                        continue;
+                    }
+                    let name = by_id.get(&k.1).map(|a| a.name.clone()).unwrap_or_default();
+                    *zt.entry(format!("{} ({name})", if z == n { "held its whole play" } else { "stopped part of its play" })).or_default() += z;
+                }
+                println!("Sims' tracks at +72 0: {zt:?}");
+                let pairs: BTreeSet<(u32, u32)> = log.speeds.iter().map(|sp| (sp.animator, sp.owner)).collect();
+                println!("  speed records' (animator, owner): {:x?}; Sims {:x?}", pairs.iter().take(8).collect::<Vec<_>>(), sim_of);
+                println!("controller speeds: {ctl_tally:?}");
                 let one = ctl_of.values().filter(|c| c.len() == 1).count();
                 println!("animate runs to their tracks (by animation id): {tally:?}; Sims on one controller {one} of {}", ctl_of.len());
             }

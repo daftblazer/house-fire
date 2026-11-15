@@ -1447,3 +1447,14 @@ frames and end mode, and the logged speeds (+72 and the controller's +80). On ho
 at its last frame when it runs backward (12). It keeps its place over 1 or 2 frames without a
 step (47). One controller can hold the same animation on two tracks at once, so a play is keyed
 by its track too.
+A track's speeds (iteration 164). On home-a17.log:
+- The objects' controllers hold the game speed at +80: 1, 0 paused (ticks 23-84, 2048-4911,
+  from 5630) or 5 in fast-forward (426-563, the span with a frame every fourth tick). It is the
+  same for every object controller in a frame. Their tracks' +72 is 1 (or 0 for 463 records of
+  still tracks).
+- The two Sims' controllers hold 1 at +80. Their tracks' +72 is their animator's speed (the '#'
+  records, the animator's owner being the controller - 0x350): the same in magnitude on 52,379
+  of 58,944 records, negative on backward plays.
+- The other 6,565 Sim records hold +72 at 0: happyFace held its whole play, and walking,
+  standing, carrying and sitting loops stopped for part of theirs.
+Where the hold and the stop come from is the next question.
