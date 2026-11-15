@@ -13,6 +13,9 @@ struct Play {
     at: usize,
     anim: u32,
     flags: Option<u32>,
+    /// Where in the log the play began: the last step that found the track at place 0 (a new
+    /// play builds its streams anew).
+    began: usize,
 }
 
 pub fn poses(log: &housefire::tree_log::Log, d: &Disc) {
@@ -20,9 +23,14 @@ pub fn poses(log: &housefire::tree_log::Log, d: &Disc) {
     let by_id: BTreeMap<u32, Anim> = housefire::arc::entries(&anims).unwrap_or_default().iter().filter_map(|e| Some((e.id, housefire::anim::read(housefire::arc::bytes(&anims, e))?))).collect();
     let mut plays: HashMap<u32, Vec<Play>> = HashMap::new();
     for t in &log.tracks {
-        plays.entry(t.track).or_default().push(Play { at: t.at, anim: t.head[1], flags: t.end.map(|e| e.1) });
+        let v = plays.entry(t.track).or_default();
+        let began = match v.last() {
+            Some(last) if t.place[0] != 0.0 && last.anim == t.head[1] => last.began,
+            _ => t.at,
+        };
+        v.push(Play { at: t.at, anim: t.head[1], flags: t.end.map(|e| e.1), began });
     }
-    let mut streams: HashMap<(u32, u32), TrackStreams> = HashMap::new();
+    let mut streams: HashMap<(u32, usize), TrackStreams> = HashMap::new();
     let mut next = 0;
     let mut tally: BTreeMap<String, usize> = BTreeMap::new();
     let mut shown = 0;
@@ -44,7 +52,7 @@ pub fn poses(log: &housefire::tree_log::Log, d: &Disc) {
         }
         let layer = play.flags.map(|f| f & 0x100 != 0);
         let mut known = Vec::new();
-        let ts = streams.entry((p.track, play.anim)).or_insert_with(|| TrackStreams::new(anim));
+        let ts = streams.entry((p.track, play.began)).or_insert_with(|| TrackStreams::new(anim));
         for i in 0..rec.before.len() {
             let (before, after) = (&rec.before[i], &rec.after[i]);
             if before == after {
