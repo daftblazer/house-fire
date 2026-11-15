@@ -597,6 +597,16 @@ pub struct SkinVerticesRec {
     pub sent: Vec<u8>,
 }
 
+/// A Sim dressed ('?', after Sim_SetModels 800591CC): the Sim, its description's address and first 16 words (0 when not reachable), and the Sim's words +1020..+1440 (106: the model part slots among them, +1092..+1128 the parts' name hashes).
+#[derive(Clone, Debug)]
+pub struct SimDressRec {
+    pub tick: u32,
+    pub sim: u32,
+    pub description: u32,
+    pub description_words: [u32; 16],
+    pub sim_words: Vec<u32>,
+}
+
 /// A track speed set ('^', Anim_SetTrackSpeed 8015AB80): the controller, track id, speed, caller, the track found (0 if none) and the wrapper's caller.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SpeedSetRec {
@@ -809,6 +819,7 @@ pub struct Log {
     pub skeletons: Vec<SkeletonRec>,
     pub bones: Vec<BonesRec>,
     pub skins: Vec<SkinRec>,
+    pub dressed: Vec<SimDressRec>,
     pub skin_vertices: Vec<SkinVerticesRec>,
     pub scalar_streams: Vec<ScalarStreamRec>,
     pub res_asks: Vec<ResAskRec>,
@@ -1596,6 +1607,15 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let sent = take(&mut r, sent_len);
                 let skin = log.skins.len().saturating_sub(1);
                 log.skin_vertices.push(SkinVerticesRec { skin, count, flags, heaviest, positions, weights, normals, sent });
+            }
+            b'?' => {
+                if !r.has(4 * (2 + 16 + 106)) {
+                    break;
+                }
+                let (sim, description) = (r.u32(), r.u32());
+                let description_words = core::array::from_fn(|_| r.u32());
+                let sim_words = (0..106).map(|_| r.u32()).collect();
+                log.dressed.push(SimDressRec { tick: log.ticks, sim, description, description_words, sim_words });
             }
             b'~' => {
                 if !r.has(4 * 7) {

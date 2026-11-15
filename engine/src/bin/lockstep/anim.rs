@@ -3,6 +3,7 @@
 mod bones;
 mod draws;
 mod flags;
+mod outfits;
 mod loads;
 mod poses;
 mod rotations;
@@ -13,6 +14,7 @@ mod streams;
 pub use bones::bones;
 pub use draws::draws;
 pub use flags::flags;
+pub use outfits::outfits;
 pub use loads::loads;
 pub use poses::poses;
 pub use rotations::rotations;

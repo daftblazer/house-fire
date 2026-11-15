@@ -1646,6 +1646,21 @@ fn main() -> ExitCode {
                 *ask_by.entry(l.caller).or_default() += 1;
             }
             println!("IsLoaded asks by caller {ask_by:x?}");
+            // the asks that name a models.arc entry: by kind and caller, with a few names (the
+            // Sims' parts are models: which code asks for them)
+            let models = d.read("models.arc").unwrap_or_default();
+            let model_names: BTreeMap<u32, String> = arc::entries(&models).unwrap_or_default().into_iter().map(|e| (e.id, e.name)).collect();
+            let mut model_by: BTreeMap<(u8, u32), (usize, BTreeSet<String>)> = BTreeMap::new();
+            for q in log.res_asks.iter().filter(|q| model_names.contains_key(&q.id)) {
+                let e = model_by.entry((q.kind, q.caller)).or_default();
+                e.0 += 1;
+                if e.1.len() < 8 {
+                    e.1.insert(model_names[&q.id].clone());
+                }
+            }
+            for ((k, c), (n, some)) in &model_by {
+                println!("models: kind {k} from {c:08x}: {n} asks, e.g. {some:?}");
+            }
             if let Ok(set) = std::env::var("ASSETS_RES_DATASET") {
                 // each animation's first load ask against its being in the dataset
                 let ds = d.read("datasets.arc").unwrap_or_default();
