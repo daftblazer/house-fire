@@ -32,63 +32,78 @@ pub fn poses(log: &housefire::tree_log::Log, d: &Disc) {
     }
     let mut streams: HashMap<(u32, usize), TrackStreams> = HashMap::new();
     let mut next = 0;
-    let mut tally: BTreeMap<String, usize> = BTreeMap::new();
-    let mut shown = 0;
+    // line 1: the weight-1 copies (poses where a node's state became its local pose), and
+    // line 2: every node's fold, by kind
+    let (mut copy_poses, mut copy_nodes, mut copy_different) = (0, 0, 0);
+    let mut folds: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut skipped: BTreeMap<String, usize> = BTreeMap::new();
+    let (mut root_flagged, mut records, mut shown) = (0, 0, 0);
     for p in &log.poses {
         let Some(rec) = log.node_states.get(next).filter(|r| r.tick == p.tick && r.track.is_some_and(|(t, pl)| t == p.track && pl.to_bits() == p.place.to_bits())) else {
-            *tally.entry("pose without a record".into()).or_default() += 1;
+            *skipped.entry("pose without a record (after the log's first 40,000)".into()).or_default() += 1;
             continue;
         };
         next += 1;
         // the track's play: the last step before the pose
         let play = plays.get(&p.track).and_then(|v| v.iter().rev().find(|x| x.at < p.at)).copied();
         let Some((play, anim)) = play.and_then(|x| Some((x, by_id.get(&x.anim)?))) else {
-            *tally.entry("track's animation not found".into()).or_default() += 1;
+            *skipped.entry("nodes of a track whose animation the log does not name".into()).or_default() += rec.before.len();
             continue;
         };
         if anim.nodes.len() != rec.before.len() {
-            *tally.entry("node count differs".into()).or_default() += 1;
+            *skipped.entry("nodes of a pose whose count is not its animation's".into()).or_default() += rec.before.len();
             continue;
         }
+        records += 1;
         let layer = play.flags.map(|f| f & 0x100 != 0);
         let mut known = Vec::new();
         let ts = streams.entry((p.track, play.began)).or_insert_with(|| TrackStreams::new(anim));
+        // each node's fold: Skip for one no fold gives, None for one not changed or not made
+        let mut found: Vec<Option<Fold>> = Vec::with_capacity(rec.before.len());
         for i in 0..rec.before.len() {
             let (before, after) = (&rec.before[i], &rec.after[i]);
             if before == after {
-                *tally.entry("unchanged".into()).or_default() += 1;
+                *folds.entry("weight 0 (the state unchanged)").or_default() += 1;
+                found.push(None);
                 continue;
             }
             let local = match ts.local(anim, i, p.place, before[0]) {
                 Ok(l) => l,
-                Err(u) => {
-                    *tally.entry(format!("unsupported {u:?}")).or_default() += 1;
+                Err(pose::Unsupported::ScalarStream) => {
+                    *folds.entry("unsupported channel (a scalar stream)").or_default() += 1;
+                    found.push(None);
                     continue;
                 }
             };
-            let state = Pose::from_words(before);
-            let what = match explain(&state, &local, after, layer, &mut known) {
-                Some(Fold::Copy) => "copy",
+            if i == 0 && play.flags.is_some_and(|f| f & 7 != 0) {
+                root_flagged += 1;
+            }
+            let fold = explain(&Pose::from_words(before), &local, after, layer, &mut known);
+            let kind = match fold {
+                Some(Fold::Copy) => "copy (weight 1)",
                 Some(Fold::Blend(_)) => "blend",
                 Some(Fold::Layer(_)) => "layer",
-                Some(Fold::Skip) => "skip",
-                None => "DIFFERENT",
+                _ => "DIFFERENT",
             };
-            if what == "DIFFERENT" && local.to_words()[1..] == after[1..] {
-                *tally.entry(format!("  flags only: before {:x} local {:x} after {:x} node0 {}", before[0], local.flags, after[0], i == 0)).or_default() += 1;
-            }
-            if what == "DIFFERENT" {
-                let mask: String = (0..16).map(|k| if local.to_words()[k] == after[k] { '.' } else { 'x' }).collect();
-                *tally.entry(format!("  different: node0 {} layer {layer:?} words {mask}", i == 0)).or_default() += 1;
-            }
-            if what == "DIFFERENT" && shown < 12 {
+            *folds.entry(kind).or_default() += 1;
+            if fold.is_none() && shown < 6 {
                 shown += 1;
-                println!("  tick {} node {i} anim {} place {} layer {layer:?}: local {:x?}\n    before {before:x?}\n    after  {after:x?}", rec.tick, anim.name, p.place, local.to_words());
+                println!("  tick {} node {i} anim {} place {} layer {layer:?} known weights {known:?}: local {:x?}\n    before {before:x?}\n    after  {after:x?}", rec.tick, anim.name, p.place, local.to_words());
             }
-            *tally.entry(what.to_string()).or_default() += 1;
+            found.push(fold.or(Some(Fold::Skip)));
+        }
+        // a pose where some node's state became its local pose has weight 1: every node it
+        // changed should have, bar the nodes' own weights (+152)
+        if found.contains(&Some(Fold::Copy)) {
+            copy_poses += 1;
+            copy_nodes += found.iter().filter(|f| **f == Some(Fold::Copy)).count();
+            copy_different += found.iter().filter(|f| **f == Some(Fold::Skip)).count();
         }
     }
-    println!("{tally:?}");
+    let different = folds.get("DIFFERENT").copied().unwrap_or(0);
+    println!("local poses from the channels (the weight-1 copies, {copy_nodes} nodes in {copy_poses} poses; a node of such a pose that no fold gives counts): DIFFERENT -> {copy_different}");
+    println!("node states after the pose ({records} poses, every node, all 16 words, the weights found from the states: not logged): DIFFERENT -> {different}; {folds:?}");
+    println!("  root-node fix (track flags bits 0 to 2 set on the pose's node 0, values not logged): {root_flagged} nodes; not compared: {skipped:?}");
 }
 
 /// The weights a node's before, local pose and after allow (the weights are not logged): each
@@ -144,10 +159,10 @@ fn explain(state: &Pose, local: &Pose, after: &[u32; 16], layer: Option<bool>, k
     let same = |f: &Fold| pose::fold(state, local, *f).to_words() == *after;
     let tried = known.iter().flat_map(|w| [Fold::Blend(*w), Fold::Layer(*w)]).filter(wanted).find(same);
     let found = tried.or_else(|| weights(state, local, &want).into_iter().flat_map(|w| [Fold::Blend(w), Fold::Layer(w)]).filter(wanted).find(same));
-    if let Some(Fold::Blend(w) | Fold::Layer(w)) = found {
-        if !known.contains(&w) {
-            known.push(w);
-        }
+    if let Some(Fold::Blend(w) | Fold::Layer(w)) = found
+        && !known.contains(&w)
+    {
+        known.push(w);
     }
     found
 }

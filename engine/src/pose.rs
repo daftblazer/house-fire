@@ -126,91 +126,72 @@ impl TrackStreams {
 
     /// Node `i`'s local pose at `place` (801582F4 to 8015869C). `state_flags` is the node
     /// state's flags before the pose: with `FLAGS_KEEP` set its 0x18 bits are carried, with it
-    /// clear its flag channel is read. The streams advance only when a channel is a stream, in the game's
-    /// order (rotation, word 2, word 1, flag, word 4).
+    /// clear its flag channel is read. Each stream keeps its own window, so the order the game
+    /// reads them in does not matter.
     pub fn local(&mut self, anim: &Anim, i: usize, place: f32, state_flags: u32) -> Result<Pose, Unsupported> {
         let node = &anim.nodes[i];
         let words = &anim.bit_words;
         let streams = &mut self.nodes[i];
+        let constants = |at: usize, n: usize| -> Vec<f32> { anim.constants.get(at..at + n).map_or_else(|| vec![0.0; n], <[f32]>::to_vec) };
         let mut pose = Pose { flags: if state_flags & FLAGS_KEEP != 0 { state_flags & FLAGS_KEPT } else { 0 }, ..Pose::default() };
-        let constants = |at: usize, n: usize| anim.constants.get(at..at + n).map(|c| c.to_vec()).unwrap_or_else(|| vec![0.0; n]);
 
-        // word 0: the rotation, or the identity
-        match Channel::of(node[0]) {
-            Channel::None => {}
-            ch => {
+        // word 0: the rotation, or the identity (flag 0x1)
+        match (Channel::of(node[0]), streams.rotation.as_mut()) {
+            (Channel::None, _) => {}
+            (Channel::Constant(at), _) => {
                 pose.flags |= 1;
-                pose.rotation = match (ch, streams.rotation.as_mut()) {
-                    (Channel::Constant(at), _) => constants(at, 4).try_into().unwrap(),
-                    (_, Some(s)) => s.read(words, place),
-                    _ => unreachable!(),
-                };
+                pose.rotation = constants(at, 4).try_into().unwrap();
+            }
+            (Channel::Stream(_), stream) => {
+                pose.flags |= 1;
+                pose.rotation = stream.map_or(pose.rotation, |s| s.read(words, place));
             }
         }
-        // the vector channels: (word, slot in the pose, flag bits set, default)
-        let mut vec3 = |w: usize, k: usize, flags: u32, out: &mut [f32; 3]| {
-            let ch = Channel::of(node[w]);
-            if ch == Channel::None {
-                return;
+        // the vector channels: words 2 (the translation, flags 0x1), 1 (the scale, 0x3), 4 (0x20)
+        let mut vec3 = |word: usize, slot: usize, flags: u32, default: [f32; 3]| -> ([f32; 3], u32) {
+            match (Channel::of(node[word]), streams.vectors[slot].as_mut()) {
+                (Channel::None, _) => (default, 0),
+                (Channel::Constant(at), _) => (constants(at, 3).try_into().unwrap(), flags),
+                (Channel::Stream(_), stream) => (stream.map_or(default, |s| s.read(words, place)), flags),
             }
-            pose.flags |= flags;
-            *out = match (ch, streams.vectors[k].as_mut()) {
-                (Channel::Constant(at), _) => constants(at, 3).try_into().unwrap(),
-                (_, Some(s)) => s.read(words, place),
-                _ => unreachable!(),
-            };
         };
-        let mut translation = pose.translation;
-        vec3(2, 1, 1, &mut translation);
-        let mut scale = pose.scale;
-        vec3(1, 0, 3, &mut scale);
-        pose.translation = translation;
-        pose.scale = scale;
-        if scale[0] != scale[1] || scale[0] != scale[2] {
+        for (word, slot, flags) in [(2, 1, 0x1), (1, 0, 0x3), (4, 2, 0x20)] {
+            let target = match word {
+                2 => &mut pose.translation,
+                1 => &mut pose.scale,
+                _ => &mut pose.vector,
+            };
+            let (value, set) = vec3(word, slot, flags, *target);
+            *target = value;
+            pose.flags |= set;
+        }
+        if pose.scale[0] != pose.scale[1] || pose.scale[0] != pose.scale[2] {
             pose.flags |= FLAG_UNEVEN_SCALE;
         }
-        // word 3: the flag channel, read only while the state's flag bit 0x10 is clear (8015852C); the
-        // pose's bit 8 is the bit's opposite (80158540)
-        if let Some(f) = FlagStream::of(node[3]) {
-            if state_flags & FLAGS_KEEP == 0 {
-                pose.flags = if f.read(words, anim.bits, place) { pose.flags & !FLAG_CHANNEL } else { pose.flags | FLAG_CHANNEL };
-            }
-        }
-        let mut vector = pose.vector;
-        let mut flags = pose.flags;
+        // word 3: the flag channel, read only while the state's flag bit 0x10 is clear (8015852C);
+        // the pose's bit 8 is the bit's opposite (80158540)
+        if let Some(f) = FlagStream::of(node[3])
+            && state_flags & FLAGS_KEEP == 0
         {
-            let ch = Channel::of(node[4]);
-            if ch != Channel::None {
-                flags |= 0x20;
-                vector = match (ch, streams.vectors[2].as_mut()) {
-                    (Channel::Constant(at), _) => constants(at, 3).try_into().unwrap(),
-                    (_, Some(s)) => s.read(words, place),
-                    _ => unreachable!(),
-                };
-            }
+            pose.flags = if f.read(words, anim.bits, place) { pose.flags & !FLAG_CHANNEL } else { pose.flags | FLAG_CHANNEL };
         }
-        pose.vector = vector;
-        pose.flags = flags;
-        // words 5 and 6: scalars, a constant or a stream not decoded here
+        // words 5 and 6: scalars (flags 0x40 and 0x80), a constant or a stream not decoded here
         let mut unsupported = None;
-        for (w, bit) in [(5, 0x40), (6, 0x80)] {
-            match Channel::of(node[w]) {
+        for (word, flag) in [(5, 0x40), (6, 0x80)] {
+            match Channel::of(node[word]) {
                 Channel::None => {}
                 Channel::Constant(at) => {
-                    pose.flags |= bit;
+                    pose.flags |= flag;
                     let v = anim.constants.get(at).copied().unwrap_or(0.0);
-                    if w == 5 { pose.scalar_a = v } else { pose.scalar_b = v }
+                    if word == 5 { pose.scalar_a = v } else { pose.scalar_b = v }
                 }
                 Channel::Stream(_) => {
-                    pose.flags |= bit;
+                    pose.flags |= flag;
                     unsupported = Some(Unsupported::ScalarStream);
                 }
             }
         }
-        match unsupported {
-            Some(u) => Err(u),
-            None => Ok(pose),
-        }
+        unsupported.map_or(Ok(pose), Err)
     }
 }
 
@@ -469,6 +450,37 @@ mod tests {
         // 2 + (2 * 3 - 2) * 0.5
         assert_eq!(r.scale, [4.0; 3]);
         assert_eq!(r.rotation, [0.0, 0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn the_arccosine_is_close_everywhere() {
+        for k in -100..=100 {
+            let x = k as f32 / 100.0;
+            assert!((acos(x) - x.acos()).abs() < 2e-6, "acos({x})");
+        }
+        assert_eq!(acos(1.0), 0.0);
+        assert!((acos(-1.0) - core::f32::consts::PI).abs() < 1e-6);
+        assert!(acos(1.5).is_nan());
+    }
+
+    #[test]
+    fn a_far_blend_is_spherical() {
+        // half way from the identity to a quarter turn about z: an eighth of a turn
+        let quarter = core::f32::consts::FRAC_PI_4;
+        let q = [0.0, 0.0, quarter.sin(), quarter.cos()];
+        let half = blend_rotation([0.0, 0.0, 0.0, 1.0], q, 0.5);
+        let eighth = core::f32::consts::FRAC_PI_8;
+        assert!((half[2] - eighth.sin()).abs() < 1e-5 && (half[3] - eighth.cos()).abs() < 1e-5, "{half:?}");
+    }
+
+    #[test]
+    fn a_layer_of_a_whole_rotation_multiplies() {
+        let quarter = core::f32::consts::FRAC_PI_4;
+        let q = [0.0, 0.0, quarter.sin(), quarter.cos()];
+        let a = pose(q, [0.0; 3], [1.0; 3]);
+        let r = layer(&a, &pose(q, [0.0; 3], [1.0; 3]), 1.0);
+        // two quarter-turn halves: a half turn about z
+        assert!((r.rotation[2] - 1.0).abs() < 1e-6 && r.rotation[3].abs() < 1e-6, "{:?}", r.rotation);
     }
 
     #[test]
