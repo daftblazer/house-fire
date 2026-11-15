@@ -975,6 +975,9 @@ fn main() -> ExitCode {
                     let mut order: Vec<usize> = (0..each.len()).collect();
                     order.sort_by_key(|&k| each[k].1);
                     let mut t2: BTreeMap<String, usize> = BTreeMap::new();
+                    // per Sim: the counted events handed out, and whether its play is at its end
+                    // owing more
+                    let mut counted: BTreeMap<u32, (usize, bool)> = BTreeMap::new();
                     // the frames' ticks in fast-forward (the tracks stepping at 5: The Sims 2's
                     // SAnimator2::Update sets +252 from the game's speed; a frame every ~4 ticks)
                     let fast_ticks: BTreeSet<u32> = log.tracks.iter().filter(|t| t.speeds[1].abs() == 5.0).map(|t| t.tick).collect();
@@ -1000,6 +1003,25 @@ fn main() -> ExitCode {
                             continue;
                         }
                         let go_on = play.get(&sim).is_some_and(|p| p.0 == *name && p.3 != u32::MAX);
+                        // the counted events (notes of value 0..99) the operand's byte 6 asks for
+                        let wanted = operand_of.get(&(name.clone(), *first)).map_or(0, |o| o[6] as i8 as i32);
+                        if !go_on {
+                            counted.insert(sim, (0, false));
+                        }
+                        let backward = flags & 2 != 0;
+                        // a play at its end still owing counted events: one at once to each call,
+                        // then true at once
+                        if counted.get(&sim).is_some_and(|c| c.1) {
+                            let c = counted.get_mut(&sim).unwrap();
+                            let key = if end == first { "at the end, at once, on the native tick" } else { "at the end, at once (NOT native)" };
+                            *t2.entry(key.to_string()).or_default() += 1;
+                            if (c.0 as i32) < wanted {
+                                c.0 += 1;
+                            } else if let Some(p) = play.get_mut(&sim) {
+                                p.3 = u32::MAX;
+                            }
+                            continue;
+                        }
                         let (k0, passed) = if go_on {
                             let p = &play[&sim];
                             (p.1, p.2)
@@ -1016,10 +1038,37 @@ fn main() -> ExitCode {
                         // the frame (from the play's first) whose place passes the next note, if
                         // this run waits for notes
                         // (every note ends the run, whatever the flags: iteration 128)
-                        let next = if !list.is_empty() { list.get(passed).map(|n| n.0 as f32 * a.rate / 1000.0).filter(|&t| t <= last) } else { None };
+                        // (The Sims 2's SAnimator2::TryAnimate: a note over 99 ends the run; one of
+                        // 0..99 only when it is the next counted event, else it is passed over)
+                        let mut counter = counted.get(&sim).map_or(0, |c| c.0);
+                        let mut idx = passed;
+                        let next_idx = loop {
+                            let Some(n) = list.get(idx) else { break None };
+                            if n.0 as f32 * a.rate / 1000.0 > last {
+                                break None;
+                            }
+                            if n.2 > 99 {
+                                break Some(idx);
+                            }
+                            let expect = if backward { wanted - counter as i32 - 1 } else { counter as i32 };
+                            if (0..wanted).contains(&expect) && n.2 == expect {
+                                counter += 1;
+                                break Some(idx);
+                            }
+                            idx += 1;
+                        };
+                        let next = next_idx.map(|k| list[k].0 as f32 * a.rate / 1000.0);
+                        let passed_after = next_idx.map_or(list.len(), |k| k + 1);
+                        // at the end: a counted event still owed goes to this run (false), the
+                        // rest at once to the next calls; none owed, true
+                        let mut at_end = false;
+                        if next.is_none() && (counter as i32) < wanted {
+                            counter += 1;
+                            at_end = true;
+                        }
+                        counted.insert(sim, (counter, at_end));
                         // forward the place runs 0 → last; backward (0x02) last → 0 after a still
                         // first frame
-                        let backward = flags & 2 != 0;
                         let gone = |t: f32| if backward { last - t } else { t };
                         // the frames whose place stays at or below the target, the place stepping
                         // by the step × the game's speed (5 in fast-forward, from the frame before)
@@ -1048,8 +1097,8 @@ fn main() -> ExitCode {
                             std::cmp::Ordering::Greater => format!("{what}: ended before (NOT native)"),
                             std::cmp::Ordering::Less => format!("{what}: ended after (NOT native)"),
                         };
-                        if predicted != *end && next.is_some() && std::env::var_os("LOCKSTEP_ANIM_NOTES_EACH").is_some() {
-                            println!("  note end {name} {first}..{end} sim {sim:x} (note {passed}, place {:?}): native {predicted}", next);
+                        if predicted != *end && std::env::var_os("LOCKSTEP_ANIM_NOTES_EACH").is_some() {
+                            println!("  note end {name} {first}..{end} sim {sim:x} (note {passed}, place {:?}, wanted {wanted}, counted {counter}, flags {flags:02x}): native {predicted}", next);
                         }
                         if predicted > *end && end != first {
                             // an early end with no note due: its flags, branch and local 0, and
@@ -1064,7 +1113,7 @@ fn main() -> ExitCode {
                             *no_note.entry((flags, branch, ls.result, ls.locals_after.first().copied().unwrap_or(-1), if after.starts_with("frame") { "another frame".to_string() } else { after })).or_default() += 1;
                         }
                         *t2.entry(key).or_default() += 1;
-                        play.insert(sim, (name.clone(), k0, passed + usize::from(next.is_some()), if next.is_some() { *end } else { u32::MAX }));
+                        play.insert(sim, (name.clone(), k0, passed_after, if next.is_some() || at_end { *end } else { u32::MAX }));
                     }
                     println!("animate runs with the notes: {t2:?}");
                     for (k, v) in &no_note_by {

@@ -386,6 +386,18 @@ and a2o-fridge-open/close's note 6 once each. Tried and dropped: a burst of ever
 play left at its end is started again within a tick. Food prep's and the easel's restarts are
 like that and have no burst (57 native instead of 113). What makes a call return at once is
 still open.
+Iteration 131: counted events, from The Sims 2's `SAnimator2::TryAnimate` (0x8005E520 on).
+Byte 6 of the operand is how many counted events the call expects: notes of value 0 to 99, in
+order (the animator's +240 counts them, from byte 6 − 1 down when played backward). A note over 99
+always ends the run with its value. A counted note ends it only when it is the next one expected;
+otherwise it is passed over and the run goes on. When the animation is done and fewer than byte 6
+came, the call hands out the next missing one (false, its index as the value). It does that at
+once on each call until all have come, then returns true. The value goes to local byte 2 with
+0x20, else to parameter 0. The stove's 0x2003 node 7 asks for 8 (byte 6 = 08) but its notes are
+101 to 108, so all 8 come at the end: the burst of tick 1096. With this, 158 of 166 runs return on
+the native tick (119 at a note, 29 at the end, 8 owed at once, 2 at once). Left: a2o-stove-cook's
+last note and its end, 2 to 3 ticks late on both plays, and a2o-flamingo-kick's 4 calls that
+return at once with nothing owed.
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object
