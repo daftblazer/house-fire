@@ -22,3 +22,9 @@
 - **`Stream` and `RotStream` duplicate the window stepping** (Q2): one generic stepper.
 - **Study samples from HashMaps** (the RUNS and PLACES studies' "followed tracks" and Sims
   lines) vary run to run: sort them so the outputs are stable.
+- **Fran's description** (club-a1.log, Sim 80f94f70, af_*_fran parts): not a lot object nor a
+  made Sim; her bytes are in no card block and no disc file searched (quickdat, characte,
+  datasets, binaries, levels, neighbourhood files). Probably the story mode's: find where the
+  game writes her description.
+- **The child part tables** are read but unchecked: no logged Sim is a child.
+- **Description bytes 8, 10 and 16-22** (skin, body shape?) not yet understood.

@@ -1731,3 +1731,11 @@ body), +1112 +8 at 14 (shoes), +1116 +12 at 23 (eyes), +1120 +16 at 24 (nose), +
 (mouth), +1128 +32 at 15. Found by a memory snapshot at tick 1,000 (the drawn parts' hashes side by
 side in each Sim) and the watch build naming the store. The observer's '?' records (home-a33.log:
 2 Sims, club-a1.log: 9) hold each dressing.
+Outfits from the data (iteration 198, `outfit.rs`, `LOCKSTEP_ANIM_OUTFITS`). A made Sim's
+description is the save's "User" chunk, found through the Sim's neighbour (person data 31 the
+neighbour id; the neighbour's GUID is the chunk's after "resU"): two UTF-16 names, then 20 bytes,
+byte 0 the gender (1 male), byte 1 the age (1 adult), then the original's description bytes 8
+to 25 (the part indices at 9, 11-15 and 23-25; 8, 10 and 16-22 not yet understood). The part
+tables are CreateASim's `Sim::Table` rows "AdultMale", "AdultFemale", "ChildMale" and
+"ChildFemale". On home-a33.log and club-a1.log every description from the save and all 99 slots
+(18 + 81) come out the same; the slots from the engine's own description for every Sim it has.
