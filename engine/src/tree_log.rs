@@ -493,6 +493,8 @@ pub struct SpeedRec {
     pub owner: u32,
     pub before: f32,
     pub after: f32,
+    /// The game state object Anim_SpeedUpdate asks and its virtual functions (+148, +108, +156, +76).
+    pub state: [u32; 5],
 }
 
 /// A track speed set ('^', Anim_SetTrackSpeed 8015AB80): the controller, track id, speed, caller, the track found (0 if none) and the wrapper's caller.
@@ -1355,11 +1357,12 @@ pub fn read_log(path: &str) -> Option<Log> {
                 log.res_asks.push(ResAskRec { tick: log.ticks, after_steps: log.steps.len(), kind, id, result, caller });
             }
             b'#' => {
-                if !r.has(16) {
+                if !r.has(36) {
                     break;
                 }
                 let (animator, owner, before, after) = (r.u32(), r.u32(), f32::from_bits(r.u32()), f32::from_bits(r.u32()));
-                log.speeds.push(SpeedRec { tick: log.ticks, after_steps: log.steps.len(), animator, owner, before, after });
+                let state = [r.u32(), r.u32(), r.u32(), r.u32(), r.u32()];
+                log.speeds.push(SpeedRec { tick: log.ticks, after_steps: log.steps.len(), animator, owner, before, after, state });
             }
             b'%' => {
                 if !r.has(4 * 4 + 1 + 15 * 4) {

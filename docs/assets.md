@@ -1556,3 +1556,14 @@ trans-lstand at 1418, the idle transitions at 1618/1632, fidget-1a at 1700). Cou
 - stopping every Sim: 17,191.
 Neither is exact, so what stops the other Sim is still to find, from the writer of the
 animator's +124.
+The animator's speed source (iteration 174). Anim_SpeedUpdate (800AB820) writes the animator's
+speed (+124) from the game state object at r13 - 23196 (80ecdcf4 on home-a20.log, 562,616
+steps). The '#' record now also logs that object and its four virtual functions. If any of
+three stop tests is nonzero, the speed is the 802A8BC8 constant:
+- fn_8023860C (+148): +1208, then fn_80239C54, a further virtual (+440) and +1090;
+- fn_80239E10 (+108): +1428 = 0 and +1424 != 0;
+- fn_80238570 (+156): +1432.
+Otherwise the speed level, the s16 at +1088 (fn_80238468, +76), picks one of five constants:
+0, -1, -2, -3 or other. The update returns early when r13 - 28672 is 0, the same flag
+fn_801C22C8 tests. These are global, not per Sim. So a dip of one Sim but not the other means
+the state changes between the two Sims' updates in the tick.

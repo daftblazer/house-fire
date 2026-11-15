@@ -1715,6 +1715,8 @@ fn main() -> ExitCode {
                         let other_busy: Vec<_> = sim_of.values().filter(|x| Some(**x) != who).map(|x| (x, log.loaded.iter().any(|m| m.tick == l.tick && !m.loaded && log.steps.get(m.after_steps).map(|s| s.sim) == Some(*x)))).collect();
                         println!("  miss tick {} {} by {who:x?}: dipped {dipped:x?} (other Sim missing too: {other_busy:x?})", l.tick, by_id.get(&l.id).map(|a| a.name.as_str()).unwrap_or("?"));
                     }
+                    let states: BTreeSet<[u32; 5]> = log.speeds.iter().map(|sp| sp.state).collect();
+                    println!("  the game state objects and their functions: {states:x?}");
                     println!("  dips to 0: {} ticks; with a load miss that tick: {}; with a miss tied to a Sim's run: {}; dip ticks without a miss {:?}", dips.len(), dips.intersection(&any_miss).count(), dips.intersection(&by_run).count(), dips.difference(&any_miss).take(20).collect::<Vec<_>>());
                 }
                 let mut game_tick: BTreeMap<u32, Vec<f32>> = BTreeMap::new(); // tick -> its frames' game speeds in order
