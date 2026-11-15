@@ -489,6 +489,19 @@ pub struct LoadedRec {
     pub caller: u32,
 }
 
+/// A resource asked for ('0'): kind 0 a load in the background (Res_AddRefAsync 801776C0, EA's
+/// EResourceManager::AddRefAsync), 1 its loaded copy (Res_GetRef 801770C0); the id, the result,
+/// the caller, and its place among the steps.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ResAskRec {
+    pub tick: u32,
+    pub after_steps: usize,
+    pub kind: u8,
+    pub id: u32,
+    pub result: u32,
+    pub caller: u32,
+}
+
 /// A walker's step ('Z', Route_Follow 800AE0A4): its follower and its state before and after.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct FollowRec {
@@ -619,6 +632,7 @@ pub struct Log {
     pub follows: Vec<FollowRec>,
     pub tracks: Vec<TrackRec>,
     pub loaded: Vec<LoadedRec>,
+    pub res_asks: Vec<ResAskRec>,
     pub ticks: u32,
 }
 
@@ -1260,6 +1274,14 @@ pub fn read_log(path: &str) -> Option<Log> {
                     break;
                 }
                 grower = Some([r.u32(), r.u32(), r.u32(), r.u32(), r.u32()]);
+            }
+            b'0' => {
+                if !r.has(13) {
+                    break;
+                }
+                let kind = r.u8();
+                let (id, result, caller) = (r.u32(), r.u32(), r.u32());
+                log.res_asks.push(ResAskRec { tick: log.ticks, after_steps: log.steps.len(), kind, id, result, caller });
             }
             b'9' => {
                 if !r.has(12) {

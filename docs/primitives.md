@@ -276,8 +276,16 @@ steps), every Animate step's first ask names its animation's `animatio.arc` id. 
 plays, the 6 late starts are exactly those whose animation was not loaded at the run's first step
 and was at the next tick's. The 15 on time were loaded at their first step, the 7 first uses
 included. So a track starts on the first frame after the Animate step that finds its animation
-loaded. What loads the 7 ahead (the object's or the interaction's animations, when they were
-asked for no earlier) is the next question.
+loaded. What loads them (iteration 120): the observer's '0' record logs EA's
+`EResourceManager::AddRefAsync(unsigned int)` (Bustin' Out `fn_801776C0`, by shape 0.957) and
+`GetRef(unsigned int)` (`fn_801770C0`, 0.979) with their callers. On a new home log, home-a10.log
+(562,616 steps): each late start's first step asks for its animation in the background (from
+800AC820, in TryAnimate) and finds it loaded at the next tick's step (6 of 6). Later uses take the
+loaded copy (GetRef from 800AC89C at the tick after). The 7 on-time first uses are never asked for
+on the log: they were in memory when it began (the log starts in play, after the lot loaded). So
+natively: an animation not yet loaded asks for its load at its first step and starts a tick later;
+which are loaded when a lot comes up (and whether a load ever takes longer than a tick, as a big
+one might from the disc) is the rest.
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object

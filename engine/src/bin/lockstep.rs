@@ -817,7 +817,8 @@ fn main() -> ExitCode {
                                 let id = by_id.iter().find(|(_, a)| a.name.eq_ignore_ascii_case(name)).map(|e| *e.0);
                                 let asks: Vec<String> = log.loaded.iter().filter(|l| Some(l.id) == id && l.tick + 40 >= *first && l.tick <= first + 2).map(|l| format!("t{} {} from {:08x}", l.tick, if l.loaded { "loaded" } else { "NOT" }, l.caller)).collect();
                                 let ever_before = log.loaded.iter().filter(|l| Some(l.id) == id && l.tick < *first).count();
-                                println!("  load {name} {first} late {}: asks near {asks:?}; asked before {ever_before}", next_frame != first_frame);
+                                let reqs: Vec<String> = log.res_asks.iter().filter(|q| Some(q.id) == id && q.tick <= *first).take(4).map(|q| format!("t{} {} from {:08x} -> {:08x}", q.tick, if q.kind == 0 { "async" } else { "getref" }, q.caller, q.result)).collect();
+                                println!("  load {name} {first} late {}: asks near {asks:?}; asked before {ever_before}; requests {reqs:?}", next_frame != first_frame);
                             }
                             *by.entry(format!("start: (first use {first_use}, late {})", next_frame != first_frame)).or_default() += 1;
                             *by.entry(if next_frame == first_frame { "first frame: the first after the step".into() } else { format!("first frame: not the first after the step ({next_frame:?} against {first_frame:?})") }).or_default() += 1;
