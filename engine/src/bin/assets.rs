@@ -2095,6 +2095,47 @@ fn main() -> ExitCode {
             }
             println!("room records set {} (with both objects {both}): the engine's words {same}", log.room_suns.len());
         }
+        "roomclock" => {
+            // the outside room record (the time of day's two objects) from the clock alone: the
+            // tick's last '3' call's clock through `time_of_day`, `sun_direction` and `room_sun`;
+            // and the inside rooms' own ambient objects' values (study)
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO roomclock LOG");
+                return ExitCode::FAILURE;
+            };
+            let f = |v: u32| f32::from_bits(v);
+            let (mut outside, mut same, mut shown) = (0, 0, 0);
+            let mut inside: BTreeMap<u32, BTreeSet<[u32; 4]>> = BTreeMap::new();
+            for (tick, rec, o, words) in &log.room_suns {
+                let Some((_, r, _, _)) = log.times_of_day.iter().rev().find(|t| t.0 <= *tick) else { continue };
+                if o[0] != r[1] || o[8] != r[0] {
+                    if o[0] != 0 {
+                        inside.entry(*rec).or_default().insert([o[1], o[2], o[3], o[4]]);
+                    }
+                    continue;
+                }
+                outside += 1;
+                let (h, m, s) = (r[2] as i32, r[3] as i32, r[4] as i32);
+                let d = housefire::light::time_of_day(h, m, s);
+                let Some(dir) = housefire::light::sun_direction(h, m, s) else { continue };
+                let mut mine = words.map(f);
+                for v in mine.iter_mut().take(15) {
+                    *v = f32::NAN;
+                }
+                mine[7] = f(words[7]);
+                housefire::light::room_sun(&mut mine, Some((d.ambient_factor, d.ambient)), Some((d.sun_factor, d.sun, dir)));
+                if mine.map(f32::to_bits) == *words {
+                    same += 1;
+                } else if shown < 3 {
+                    shown += 1;
+                    println!("  tick {tick} at {h}:{m}:{s}: mine {mine:?}, the log's {:?}", words.map(f));
+                }
+            }
+            println!("outside records {outside}: the engine's from the clock {same}");
+            for (rec, vals) in &inside {
+                println!("inside record {rec:08x}: its ambient (factor, colour) {:?}", vals.iter().map(|v| v.map(f)).collect::<Vec<_>>());
+            }
+        }
         "lamplights" => {
             // each rebuild's lamp lights against the engine's colour and reach from the light
             // object's node (the last '1' record for that light before the rebuild)

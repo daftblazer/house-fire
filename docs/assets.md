@@ -982,3 +982,12 @@ log agrees far better than from the card:
   0, scope 4 from 41 to 2 and scope 8 from 70 to 20;
 - motives set to the log's fall from 94 to 1 (the card run lets the motives move, `card_lot`).
 The figures keep their `--card` (both give 0 differing steps).
+
+The outside room record from the clock alone (`assets roomclock`). The outside record's two
+objects are the time of day's (its ambient is the call's r4, its sun r3). For each '2' record,
+the tick's last time of day call gives the clock, then `time_of_day`, `sun_direction` and
+`room_sun` give its words 0-14 word for word: home's 1,000 and club's 667. The inside rooms'
+records hold an ambient object of their own (no sun). Its colour is the time of day's ambient
+colour (0.8, 0.8, 1), but its factor is the room's own: home's three rooms about 0.303, 0.315 and
+0.309 (the outside's 0.4), the club's about 0.265 to 0.272, all drifting with the time. Its
+writer is next.
