@@ -854,6 +854,33 @@ fn main() -> ExitCode {
         println!("animate runs by the frames: fixed runs against the frame clock's spans {rule:?}; all runs against the longest span {all:?}");
         println!("animate runs: {} animations ({fixed} always the same ticks), ends by result {ends:?}; ticks over frames (at 30) of the fixed ones {fits:?}", total);
     }
+    // (LOCKSTEP_ANIM_LOADS: the engine's animations in memory, `anim::Loads`, from the lot's
+    // preload sets (house n, LOCKSTEP_HOUSE, default 1: House1Preload and housepre<n>), against
+    // each of the original's Animate load asks ('9', from TryAnimate at 800AC7E4) in turn)
+    if std::env::var_os("LOCKSTEP_ANIM_LOADS").is_some() && !log.loaded.is_empty() {
+        let house: u32 = std::env::var("LOCKSTEP_HOUSE").ok().and_then(|v| v.parse().ok()).unwrap_or(1);
+        let anims = d.read("animatio.arc").unwrap_or_default();
+        let ids: std::collections::HashSet<u32> = housefire::arc::entries(&anims).unwrap_or_default().iter().map(|e| e.id).collect();
+        let ds = d.read("datasets.arc").unwrap_or_default();
+        let sets: Vec<Vec<u8>> = housefire::arc::entries(&ds)
+            .unwrap_or_default()
+            .iter()
+            .filter(|e| e.name == "House1Preload" || e.name == format!("housepre{house:02}"))
+            .map(|e| housefire::arc::bytes(&ds, e).to_vec())
+            .collect();
+        let refs: Vec<&[u8]> = sets.iter().map(|v| v.as_slice()).collect();
+        let mut loads = housefire::anim::Loads::with_sets(&refs, &ids);
+        let (mut same, mut differ) = (0, 0);
+        for l in log.loaded.iter().filter(|l| l.caller == 0x800A_C7E4) {
+            if loads.ask(l.id, l.tick) == l.loaded {
+                same += 1;
+            } else {
+                differ += 1;
+                println!("  load ask differs: tick {} id {:08x}: the original's {}", l.tick, l.id, l.loaded);
+            }
+        }
+        println!("animate loads natively (sets {}): {same} asks answered as the original's, {differ} not", sets.len());
+    }
     // study (LOCKSTEP_SHOW_MAKERS): the node a made object came from, the step whose stack
     // object becomes an id the list gains that tick (or the one before)
     if std::env::var_os("LOCKSTEP_SHOW_MAKERS").is_some() {

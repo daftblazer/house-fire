@@ -304,6 +304,13 @@ elsewhere). At 800822F8 `housepre[n - 1]`, from a table of the 16 sets' ids in t
 (ticks 1, 100, 1,000) hold n = 1 and the flag 0: House1Preload and housepre01, the two the log
 asks for. The club's (tick 100) holds n = 16, the flag 0. What the flag and the other branches
 of the switch are (House2/3Preload) is still to read.
+The engine's own (iteration 123, `anim::Loads`): the animations in memory start as those the
+lot's preload sets hold (the archive's entry ids found in the sets' bytes); an ask for one not in
+memory asks for its load and is answered loaded from the next tick. Lockstep
+`LOCKSTEP_ANIM_LOADS` (house n from `LOCKSTEP_HOUSE`, default 1) answers every Animate load ask on
+home-a10.log (TryAnimate's, 800AC7E4) in turn: 104 of 104 as the original's. With iteration
+119's rule (a track starts on the first frame after the step that finds its animation loaded),
+that gives each whole play's start.
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object

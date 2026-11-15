@@ -105,6 +105,54 @@ pub fn read(e: &[u8]) -> Option<Anim> {
     (r.at == e.len()).then_some(Anim { name, frames, first, second, nodes, word, constants, bits, bit_words, rate, floats, byte, words, flags, events })
 }
 
+/// The animations in memory, as the original's resource manager has them for the Animate
+/// primitive (EA's `EResourceManager`: `IsLoaded`, `AddRefAsync`). A lot comes up with its
+/// preload sets in memory (`datasets.arc`: House1Preload and housepre01 for house 1; their
+/// resources' ids are found in the sets' bytes, at any offset); an animation asked for that is
+/// not in memory is loaded in the background and is there from the next tick.
+#[derive(Clone, Debug, Default)]
+pub struct Loads {
+    present: std::collections::HashSet<u32>,
+    pending: std::collections::BTreeMap<u32, u32>,
+}
+
+impl Loads {
+    /// The ids `sets` (the preload sets' bytes) hold, as present; `ids` limits them to the
+    /// resources asked about (the animation archive's entries).
+    pub fn with_sets(sets: &[&[u8]], ids: &std::collections::HashSet<u32>) -> Loads {
+        let mut present = std::collections::HashSet::new();
+        for s in sets {
+            for w in s.windows(4) {
+                let v = u32::from_be_bytes([w[0], w[1], w[2], w[3]]);
+                if ids.contains(&v) {
+                    present.insert(v);
+                }
+            }
+        }
+        Loads { present, pending: Default::default() }
+    }
+
+    /// Whether `id` is in memory at `tick`; if not, its load is asked for (it is there from the
+    /// next tick on).
+    pub fn ask(&mut self, id: u32, tick: u32) -> bool {
+        if self.present.contains(&id) {
+            return true;
+        }
+        match self.pending.get(&id) {
+            Some(&t) if tick > t => {
+                self.present.insert(id);
+                self.pending.remove(&id);
+                true
+            }
+            Some(_) => false,
+            None => {
+                self.pending.insert(id, tick);
+                false
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,5 +189,17 @@ mod tests {
         assert_eq!(a.seconds(), 1.0);
         e.push(0);
         assert_eq!(read(&e), None);
+    }
+
+    #[test]
+    fn an_animation_not_in_memory_is_there_the_tick_after_its_ask() {
+        let ids: std::collections::HashSet<u32> = [1, 2].into_iter().collect();
+        let set = [0u8, 0, 0, 0, 1, 9];
+        let mut l = Loads::with_sets(&[&set], &ids);
+        assert!(l.ask(1, 5));
+        assert!(!l.ask(2, 5));
+        assert!(!l.ask(2, 5));
+        assert!(l.ask(2, 6));
+        assert!(l.ask(2, 7));
     }
 }
