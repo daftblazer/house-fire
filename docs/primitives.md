@@ -286,6 +286,16 @@ on the log: they were in memory when it began (the log starts in play, after the
 natively: an animation not yet loaded asks for its load at its first step and starts a tick later;
 which are loaded when a lot comes up (and whether a load ever takes longer than a tick, as a big
 one might from the disc) is the rest.
+Which are loaded when the lot comes up (iteration 121): the disc's `datasets.arc` (486 entries)
+holds sets of resources by name: `globals`, `createasim`, `House1Preload`, `housepre01` to
+`housepre15` and more (`assets ISO idwhere NAME...` lists the sets that hold an animation's id,
+unaligned). Home's lot has `House1Preload` and `housepre01` in memory. Every animation's first
+load ask on home-a10.log (43, `assets ISO resasks LOG` with
+`ASSETS_RES_DATASET=House1Preload,housepre01`) is answered loaded exactly when the animation is
+in one of the two: 28 in and loaded, 14 out and not, 42 of 43. The one left is
+`am_cas_idle_loop` at tick 0, a create-a-Sim animation still in memory from before the lot. How
+a lot names its sets (house 1: House1Preload, housepre01) is still to read, from the lot load or
+the HouseData table.
 Before that, the first 16 bits were taken for the AnimRef table's row, which they are not: read
 so, home's 272 Animate runs would be mostly `a2a-apologizee` and the attack loops, with lengths
 that follow no animation's (lockstep `LOCKSTEP_ANIM_RUNS`). They index something per object

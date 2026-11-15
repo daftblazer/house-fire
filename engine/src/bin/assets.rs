@@ -1509,6 +1509,100 @@ fn main() -> ExitCode {
                 println!("  animation {a:08x} ({n} steps): {}", h.iter().map(|w| format!("{w:08x}")).collect::<Vec<_>>().join(" "));
             }
         }
+        "idwhere" => {
+            // (study) where named animations' ids appear: each quick data entry's tables (by the
+            // word's offset), and every disc file other than the archive itself
+            let anims = d.read("animatio.arc").unwrap_or_default();
+            let ids: Vec<(String, u32)> = args[3..].iter().filter_map(|n| arc::entries(&anims).unwrap_or_default().into_iter().find(|e| e.name.eq_ignore_ascii_case(n)).map(|e| (e.name, e.id))).collect();
+            let q = d.read("quickdat.arc").unwrap_or_default();
+            for e in arc::entries(&q).unwrap_or_default() {
+                let Some(img) = quickdata::Image::read(arc::bytes(&q, &e)) else { continue };
+                for (name, id) in &ids {
+                    for o in (0..img.data.len() / 4).map(|k| 4 * k) {
+                        if img.u32(o) == Some(*id) {
+                            let t = img.tables.iter().find(|(_, t)| o >= t.rows && o < t.rows + t.count * t.row_size).map_or(format!("@{o:x}"), |(n, t)| format!("{n}[{}]+{}", (o - t.rows) / t.row_size, (o - t.rows) % t.row_size));
+                            println!("{name} {id:08x}: quick {} {t}", e.name);
+                        }
+                    }
+                }
+            }
+            let ds = d.read("datasets.arc").unwrap_or_default();
+            let entries = arc::entries(&ds).unwrap_or_default();
+            println!("datasets.arc: {} entries", entries.len());
+            for e in &entries {
+                let b = arc::bytes(&ds, e);
+                let has: Vec<&str> = ids.iter().filter(|(_, id)| b.windows(4).any(|w| w == id.to_be_bytes())).map(|(n, _)| n.as_str()).collect();
+                if !has.is_empty() {
+                    println!("  dataset {} ({} bytes, {} words): {has:?}", e.name, b.len(), b.len() / 4);
+                }
+            }
+            for f in d.files().keys().cloned().collect::<Vec<_>>() {
+                if f.ends_with("animatio.arc") || f.ends_with("quickdat.arc") {
+                    continue;
+                }
+                let b = d.read(&f).unwrap_or_default();
+                for (name, id) in &ids {
+                    let n = b.windows(4).filter(|w| *w == id.to_be_bytes()).count();
+                    if n > 0 {
+                        println!("{name} {id:08x}: file {f} x{n}");
+                    }
+                }
+            }
+        }
+        "resasks" => {
+            // (study) the resource requests ('0') and load asks ('9'): by kind and caller, the
+            // ticks they span, and the names of the archive entries they name
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO resasks LOG");
+                return ExitCode::FAILURE;
+            };
+            let anims = d.read("animatio.arc").unwrap_or_default();
+            let names: BTreeMap<u32, String> = arc::entries(&anims).unwrap_or_default().into_iter().map(|e| (e.id, e.name)).collect();
+            let mut by: BTreeMap<(u8, u32), (usize, u32, u32, usize)> = BTreeMap::new();
+            for q in &log.res_asks {
+                let e = by.entry((q.kind, q.caller)).or_insert((0, u32::MAX, 0, 0));
+                e.0 += 1;
+                e.1 = e.1.min(q.tick);
+                e.2 = e.2.max(q.tick);
+                if names.contains_key(&q.id) {
+                    e.3 += 1;
+                }
+            }
+            for ((k, c), (n, a, b, an)) in &by {
+                println!("kind {k} from {c:08x}: {n} asks, ticks {a}..{b}, {an} of them animations");
+            }
+            let mut ask_by: BTreeMap<u32, usize> = BTreeMap::new();
+            for l in &log.loaded {
+                *ask_by.entry(l.caller).or_default() += 1;
+            }
+            println!("IsLoaded asks by caller {ask_by:x?}");
+            if let Ok(set) = std::env::var("ASSETS_RES_DATASET") {
+                // each animation's first load ask against its being in the dataset
+                let ds = d.read("datasets.arc").unwrap_or_default();
+                // the named datasets (comma-separated), together
+                let mut has: std::collections::HashSet<u32> = std::collections::HashSet::new();
+                for one in set.split(',') {
+                    let data = arc::entries(&ds).unwrap_or_default().into_iter().find(|e| e.name == one).map(|e| arc::bytes(&ds, &e).to_vec()).unwrap_or_default();
+                    has.extend(data.windows(4).map(|w| u32::from_be_bytes([w[0], w[1], w[2], w[3]])));
+                }
+                let mut seen = BTreeSet::new();
+                let mut tally: BTreeMap<(bool, bool), usize> = BTreeMap::new();
+                for l in log.loaded.iter().filter(|l| names.contains_key(&l.id)) {
+                    if seen.insert(l.id) {
+                        *tally.entry((has.contains(&l.id), l.loaded)).or_default() += 1;
+                        if has.contains(&l.id) != l.loaded {
+                            println!("  {} t{}: in {set} {}, loaded {}", names[&l.id], l.tick, has.contains(&l.id), l.loaded);
+                        }
+                    }
+                }
+                println!("animations' first asks (in {set}, loaded): {tally:?}");
+            }
+            if let Ok(want) = std::env::var("ASSETS_RES_NAME") {
+                for q in log.res_asks.iter().filter(|q| names.get(&q.id).is_some_and(|n| n.contains(want.as_str()))) {
+                    println!("  t{} kind {} {} from {:08x} -> {:08x}", q.tick, q.kind, names[&q.id], q.caller, q.result);
+                }
+            }
+        }
         "frameticks" => {
             // (study) the frames (the camera's own step a frame, which 0) against the ticks: how
             // many frames each tick spans, and the ticks a frame
