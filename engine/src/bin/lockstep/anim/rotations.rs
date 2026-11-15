@@ -37,6 +37,8 @@ pub fn rotations(log: &housefire::tree_log::Log, d: &Disc) {
     let anims = d.read("animatio.arc").unwrap_or_default();
     let all: Vec<anim::Anim> = housefire::arc::entries(&anims).unwrap_or_default().iter().filter_map(|e| anim::read(housefire::arc::bytes(&anims, e))).collect();
     println!("rotation reads: {} in {} animations", log.rot_streams.len(), all.len());
+    let flag_set = log.flag_streams.iter().filter(|f| f.result != 0).count();
+    println!("flag channel reads: {} ({} set, {} streams); scalar channel reads: {} ({} streams)", log.flag_streams.len(), flag_set, log.flag_streams.iter().map(|f| f.stream).collect::<std::collections::BTreeSet<_>>().len(), log.scalar_streams.len(), log.scalar_streams.iter().map(|f| f.stream).collect::<std::collections::BTreeSet<_>>().len());
     // every animation's streams named by a node word: the rotation header at that bit
     let mut named: HashMap<(u32, u32), Vec<(usize, usize)>> = HashMap::new();
     for (i, a) in all.iter().enumerate() {

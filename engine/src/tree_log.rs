@@ -513,6 +513,29 @@ pub struct RotStreamRec {
     pub track: Option<(u32, f32)>,
 }
 
+/// A flag channel read ('~', Anim_FlagStream 801BD4D4, the node's +16 channel): the stream, the place, its words +0..+12 and the bit returned.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FlagStreamRec {
+    pub tick: u32,
+    pub stream: u32,
+    pub place: f32,
+    pub head: [u32; 4],
+    pub result: u32,
+    pub track: Option<(u32, f32)>,
+}
+
+/// A scalar channel read ('@', Anim_ScalarStream 801BD7BC, the node's +24 and +28 channels): the stream, the place, its words +0..+44, the mode byte +33 and the float returned.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ScalarStreamRec {
+    pub tick: u32,
+    pub stream: u32,
+    pub place: f32,
+    pub head: [u32; 12],
+    pub mode: u8,
+    pub result: f32,
+    pub track: Option<(u32, f32)>,
+}
+
 /// A track speed set ('^', Anim_SetTrackSpeed 8015AB80): the controller, track id, speed, caller, the track found (0 if none) and the wrapper's caller.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SpeedSetRec {
@@ -720,6 +743,8 @@ pub struct Log {
     pub poses: Vec<PoseRec>,
     pub speed_sets: Vec<SpeedSetRec>,
     pub rot_streams: Vec<RotStreamRec>,
+    pub flag_streams: Vec<FlagStreamRec>,
+    pub scalar_streams: Vec<ScalarStreamRec>,
     pub res_asks: Vec<ResAskRec>,
     pub ticks: u32,
 }
@@ -1419,6 +1444,28 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
                 let result = [f32::from_bits(r.u32()), f32::from_bits(r.u32()), f32::from_bits(r.u32()), f32::from_bits(r.u32())];
                 log.rot_streams.push(RotStreamRec { tick: log.ticks, stream, place, head, mode, window, result, track: posing });
+            }
+            b'~' => {
+                if !r.has(4 * 7) {
+                    break;
+                }
+                let (stream, place) = (r.u32(), f32::from_bits(r.u32()));
+                let head = [r.u32(), r.u32(), r.u32(), r.u32()];
+                let result = r.u32();
+                log.flag_streams.push(FlagStreamRec { tick: log.ticks, stream, place, head, result, track: posing });
+            }
+            b'@' => {
+                if !r.has(4 * 14 + 1 + 4) {
+                    break;
+                }
+                let (stream, place) = (r.u32(), f32::from_bits(r.u32()));
+                let mut head = [0u32; 12];
+                for w in &mut head {
+                    *w = r.u32();
+                }
+                let mode = r.u8();
+                let result = f32::from_bits(r.u32());
+                log.scalar_streams.push(ScalarStreamRec { tick: log.ticks, stream, place, head, mode, result, track: posing });
             }
             b'^' => {
                 if !r.has(24) {
