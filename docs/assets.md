@@ -1739,3 +1739,16 @@ to 25 (the part indices at 9, 11-15 and 23-25; 8, 10 and 16-22 not yet understoo
 tables are CreateASim's `Sim::Table` rows "AdultMale", "AdultFemale", "ChildMale" and
 "ChildFemale". On home-a33.log and club-a1.log every description from the save and all 99 slots
 (18 + 81) come out the same; the slots from the engine's own description for every Sim it has.
+The lamps from the engine alone (iterations 199-200, `lamps.rs`, `LOCKSTEP_ANIM_LAMPS`). A lamp's
+light sits at its node's bone translation (all 400 on home-a28.log), the node state's words 5-7
+once ComputeMatrices writes them back; its colour, factor and radius are the node's channels
+4-6. The object keeps its animation controller at +848. Its root matrix is rows (sin t, cos t),
+(cos t, -sin t), t = 45° x facing in single-precision radians, at the lot's placement
+(`lamps::object_matrix`; all 11 of home's roots the same). The light nodes are those with
+channels 4, 5 and 6, posed from the object's idle animation (word 2 of its resources record,
+`ObjResources::idle`; home's lamps play static two-frame animations). From the engine alone, on
+home: all 389 placed lamp lights' places, colours and reaches; the 11 own lights in order; all
+1,364 grid cells; 3,916 window fills (nearest list, mix and colour); and 149,472 light grid sums,
+bit for bit. The club's lamps are in their "on" animations (o_lamp_wall_club_on,
+Torchosterone_Floor_Lamp_A_01, the dance floor's), which need the object's state to choose, and
+its laser light follows scalar streams.
