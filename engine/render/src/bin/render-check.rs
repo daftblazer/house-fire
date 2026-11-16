@@ -2,6 +2,11 @@
 //! records with the engine's own renderer, and compares it with the recompiled game's own dump
 //! of that frame (`$HF_FRAMES/world_NNNNN.png`, the picture before the 2D layer). Writes our
 //! picture and a difference picture under `$HF_FRAMES/r1/`.
+//!
+//! Study aids (environment): `HF_WORST=n` lists the n models whose pixels are furthest off,
+//! `HF_PROBE="x,y;x,y"` explains the draw at those pixels, `HF_MODEL=name` samples a model's
+//! off pixels, `HF_FLAGS=1` counts the materials' flag words, `HF_EXCLUDE` leaves
+//! boxes out of a second figure, `HF_VALIDATE=1` turns the Vulkan validation layer on.
 
 use housefire::disc::Disc;
 use housefire::tree_log::read_log;
@@ -22,7 +27,7 @@ fn read_png(path: &Path) -> Option<Vec<u8>> {
     assert_eq!((info.width, info.height), (WIDTH, HEIGHT), "the reference is {WIDTH}x{HEIGHT}");
     match info.color_type {
         png::ColorType::Rgba => Some(buf),
-        png::ColorType::Rgb => Some(buf.chunks_exact(3).flat_map(|c| [c[0], c[1], c[2], 255]).collect()),
+        png::ColorType::Rgb => Some(buf.as_chunks::<3>().0.iter().flat_map(|c| [c[0], c[1], c[2], 255]).collect()),
         _ => None,
     }
 }
@@ -93,14 +98,14 @@ fn main() -> ExitCode {
     for d in &scene.all {
         *draws.entry(d.class).or_default() += 1;
     }
-    let other_commands = log.other_draws.len() / ticks.len().max(1);
+    let other_commands = log.other_draws.iter().filter(|g| g.0.tick == tick).count();
     let mut pixels: BTreeMap<Class, u64> = BTreeMap::new();
     for &id in &picture.ids {
         if id != 0 {
             *pixels.entry(scene.drawn[id as usize - 1].class).or_default() += 1;
         }
     }
-    println!("frame {frame} (tick {tick}): {} draws drawn of {} strips; {} other commands ('g' records, about)", scene.drawn.len(), scene.all.len(), other_commands);
+    println!("frame {frame} (tick {tick}): {} draws drawn of {} strips; {} other commands ('g' records)", scene.drawn.len(), scene.all.len(), other_commands);
     println!("{:<44} {:>7} {:>10}", "class", "draws", "pixels");
     for c in Class::ALL {
         let n = if c == Class::Other { other_commands } else { draws.get(&c).copied().unwrap_or(0) };
@@ -111,7 +116,8 @@ fn main() -> ExitCode {
     for d in scene.drawn.iter().filter_map(|d| d.unsupported) {
         *unsupported.entry(d).or_default() += 1;
     }
-    println!("drawn with a texture not found (white): {missing}; materials not drawn right: {unsupported:?}");
+    let missing_pixels = picture.ids.iter().filter(|&&id| id != 0 && scene.drawn[id as usize - 1].missing_texture).count();
+    println!("drawn with a texture not found (white): {missing} draws, {missing_pixels} pixels; materials not drawn right: {unsupported:?}");
 
     compare("rigid draws' pixels", &picture.rgba, &reference, |p| picture.ids[p] != 0);
     // where the error is: the models whose pixels are furthest off
@@ -130,6 +136,20 @@ fn main() -> ExitCode {
     worst.sort_by_key(|w| std::cmp::Reverse((w.1).1));
     for (name, (n, off, signed)) in worst.iter().take(std::env::var("HF_WORST").ok().and_then(|v| v.parse().ok()).unwrap_or(0)) {
         println!("  {off:>6} of {n:>6} off (mean signed {:+.1} {:+.1} {:+.1}): {name}", signed[0] as f64 / *n as f64, signed[1] as f64 / *n as f64, signed[2] as f64 / *n as f64);
+    }
+    if std::env::var_os("HF_FLAGS").is_some() {
+        let mut by_flags: BTreeMap<u32, (usize, Vec<String>)> = BTreeMap::new();
+        for d in &scene.drawn {
+            let e = by_flags.entry(d.flags[0]).or_default();
+            e.0 += 1;
+            let t = format!("{}:{}", d.model, d.textures[0].clone().unwrap_or_default());
+            if e.1.len() < 8 && !e.1.contains(&t) {
+                e.1.push(t);
+            }
+        }
+        for (f, (n, ex)) in by_flags {
+            println!("flags {f:#x}: {n} draws e.g. {ex:?}");
+        }
     }
     if let Ok(name) = std::env::var("HF_MODEL") {
         let mut shown = 0;
@@ -151,11 +171,17 @@ fn main() -> ExitCode {
             println!("   {info:?}\n   {:?}\n   {:?}", d.material, d.lighting);
         }
     }
+    // (HF_EXCLUDE="x0,y0,x1,y1;...": boxes another pass paints over, left out of a second figure)
+    let boxes: Vec<Vec<usize>> = std::env::var("HF_EXCLUDE").unwrap_or_default().split(';').filter(|b| !b.is_empty()).map(|b| b.split(',').filter_map(|v| v.parse().ok()).collect()).collect();
+    if !boxes.is_empty() {
+        let inside = |p: usize| boxes.iter().any(|b| (b[0]..b[2]).contains(&(p % WIDTH as usize)) && (b[1]..b[3]).contains(&(p / WIDTH as usize)));
+        compare("rigid draws' pixels outside the excluded boxes", &picture.rgba, &reference, |p| picture.ids[p] != 0 && !inside(p));
+    }
     compare("whole frame", &picture.rgba, &reference, |_| true);
 
     let out = frames_dir.join("r1");
     std::fs::create_dir_all(&out).unwrap();
-    write_png(&out.join(format!("ours_{frame}.png")), &picture.rgba.chunks_exact(4).flat_map(|c| [c[0], c[1], c[2], 255]).collect::<Vec<_>>());
+    write_png(&out.join(format!("ours_{frame}.png")), &picture.rgba.as_chunks::<4>().0.iter().flat_map(|c| [c[0], c[1], c[2], 255]).collect::<Vec<_>>());
     let diff: Vec<u8> = (0..(WIDTH * HEIGHT) as usize)
         .flat_map(|p| {
             let covered = picture.ids[p] != 0;

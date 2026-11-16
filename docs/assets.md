@@ -1752,3 +1752,98 @@ home: all 389 placed lamp lights' places, colours and reaches; the 11 own lights
 bit for bit. The club's lamps are in their "on" animations (o_lamp_wall_club_on,
 Torchosterone_Floor_Lamp_A_01, the dance floor's), which need the object's state to choose, and
 its laser light follows scalar streams.
+
+## The renderer
+
+`engine/render` (package `housefire-render`, its own target directory and lock file: the
+simulation crate has no GPU dependency) is the engine's own Vulkan renderer, raw `ash`, headless.
+Its API is a `Frame` (`frame.rs`): a camera (view, projection) and a list of draws, each a mesh,
+a world matrix, a material (combine mode, two layers' textures and samplers, blend, depth, cull,
+alpha test, sphere map) and a light set (ambient, directionals, points, or vertex colours, or
+black). Meshes are uploaded once (`Renderer::load_meshes`: compact vertices, 16-bit positions and
+coordinates and 8-bit normals scaled in the shader, one vertex and one index buffer), textures
+once (`load_texture`: RGBA8 with the mip levels the format holds whole), and a frame is one
+command buffer: the per-draw numbers are one storage buffer indexed by the instance, the lights
+are summed per pixel in the fragment shader, and no vertex is touched on the CPU. Offscreen:
+colour and an id buffer (the last draw to cover each pixel), read back.
+
+`render-check LOG ISO FRAME` (`HF_FRAMES`: the folder of the recomp's frame dumps) builds the
+frame from the log's records (`scene.rs`), renders it at 640 x 448 and compares it with
+`world_NNNNN.png` (the picture before the 2D layer), writing `r1/ours_N.png` and `r1/diff_N.png`.
+`home-a34.log` has the draw records of frames 2400 and 2401 (ticks 1039 and 1040).
+
+How the records make a frame. The log is a stream; a draw's state is what was set before it and
+what it set up itself. Strip k (a 'w' record, an opcode 56 strip or an opcode 66 display list)
+takes the material ('m') and light set ('[') logged before it (the last of its tick in "gap k",
+the records with k strips before them), the texture loads ('l') up to it (the last of each map
+carries over, as the device's state does), and its world matrix, view and projection from the
+first such record of its tick in gap k + 1 (the draw's own `ERC_ApplyState`; none there: the
+state carried from before). The part is found by the arrays' first bytes (`draw::PartIndex::find`;
+a display list also by its list's bytes). Draws through another projection than the lot's
+camera are the interface's (class "overlay"); a lit-off light set (flag 0x4000) is a projected
+shadow; a part blended over several bones is a Sim's; the 'g' records are the floors' strips.
+
+What is drawn, as the device's combiner stages made it (`erc_material.cpp`):
+
+- one layer, textured: the texture times the light's colour, doubled and clamped (or the texture
+  alone, doubled, for an unlit layer); untextured: the light's colour;
+- two layers: a cross-fade by the second layer's factor, or layer 1 over layer 0 by layer 0's
+  alpha or its own, or added by layer 0's alpha (blended over the picture or added to it); the
+  second layer's blend byte pairs 2 and 2 (added through the game's table, a global) are not
+  drawn and none occurs in the frames;
+- a second layer whose uv source is 2 with lighting on is a sphere map: the view-space position
+  reflected about the normal (`vertex_programs.cpp`'s `bustin_sphere`), the second texture read
+  there and added to the colour by weight 1, the alpha so far, or the factor;
+- lights (`erc_lights.cpp`): the ambient and each light's colour times its tint, as bytes;
+  directionals turned by the device's matrix (to the light is the negated direction); points
+  moved into view space by the view the device had, their colour divided by k0 + k1 d (k0 1, k1
+  the range times 0.1); the diffuse term clamped at 0; the sum clamped to 1; texture colour times
+  that, doubled. A set with no lights and flag 0x8 clear is the vertex colours; flag 0x4000 black
+  at alpha 127/255;
+- textures are the 'x' record by image address, found in `textures.arc` or `datasets.arc` by the
+  hash of the first level. A palette texture has two IA8 palettes: the device samples the image
+  through each (texture maps m and m + 1) and its stages (fn_8019DC7C: a yellow and a blue
+  constant, texture swaps) take red from the first palette's intensity, green from its alpha, blue
+  from the second's intensity and the alpha from its alpha (read from the stage setup, and
+  checked by the bench's pixels). The filters are the GXTexObj's mode word as the hardware codes
+  it (bit 2 of the minifying code linear, its low bits the mip levels: 0 none, 1 nearest, 2
+  linear), the wraps its low four bits;
+- the layer flag word (bytes 4 to 8 of a layer in the 'm' record) has 0x40 for the translucent
+  materials (windows, the aquarium, the bottle lamp, water): drawn blended by source alpha with
+  depth writes on and no alpha test. Checked: with it the aquarium's pixels off go from 255 to 12
+  and the bottle lamp's and the diamond's to 0.
+
+Figures (`render-check`, RGB, within 4 in every channel; the colour of a pixel our rigid draws
+cover last, against the reference):
+
+| frame | rigid pixels | within 4 | beyond | PSNR | outside the portrait | beyond | PSNR |
+|---|---|---|---|---|---|---|---|
+| 2400 | 80,708 | 91.83% | 6,595 | 21.08 dB | 77,596 | 95.39% (3,579) | 28.37 dB |
+| 2401 | 80,713 | 91.83% | 6,596 | 21.09 dB | 77,601 | 95.39% (3,580) | 28.35 dB |
+
+Draws by class, frame 2400 (2401 the same but for pixels, 13,023 and 67,690): rigid model
+strips 333 (13,019 pixels), display-list model draws 330 (67,689), skinned 119, projected
+shadows 658, overlay 57, other commands (floors) 198, unidentified 1; the last four are not
+drawn (R2 and the floors), so they cover none. 56 draws have a texture not found among the
+game's (made at run time; 47 pixels, the Persian rug).
+
+What the remaining 6,595 pixels are (frame 2400): 3,127 the Sim's portrait square (49..104 x
+347..402, painted over the road by a later draw: R2); 1,401 the windows' glass, drawn blended over
+what is behind it, which is the rooms' floors (the 'g' strips, not drawn: black here); 1,084 the
+birch tree's leaves, darker by a third in the reference at the pixels where a shadow pass lies on
+it (a shadow draw of the same tree: R2); about 240 the rose bushes (the same), 290 the bathroom
+counter (its edge texels), 185 the wall caps (coplanar and rounding), and the rest scattered
+(Sims' belongings, the TV, the jukebox). Without the portrait the figure is 95.4%, and without
+the glass and the shadowed leaves about 98.7%: the 99% of the rigid pixels needs the floors and
+the shadows (R2).
+
+Not in the log (the observer does not record the device's per-draw state), so defaults stand in
+and the pixels they account for are measured: cull (none: back or front culling with either
+winding takes the picture from 91.8% to 63% and 67%, so the original draws these without it, or
+per draw), the depth test (less or equal, writes on; less gives the same figure), the alpha
+compare of the opaque materials (a pixel with alpha below 0.5 is not drawn: 0.3 to 0.5 give the
+same figure, 0.05 gives 87%, and 0.65 gives 90.8%; the leaves are 1,084 of the 6,595 either
+way), the blend of one-layer materials (read from the layer flag 0x40, above), and fog (none
+seen). To read them, record ERC_ApplyState's context at the entry of each draw (the 0x30 bytes
+from context +0x23C to +0x26B: Z mode, alpha compare; +0x564 to +0x573: the blend; +0x578, the
+blend flags; +0x5B0, the cull mode).

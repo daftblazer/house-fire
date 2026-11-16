@@ -146,7 +146,7 @@ impl<'g> Renderer<'g> {
         let push = [vk::PushConstantRange::default().stage_flags(vk::ShaderStageFlags::VERTEX).size(32)];
         let pipeline_layout = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&layouts).push_constant_ranges(&push), None) }.unwrap();
         let module = |spv: &[u8]| {
-            let words: Vec<u32> = spv.chunks_exact(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect();
+            let words: Vec<u32> = spv.as_chunks::<4>().0.iter().map(|c| u32::from_le_bytes(*c)).collect();
             unsafe { d.create_shader_module(&vk::ShaderModuleCreateInfo::default().code(&words), None) }.unwrap()
         };
         let vert = module(include_bytes!(concat!(env!("OUT_DIR"), "/model.vert.spv")));
@@ -332,7 +332,7 @@ impl<'g> Renderer<'g> {
             .front_face(vk::FrontFace::CLOCKWISE)
             .line_width(1.0);
         let multisample = vk::PipelineMultisampleStateCreateInfo::default().rasterization_samples(vk::SampleCountFlags::TYPE_1);
-        let depth = vk::PipelineDepthStencilStateCreateInfo::default().depth_test_enable(key.depth_test).depth_write_enable(key.depth_write).depth_compare_op(vk::CompareOp::LESS_OR_EQUAL);
+        let depth = vk::PipelineDepthStencilStateCreateInfo::default().depth_test_enable(key.depth_test).depth_write_enable(key.depth_write).depth_compare_op(vk::CompareOp::LESS);
         let all = vk::ColorComponentFlags::RGBA;
         let colour_blend = match key.blend {
             Blend::Opaque => vk::PipelineColorBlendAttachmentState::default().color_write_mask(all),
@@ -449,7 +449,7 @@ impl<'g> Renderer<'g> {
         let n = (w * h) as usize;
         let rgba = gpu.read(&self.colour_out, n * 4);
         let raw = gpu.read(&self.ids_out, n * 4);
-        let ids = raw.chunks_exact(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).map(|i| if i == 0 { 0 } else { frame.draws[i as usize - 1].id }).collect();
+        let ids = raw.as_chunks::<4>().0.iter().map(|c| u32::from_le_bytes(*c)).map(|i| if i == 0 { 0 } else { frame.draws[i as usize - 1].id }).collect();
         Picture { width: w, height: h, rgba, ids }
     }
 }
@@ -534,8 +534,8 @@ fn record(camera: &Camera, d: &Draw) -> DrawRecord {
         r.mv[i] = [mv[i * 4], mv[i * 4 + 1], mv[i * 4 + 2], mv[i * 4 + 3]];
     }
     let nm = normal_matrix([[mv[0], mv[1], mv[2]], [mv[4], mv[5], mv[6]], [mv[8], mv[9], mv[10]]]);
-    for i in 0..3 {
-        r.nm[i] = [nm[i][0], nm[i][1], nm[i][2], 0.0];
+    for (row, n) in r.nm.iter_mut().zip(nm) {
+        *row = [n[0], n[1], n[2], 0.0];
     }
     let (mode, combine) = (
         match &d.lighting {
@@ -583,4 +583,18 @@ fn record(camera: &Camera, d: &Draw) -> DrawRecord {
     r.params[0] = if let Combine::Crossfade { fade } = d.material.combine { fade } else { 0.0 };
     r.params[1] = d.material.alpha_ref.unwrap_or(0.0);
     r
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normal_matrix_keeps_directions_through_scale_and_mirror() {
+        // a mirror in y with a uniform scale: normals are mirrored too, and not scaled up
+        let n = normal_matrix([[0.5, 0.0, 0.0], [0.0, -0.5, 0.0], [0.0, 0.0, 0.5]]);
+        assert_eq!(n[1][1], -2.0);
+        assert_eq!(n[0][0], 2.0);
+        assert_eq!(n[0][1], 0.0);
+    }
 }

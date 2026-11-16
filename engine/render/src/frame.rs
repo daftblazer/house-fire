@@ -200,3 +200,18 @@ pub struct Picture {
     pub rgba: Vec<u8>,
     pub ids: Vec<u32>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn concat_applies_the_second_matrix_first() {
+        // b moves by (1, 0, 0); a doubles
+        let b = [1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        let a = [2.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0];
+        let m = concat(&a, &b);
+        assert_eq!([m[0], m[3], m[5], m[10]], [2.0, 2.0, 2.0, 2.0]);
+        assert_eq!(concat(&IDENTITY, &b), b);
+    }
+}

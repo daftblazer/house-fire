@@ -16,6 +16,12 @@ use std::collections::{BTreeMap, HashMap};
 /// (`ERC_ApplyState`'s block at context +0x248) is not in the log; 0.3 to 0.5 fit the same.
 pub const ALPHA_REF: f32 = 0.5;
 
+/// A layer's flag (the low byte of its flag word, 0x08 for most materials) that goes with the
+/// translucent ones (windows, the aquarium, the bottle lamp, water): drawn blended by source
+/// alpha, with no alpha test. Read from the log's material records, and checked by the pixels
+/// those draws cover (`docs/assets.md`, "The renderer"); the blend state itself is not logged.
+pub const LAYER_BLENDED: u8 = 0x40;
+
 /// What a draw of the frame is, for the report.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Class {
@@ -66,6 +72,8 @@ pub struct DrawInfo {
     pub missing_texture: bool,
     /// The names of the textures bound to its layers.
     pub textures: [Option<String>; 2],
+    /// The layers' flag words (bytes 4 to 8 of each).
+    pub flags: [u32; 2],
     /// Whether the material is of a kind not drawn yet (a sphere map, the added-by-table blend).
     pub unsupported: Option<&'static str>,
 }
@@ -355,7 +363,11 @@ fn material_of(m: &MaterialRec, lit: bool, bound: [Option<TextureRef>; 2]) -> (M
         mat.layers = [bound[0], None];
         if bound[0].is_some() {
             mat.combine = Combine::Modulate { unlit: l(0, 0x15) == 1 };
-            mat.alpha_ref = Some(ALPHA_REF);
+            if m.layer[0][7] & LAYER_BLENDED != 0 {
+                mat.blend = Blend::Alpha;
+            } else {
+                mat.alpha_ref = Some(ALPHA_REF);
+            }
             if sphere && lit && bound[1].is_some() {
                 mat.sphere = Some(sphere_weight);
                 mat.layers = bound;
@@ -440,7 +452,7 @@ impl Assets {
             main_projection = main_projection.or(projection).or(use_projection);
             let strip: &StripRec = &log.strips[k];
             let (class, part) = self.identify(strip, k, lr, use_projection, main_projection, &skinned_at);
-            let mut info = DrawInfo { class, strip: k, model: part.map(|p| p.record.name.clone()).unwrap_or_default(), missing_texture: false, textures: [None, None], unsupported: None };
+            let mut info = DrawInfo { class, strip: k, model: part.map(|p| p.record.name.clone()).unwrap_or_default(), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None };
             if class.drawn() {
                 let part = part.unwrap();
                 let (Some(m), Some(lr), Some(view), Some(world)) = (m, lr, use_view, use_world) else {
@@ -464,7 +476,7 @@ impl Assets {
                 for slot in 0..(m.layers as usize).min(2) {
                     let Some(load) = texture_state[slot] else { continue };
                     let image = load.image();
-                    let x = log.textures.iter().filter(|x| x.image == image && x.tick <= tick).next_back().or_else(|| log.textures.iter().find(|x| x.image == image));
+                    let x = log.textures.iter().rfind(|x| x.image == image && x.tick <= tick).or_else(|| log.textures.iter().find(|x| x.image == image));
                     let id = x.and_then(|x| {
                         *hash_textures.entry(x.hash).or_insert_with(|| {
                             self.decode(x.hash).map(|levels| {
@@ -492,6 +504,7 @@ impl Assets {
                 let lighting = lighting_of(lr);
                 let (material, unsupported) = material_of(m, matches!(lighting, Lighting::Lit { .. } | Lighting::VertexColours), bound);
                 info.unsupported = unsupported;
+                info.flags = [0, 1].map(|i| u32::from_be_bytes(m.layer[i][4..8].try_into().unwrap()));
                 camera_view = camera_view.or(Some(view));
                 draws.push(Draw { mesh: MeshId(mesh_index as u32), world, view: Some(view), material, lighting, id: drawn.len() as u32 + 1 });
                 drawn.push(info.clone());
@@ -527,5 +540,27 @@ impl Assets {
             return (Class::Shadow, Some(part));
         }
         (if list { Class::DisplayList } else { Class::RigidStrip }, Some(part))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strips_become_triangles_all_facing_one_way() {
+        let mut out = Vec::new();
+        strip_indices(&mut out, 10, 5);
+        assert_eq!(out, [10, 11, 12, 12, 11, 13, 12, 13, 14]);
+        out.clear();
+        strip_indices(&mut out, 0, 2);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn colours_go_through_bytes_as_the_game_makes_them() {
+        assert_eq!(byte(0.5), 128.0 / 255.0);
+        assert_eq!(byte(2.0), 1.0);
+        assert_eq!(byte(-1.0), 0.0);
     }
 }
