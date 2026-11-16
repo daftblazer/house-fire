@@ -22,6 +22,7 @@ pub mod quickdata;
 pub mod scene;
 pub mod shader;
 pub mod skeleton;
+pub mod skin;
 pub mod routing;
 pub mod interp;
 pub mod lamps;
