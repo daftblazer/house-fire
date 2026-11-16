@@ -34,3 +34,14 @@
 - **The picture's state not recorded** (home-a36's ';' records have the context's state and
   the pixel engine's registers as ERC_ApplyState left them): fog, and GX calls a draw method
   makes after ERC_ApplyState (the shadow mask's constant alpha?).
+- **Floors 82.5% and shadows 67.6% within 4** (frame 2400, R2a/R2a2, left over from stage 5b):
+  terrain strips ~24,000 px off (second layer through GX_TEXMTX0 then the dual-texture matrix
+  0x40, which ERC_ApplyState loads natively from the context's +0x6A4: not in the log, so
+  TERRAIN_COLOUR_* is fitted; next step: add +0x674 and +0x6A4 to the ';' record), trilinear LOD;
+  wall shadows hatched where triangles overlap (~4,000 px on the wall caps) where the reference
+  is flat; `shadow_of` (flat black, alpha 127) fitted; the porch near black in the reference;
+  birch leaves 1,091 px darker in the reference with no shadow draw after them.
+- **The reference ignores GX's constant destination alpha** (BP 0x42): gcn-recomp's renderers
+  read only BP 0x41, so the recomp's frames differ from the console's wherever shadows read
+  destination alpha. House Fire follows the reference (`HONOUR_CONSTANT_DST_ALPHA` false in
+  scene.rs). The user's call: keep matching the recomp, or fix gcn-recomp and match hardware.
