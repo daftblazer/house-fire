@@ -117,6 +117,15 @@ pub enum Cull {
     Front,
 }
 
+/// How much of the sphere-mapped layer is added.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SphereWeight {
+    One,
+    /// By the colour's alpha so far.
+    PrevAlpha,
+    Factor(f32),
+}
+
 /// A material: how the layers combine and the state the draw is made in.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Material {
@@ -128,6 +137,9 @@ pub struct Material {
     pub depth_write: bool,
     /// Pixels whose alpha is below this are not drawn.
     pub alpha_ref: Option<f32>,
+    /// A reflection added over the colour: layer 1 read through the sphere map of the surface
+    /// (`Combine::Modulate` only).
+    pub sphere: Option<SphereWeight>,
 }
 
 /// A light shining on the draw, in the draw's view space.

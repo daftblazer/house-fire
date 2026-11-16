@@ -29,6 +29,7 @@ layout(push_constant) uniform Camera {
 layout(location = 0) out vec4 v_colour;
 layout(location = 1) out vec2 v_uv;
 layout(location = 2) flat out int v_draw;
+layout(location = 3) out vec2 v_sphere;
 
 float byte(float v) { return floor(clamp(v, 0.0, 1.0) * 255.0 + 0.5) / 255.0; }
 
@@ -42,12 +43,22 @@ void main() {
     v_uv = vec2(in_uv) * (1.0 / 4096.0);
     v_draw = gl_InstanceIndex;
 
+    vec3 n = vec3(dot(d.nm[0].xyz, in_normal.xyz), dot(d.nm[1].xyz, in_normal.xyz), dot(d.nm[2].xyz, in_normal.xyz));
+    float nl = length(n);
+    n = nl > 0.0 ? n / nl : n;
+    // the sphere map: the view-space position reflected about the normal, turned into a pair
+    // of coordinates
+    vec3 o = vec3(0.0, 0.0, 1.0);
+    if (nl > 0.0) {
+        o = v - n * (2.0 * dot(v, n));
+        o.z += length(o) + 1.0;
+        o = normalize(o);
+    }
+    v_sphere = o.xy * 0.5 + 0.5;
+
     int mode = int(d.ambient.w);
     vec4 c;
     if (mode == 0) {
-        vec3 n = vec3(dot(d.nm[0].xyz, in_normal.xyz), dot(d.nm[1].xyz, in_normal.xyz), dot(d.nm[2].xyz, in_normal.xyz));
-        float l = length(n);
-        n = l > 0.0 ? n / l : n;
         vec3 sum = d.ambient.rgb;
         for (int i = 0; i < d.counts.x; i++) {
             sum += d.dir_colour[i].rgb * max(0.0, dot(n, d.dir_to_light[i].xyz));

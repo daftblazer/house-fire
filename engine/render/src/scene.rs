@@ -322,10 +322,12 @@ fn material_of(m: &MaterialRec, lit: bool, bound: [Option<TextureRef>; 2]) -> (M
     let sphere = m.layers == 2 && l(1, 0x16) == 2;
     let mut unsupported = None;
     let two = m.layers == 2 && bound[1].is_some() && lit && !sphere;
-    let mut mat = Material { combine: Combine::Vertex, layers: [bound[0], None], blend: Blend::Opaque, cull: Cull::None, depth_test: true, depth_write: true, alpha_ref: None };
-    if sphere && bound[1].is_some() && lit {
-        unsupported = Some("sphere map");
-    }
+    let mut mat = Material { combine: Combine::Vertex, layers: [bound[0], None], blend: Blend::Opaque, cull: Cull::None, depth_test: true, depth_write: true, alpha_ref: None, sphere: None };
+    let sphere_weight = match by {
+        1 => SphereWeight::PrevAlpha,
+        2 => SphereWeight::Factor(f32::from(factor) / 255.0),
+        _ => SphereWeight::One,
+    };
     if two && mode == 0 && blend == 1 && by == 2 && enabled == 1 {
         mat.combine = Combine::Crossfade { fade: f32::from(255 - factor) / 255.0 };
         mat.layers = bound;
@@ -354,6 +356,10 @@ fn material_of(m: &MaterialRec, lit: bool, bound: [Option<TextureRef>; 2]) -> (M
         if bound[0].is_some() {
             mat.combine = Combine::Modulate { unlit: l(0, 0x15) == 1 };
             mat.alpha_ref = Some(ALPHA_REF);
+            if sphere && lit && bound[1].is_some() {
+                mat.sphere = Some(sphere_weight);
+                mat.layers = bound;
+            }
         }
     }
     (mat, unsupported)

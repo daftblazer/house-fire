@@ -569,7 +569,17 @@ fn record(camera: &Camera, d: &Draw) -> DrawRecord {
     }
     let unlit_first = matches!(d.material.combine, Combine::Over { unlit_first: true, .. } | Combine::Add { unlit_first: true });
     r.counts[2] = combine;
-    r.counts[3] = i32::from(d.material.alpha_ref.is_some()) | if unlit_first { 2 } else { 0 };
+    // flags: 1 alpha test, 2 first layer unlit, 4 sphere map added (weight in bits 3 and 4)
+    let (sphere, weight) = match d.material.sphere {
+        None => (0, 0),
+        Some(SphereWeight::One) => (4, 0),
+        Some(SphereWeight::PrevAlpha) => (4, 1 << 3),
+        Some(SphereWeight::Factor(f)) => {
+            r.params[2] = f;
+            (4, 2 << 3)
+        }
+    };
+    r.counts[3] = i32::from(d.material.alpha_ref.is_some()) | if unlit_first { 2 } else { 0 } | sphere | weight;
     r.params[0] = if let Combine::Crossfade { fade } = d.material.combine { fade } else { 0.0 };
     r.params[1] = d.material.alpha_ref.unwrap_or(0.0);
     r

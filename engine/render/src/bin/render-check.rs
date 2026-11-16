@@ -131,6 +131,16 @@ fn main() -> ExitCode {
     for (name, (n, off, signed)) in worst.iter().take(std::env::var("HF_WORST").ok().and_then(|v| v.parse().ok()).unwrap_or(0)) {
         println!("  {off:>6} of {n:>6} off (mean signed {:+.1} {:+.1} {:+.1}): {name}", signed[0] as f64 / *n as f64, signed[1] as f64 / *n as f64, signed[2] as f64 / *n as f64);
     }
+    if let Ok(name) = std::env::var("HF_MODEL") {
+        let mut shown = 0;
+        for (p, &id) in picture.ids.iter().enumerate().filter(|x| *x.1 != 0) {
+            let off = (0..3).any(|c| (i32::from(picture.rgba[p * 4 + c]) - i32::from(reference[p * 4 + c])).abs() > 4);
+            if off && scene.drawn[id as usize - 1].model == name && p % 37 == 0 && shown < 25 {
+                shown += 1;
+                println!("  {},{}: ours {:?} reference {:?} (strip {})", p % WIDTH as usize, p / WIDTH as usize, &picture.rgba[p * 4..p * 4 + 3], &reference[p * 4..p * 4 + 3], scene.drawn[id as usize - 1].strip);
+            }
+        }
+    }
     for probe in std::env::var("HF_PROBE").unwrap_or_default().split(';').filter(|p| !p.is_empty()) {
         let xy: Vec<usize> = probe.split(',').filter_map(|v| v.parse().ok()).collect();
         let p = xy[1] * WIDTH as usize + xy[0];

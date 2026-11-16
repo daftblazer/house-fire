@@ -5,6 +5,7 @@
 layout(location = 0) in vec4 v_colour;
 layout(location = 1) in vec2 v_uv;
 layout(location = 2) flat in int v_draw;
+layout(location = 3) in vec2 v_sphere;
 
 struct Draw {
     vec4 mv[3];
@@ -56,6 +57,11 @@ void main() {
                 c = vec4(clamp(2.0 * mix(first.rgb, t1.rgb, by), 0.0, 1.0), first.a);
             }
         }
+    }
+    if ((d.counts.w & 4) != 0) {
+        int by = (d.counts.w >> 3) & 3;
+        float weight = by == 0 ? 1.0 : (by == 1 ? c.a : d.params.z);
+        c.rgb = clamp(c.rgb + texture(layer1, v_sphere).rgb * weight, 0.0, 1.0);
     }
     if ((d.counts.w & 1) != 0 && c.a < d.params.y) discard;
     out_colour = c;
