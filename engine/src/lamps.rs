@@ -1,15 +1,16 @@
 //! The lamps' lights placed from the engine's own data (`docs/assets.md`, "The lamps' lights").
 //!
 //! An object with a light plays one still animation when it is idle (its resources' idle
-//! animation, `quickdata::ObjResources::idle`: two frames, every channel constant). The nodes of
-//! that animation that carry the colour, factor and radius channels (words 4 to 6, the pose's
-//! flags 0x20, 0x40 and 0x80) are its lights. The pose of every node is built from the animation,
-//! the skeleton's bones are computed from the poses on the object's own matrix, and a light sits
-//! at its node's bone, with the node's colour, factor and radius.
+//! animation, `quickdata::ObjResources::idle`: two frames, every channel constant, or for the
+//! disco's lights a colour and radius that run on scalar streams). The nodes of that animation
+//! that carry the colour, factor and radius channels (words 4 to 6) are its lights. The pose of
+//! every node is built from the animation, the skeleton's bones are computed from the poses on the
+//! object's own matrix, and a light sits at its node's bone, with the node's colour, factor and
+//! radius.
 
 use std::collections::BTreeMap;
 
-use crate::anim::Anim;
+use crate::anim::{Anim, Channel, Node};
 use crate::disc::Disc;
 use crate::light::lamp_light;
 use crate::pose::{Pose, TrackStreams};
@@ -17,23 +18,25 @@ use crate::quickdata::ObjResources;
 use crate::scene::Placement;
 use crate::skeleton::{self, CharNode, IDENTITY, Mat4, NodeState, PoseMode, Skeleton};
 
-/// The pose flags a node has when its animation gives the light channels (4 to 6: colour,
-/// factor and radius, the flags 0x20, 0x40 and 0x80 of `pose::Pose`).
-pub const LIGHT_CHANNELS: u32 = 0xE0;
-
 /// The place in a still animation's track the idle pose is read at (every channel is constant,
 /// so any place gives the same pose).
 const IDLE_PLACE: f32 = 0.0;
 
+/// A node's words of the light channels (colour, factor, radius: 4 to 6).
+const LIGHT_WORDS: [usize; 3] = [4, 5, 6];
+
 /// A lamp's light placed on its object: the node it hangs from, where it is (tiles, the third the
 /// height), its colour (the node's by its factor) and its reach (the light's radius twice, by the
-/// get-light's quarter).
+/// get-light's quarter). A light whose factor or radius runs on a stream (`animated`: the dance
+/// floor's and laser show's, not decoded yet) has only its place from the engine: its colour and
+/// reach are those of the stream's defaults.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LampLight {
     pub node: usize,
     pub at: [f32; 3],
     pub colour: [f32; 3],
     pub reach: f32,
+    pub animated: bool,
 }
 
 /// An object's own matrix on the lot (rows, the translation last): its place (tiles) and its
@@ -55,35 +58,49 @@ pub fn object_matrix(x: f32, y: f32, angle: f32) -> Mat4 {
     m
 }
 
-/// The poses of every node of `anim` at its idle place; `None` if a node has a scalar stream
-/// (not decoded: lamps have constants).
-pub fn idle_poses(anim: &Anim) -> Option<Vec<Pose>> {
-    let mut streams = TrackStreams::new(anim);
-    (0..anim.nodes.len()).map(|i| streams.local(anim, i, IDLE_PLACE, 0).ok()).collect()
+/// Whether a node of the animation is a light: all three light channels given.
+fn is_light(node: &Node) -> bool {
+    LIGHT_WORDS.iter().all(|&w| Channel::of(node[w]) != Channel::None)
+}
+
+/// Whether the node's factor or radius (words 5 and 6) is a stream.
+fn is_animated(node: &Node) -> bool {
+    [5, 6].iter().any(|&w| matches!(Channel::of(node[w]), Channel::Stream(_)))
+}
+
+/// The poses of every node of `anim` at its idle place. The scalar streams (words 5 and 6; not
+/// decoded) are left out of a node's pose, which then keeps their defaults.
+pub fn idle_poses(anim: &Anim) -> Vec<Pose> {
+    let mut plain = anim.clone();
+    for node in plain.nodes.iter_mut().filter(|n| is_animated(n)) {
+        node[5] = 0;
+        node[6] = 0;
+    }
+    let mut streams = TrackStreams::new(&plain);
+    (0..plain.nodes.len()).map(|i| streams.local(&plain, i, IDLE_PLACE, 0).unwrap_or_default()).collect()
 }
 
 /// The lights of an object idle in `anim` on `skeleton` (the bones' own count of nodes), with the
 /// object's matrix `root`: one for each node with the light channels. Empty for an object with
 /// none, or whose animation's nodes do not fit its skeleton.
 pub fn lights(skeleton: &Skeleton, anim: &Anim, root: &Mat4) -> Vec<LampLight> {
-    let Some(poses) = idle_poses(anim).filter(|p| p.len() == skeleton.bones.len()) else {
-        return Vec::new();
-    };
-    if poses.iter().all(|p| p.flags & LIGHT_CHANNELS != LIGHT_CHANNELS) {
+    if anim.nodes.len() != skeleton.bones.len() || !anim.nodes.iter().any(is_light) {
         return Vec::new();
     }
+    let poses = idle_poses(anim);
     let nodes: Vec<CharNode> = skeleton.bones.iter().map(CharNode::from_bone).collect();
     let states: Vec<NodeState> = poses.iter().map(|p| NodeState { flags: p.flags, rotation: p.rotation, translation: p.translation, scale: p.scale }).collect();
     // the controller's mode word is not 0 for these objects (the logged bones'); its scale only
     // scales the matrices' 3 x 3, not the translations the lights sit at
     let bones = skeleton::bone_matrices(&nodes, &states, root, PoseMode { through_rest: true, scale: 1.0 });
-    poses
+    anim.nodes
         .iter()
+        .zip(&poses)
         .enumerate()
-        .filter(|(_, p)| p.flags & LIGHT_CHANNELS == LIGHT_CHANNELS)
-        .map(|(node, p)| {
+        .filter(|(_, (n, _))| is_light(n))
+        .map(|(node, (n, p))| {
             let (colour, reach) = lamp_light(p.vector, p.scalar_a, p.scalar_b);
-            LampLight { node, at: [bones[node][12], bones[node][13], bones[node][14]], colour, reach }
+            LampLight { node, at: [bones[node][12], bones[node][13], bones[node][14]], colour, reach, animated: is_animated(n) }
         })
         .collect()
 }
@@ -114,14 +131,15 @@ pub struct Lamp {
     pub lights: Vec<LampLight>,
 }
 
-/// The lamps among the lot's drawn objects: each placement whose leader (`guid_of`, its GUID)
-/// has a model, a skeleton and an idle animation with light nodes.
-pub fn on_lot(placements: &[Placement], guid_of: impl Fn(i16) -> Option<u32>, resources: &BTreeMap<u32, ObjResources>, sources: &Sources) -> Vec<Lamp> {
+/// The lamps among the lot's drawn objects: each placement whose group has a model, a skeleton
+/// and an idle animation with light nodes. `guids_of` gives the GUIDs of a leader's parts (its
+/// own first): a multi-tile object's resources are on one of its parts' definitions, not always
+/// the leader's.
+pub fn on_lot(placements: &[Placement], guids_of: impl Fn(i16) -> Vec<u32>, resources: &BTreeMap<u32, ObjResources>, sources: &Sources) -> Vec<Lamp> {
     placements
         .iter()
         .filter_map(|p| {
-            let r = resources.get(&guid_of(p.leader)?)?;
-            let (skeleton, anim) = (sources.skeletons.get(&r.model)?, sources.anims.get(&r.idle)?);
+            let (skeleton, anim) = guids_of(p.leader).iter().filter_map(|g| resources.get(g)).find_map(|r| Some((sources.skeletons.get(&r.model)?, sources.anims.get(&r.idle)?)))?;
             let lights = lights(skeleton, anim, &object_matrix(p.x, p.y, p.angle));
             (!lights.is_empty()).then_some(Lamp { leader: p.leader, place: *p, lights })
         })

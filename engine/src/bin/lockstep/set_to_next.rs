@@ -16,7 +16,7 @@ type RoomLists = (Vec<Vec<(i32, i32)>>, std::collections::BTreeMap<u32, usize>);
 /// patterns (SimsTiles) and the objects' resources by GUID (SimsObjects).
 pub type DiscTables = (Vec<u32>, Vec<u32>, Vec<housefire::quickdata::FloorPattern>, std::collections::BTreeMap<u32, housefire::quickdata::ObjResources>);
 
-pub fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &DiscTables, log: &housefire::tree_log::Log, step_object: &[Option<FileId>], notes: &mut Notes) {
+pub fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &DiscTables, log: &housefire::tree_log::Log, step_object: &[Option<FileId>], engine_lamps: &[housefire::lamps::Lamp], notes: &mut Notes) {
     let (lots, lot_ids, walk, best, best_n) = pick_lot(lib, ngh, log);
     let raw_of = |s: &StepRec| -> Option<&[u8]> {
         let t = log.tree_of(s)?;
@@ -669,6 +669,7 @@ pub fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &Dis
                             }
                             println!("grid build at tick {} from the engine: cells {}, rooms the same {rooms_same}; cell rooms {cell_rooms}, the four lights the same {lit_same}", g.tick, g.cells.len());
                         }
+                        lamps_from_the_engine(&log, b, rooms, &objs, &info, &order, engine_lamps, &lw, walls);
                         println!("window lights' nearest lights: {fills} fills after a build ({first_fills} before any), from the other side's room {near_same}");
                     }
                 }
@@ -954,4 +955,149 @@ pub fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &Dis
             );
         }
     }
+}
+
+/// The lights as the engine makes them with its own lamps (`lamps::on_lot`: places from the
+/// objects' poses, no logged place): the lamps are light objects in the world list's order, each
+/// in its tile's room, sorted with the windows (`sort_lights`); then, against the log's last
+/// rebuild `b`, the own lights in order (place, reach, colour), the light grid built after the
+/// rebuild before it (every cell room's four lights) and each window fill's nearest lamps and
+/// mix. A rebuild or fill from before the lamps were placed (the original's lamp lights sit near
+/// the origin then) is counted apart.
+#[allow(clippy::too_many_arguments)]
+fn lamps_from_the_engine(
+    log: &housefire::tree_log::Log,
+    b: &housefire::tree_log::LightRebuildRec,
+    rooms: usize,
+    objs: &[(housefire::light::LightKind, i32, i32)],
+    info: &[((f32, f32), u32, i32)],
+    other_order: &[usize],
+    lamps: &[housefire::lamps::Lamp],
+    lw: &World,
+    walls: &housefire::routing::Walls,
+) {
+    use housefire::light::{self, LightKind};
+    let by_leader: BTreeMap<i16, &housefire::lamps::Lamp> = lamps.iter().map(|l| (l.leader, l)).collect();
+    let mut all = objs.to_vec();
+    let mut lamp_lights = Vec::new();
+    for o in lw.objects().filter(|o| o.on_lot()) {
+        let Some(l) = by_leader.get(&o.id()) else { continue };
+        let room = i32::from(walls.room(o.x16 >> 4, o.y16 >> 4).wrapping_sub(1));
+        for light in &l.lights {
+            all.push((LightKind::Lamp, room, room));
+            lamp_lights.push(*light);
+        }
+    }
+    let (ranges, other, own) = light::sort_lights(rooms, &all);
+    debug_assert_eq!(other.len(), other_order.len());
+    let mut lights = vec![([0.0f32; 3], 0.0f32); 512];
+    for (k, &i) in other.iter().enumerate() {
+        let ((x, y), kind, me) = info[i];
+        if let Some((reach, _, Some(h))) = light::window_light_params(kind, me != 0) {
+            lights[k] = ([x, y, h], reach);
+        }
+    }
+    let own_lights: Vec<housefire::lamps::LampLight> = own.iter().map(|&i| lamp_lights[i - objs.len()]).collect();
+    for (k, l) in own_lights.iter().enumerate() {
+        lights[256 + k] = (l.at, l.reach);
+    }
+    // the own lights in order against the rebuild's
+    let theirs = &b.lights[(b.other as usize).min(b.lights.len())..];
+    let f = f32::from_bits;
+    let (mut placed, mut coloured) = (0, 0);
+    for (mine, t) in own_lights.iter().zip(theirs) {
+        placed += usize::from([f(t[0]), f(t[1]), f(t[2]), f(t[3])].map(f32::to_bits) == [mine.at[0], mine.at[1], mine.at[2], mine.reach].map(f32::to_bits));
+        coloured += usize::from([t[4], t[5], t[6]] == mine.colour.map(f32::to_bits));
+    }
+    if std::env::var_os("LOCKSTEP_LAMPS_SHOW").is_some() {
+        for t in theirs {
+            println!("  log own light obj {:08x}: ({}, {}, {}) reach {} colour ({}, {}, {})", t[7], f(t[0]), f(t[1]), f(t[2]), f(t[3]), f(t[4]), f(t[5]), f(t[6]));
+        }
+        for (k, m) in own_lights.iter().enumerate() {
+            println!("  engine own light {k}: node {} {:?} reach {} colour {:?}", m.node, m.at, m.reach, m.colour);
+        }
+        for t in theirs {
+            let at = [f(t[0]), f(t[1]), f(t[2])];
+            if own_lights.iter().any(|m| m.at == at) {
+                continue;
+            }
+            let rec = log.object_lights.iter().filter(|o| o.lights.iter().any(|l| l.light == t[7])).last();
+            println!("  unmatched log light {:08x} at {at:?}: record {:?}", t[7], rec.map(|o| (o.tick, o.object, o.lights.iter().map(|l| (l.kind, l.node, l.light == t[7])).collect::<Vec<_>>())));
+            for o in lw.objects().filter(|o| o.on_lot() && (o.x16 as f32 / 16.0 - at[0]).abs() < 1.5 && (o.y16 as f32 / 16.0 - at[1]).abs() < 1.5) {
+                println!("    near: object {} guid {:08x} leader {} at ({}, {}) file {:?}", o.id(), o.guid, o.leader, o.x16 as f32 / 16.0, o.y16 as f32 / 16.0, o.file.map(|f| lw.library().file(f).path.clone()));
+            }
+        }
+    }
+    println!("own lights from the engine's lamps: the engine's {}, the log's {}; in order the same place and reach {placed}, colour {coloured}", own_lights.len(), theirs.len());
+    // the grid built after the rebuild
+    if let Some(g) = b.builds_before.checked_sub(1).and_then(|i| log.grid_builds.get(i)) {
+        let mut cells = light::CellRooms::default();
+        for (x, y, r) in light::cell_room_adds((walls.size().0.min(39), walls.size().1.min(39)), |x, y| walls.room(x, y).wrapping_sub(1) as u8, |x, y| walls.diagonal_bits(x, y)) {
+            cells.add(x, y, r);
+        }
+        // (a light on a stream, the laser show's, has its reach from the stream, not decoded: the
+        // engine's is the stream's default; counted again with such lights as the build has them)
+        if std::env::var_os("LOCKSTEP_LAMPS_SHOW").is_some() {
+            for k in 0..own_lights.len() {
+                println!("  build light {k}: {:?} engine {:?}", g.lights.get(256 + k), lights[256 + k]);
+            }
+            println!("  ranges engine {ranges:?}\n  ranges build  {:?}", &g.ranges[..rooms]);
+        }
+        let mut as_built = lights.clone();
+        let mut moving = 0;
+        for k in 0..own_lights.len() {
+            if let Some(l) = g.lights.get(256 + k).filter(|_| own_lights[k].animated) {
+                as_built[256 + k] = *l;
+                moving += 1;
+            }
+        }
+        for (name, set) in [("the engine's lamps and windows", &lights), ("the lights on streams as built", &as_built)] {
+            let (mut cell_rooms, mut lit_same) = (0, 0);
+            for (ci, cell) in g.cells.iter().enumerate() {
+                let (x, y) = (2 + ci / 36, 2 + ci % 36);
+                for (k, &id) in cells.at(x as i32, y as i32).unwrap_or([0xFF; 4]).iter().enumerate() {
+                    if id == 0xFF {
+                        break;
+                    }
+                    cell_rooms += 1;
+                    let logged: [u16; 4] = {
+                        let (a, c) = (cell[1 + 2 * k], cell[2 + 2 * k]);
+                        [(a >> 16) as u16, a as u16, (c >> 16) as u16, c as u16]
+                    };
+                    let Some(r) = ranges.get(usize::from(id)) else { continue };
+                    let point = [x as f32, y as f32, light::GRID_Z];
+                    if light::cell_lights(point, (r[2], r[3]), (r[0], r[1]), set) == Some(logged) {
+                        lit_same += 1;
+                    }
+                }
+            }
+            println!("grid build at tick {} from {name} ({moving} lights on streams): cell rooms {cell_rooms}, the four lights the same {lit_same}", g.tick);
+        }
+    }
+    // each window fill: its nearest lamps (ranked over its other side's room's own range) and the
+    // mix of them, from the engine's lamps, where the grid build before it had them placed
+    let (mut fills, mut before, mut list_same, mut mix_same, mut colour_same) = (0, 0, 0, 0, 0);
+    for w in &log.window_fills {
+        let Some(g) = log.grid_builds.iter().rev().find(|g| g.tick < w.tick) else {
+            before += 1;
+            continue;
+        };
+        let Some(&i) = other.get(w.light as usize) else { continue };
+        let here = (0..own_lights.len()).all(|k| g.lights.get(256 + k).is_some_and(|l| l.0.map(f32::to_bits) == lights[256 + k].0.map(f32::to_bits) && l.1.to_bits() == lights[256 + k].1.to_bits()));
+        if !here {
+            before += 1;
+            continue;
+        }
+        let Some(r) = usize::try_from(all[i].2).ok().and_then(|room| ranges.get(room)) else { continue };
+        let Some(near) = light::nearest_lights(w.at, (r[2], r[3]), &lights) else { continue };
+        let ids: Vec<u32> = near.iter().map_while(|s| s.map(u32::from)).collect();
+        fills += 1;
+        list_same += usize::from(ids == w.near.iter().map(|x| x.0).collect::<Vec<_>>());
+        let lamps_near: Vec<_> = ids.iter().map(|&id| (lights[id as usize].0, lights[id as usize].1, own_lights[id as usize - 256].colour)).collect();
+        let mix = light::window_mix(w.room, w.sun, w.at, &lamps_near);
+        let colour = mix.map(|v| v * w.base);
+        mix_same += usize::from(mix.map(f32::to_bits) == w.mix.map(f32::to_bits));
+        colour_same += usize::from(colour.map(f32::to_bits) == w.colour.map(f32::to_bits));
+    }
+    println!("window fills from the engine's lamps: {fills} after a grid build with the lamps placed ({before} before any build or with them unplaced): nearest list the same {list_same}, mix {mix_same}, colour {colour_same}");
 }

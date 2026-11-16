@@ -27,7 +27,12 @@ pub fn engine_lamps(world: &World, res: &BTreeMap<u32, housefire::quickdata::Obj
         .filter(|w| w.on_lot() && !w.person)
         .map(|w| housefire::scene::Part { id: w.id(), leader: if w.leader != 0 { w.leader } else { w.id() }, x16: w.x16, y16: w.y16, facing: i32::from(w.facing()), wall: res.get(&w.guid).is_some_and(|r| r.on_wall()) })
         .collect();
-    lamps::on_lot(&housefire::scene::placements(&parts), |id| world.find_object(id).map(|o| o.guid), res, &Sources::read(disc))
+    lamps::on_lot(&housefire::scene::placements(&parts), |id| world.find_object(id).into_iter().chain(world.objects().filter(|o| o.leader == id)).map(|o| o.guid).collect(), res, &Sources::read(disc))
+}
+
+/// The squared distance between two places.
+fn dist(a: [f32; 3], b: [f32; 3]) -> f32 {
+    (0..3).map(|i| (a[i] - b[i]) * (a[i] - b[i])).sum()
 }
 
 pub fn lamps(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quickdata::ObjResources>, d: &Disc) {
@@ -106,7 +111,7 @@ pub fn lamps(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quickdata:
             placed += 1;
             let at = l.at.map(f32::to_bits) == mine.at.map(f32::to_bits);
             let (colour, reach) = housefire::light::lamp_light([f(l.words[11]), f(l.words[12]), f(l.words[13])], f(l.words[14]), f(l.words[15]));
-            let same_colour = colour.map(f32::to_bits) == mine.colour.map(f32::to_bits) && reach.to_bits() == mine.reach.to_bits();
+            let same_colour = mine.animated || colour.map(f32::to_bits) == mine.colour.map(f32::to_bits) && reach.to_bits() == mine.reach.to_bits();
             at_different += usize::from(!at);
             if !at {
                 let e = mine.at.iter().zip(&l.at).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
@@ -120,4 +125,65 @@ pub fn lamps(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quickdata:
         }
     }
     println!("lamp places from the engine ({placed} lights on their tiles, {before} before the object is placed, {no_node} at no engine light node): DIFFERENT -> {at_different} (place; the worst {worst:e}), {colour_different} (colour and reach)");
+
+    // 3. the lamps' final places without the bones (the clubs' logs have none): each lamp
+    // object's last record's kind-0 lights against the engine's lights, each place bit for bit
+    // some engine lamp light's, and its colour and reach the idle pose's (a lamp in another
+    // animation state, or a light on a stream, keeps its own)
+    let mut last: BTreeMap<u32, &housefire::tree_log::ObjectLightsRec> = BTreeMap::new();
+    for o in &log.object_lights {
+        last.insert(o.object, o);
+    }
+    let all: Vec<(usize, &housefire::lamps::LampLight)> = mine.iter().enumerate().flat_map(|(k, l)| l.lights.iter().map(move |x| (k, x))).collect();
+    // the animation (any of the disc's of the object's skeleton) that puts a lamp's light where
+    // and as the log has it: the lamp's other states, by name
+    let sources = Sources::read(d);
+    let mut states: BTreeMap<String, usize> = BTreeMap::new();
+    let mut state_of = |lamp: &Lamp, l: &housefire::tree_log::ObjectLight| {
+        let skeleton = world.objects().filter(|o| o.leader == lamp.leader || o.id() == lamp.leader).filter_map(|o| res.get(&o.guid)).find_map(|r| sources.skeletons.get(&r.model));
+        let Some(skeleton) = skeleton else { return };
+        let root = lamps::object_matrix(lamp.place.x, lamp.place.y, lamp.place.angle);
+        let (colour, reach) = housefire::light::lamp_light([f(l.words[11]), f(l.words[12]), f(l.words[13])], f(l.words[14]), f(l.words[15]));
+        let names: Vec<&str> = sources
+            .anims
+            .values()
+            .filter(|a| a.nodes.len() == skeleton.bones.len())
+            .filter(|a| lamps::lights(skeleton, a, &root).iter().any(|m| m.node == l.node as usize && m.at.map(f32::to_bits) == l.at.map(f32::to_bits) && m.colour.map(f32::to_bits) == colour.map(f32::to_bits) && m.reach.to_bits() == reach.to_bits()))
+            .map(|a| a.name.as_str())
+            .collect();
+        *states.entry(if names.is_empty() { format!("{}: no animation of the disc's", skeleton.name) } else { format!("{}: {}", skeleton.name, names.join(", ")) }).or_default() += 1;
+    };
+    let (mut lights, mut found, mut idle, mut animated, mut other_state) = (0, 0, 0, 0, 0);
+    let mut used = BTreeSet::new();
+    for o in last.values() {
+        for l in o.lights.iter().filter(|l| l.kind == 0) {
+            lights += 1;
+            let Some(k) = all.iter().position(|m| m.1.at.map(f32::to_bits) == l.at.map(f32::to_bits)) else {
+                println!("  no engine light at {:?} (object {:08x}, node {}); the engine's nearest {:?}", l.at, o.object, l.node, all.iter().min_by(|a, b| dist(a.1.at, l.at).total_cmp(&dist(b.1.at, l.at))).map(|m| (m.1.node, m.1.at)));
+                if let Some(m) = all.iter().min_by(|a, b| dist(a.1.at, l.at).total_cmp(&dist(b.1.at, l.at))) {
+                    state_of(&mine[m.0], l);
+                }
+                continue;
+            };
+            found += 1;
+            used.insert(k);
+            let (colour, reach) = housefire::light::lamp_light([f(l.words[11]), f(l.words[12]), f(l.words[13])], f(l.words[14]), f(l.words[15]));
+            if all[k].1.animated {
+                animated += 1;
+            } else if colour.map(f32::to_bits) == all[k].1.colour.map(f32::to_bits) && reach.to_bits() == all[k].1.reach.to_bits() {
+                idle += 1;
+            } else {
+                other_state += 1;
+                state_of(&mine[all[k].0], l);
+            }
+        }
+    }
+    println!(
+        "lamp objects' last kind-0 lights ({} objects, {} engine lights): {lights}, at an engine lamp's place bit for bit {found} (DIFFERENT -> {}), engine lights used {}; colour and reach the idle pose's {idle}, on a stream (place only) {animated}, of another animation state {other_state}",
+        last.len(),
+        all.len(),
+        lights - found,
+        used.len()
+    );
+    println!("  the animations that give the other states: {states:?}");
 }
