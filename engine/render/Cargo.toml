@@ -1,0 +1,18 @@
+[package]
+name = "housefire-render"
+version = "0.1.0"
+edition = "2024"
+description = "House Fire's own Vulkan renderer: draws a frame's records offscreen"
+license = "MIT"
+publish = false
+
+[dependencies]
+housefire = { path = ".." }
+ash = "0.38"
+png = "0.17"
+
+# Its own target directory and lock file: the simulation crate (`..`) has no GPU dependency.
+[workspace]
+
+[profile.release]
+debug = "line-tables-only"
