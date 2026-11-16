@@ -12,6 +12,10 @@ use housefire::texture::{self, Kind};
 use housefire::tree_log::{LightsRec, Log, MaterialRec, StripRec, TexLoadRec};
 use std::collections::{BTreeMap, HashMap};
 
+/// The alpha below which a textured pixel is not drawn. A stand-in: the device's alpha compare
+/// (`ERC_ApplyState`'s block at context +0x248) is not in the log; 0.3 to 0.5 fit the same.
+pub const ALPHA_REF: f32 = 0.5;
+
 /// What a draw of the frame is, for the report.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Class {
@@ -60,12 +64,15 @@ pub struct DrawInfo {
     pub model: String,
     /// Whether its texture was not found among the game's textures (drawn white).
     pub missing_texture: bool,
+    /// The names of the textures bound to its layers.
+    pub textures: [Option<String>; 2],
     /// Whether the material is of a kind not drawn yet (a sphere map, the added-by-table blend).
     pub unsupported: Option<&'static str>,
 }
 
 /// A texture of `textures.arc` or `datasets.arc`: where its bytes are.
 struct TextureSource {
+    name: String,
     in_datasets: bool,
     /// The LFXT's offset in its archive's data.
     at: usize,
@@ -94,7 +101,7 @@ impl Assets {
             let b = arc::bytes(&textures_arc, &e);
             if let Some(t) = texture::read(b) {
                 let first = (t.width as usize * t.height as usize * t.kind.bits() as usize) / 8;
-                by_hash.entry(fnv1a(&b[t.texels.0..t.texels.0 + first])).or_insert(TextureSource { in_datasets: false, at: e.offset as usize });
+                by_hash.entry(fnv1a(&b[t.texels.0..t.texels.0 + first])).or_insert(TextureSource { name: t.name.clone(), in_datasets: false, at: e.offset as usize });
             }
         }
         // those kept inside datasets.arc's entries (the lots' and objects' own)
@@ -105,7 +112,7 @@ impl Assets {
                 let at = p + q;
                 if let Some((t, end)) = texture::read_prefix(&b[at..]) {
                     let first = (t.width as usize * t.height as usize * t.kind.bits() as usize) / 8;
-                    by_hash.entry(fnv1a(&b[at + t.texels.0..at + t.texels.0 + first])).or_insert(TextureSource { in_datasets: true, at: e.offset as usize + at });
+                    by_hash.entry(fnv1a(&b[at + t.texels.0..at + t.texels.0 + first])).or_insert(TextureSource { name: format!("{}/{}", e.name, t.name), in_datasets: true, at: e.offset as usize + at });
                     p = at + end;
                 } else {
                     p = at + 4;
@@ -129,8 +136,14 @@ impl Assets {
             let src = b.get(off..off + size)?;
             let texels = match t.kind {
                 Kind::Palette4 | Kind::Palette8 => {
+                    // two IA8 palettes carry the colours: the device samples the image through
+                    // each (texture maps m and m + 1) and its combiner takes red and green from
+                    // the first one's intensity and alpha, blue and alpha from the second one's
+                    // (`fn_8019DC7C`: stages with a yellow and a blue constant and texture swaps)
                     let (po, n) = t.palette?;
-                    texture::decode_indexed(t.kind, w, h, src, b.get(po..po + n * 2)?, 0)
+                    let first = texture::decode_indexed(t.kind, w, h, src, b.get(po..po + n * 2)?, 0)?;
+                    let second = texture::decode_indexed(t.kind, w, h, src, b.get(po + n * 2..po + n * 4)?, 0)?;
+                    Some(first.iter().zip(&second).map(|(&a, &b)| (a & 0xFF) | (a >> 24) << 8 | (b & 0xFF) << 16 | (b >> 24) << 24).collect())
                 }
                 k => texture::decode_level(k, w, h, src),
             };
@@ -340,6 +353,7 @@ fn material_of(m: &MaterialRec, lit: bool, bound: [Option<TextureRef>; 2]) -> (M
         mat.layers = [bound[0], None];
         if bound[0].is_some() {
             mat.combine = Combine::Modulate { unlit: l(0, 0x15) == 1 };
+            mat.alpha_ref = Some(ALPHA_REF);
         }
     }
     (mat, unsupported)
@@ -420,7 +434,7 @@ impl Assets {
             main_projection = main_projection.or(projection).or(use_projection);
             let strip: &StripRec = &log.strips[k];
             let (class, part) = self.identify(strip, k, lr, use_projection, main_projection, &skinned_at);
-            let mut info = DrawInfo { class, strip: k, model: part.map(|p| p.record.name.clone()).unwrap_or_default(), missing_texture: false, unsupported: None };
+            let mut info = DrawInfo { class, strip: k, model: part.map(|p| p.record.name.clone()).unwrap_or_default(), missing_texture: false, textures: [None, None], unsupported: None };
             if class.drawn() {
                 let part = part.unwrap();
                 let (Some(m), Some(lr), Some(view), Some(world)) = (m, lr, use_view, use_world) else {
@@ -453,13 +467,21 @@ impl Assets {
                             })
                         })
                     });
+                    info.textures[slot] = x.and_then(|x| self.by_hash.get(&x.hash)).map(|s| s.name.clone());
                     let Some(texture) = id else {
                         info.missing_texture = true;
                         continue;
                     };
                     let mode0 = u32::from_be_bytes(load.obj[..4].try_into().unwrap());
+                    // the minifying filter as the hardware codes it: bit 2 linear, the low two
+                    // bits the mip levels (0 none, 1 the nearest level, 2 two mixed)
                     let min = (mode0 >> 5) & 7;
-                    bound[slot] = Some(TextureRef { texture, wrap: (wrap_of(mode0), wrap_of(mode0 >> 2)), linear: matches!(min, 1 | 3 | 5), mipmaps: min >= 2 });
+                    let mipmaps = match min & 3 {
+                        0 => Mipmaps::Off,
+                        1 => Mipmaps::Nearest,
+                        _ => Mipmaps::Linear,
+                    };
+                    bound[slot] = Some(TextureRef { texture, wrap: (wrap_of(mode0), wrap_of(mode0 >> 2)), linear: min & 4 != 0 || mode0 & 0x10 != 0 && min & 3 == 0, mipmaps });
                 }
                 let lighting = lighting_of(lr);
                 let (material, unsupported) = material_of(m, matches!(lighting, Lighting::Lit { .. } | Lighting::VertexColours), bound);

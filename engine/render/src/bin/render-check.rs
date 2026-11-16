@@ -114,6 +114,33 @@ fn main() -> ExitCode {
     println!("drawn with a texture not found (white): {missing}; materials not drawn right: {unsupported:?}");
 
     compare("rigid draws' pixels", &picture.rgba, &reference, |p| picture.ids[p] != 0);
+    // where the error is: the models whose pixels are furthest off
+    let mut by_model: BTreeMap<String, (u64, u64, [i64; 3])> = BTreeMap::new();
+    for (p, &id) in picture.ids.iter().enumerate().filter(|x| *x.1 != 0) {
+        let info = &scene.drawn[id as usize - 1];
+        let off = (0..3).any(|c| (i32::from(picture.rgba[p * 4 + c]) - i32::from(reference[p * 4 + c])).abs() > 4);
+        let e = by_model.entry(format!("{} {:?}", info.model, info.class)).or_default();
+        e.0 += 1;
+        e.1 += u64::from(off);
+        for c in 0..3 {
+            e.2[c] += i64::from(picture.rgba[p * 4 + c]) - i64::from(reference[p * 4 + c]);
+        }
+    }
+    let mut worst: Vec<_> = by_model.into_iter().collect();
+    worst.sort_by_key(|w| std::cmp::Reverse((w.1).1));
+    for (name, (n, off, signed)) in worst.iter().take(std::env::var("HF_WORST").ok().and_then(|v| v.parse().ok()).unwrap_or(0)) {
+        println!("  {off:>6} of {n:>6} off (mean signed {:+.1} {:+.1} {:+.1}): {name}", signed[0] as f64 / *n as f64, signed[1] as f64 / *n as f64, signed[2] as f64 / *n as f64);
+    }
+    for probe in std::env::var("HF_PROBE").unwrap_or_default().split(';').filter(|p| !p.is_empty()) {
+        let xy: Vec<usize> = probe.split(',').filter_map(|v| v.parse().ok()).collect();
+        let p = xy[1] * WIDTH as usize + xy[0];
+        let id = picture.ids[p];
+        println!("probe {probe}: ours {:?} reference {:?}", &picture.rgba[p * 4..p * 4 + 4], &reference[p * 4..p * 4 + 4]);
+        if id != 0 {
+            let (info, d) = (&scene.drawn[id as usize - 1], &scene.frame.draws[id as usize - 1]);
+            println!("   {info:?}\n   {:?}\n   {:?}", d.material, d.lighting);
+        }
+    }
     compare("whole frame", &picture.rgba, &reference, |_| true);
 
     let out = frames_dir.join("r1");

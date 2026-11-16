@@ -65,13 +65,24 @@ pub enum Wrap {
     Mirror,
 }
 
+/// How a texture's mip levels are read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Mipmaps {
+    Off,
+    /// The nearest level.
+    Nearest,
+    /// Two levels mixed.
+    Linear,
+}
+
 /// A texture as a layer reads it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TextureRef {
     pub texture: TextureId,
     pub wrap: (Wrap, Wrap),
+    /// Bilinear filtering (both ways).
     pub linear: bool,
-    pub mipmaps: bool,
+    pub mipmaps: Mipmaps,
 }
 
 /// How a material's layers make the pixel (`docs/assets.md`, "The renderer").

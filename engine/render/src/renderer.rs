@@ -68,7 +68,7 @@ pub struct Renderer<'g> {
     vert: vk::ShaderModule,
     frag: vk::ShaderModule,
     pipelines: HashMap<PipelineKey, vk::Pipeline>,
-    samplers: HashMap<(Wrap, Wrap, bool, bool), vk::Sampler>,
+    samplers: HashMap<(Wrap, Wrap, bool, Mipmaps), vk::Sampler>,
     pool: vk::DescriptorPool,
     draw_set: vk::DescriptorSet,
     draw_buffer: Buffer,
@@ -276,11 +276,11 @@ impl<'g> Renderer<'g> {
             let info = vk::SamplerCreateInfo::default()
                 .mag_filter(filter)
                 .min_filter(filter)
-                .mipmap_mode(if t.mipmaps && t.linear { vk::SamplerMipmapMode::LINEAR } else { vk::SamplerMipmapMode::NEAREST })
+                .mipmap_mode(if t.mipmaps == Mipmaps::Linear { vk::SamplerMipmapMode::LINEAR } else { vk::SamplerMipmapMode::NEAREST })
                 .address_mode_u(mode(t.wrap.0))
                 .address_mode_v(mode(t.wrap.1))
                 .address_mode_w(vk::SamplerAddressMode::REPEAT)
-                .max_lod(if t.mipmaps { 16.0 } else { 0.0 });
+                .max_lod(if t.mipmaps == Mipmaps::Off { 0.0 } else { 16.0 });
             unsafe { device.create_sampler(&info, None) }.unwrap()
         })
     }
@@ -291,7 +291,7 @@ impl<'g> Renderer<'g> {
             return s;
         }
         let set = unsafe { self.gpu.device.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(self.pool).set_layouts(&[self.tex_layout])) }.expect("descriptor pool full")[0];
-        let white = TextureRef { texture: self.white, wrap: (Wrap::Clamp, Wrap::Clamp), linear: false, mipmaps: false };
+        let white = TextureRef { texture: self.white, wrap: (Wrap::Clamp, Wrap::Clamp), linear: false, mipmaps: Mipmaps::Off };
         for (b, layer) in layers.iter().enumerate() {
             let t = layer.unwrap_or(white);
             let info = [vk::DescriptorImageInfo::default().sampler(self.sampler(&t)).image_view(self.textures[t.texture.0 as usize].image.view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
