@@ -27,6 +27,21 @@ layout(set = 1, binding = 0) uniform sampler2D layer0;
 layout(set = 1, binding = 1) uniform sampler2D layer1;
 
 layout(location = 0) out vec4 out_colour;
+
+// GX's compare functions: never, less, equal, less or equal, greater, not equal, greater or
+// equal, always.
+bool compare(int f, float a, float r) {
+    switch (f) {
+        case 0: return false;
+        case 1: return a < r;
+        case 2: return a == r;
+        case 3: return a <= r;
+        case 4: return a > r;
+        case 5: return a != r;
+        case 6: return a >= r;
+        default: return true;
+    }
+}
 layout(location = 1) out uint out_id;
 
 // combine codes (counts.z)
@@ -89,7 +104,15 @@ void main() {
         float weight = by == 0 ? 1.0 : (by == 1 ? c.a : d.params.z);
         c.rgb = clamp(c.rgb + texture(layer1, v_sphere).rgb * weight, 0.0, 1.0);
     }
-    if ((d.counts.w & 1) != 0 && c.a < d.params.y) discard;
+    if ((d.counts.w & 1) != 0) {
+        // GX's alpha compare, in 8 bits
+        float a = floor(c.a * 255.0 + 0.5);
+        bool p0 = compare((d.counts.w >> 5) & 7, a, d.params.y);
+        bool p1 = compare((d.counts.w >> 8) & 7, a, d.params.w);
+        int op = (d.counts.w >> 11) & 3;
+        bool pass = op == 0 ? p0 && p1 : (op == 1 ? p0 || p1 : (op == 2 ? p0 != p1 : p0 == p1));
+        if (!pass) discard;
+    }
     out_colour = c;
     out_id = uint(v_draw) + 1u;
 }

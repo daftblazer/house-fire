@@ -31,3 +31,6 @@
 - **Lamps' "on" animations** (the club): which animation an object poses beyond its idle one
   follows its state (lit or not); 11 of the club's 15 lamp colours wait on it, and the laser's
   reach and place (1,258 of 1,386 grid cells from the engine alone).
+- **The picture's state not recorded** (since home-a35's ';' records): fog, the EFB pixel
+  format (whether destination alpha is kept for the Z-off passes blending by it, flags 0x148)
+  and GXSetAlphaUpdate/ColorUpdate. Record them with R2's shadow passes if those need them.

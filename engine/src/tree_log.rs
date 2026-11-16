@@ -827,7 +827,59 @@ pub struct Log {
     /// frame dump N is the N-th copy, so the frame drawn in tick t is the first count past it.
     pub frames: Vec<(u32, u32)>,
     pub lights: Vec<LightsRec>,
+    pub states: Vec<StateRec>,
     pub ticks: u32,
+}
+
+/// ';': the GX state in force after an ERC_ApplyState call in the draw window (the recomp's
+/// applied copy of the render context, so what the next draw is made with). Draw records come
+/// before their handler applies its state, so a draw's own state is the last of these before
+/// the next draw record: `strips_before` and `others_before` place it.
+#[derive(Clone, Debug)]
+pub struct StateRec {
+    pub tick: u32,
+    pub context: u32,
+    pub mtx_mode: u32,
+    pub strips_before: usize,
+    pub others_before: usize,
+    /// Z test on, its GX compare function (0 never .. 7 always), Z writes on.
+    pub z: (bool, u32, bool),
+    /// Alpha compare: comp0, ref0, op, comp1, ref1 (GXSetAlphaCompare's arguments).
+    pub alpha: (u32, u8, u32, u32, u8),
+    /// Z compare before texturing (GXSetZCompLoc).
+    pub z_before_tex: bool,
+    /// Blend type (0 none, 1 blend, 2 logic, 3 subtract), source and destination factors,
+    /// logic op (GXSetBlendMode's arguments, as applied: all 0 when blending is off).
+    pub blend: [u32; 4],
+    /// The render context's word at +0x574 (the light set's flags) and blend flags (+0x578, 0x40 on).
+    pub word574: u32,
+    pub blend_flags: u32,
+    /// GX cull mode: 0 none, 1 front, 2 back, 3 all.
+    pub cull: u32,
+}
+
+impl StateRec {
+    pub const LEN: usize = 12 + 32 + 24 + 4;
+    fn parse(b: &[u8], strips_before: usize, others_before: usize) -> StateRec {
+        // the observer's own words are little-endian, the guest's bytes big-endian
+        let le = |at: usize| u32::from_le_bytes(b[at..at + 4].try_into().unwrap());
+        let w = |at: usize| u32::from_be_bytes(b[at..at + 4].try_into().unwrap());
+        let (z, s) = (12, 12 + 32); // +0x23C, +0x564
+        StateRec {
+            tick: le(0),
+            context: le(4),
+            mtx_mode: le(8),
+            strips_before,
+            others_before,
+            z: (b[z] != 0, w(z + 4), b[z + 8] != 0),
+            alpha: (w(z + 0xC), b[z + 0x10], w(z + 0x14), w(z + 0x18), b[z + 0x1C]),
+            z_before_tex: b[z + 0x1D] != 0,
+            blend: [w(s), w(s + 4), w(s + 8), w(s + 12)],
+            word574: w(s + 16),
+            blend_flags: w(s + 20),
+            cull: w(s + 24),
+        }
+    }
 }
 
 /// '[': an ERC_SetLights call in the draw window: the device and its light state as the
@@ -970,6 +1022,14 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let bytes = r.b[r.p..r.p + LightsRec::LEN].to_vec();
                 r.p += LightsRec::LEN;
                 log.lights.push(LightsRec { tick, device, strips_before: log.strips.len(), bytes });
+            }
+            b';' => {
+                if !r.has(StateRec::LEN) {
+                    break;
+                }
+                let st = StateRec::parse(&r.b[r.p..r.p + StateRec::LEN], log.strips.len(), log.other_draws.len());
+                r.p += StateRec::LEN;
+                log.states.push(st);
             }
             b'w' => {
                 if !r.has(4 + 16 * 36) {

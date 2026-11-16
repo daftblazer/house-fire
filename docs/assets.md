@@ -1770,7 +1770,8 @@ colour and an id buffer (the last draw to cover each pixel), read back.
 `render-check LOG ISO FRAME` (`HF_FRAMES`: the folder of the recomp's frame dumps) builds the
 frame from the log's records (`scene.rs`), renders it at 640 x 448 and compares it with
 `world_NNNNN.png` (the picture before the 2D layer), writing `r1/ours_N.png` and `r1/diff_N.png`.
-`home-a34.log` has the draw records of frames 2400 and 2401 (ticks 1039 and 1040).
+`home-a35.log` has the draw records of frames 2400 and 2401 (ticks 1039 and 1040), with the
+GX state of each draw (';').
 
 How the records make a frame. The log is a stream; a draw's state is what was set before it and
 what it set up itself. Strip k (a 'w' record, an opcode 56 strip or an opcode 66 display list)
@@ -1837,13 +1838,16 @@ counter (its edge texels), 185 the wall caps (coplanar and rounding), and the re
 the glass and the shadowed leaves about 98.7%: the 99% of the rigid pixels needs the floors and
 the shadows (R2).
 
-Not in the log (the observer does not record the device's per-draw state), so defaults stand in
-and the pixels they account for are measured: cull (none: back or front culling with either
-winding takes the picture from 91.8% to 63% and 67%, so the original draws these without it, or
-per draw), the depth test (less or equal, writes on; less gives the same figure), the alpha
-compare of the opaque materials (a pixel with alpha below 0.5 is not drawn: 0.3 to 0.5 give the
-same figure, 0.05 gives 87%, and 0.65 gives 90.8%; the leaves are 1,084 of the 6,595 either
-way), the blend of one-layer materials (read from the layer flag 0x40, above), and fog (not
-recorded either). To read them, record the render context at ERC_ApplyState's entry for each
-draw: +0x23C (Z mode) to +0x25B (alpha compare), +0x564 to +0x573 (the blend), +0x578 (the blend
-flags) and +0x5B0 (the cull mode).
+The GX state of each draw is in the log since home-a35 (';', after each ERC_ApplyState: the
+applied copy at 0x80357DB8, so what GX holds, since the context's own Z and alpha fields are
+applied only with the blend group): Z mode, alpha compare, Z compare location, blend mode and
+flags, cull. A strip takes the first ';' of its tick in gap k + 1 (`with_state` in scene.rs);
+every drawn strip of frames 2400/2401 has one. What frames 2400-2401 show (3,504 records):
+cull is always none and Z always less-or-equal (R1's stand-ins were right); opaque materials
+test alpha >= 127 (GEQUAL 127, not R1's 0.5 = 128), opaque display lists mostly test nothing,
+some draws test >= 102 or >= 12, the blended (flag 0x40) ones >= 5 or >= 0 with source alpha /
+inverse; Z-off passes with destination-alpha / inverse (1,316 records, flags 0x148) and a
+multiply by the picture (source factor 2, 196) are not among the rigid draws drawn so far (R2's
+shadows and floors). With the state, the rigid figure is 92.93% within 4 (80,876 pixels, 5,716
+beyond; frame 2400), from R1's 91.82%. Not recorded: fog, the EFB's pixel format (whether the
+destination alpha those passes read is kept) and GXSetAlphaUpdate/GXSetColorUpdate.

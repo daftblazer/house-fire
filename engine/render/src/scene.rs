@@ -9,12 +9,12 @@ use housefire::disc::Disc;
 use housefire::draw::{Part, PartIndex};
 use housefire::model::SubModel;
 use housefire::texture::{self, Kind};
-use housefire::tree_log::{LightsRec, Log, MaterialRec, StripRec, TexLoadRec};
+use housefire::tree_log::{LightsRec, Log, MaterialRec, StateRec, StripRec, TexLoadRec};
 use std::collections::{BTreeMap, HashMap};
 
-/// The alpha below which a textured pixel is not drawn. A stand-in: the device's alpha compare
-/// (`ERC_ApplyState`'s block at context +0x248) is not in the log; 0.3 to 0.5 fit the same.
-pub const ALPHA_REF: f32 = 0.5;
+/// The alpha (of 255) below which a textured opaque pixel is not drawn, for a log without the
+/// state records (';'): R1's stand-in, 0.5. The records give 127 for most such draws.
+pub const ALPHA_REF: u8 = 128;
 
 /// A layer's flag (the low byte of its flag word, 0x08 for most materials) that goes with the
 /// translucent ones (windows, the aquarium, the bottle lamp, water): drawn blended by source
@@ -322,15 +322,16 @@ fn wrap_of(v: u32) -> Wrap {
 }
 
 /// A material and the textures bound to its layers, as the device's combiner stages would make
-/// them (`erc_material.cpp`). The state a draw is made in beyond that (blend of a one-layer
-/// material, depth, cull, alpha compare) is not in the log: the defaults are used.
+/// them (`erc_material.cpp`). The state a draw is made in beyond that (blend, depth, cull,
+/// alpha compare) is guessed from the material here, and replaced by the draw's own state
+/// record where the log has one (`with_state`).
 fn material_of(m: &MaterialRec, lit: bool, bound: [Option<TextureRef>; 2]) -> (Material, Option<&'static str>) {
     let l = |i: usize, o: usize| m.layer[i][o];
     let (mode, blend, by, enabled, factor) = (l(1, 0x10), l(1, 0x11), l(1, 0x12), l(1, 0x13), l(1, 0x14));
     let sphere = m.layers == 2 && l(1, 0x16) == 2;
     let mut unsupported = None;
     let two = m.layers == 2 && bound[1].is_some() && lit && !sphere;
-    let mut mat = Material { combine: Combine::Vertex, layers: [bound[0], None], blend: Blend::Opaque, cull: Cull::None, depth_test: true, depth_write: true, alpha_ref: None, sphere: None };
+    let mut mat = Material { combine: Combine::Vertex, layers: [bound[0], None], blend: Blend::Opaque, cull: Cull::None, depth_test: Some(Compare::LEQUAL), depth_write: true, alpha_test: None, sphere: None };
     let sphere_weight = match by {
         1 => SphereWeight::PrevAlpha,
         2 => SphereWeight::Factor(f32::from(factor) / 255.0),
@@ -344,16 +345,16 @@ fn material_of(m: &MaterialRec, lit: bool, bound: [Option<TextureRef>; 2]) -> (M
         match (blend, by) {
             (2, 1) => {
                 mat.combine = Combine::Add { unlit_first };
-                mat.blend = Blend::Add;
+                mat.blend = Blend::ADD;
             }
             (2, 2) => unsupported = Some("added by the game's table"),
             (1, 1) => {
                 mat.combine = Combine::Over { by_texture_alpha: false, unlit_first };
-                mat.blend = Blend::Alpha;
+                mat.blend = Blend::ALPHA;
             }
             (1, 0) => {
                 mat.combine = Combine::Over { by_texture_alpha: true, unlit_first };
-                mat.blend = Blend::Alpha;
+                mat.blend = Blend::ALPHA;
             }
             _ => unsupported = Some("second layer of another blend"),
         }
@@ -364,9 +365,9 @@ fn material_of(m: &MaterialRec, lit: bool, bound: [Option<TextureRef>; 2]) -> (M
         if bound[0].is_some() {
             mat.combine = Combine::Modulate { unlit: l(0, 0x15) == 1 };
             if m.layer[0][7] & LAYER_BLENDED != 0 {
-                mat.blend = Blend::Alpha;
+                mat.blend = Blend::ALPHA;
             } else {
-                mat.alpha_ref = Some(ALPHA_REF);
+                mat.alpha_test = Some(AlphaTest::at_least(ALPHA_REF));
             }
             if sphere && lit && bound[1].is_some() {
                 mat.sphere = Some(sphere_weight);
@@ -375,6 +376,33 @@ fn material_of(m: &MaterialRec, lit: bool, bound: [Option<TextureRef>; 2]) -> (M
         }
     }
     (mat, unsupported)
+}
+
+/// The material in the GX state the device applied for the draw (the log's ';' record).
+fn with_state(mut mat: Material, st: &StateRec) -> Material {
+    mat.blend = if st.blend_flags & 0x40 == 0 {
+        Blend::Opaque
+    } else {
+        match st.blend[0] {
+            1 => Blend::Mix { src: Factor::from_gx(st.blend[1]), dst: Factor::from_gx(st.blend[2]) },
+            3 => Blend::Subtract,
+            // logic ops (2) are not met in the frames checked
+            _ => Blend::Opaque,
+        }
+    };
+    let (on, func, update) = st.z;
+    mat.depth_test = on.then_some(Compare(func as u8 & 7));
+    mat.depth_write = on && update;
+    let (c0, r0, op, c1, r1) = st.alpha;
+    let test = AlphaTest { comp: [Compare(c0 as u8 & 7), Compare(c1 as u8 & 7)], refs: [r0, r1], op: op as u8 & 3 };
+    mat.alpha_test = (!test.passes_all()).then_some(test);
+    mat.cull = match st.cull {
+        0 => Cull::None,
+        1 => Cull::Front,
+        2 => Cull::Back,
+        _ => Cull::All,
+    };
+    mat
 }
 
 impl Assets {
@@ -391,6 +419,10 @@ impl Assets {
         let mut lights: BTreeMap<usize, Vec<&LightsRec>> = BTreeMap::new();
         for m in &log.lights {
             lights.entry(m.strips_before).or_default().push(m);
+        }
+        let mut states: BTreeMap<usize, Vec<&StateRec>> = BTreeMap::new();
+        for m in &log.states {
+            states.entry(m.strips_before).or_default().push(m);
         }
         let mut loads: BTreeMap<usize, Vec<&TexLoadRec>> = BTreeMap::new();
         for m in &log.tex_loads {
@@ -502,7 +534,11 @@ impl Assets {
                     bound[slot] = Some(TextureRef { texture, wrap: (wrap_of(mode0), wrap_of(mode0 >> 2)), linear: min & 4 != 0 || mode0 & 0x10 != 0 && min & 3 == 0, mipmaps });
                 }
                 let lighting = lighting_of(lr);
-                let (material, unsupported) = material_of(m, matches!(lighting, Lighting::Lit { .. } | Lighting::VertexColours), bound);
+                let (mut material, unsupported) = material_of(m, matches!(lighting, Lighting::Lit { .. } | Lighting::VertexColours), bound);
+                // the draw's own state: the first applied after its record, before the next strip
+                if let Some(st) = states.get(&(k + 1)).and_then(|v| v.iter().find(|s| s.tick == tick)) {
+                    material = with_state(material, st);
+                }
                 info.unsupported = unsupported;
                 info.flags = [0, 1].map(|i| u32::from_be_bytes(m.layer[i][4..8].try_into().unwrap()));
                 camera_view = camera_view.or(Some(view));
@@ -546,6 +582,22 @@ impl Assets {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn state_record_sets_blend_depth_and_alpha_test() {
+        let base = Material { combine: Combine::Vertex, layers: [None, None], blend: Blend::Opaque, cull: Cull::Back, depth_test: None, depth_write: false, alpha_test: None, sphere: None };
+        // as the frames' blended glass: on by flag 0x40, src alpha / inverse, Z <= with writes, alpha >= 5
+        let st = StateRec { tick: 0, context: 0, mtx_mode: 0, strips_before: 0, others_before: 0, z: (true, 3, true), alpha: (6, 5, 0, 7, 0), z_before_tex: false, blend: [1, 4, 5, 0], word574: 0, blend_flags: 0x48, cull: 0 };
+        let m = with_state(base, &st);
+        assert_eq!(m.blend, Blend::ALPHA);
+        assert_eq!((m.depth_test, m.depth_write, m.cull), (Some(Compare::LEQUAL), true, Cull::None));
+        assert_eq!(m.alpha_test, Some(AlphaTest::at_least(5)));
+        // blending off by the flag whatever the factors; Z off takes the writes with it; an
+        // always-and-always compare is no test
+        let st = StateRec { z: (false, 3, true), alpha: (7, 0, 1, 7, 0), blend_flags: 0x08, ..st };
+        let m = with_state(base, &st);
+        assert_eq!((m.blend, m.depth_test, m.depth_write, m.alpha_test), (Blend::Opaque, None, false, None));
+    }
 
     #[test]
     fn strips_become_triangles_all_facing_one_way() {

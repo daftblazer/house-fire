@@ -30,7 +30,7 @@ struct DrawRecord {
 struct PipelineKey {
     blend: Blend,
     cull: Cull,
-    depth_test: bool,
+    depth_test: Option<Compare>,
     depth_write: bool,
 }
 
@@ -326,29 +326,47 @@ impl<'g> Renderer<'g> {
                 Cull::None => vk::CullModeFlags::NONE,
                 Cull::Back => vk::CullModeFlags::BACK,
                 Cull::Front => vk::CullModeFlags::FRONT,
+                Cull::All => vk::CullModeFlags::FRONT_AND_BACK,
             })
             // the projection flips y, so a counter-clockwise triangle on the original's screen
             // is clockwise in Vulkan's
             .front_face(vk::FrontFace::CLOCKWISE)
             .line_width(1.0);
         let multisample = vk::PipelineMultisampleStateCreateInfo::default().rasterization_samples(vk::SampleCountFlags::TYPE_1);
-        let depth = vk::PipelineDepthStencilStateCreateInfo::default().depth_test_enable(key.depth_test).depth_write_enable(key.depth_write).depth_compare_op(vk::CompareOp::LESS);
+        let depth = vk::PipelineDepthStencilStateCreateInfo::default().depth_test_enable(key.depth_test.is_some())
+            .depth_write_enable(key.depth_write)
+            .depth_compare_op(key.depth_test.map_or(vk::CompareOp::ALWAYS, |c| vk::CompareOp::from_raw(i32::from(c.0))));
         let all = vk::ColorComponentFlags::RGBA;
+        let factor = |f: Factor, src: bool| match f {
+            Factor::Zero => vk::BlendFactor::ZERO,
+            Factor::One => vk::BlendFactor::ONE,
+            Factor::Other if src => vk::BlendFactor::DST_COLOR,
+            Factor::Other => vk::BlendFactor::SRC_COLOR,
+            Factor::InvOther if src => vk::BlendFactor::ONE_MINUS_DST_COLOR,
+            Factor::InvOther => vk::BlendFactor::ONE_MINUS_SRC_COLOR,
+            Factor::SrcAlpha => vk::BlendFactor::SRC_ALPHA,
+            Factor::InvSrcAlpha => vk::BlendFactor::ONE_MINUS_SRC_ALPHA,
+            Factor::DstAlpha => vk::BlendFactor::DST_ALPHA,
+            Factor::InvDstAlpha => vk::BlendFactor::ONE_MINUS_DST_ALPHA,
+        };
         let colour_blend = match key.blend {
             Blend::Opaque => vk::PipelineColorBlendAttachmentState::default().color_write_mask(all),
-            Blend::Alpha => vk::PipelineColorBlendAttachmentState::default()
+            // GX blends the colour and the alpha by the same factors
+            Blend::Mix { src, dst } => vk::PipelineColorBlendAttachmentState::default()
                 .color_write_mask(all)
                 .blend_enable(true)
-                .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
-                .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
-                .src_alpha_blend_factor(vk::BlendFactor::ONE)
-                .dst_alpha_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA),
-            Blend::Add => vk::PipelineColorBlendAttachmentState::default()
+                .src_color_blend_factor(factor(src, true))
+                .dst_color_blend_factor(factor(dst, false))
+                .src_alpha_blend_factor(factor(src, true))
+                .dst_alpha_blend_factor(factor(dst, false)),
+            Blend::Subtract => vk::PipelineColorBlendAttachmentState::default()
                 .color_write_mask(all)
                 .blend_enable(true)
-                .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
+                .color_blend_op(vk::BlendOp::REVERSE_SUBTRACT)
+                .alpha_blend_op(vk::BlendOp::REVERSE_SUBTRACT)
+                .src_color_blend_factor(vk::BlendFactor::ONE)
                 .dst_color_blend_factor(vk::BlendFactor::ONE)
-                .src_alpha_blend_factor(vk::BlendFactor::ZERO)
+                .src_alpha_blend_factor(vk::BlendFactor::ONE)
                 .dst_alpha_blend_factor(vk::BlendFactor::ONE),
         };
         let attachments = [colour_blend, vk::PipelineColorBlendAttachmentState::default().color_write_mask(vk::ColorComponentFlags::R)];
@@ -569,7 +587,7 @@ fn record(camera: &Camera, d: &Draw) -> DrawRecord {
     }
     let unlit_first = matches!(d.material.combine, Combine::Over { unlit_first: true, .. } | Combine::Add { unlit_first: true });
     r.counts[2] = combine;
-    // flags: 1 alpha test, 2 first layer unlit, 4 sphere map added (weight in bits 3 and 4)
+    // flags: 1 alpha test (its functions in bits 5 to 12), 2 first layer unlit, 4 sphere map added (weight in bits 3 and 4)
     let (sphere, weight) = match d.material.sphere {
         None => (0, 0),
         Some(SphereWeight::One) => (4, 0),
@@ -579,9 +597,13 @@ fn record(camera: &Camera, d: &Draw) -> DrawRecord {
             (4, 2 << 3)
         }
     };
-    r.counts[3] = i32::from(d.material.alpha_ref.is_some()) | if unlit_first { 2 } else { 0 } | sphere | weight;
+    // alpha test: comp0 in bits 5-7, comp1 in 8-10, op in 11-12; the references in params.y, w
+    let alpha = d.material.alpha_test.map_or(0, |t| 1 | i32::from(t.comp[0].0) << 5 | i32::from(t.comp[1].0) << 8 | i32::from(t.op) << 11);
+    r.counts[3] = alpha | if unlit_first { 2 } else { 0 } | sphere | weight;
     r.params[0] = if let Combine::Crossfade { fade } = d.material.combine { fade } else { 0.0 };
-    r.params[1] = d.material.alpha_ref.unwrap_or(0.0);
+    if let Some(t) = d.material.alpha_test {
+        (r.params[1], r.params[3]) = (f32::from(t.refs[0]), f32::from(t.refs[1]));
+    }
     r
 }
 

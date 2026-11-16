@@ -101,13 +101,78 @@ pub enum Combine {
     Add { unlit_first: bool },
 }
 
+/// How a draw's colour meets the picture: GX's blend modes (GXSetBlendMode).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Blend {
     Opaque,
+    /// source x `src` + picture x `dst`.
+    Mix { src: Factor, dst: Factor },
+    /// picture - source.
+    Subtract,
+}
+
+impl Blend {
     /// Source alpha over the picture.
-    Alpha,
+    pub const ALPHA: Blend = Blend::Mix { src: Factor::SrcAlpha, dst: Factor::InvSrcAlpha };
     /// Source alpha times the colour, added.
-    Add,
+    pub const ADD: Blend = Blend::Mix { src: Factor::SrcAlpha, dst: Factor::One };
+}
+
+/// A blend factor, as GX numbers them (0 to 7). `Other` is the other side's colour (the
+/// picture's for the source factor, the source's for the picture's).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Factor {
+    Zero,
+    One,
+    Other,
+    InvOther,
+    SrcAlpha,
+    InvSrcAlpha,
+    DstAlpha,
+    InvDstAlpha,
+}
+
+impl Factor {
+    pub fn from_gx(code: u32) -> Factor {
+        [Factor::Zero, Factor::One, Factor::Other, Factor::InvOther, Factor::SrcAlpha, Factor::InvSrcAlpha, Factor::DstAlpha, Factor::InvDstAlpha][code as usize & 7]
+    }
+}
+
+/// A compare function, as GX (and Vulkan) number them: never, less, equal, less or equal,
+/// greater, not equal, greater or equal, always.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Compare(pub u8);
+
+impl Compare {
+    pub const LEQUAL: Compare = Compare(3);
+    pub const GEQUAL: Compare = Compare(6);
+    pub const ALWAYS: Compare = Compare(7);
+}
+
+/// GX's alpha compare: a pixel is drawn when (alpha `comp[0]` `refs[0]`) `op` (alpha
+/// `comp[1]` `refs[1]`), the alpha and references in 8 bits; `op` is 0 and, 1 or, 2 xor,
+/// 3 xnor.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct AlphaTest {
+    pub comp: [Compare; 2],
+    pub refs: [u8; 2],
+    pub op: u8,
+}
+
+impl AlphaTest {
+    /// Alpha at least `r` (of 255).
+    pub fn at_least(r: u8) -> AlphaTest {
+        AlphaTest { comp: [Compare::GEQUAL, Compare::ALWAYS], refs: [r, 0], op: 0 }
+    }
+    /// Whether it lets every pixel through.
+    pub fn passes_all(&self) -> bool {
+        let all = |c: Compare| c == Compare::ALWAYS;
+        match self.op {
+            0 => all(self.comp[0]) && all(self.comp[1]),
+            1 => all(self.comp[0]) || all(self.comp[1]),
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -115,6 +180,8 @@ pub enum Cull {
     None,
     Back,
     Front,
+    /// Every triangle (GX_CULL_ALL): nothing is drawn.
+    All,
 }
 
 /// How much of the sphere-mapped layer is added.
@@ -133,10 +200,11 @@ pub struct Material {
     pub layers: [Option<TextureRef>; 2],
     pub blend: Blend,
     pub cull: Cull,
-    pub depth_test: bool,
+    /// The depth test's function (none: not tested, and not written either, as on GX).
+    pub depth_test: Option<Compare>,
     pub depth_write: bool,
-    /// Pixels whose alpha is below this are not drawn.
-    pub alpha_ref: Option<f32>,
+    /// Which pixels are drawn by their alpha (none: all).
+    pub alpha_test: Option<AlphaTest>,
     /// A reflection added over the colour: layer 1 read through the sphere map of the surface
     /// (`Combine::Modulate` only).
     pub sphere: Option<SphereWeight>,
