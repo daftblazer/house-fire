@@ -833,8 +833,8 @@ pub struct Log {
 
 /// ';': the GX state in force after an ERC_ApplyState call in the draw window (the recomp's
 /// applied copy of the render context, so what the next draw is made with). Draw records come
-/// before their handler applies its state, so a draw's own state is the last of these before
-/// the next draw record: `strips_before` and `others_before` place it.
+/// before their handler applies its state, so a draw's own state is the first of these after
+/// its record: `strips_before` and `others_before` place it.
 #[derive(Clone, Debug)]
 pub struct StateRec {
     pub tick: u32,
@@ -856,10 +856,15 @@ pub struct StateRec {
     pub blend_flags: u32,
     /// GX cull mode: 0 none, 1 front, 2 back, 3 all.
     pub cull: u32,
+    /// The SDK's copies of the pixel engine's registers (__GXData +0x1D0): cmode0 (bit 0
+    /// blend, 3 colour writes, 4 alpha writes, ...), cmode1 (bit 8 constant destination alpha,
+    /// its value in the low byte), zmode, peCtrl (bits 0-2 the EFB's pixel format: 0 RGB8,
+    /// 1 RGBA6, 2 RGB565).
+    pub pe: [u32; 4],
 }
 
 impl StateRec {
-    pub const LEN: usize = 12 + 32 + 24 + 4;
+    pub const LEN: usize = 12 + 32 + 24 + 4 + 16;
     fn parse(b: &[u8], strips_before: usize, others_before: usize) -> StateRec {
         // the observer's own words are little-endian, the guest's bytes big-endian
         let le = |at: usize| u32::from_le_bytes(b[at..at + 4].try_into().unwrap());
@@ -878,6 +883,7 @@ impl StateRec {
             word574: w(s + 16),
             blend_flags: w(s + 20),
             cull: w(s + 24),
+            pe: [0, 1, 2, 3].map(|i| w(s + 28 + 4 * i)),
         }
     }
 }

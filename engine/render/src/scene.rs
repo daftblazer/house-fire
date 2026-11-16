@@ -587,7 +587,7 @@ mod tests {
     fn state_record_sets_blend_depth_and_alpha_test() {
         let base = Material { combine: Combine::Vertex, layers: [None, None], blend: Blend::Opaque, cull: Cull::Back, depth_test: None, depth_write: false, alpha_test: None, sphere: None };
         // as the frames' blended glass: on by flag 0x40, src alpha / inverse, Z <= with writes, alpha >= 5
-        let st = StateRec { tick: 0, context: 0, mtx_mode: 0, strips_before: 0, others_before: 0, z: (true, 3, true), alpha: (6, 5, 0, 7, 0), z_before_tex: false, blend: [1, 4, 5, 0], word574: 0, blend_flags: 0x48, cull: 0 };
+        let st = StateRec { tick: 0, context: 0, mtx_mode: 0, strips_before: 0, others_before: 0, z: (true, 3, true), alpha: (6, 5, 0, 7, 0), z_before_tex: false, blend: [1, 4, 5, 0], word574: 0, blend_flags: 0x48, cull: 0, pe: [0; 4] };
         let m = with_state(base, &st);
         assert_eq!(m.blend, Blend::ALPHA);
         assert_eq!((m.depth_test, m.depth_write, m.cull), (Some(Compare::LEQUAL), true, Cull::None));

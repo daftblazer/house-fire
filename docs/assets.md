@@ -1770,7 +1770,7 @@ colour and an id buffer (the last draw to cover each pixel), read back.
 `render-check LOG ISO FRAME` (`HF_FRAMES`: the folder of the recomp's frame dumps) builds the
 frame from the log's records (`scene.rs`), renders it at 640 x 448 and compares it with
 `world_NNNNN.png` (the picture before the 2D layer), writing `r1/ours_N.png` and `r1/diff_N.png`.
-`home-a35.log` has the draw records of frames 2400 and 2401 (ticks 1039 and 1040), with the
+`home-a36.log` has the draw records of frames 2400 and 2401 (ticks 1039 and 1040), with the
 GX state of each draw (';').
 
 How the records make a frame. The log is a stream; a draw's state is what was set before it and
@@ -1838,7 +1838,7 @@ counter (its edge texels), 185 the wall caps (coplanar and rounding), and the re
 the glass and the shadowed leaves about 98.7%: the 99% of the rigid pixels needs the floors and
 the shadows (R2).
 
-The GX state of each draw is in the log since home-a35 (';', after each ERC_ApplyState: the
+The GX state of each draw is in the log since home-a36 (';', after each ERC_ApplyState: the
 applied copy at 0x80357DB8, so what GX holds, since the context's own Z and alpha fields are
 applied only with the blend group): Z mode, alpha compare, Z compare location, blend mode and
 flags, cull. A strip takes the first ';' of its tick in gap k + 1 (`with_state` in scene.rs);
@@ -1849,5 +1849,15 @@ some draws test >= 102 or >= 12, the blended (flag 0x40) ones >= 5 or >= 0 with 
 inverse; Z-off passes with destination-alpha / inverse (1,316 records, flags 0x148) and a
 multiply by the picture (source factor 2, 196) are not among the rigid draws drawn so far (R2's
 shadows and floors). With the state, the rigid figure is 92.93% within 4 (80,876 pixels, 5,716
-beyond; frame 2400), from R1's 91.82%. Not recorded: fog, the EFB's pixel format (whether the
-destination alpha those passes read is kept) and GXSetAlphaUpdate/GXSetColorUpdate.
+beyond; frame 2400), from R1's 91.82%. The record also carries the SDK's copies of the pixel
+engine's registers (__GXData +0x1D0 cmode0, +0x1D4 cmode1, +0x1D8 zmode, +0x1DC peCtrl;
+offsets from GXSetColorUpdate, GXSetDstAlpha and GXSetPixelFmt's stores). In the frames: the
+EFB is RGBA6_Z24 (peCtrl 1; bit 6, Z before texturing, on most opaque draws), so it keeps a
+destination alpha. Opaque draws write colour and alpha (cmode0 0x1C) with a constant
+destination alpha (cmode1 0x100: alpha 0; 0x17F: 0x7F, 208 records); blended ones 0x4BD. The
+shadows are two passes with Z off: a mask (cmode0 0x215: alpha writes only, no colour, source
+factor the picture's colour, destination zero; 98 a frame) and the shadow draws (0x6FD: colour
+and alpha, source x destination alpha + picture x (1 - destination alpha); the 658 "lighting
+off" draws a frame). The registers are as ERC_ApplyState left them; a draw method that sets GX
+itself after it (a constant alpha for the mask?) is not seen. Fog is not shadowed in __GXData
+and not recorded.
