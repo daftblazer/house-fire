@@ -823,7 +823,69 @@ pub struct Log {
     pub skin_vertices: Vec<SkinVerticesRec>,
     pub scalar_streams: Vec<ScalarStreamRec>,
     pub res_asks: Vec<ResAskRec>,
+    /// '|': (tick, the guest's display copies before it), when the count changed. The recomp's
+    /// frame dump N is the N-th copy, so the frame drawn in tick t is the first count past it.
+    pub frames: Vec<(u32, u32)>,
+    pub lights: Vec<LightsRec>,
     pub ticks: u32,
+}
+
+/// '[': an ERC_SetLights call in the draw window: the device and its light state as the
+/// guest's bytes (big-endian), at the offsets `LightsRec`'s accessors name.
+#[derive(Clone, Debug)]
+pub struct LightsRec {
+    pub tick: u32,
+    pub device: u32,
+    /// The draw records before it ('w' strips), so it is placed among them.
+    pub strips_before: usize,
+    pub bytes: Vec<u8>,
+}
+
+impl LightsRec {
+    pub const LEN: usize = 48 + 32 + 258 + 4 + 48 + 16;
+    fn f(&self, at: usize) -> f32 {
+        f32::from_bits(u32::from_be_bytes(self.bytes[at..at + 4].try_into().unwrap()))
+    }
+    fn floats<const N: usize>(&self, at: usize) -> [f32; N] {
+        std::array::from_fn(|i| self.f(at + 4 * i))
+    }
+    /// The device's turn matrix (+0x428), 3x4 rows: the directionals are turned by it.
+    pub fn turn(&self) -> [f32; 12] {
+        self.floats(0)
+    }
+    /// The light tint (+0x588) and the ambient's (+0x598), four floats each.
+    pub fn tints(&self) -> ([f32; 4], [f32; 4]) {
+        (self.floats(48), self.floats(64))
+    }
+    /// The set's ambient (+0x640), four floats.
+    pub fn ambient(&self) -> [f32; 4] {
+        self.floats(80)
+    }
+    /// Directional k (+0x650 + 0x18 k): six floats (its colour, then its direction at +0xC).
+    pub fn directional(&self, k: usize) -> [f32; 6] {
+        self.floats(96 + 0x18 * k)
+    }
+    /// Point k (+0x698 + 0x20 k): eight floats (its place, range at +0xC, colour at +0x10).
+    pub fn point(&self, k: usize) -> [f32; 8] {
+        self.floats(80 + 0x58 + 0x20 * k)
+    }
+    /// The counts (+0x740, +0x741): directionals, points.
+    pub fn counts(&self) -> (u8, u8) {
+        (self.bytes[80 + 0x100], self.bytes[80 + 0x101])
+    }
+    /// The render context's flags (+0x574: 0x4000 lighting off, 0x8 lit).
+    pub fn flags(&self) -> u32 {
+        u32::from_be_bytes(self.bytes[338..342].try_into().unwrap())
+    }
+    /// The render context's view matrix (+0x5E4), 3x4 rows: the points are moved by it.
+    pub fn view(&self) -> [f32; 12] {
+        self.floats(342)
+    }
+    /// The globals below r13: unlit ambient and material colours (words), range scale, k0.
+    pub fn globals(&self) -> (u32, u32, f32, f32) {
+        let w = |at: usize| u32::from_be_bytes(self.bytes[at..at + 4].try_into().unwrap());
+        (w(390), w(394), self.f(398), self.f(402))
+    }
 }
 
 impl Log {
@@ -892,6 +954,22 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
                 r.u32();
                 log.ticks += 1;
+            }
+            b'|' => {
+                if !r.has(8) {
+                    break;
+                }
+                let (tick, frames) = (r.u32(), r.u32());
+                log.frames.push((tick, frames));
+            }
+            b'[' => {
+                if !r.has(8 + LightsRec::LEN) {
+                    break;
+                }
+                let (tick, device) = (r.u32(), r.u32());
+                let bytes = r.b[r.p..r.p + LightsRec::LEN].to_vec();
+                r.p += LightsRec::LEN;
+                log.lights.push(LightsRec { tick, device, strips_before: log.strips.len(), bytes });
             }
             b'w' => {
                 if !r.has(4 + 16 * 36) {

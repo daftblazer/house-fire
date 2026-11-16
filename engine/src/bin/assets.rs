@@ -1701,6 +1701,34 @@ fn main() -> ExitCode {
                 }
             }
         }
+        "drawwindow" => {
+            // (study) what a frame-keyed draw window holds (BUSTIN_TREE_DRAW_FRAME): the frame
+            // counts around it, the draw records, and the light sets ERC_SetLights was given
+            let Some(log) = args.get(3).and_then(|p| read_log(p)) else {
+                println!("usage: assets ISO drawwindow LOG");
+                return ExitCode::FAILURE;
+            };
+            let ticks: BTreeSet<u32> = log.strips.iter().map(|s| s.tick).collect();
+            println!("draw ticks {:?}..{:?} ({} ticks)", ticks.first(), ticks.last(), ticks.len());
+            if let (Some(&a), Some(&b)) = (ticks.first(), ticks.last()) {
+                let near: Vec<_> = log.frames.iter().filter(|f| f.0 + 3 >= a && f.0 <= b + 3).collect();
+                println!("frame counts near them (tick, frames done) {near:?}");
+            }
+            println!(
+                "strips {} other draws {} materials {} texture loads {} matrices {} (projections {}) skins {} skinned vertices {} light sets {}",
+                log.strips.len(), log.other_draws.len(), log.materials.len(), log.tex_loads.len(), log.matrices.len(),
+                log.matrices.iter().filter(|m| m.projection).count(), log.skins.len(), log.skin_vertices.len(), log.lights.len()
+            );
+            let mut kinds: BTreeMap<(u32, u8, u8), usize> = BTreeMap::new();
+            for l in &log.lights {
+                let (d, p) = l.counts();
+                *kinds.entry((l.flags() & 0x4008, d, p)).or_default() += 1;
+            }
+            println!("light sets by (flags & 0x4008, directionals, points): {kinds:?}");
+            if let Some(l) = log.lights.iter().find(|l| l.counts().1 > 0) {
+                println!("a lit set: ambient {:?} tints {:?} directional0 {:?} point0 {:?} globals {:?}", l.ambient(), l.tints(), l.directional(0), l.point(0), l.globals());
+            }
+        }
         "frameticks" => {
             // (study) the frames (the camera's own step a frame, which 0) against the ticks: how
             // many frames each tick spans, and the ticks a frame
