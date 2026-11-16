@@ -154,9 +154,9 @@ mod tests {
     fn an_object_matrix_turns_and_mirrors() {
         let m = object_matrix(17.5, 24.5, 90.0);
         assert_eq!([m[0], m[1], m[4], m[5]], [0.0, 1.0, 1.0, 0.0]);
+        assert_eq!((m[12], m[13], m[15]), (17.5, 24.5, 1.0));
         // facing 6 (-180 degrees): cos of 270 degrees is not quite 0
         let m = object_matrix(0.0, 0.0, -180.0);
         assert_eq!([m[0], m[1], m[4], m[5]], [-1.0, 1.1924881e-8, 1.1924881e-8, 1.0]);
-        assert_eq!((m[12], m[13], m[15]), (17.5, 24.5, 1.0));
     }
 }

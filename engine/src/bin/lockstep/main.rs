@@ -774,7 +774,8 @@ fn main() -> ExitCode {
     if std::env::var_os("LOCKSTEP_ANIM_LAMPS").is_some() {
         anim::lamps(&log, &lot_world, &objects, &d);
     }
-    let lamps = anim::engine_lamps(&lot_world, &objects, &d);
+    // (the engine's lamps, for the window lights study LOCKSTEP_WINDOW_LIGHTS only: they read every skeleton and animation of the disc)
+    let lamps = if std::env::var_os("LOCKSTEP_WINDOW_LIGHTS").is_some() { anim::engine_lamps(&lot_world, &objects, &d) } else { Vec::new() };
     let tiles = (tiles.0, tiles.1, tiles.2, objects);
     set_to_next_check(&lib, &ngh, &disc_ngh, &tiles, &log, &step_object, &lamps, &mut notes);
 

@@ -6,6 +6,17 @@
 //!
 //! The object keeps its controller at +848 (the '<' records' controller is the '1' record's
 //! object + 848), so a lamp's light is found by its object.
+//!
+//! Run (home, then the club, whose log has no bones):
+//!   LOCKSTEP_ANIM_LAMPS=1 lockstep work/logs/home-a28.log ISO --card <mom-live card>
+//!   LOCKSTEP_ANIM_LAMPS=1 lockstep work/logs/club-a1.log ISO --card <club-live card>
+//! Lines: the lights against the bones; "object roots from the lot"; "lamp places from the
+//! engine"; the lamp objects' final lights (any log). The window fills, the light grid's cells
+//! and the light grid sums from the engine's lamps are lockstep's window lights study
+//! (`set_to_next.rs`, `lamps_from_the_engine`):
+//!   LOCKSTEP_DUMP_PLACES=1000 LOCKSTEP_DUMP_OUT=OUT LOCKSTEP_DUMP_WALLS=OUT2 \
+//!   LOCKSTEP_WINDOW_LIGHTS=work/logs/home-a28.log lockstep work/logs/home.log ISO --card ...
+//! (the club: LOCKSTEP_WINDOW_LIGHTS=work/logs/club-rooms.log on club.log).
 
 use crate::*;
 use housefire::lamps::{self, Lamp, Sources};

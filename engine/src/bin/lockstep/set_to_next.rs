@@ -16,6 +16,7 @@ type RoomLists = (Vec<Vec<(i32, i32)>>, std::collections::BTreeMap<u32, usize>);
 /// patterns (SimsTiles) and the objects' resources by GUID (SimsObjects).
 pub type DiscTables = (Vec<u32>, Vec<u32>, Vec<housefire::quickdata::FloorPattern>, std::collections::BTreeMap<u32, housefire::quickdata::ObjResources>);
 
+#[allow(clippy::too_many_arguments)]
 pub fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &DiscTables, log: &housefire::tree_log::Log, step_object: &[Option<FileId>], engine_lamps: &[housefire::lamps::Lamp], notes: &mut Notes) {
     let (lots, lot_ids, walk, best, best_n) = pick_lot(lib, ngh, log);
     let raw_of = |s: &StepRec| -> Option<&[u8]> {
@@ -1021,7 +1022,7 @@ fn lamps_from_the_engine(
             if own_lights.iter().any(|m| m.at == at) {
                 continue;
             }
-            let rec = log.object_lights.iter().filter(|o| o.lights.iter().any(|l| l.light == t[7])).last();
+            let rec = log.object_lights.iter().rfind(|o| o.lights.iter().any(|l| l.light == t[7]));
             println!("  unmatched log light {:08x} at {at:?}: record {:?}", t[7], rec.map(|o| (o.tick, o.object, o.lights.iter().map(|l| (l.kind, l.node, l.light == t[7])).collect::<Vec<_>>())));
             for o in lw.objects().filter(|o| o.on_lot() && (o.x16 as f32 / 16.0 - at[0]).abs() < 1.5 && (o.y16 as f32 / 16.0 - at[1]).abs() < 1.5) {
                 println!("    near: object {} guid {:08x} leader {} at ({}, {}) file {:?}", o.id(), o.guid, o.leader, o.x16 as f32 / 16.0, o.y16 as f32 / 16.0, o.file.map(|f| lw.library().file(f).path.clone()));
@@ -1100,4 +1101,38 @@ fn lamps_from_the_engine(
         colour_same += usize::from(colour.map(f32::to_bits) == w.colour.map(f32::to_bits));
     }
     println!("window fills from the engine's lamps: {fills} after a grid build with the lamps placed ({before} before any build or with them unplaced): nearest list the same {list_same}, mix {mix_same}, colour {colour_same}");
+    // each LightGrid_Sum point: its cell's lights as the log has them, the lamps (found by their
+    // light objects, the rebuild's own lights in order) replaced by the engine's place, reach and
+    // colour, summed (`point_light`) against the logged colour; a call whose lamps are not yet at
+    // the engine's places or reach (unplaced, or the light on a stream) is counted apart
+    let own_objects: Vec<u32> = theirs.iter().map(|t| t[7]).collect();
+    let (mut points, mut sum_same, mut unplaced, mut state) = (0, 0, 0, 0);
+    for g in &log.light_grids {
+        for (x, y, words, out) in &g.points {
+            let mut engine_colour = true;
+            let mut at_engine = true;
+            let cell: Vec<light::Light> = words
+                .iter()
+                .map(|w| {
+                    let Some(k) = own_objects.iter().position(|&o| o == w[7]).filter(|&k| k < own_lights.len()) else { return light::Light::from_words(w) };
+                    let (l, logged) = (&own_lights[k], light::Light::from_words(w));
+                    at_engine &= [logged.x, logged.y, logged.height].map(f32::to_bits) == l.at.map(f32::to_bits) && logged.reach.to_bits() == l.reach.to_bits();
+                    engine_colour &= logged.colour.map(f32::to_bits) == l.colour.map(f32::to_bits);
+                    light::Light { x: l.at[0], y: l.at[1], height: l.at[2], reach: l.reach, colour: l.colour }
+                })
+                .collect();
+            if !at_engine {
+                unplaced += 1;
+                continue;
+            }
+            if !engine_colour {
+                state += 1;
+                continue;
+            }
+            points += 1;
+            let mine = light::point_light(*x as f32, *y as f32, &cell);
+            sum_same += usize::from(mine.map(f32::to_bits) == out.map(f32::to_bits));
+        }
+    }
+    println!("light grid sums from the engine's lamps: {points} points the lamps of which are at the engine's places and colours: the sum bit for bit {sum_same} (DIFFERENT -> {}); {unplaced} points with a lamp not at the engine's place or reach (before the lamps were placed, or on a stream), {state} with a lamp of another animation state", points - sum_same);
 }
