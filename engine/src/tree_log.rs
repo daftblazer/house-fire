@@ -828,7 +828,43 @@ pub struct Log {
     pub frames: Vec<(u32, u32)>,
     pub lights: Vec<LightsRec>,
     pub states: Vec<StateRec>,
+    pub gx_calls: Vec<GxCallRec>,
     pub ticks: u32,
+}
+
+/// '}': a GX call a draw method makes itself (not through ERC_ApplyState's context), in the
+/// draw window, placed among the draws like `StateRec`.
+#[derive(Clone, Debug)]
+pub struct GxCallRec {
+    pub tick: u32,
+    pub call: GxCall,
+    /// The first four argument registers, r3 to r6.
+    pub args: [u32; 4],
+    /// GXLoadTexMtxImm's matrix (3x4 by rows, or 2x4 and zeros); zeros for the others.
+    pub matrix: [f32; 12],
+    pub strips_before: usize,
+    pub others_before: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GxCall {
+    /// (on)
+    SetColorUpdate,
+    /// (on)
+    SetAlphaUpdate,
+    /// (on, alpha)
+    SetDstAlpha,
+    /// (matrix pointer, id, type: 0 3x4, 1 2x4)
+    LoadTexMtxImm,
+    /// (destination, clear)
+    CopyTex,
+    /// (coordinate, function, source, matrix id)
+    SetTexCoordGen2,
+    Other(u32),
+}
+
+impl GxCallRec {
+    pub const LEN: usize = 4 * 18;
 }
 
 /// ';': the GX state in force after an ERC_ApplyState call in the draw window (the recomp's
@@ -1028,6 +1064,24 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let bytes = r.b[r.p..r.p + LightsRec::LEN].to_vec();
                 r.p += LightsRec::LEN;
                 log.lights.push(LightsRec { tick, device, strips_before: log.strips.len(), bytes });
+            }
+            b'}' => {
+                if !r.has(GxCallRec::LEN) {
+                    break;
+                }
+                let (tick, id) = (r.u32(), r.u32());
+                let args = [0; 4].map(|_| r.u32());
+                let matrix = [0; 12].map(|_| f32::from_bits(r.u32()));
+                let call = match id {
+                    1 => GxCall::SetColorUpdate,
+                    2 => GxCall::SetAlphaUpdate,
+                    3 => GxCall::SetDstAlpha,
+                    4 => GxCall::LoadTexMtxImm,
+                    5 => GxCall::CopyTex,
+                    6 => GxCall::SetTexCoordGen2,
+                    n => GxCall::Other(n),
+                };
+                log.gx_calls.push(GxCallRec { tick, call, args, matrix, strips_before: log.strips.len(), others_before: log.other_draws.len() });
             }
             b';' => {
                 if !r.has(StateRec::LEN) {
