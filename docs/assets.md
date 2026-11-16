@@ -1843,7 +1843,7 @@ winding takes the picture from 91.8% to 63% and 67%, so the original draws these
 per draw), the depth test (less or equal, writes on; less gives the same figure), the alpha
 compare of the opaque materials (a pixel with alpha below 0.5 is not drawn: 0.3 to 0.5 give the
 same figure, 0.05 gives 87%, and 0.65 gives 90.8%; the leaves are 1,084 of the 6,595 either
-way), the blend of one-layer materials (read from the layer flag 0x40, above), and fog (none
-seen). To read them, record ERC_ApplyState's context at the entry of each draw (the 0x30 bytes
-from context +0x23C to +0x26B: Z mode, alpha compare; +0x564 to +0x573: the blend; +0x578, the
-blend flags; +0x5B0, the cull mode).
+way), the blend of one-layer materials (read from the layer flag 0x40, above), and fog (not
+recorded either). To read them, record the render context at ERC_ApplyState's entry for each
+draw: +0x23C (Z mode) to +0x25B (alpha compare), +0x564 to +0x573 (the blend), +0x578 (the blend
+flags) and +0x5B0 (the cull mode).
