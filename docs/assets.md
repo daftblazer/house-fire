@@ -1819,11 +1819,11 @@ cover last, against the reference; frame 2400, 2401 the same to a pixel or two):
 
 | class (pixels it covers last) | pixels | within 4 | PSNR |
 |---|---|---|---|
-| rigid draws (strips and display lists) | 80,876 | 93.97% (4,880 beyond) | 21.70 dB |
+| rigid draws (strips and display lists) | 80,876 | 93.96% (4,882 beyond) | 21.70 dB |
 | the same outside the Sim's portrait square | 77,764 | 97.60% (1,864) | 34.10 dB |
-| floors' own pixels | 205,844 | 81.73% | 25.41 dB |
-| shadows' own pixels (the last Z-off draw) | 32,086 | 62.41% | 24.89 dB |
-| the whole frame | 286,720 | 85.18% | 24.01 dB |
+| floors' own pixels | 205,844 | 82.54% | 25.74 dB |
+| shadows' own pixels (the last Z-off draw) | 32,086 | 67.61% | 27.29 dB |
+| the whole frame | 286,720 | 85.76% | 24.18 dB |
 
 (Before the floors and shadows: rigid 92.93%, the whole frame 28.21%.)
 
@@ -1902,22 +1902,35 @@ constant goes out as the fragment's alpha (the shader), taken as it is by an alp
 (1, 0), except where the colour blend itself reads the fragment's alpha (windows, water): the
 alpha written is then the fragment's own.
 
-Fitted, shadows (`shadow_of` in scene.rs): the shadow draws are flat black at the light set's
-127/255 alpha with their polygon texture (`polyshadow`) left out, and write their own alpha
-instead of the constant 0 the state record shows, so that overlapping draws darken more (a
-tree's shadow is hundreds of overlapping leaf-sized polygons; each is dst x (1 - 0.5) where the
-alpha is 0.5, and writes 0.5 again: stacking to black as the reference has at its middle, 2 of
-255). The recorded constant 0 (no stacking) gave 54.7% on the shadows' pixels, the texture left
-on 58.2%, this 62.4%. The reference's walls' shadows are one flat half over the ground
-(stacking-free, uniform) where ours show the triangles' overlaps as a hatching: the wall caps'
-9,286 pixels are 47% off, the Mulberry tree's 23% and the roses' 62%: so the two are
-probably not one rule in the original (the walls' draws not stacking, the trees' stacking) and
-the log lacks what tells them apart (the constant alpha set after `ERC_ApplyState` by the draw's
-own method, or a different state set between the draws). Shadows are 62.41% within 4, not the
-90%: of the 12,061 pixels off, 4,379 are the wall caps' (the hatching), 1,393 the Mulberry
-tree's, 1,327 the picket fences', 1,268 the roses' and 708 the diagonal walls'. The porch under
-the house's wall is near black in the reference (a stack of several shadow draws, or a larger
-alpha there) and ours is half: not counted separately (unverified).
+The '}' records (home-a37; the GX calls a draw method makes itself, `Log::gx_calls`) say the same
+as the state records and nothing more: before each batch SetColorUpdate(1), SetAlphaUpdate(1),
+SetDstAlpha(on, 0x7F) for the floors; (1, 1, on 0) for the shadow draws; (0, 1, on 0) for the
+mask; then back. No call separates the walls' shadows from the trees', so the stacking guess of
+R2a (shadows ignoring the constant) is not explained by them, and it is not needed: the
+reference frames come from the recomp's renderer, which does not implement the constant
+destination alpha at all (`gcn-recomp/runtime/gx/render_vk.cpp` reads BP 0x41 only: the draw's
+own alpha is written, blended by the colour's factors, and read back by the shadows). With the
+constant not applied (`HONOUR_CONSTANT_DST_ALPHA` false in scene.rs; the renderer still supports
+it, for a target of the hardware's own picture) the floors write their vertex colours' alpha
+(0x80, half) and the shadows' blend reads that: floors 81.73 -> 82.54%, shadows 62.41 ->
+67.61%, with no stacking fit. Left fitted (`shadow_of`): the shadows' polygon texture (their
+alpha) is not applied, flat black at the light set's 127/255 (67.61%; applied 66.57%).
+
+The terrain's second layer: the '}' records give the texgen (SetTexCoordGen2: coordinate 1,
+2x4 matrix from the position, matrix 0x1E, one a floor strip) and the one load of
+GX_TEXMTX0 for them (an identity: ERC_ApplyState loads the model matrix there, which is the
+identity for the floors), so u, v before the second transform are the position in tiles. The
+second transform is the post matrix of dual-texture (0x40, from the device's projection): it is
+loaded by ERC_ApplyState's native path, not through the hooked GXLoadTexMtxImm, so it is not in
+the records. The fit (`TERRAIN_COLOUR_*`) stays. The records' other texture matrix, a 1/256 scale
+at the shadow batch's start, is not the terrain's.
+
+Shadows are 67.61% within 4, floors 82.54%, not the 90%: of the shadows' 10,394 pixels off the
+wall caps' hatching is the largest (the reference's wall shadows are one flat half, ours show
+the overlaps of the triangles as two tones); the floors' 35,938 off pixels are the terrain
+(about 24,000 in 12 strips: the detail and the aerial texture's alignment, the GPU's trilinear
+against the console's) and the porch (the house's shadow there is near black in the reference
+and half in ours; not counted separately, unverified).
 
 Open: the birch tree's leaves (1,091 pixels of the rigid draws) are darker in the reference at
 pixels where its own shadow draws lie (down to 0, ours up to 120), but every shadow draw of the

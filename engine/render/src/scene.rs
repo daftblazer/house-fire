@@ -327,6 +327,15 @@ fn wrap_of(v: u32) -> Wrap {
     }
 }
 
+/// Whether the constant destination alpha of the pixel engine (cmode1 bit 8, GXSetDstAlpha) is
+/// applied. The reference frames come from the recomp's own renderer, which does not implement
+/// it: it writes the draw's own alpha, blended by the colour's factors, and reads that alpha
+/// back for the shadows (`gcn-recomp/runtime/gx/render_vk.cpp` takes only BP 0x41). The '}'
+/// records agree with the state records on every constant (0x7F for the floors, 0 for the
+/// shadows and the mask), so the original's own picture would differ; the renderer supports
+/// the constant (`Material::dst_alpha`) for when the target is the hardware.
+pub const HONOUR_CONSTANT_DST_ALPHA: bool = false;
+
 /// A material and the textures bound to its layers, as the device's combiner stages would make
 /// them (`erc_material.cpp`). The state a draw is made in beyond that (blend, depth, cull,
 /// alpha compare) is guessed from the material here, and replaced by the draw's own state
@@ -414,19 +423,17 @@ fn with_state(mut mat: Material, st: &StateRec) -> Material {
     if st.pe[0] & 0xFF_FFFF != 0 {
         mat.write_colour = st.pe[0] & 8 != 0;
         mat.write_alpha = st.pe[0] & 0x10 != 0;
-        mat.dst_alpha = (st.pe[1] & 0x100 != 0).then_some(st.pe[1] as u8);
+        mat.dst_alpha = (st.pe[1] & 0x100 != 0 && HONOUR_CONSTANT_DST_ALPHA).then_some(st.pe[1] as u8);
     }
     mat
 }
 
 /// The projected shadows' material as fitted to the reference (`docs/assets.md`, "The renderer"):
-/// a flat black at half alpha (the light set's), the polygon's texture not applied, and the alpha
-/// they leave in the picture their own rather than the constant the state record shows, so
-/// shadows laid over each other darken the ground more (the trees' do).
+/// flat black at the light set's alpha (127/255), the polygon texture's alpha not applied. With
+/// the texture's alpha the shadows' pixels are 66.6% within 4, without it 67.6%.
 fn shadow_of(mut mat: Material) -> Material {
     mat.combine = Combine::Vertex;
     mat.layers = [None, None];
-    mat.dst_alpha = None;
     mat
 }
 
@@ -737,11 +744,11 @@ mod tests {
         let st = StateRec { tick: 0, context: 0, mtx_mode: 0, strips_before: 0, others_before: 0, z: (false, 3, false), alpha: (7, 0, 1, 7, 0), z_before_tex: false, blend: [1, 2, 0, 0], word574: 0, blend_flags: 0x148, cull: 0, pe: [0x4100_0215, 0x4200_0100, 0, 0] };
         // the mask pass: alpha only, constant alpha 0
         let m = with_state(base, &st);
-        assert_eq!((m.write_colour, m.write_alpha, m.dst_alpha), (false, true, Some(0)));
+        assert_eq!((m.write_colour, m.write_alpha, m.dst_alpha), (false, true, None));
         // an opaque draw: both, with the receivers' constant alpha 0x7F
         let st = StateRec { pe: [0x4100_001C, 0x4200_017F, 0, 0], ..st };
         let m = with_state(base, &st);
-        assert_eq!((m.write_colour, m.write_alpha, m.dst_alpha), (true, true, Some(0x7F)));
+        assert_eq!((m.write_colour, m.write_alpha, m.dst_alpha), (true, true, None));
     }
 
     #[test]
