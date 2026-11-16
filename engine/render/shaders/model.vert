@@ -1,6 +1,6 @@
 #version 450
 // A model's vertices: compact attributes (16-bit positions and coordinates, 8-bit normals)
-// scaled here, the world and view matrices applied, and the lights summed per vertex.
+// scaled here and carried to the fragment shader in view space, where the lights are summed.
 
 layout(location = 0) in ivec4 in_position;
 layout(location = 1) in ivec2 in_uv;
@@ -16,7 +16,7 @@ struct Draw {
     vec4 point_colour[4];    // w: k0
     vec4 point_position[4];  // w: k1
     ivec4 counts;      // directionals, points, combine, flags
-    vec4 params;       // crossfade share, alpha reference
+    vec4 params;       // crossfade share, alpha reference, sphere weight
 };
 
 layout(std430, set = 0, binding = 0) readonly buffer Draws { Draw draws[]; };
@@ -30,8 +30,8 @@ layout(location = 0) out vec4 v_colour;
 layout(location = 1) out vec2 v_uv;
 layout(location = 2) flat out int v_draw;
 layout(location = 3) out vec2 v_sphere;
-
-float byte(float v) { return floor(clamp(v, 0.0, 1.0) * 255.0 + 0.5) / 255.0; }
+layout(location = 4) out vec3 v_position;
+layout(location = 5) out vec3 v_normal;
 
 void main() {
     Draw d = draws[gl_InstanceIndex];
@@ -42,6 +42,7 @@ void main() {
                        cam.p1.x * v.z + cam.p1.y + w, w);
     v_uv = vec2(in_uv) * (1.0 / 4096.0);
     v_draw = gl_InstanceIndex;
+    v_colour = in_colour;
 
     vec3 n = vec3(dot(d.nm[0].xyz, in_normal.xyz), dot(d.nm[1].xyz, in_normal.xyz), dot(d.nm[2].xyz, in_normal.xyz));
     float nl = length(n);
@@ -55,26 +56,6 @@ void main() {
         o = normalize(o);
     }
     v_sphere = o.xy * 0.5 + 0.5;
-
-    int mode = int(d.ambient.w);
-    vec4 c;
-    if (mode == 0) {
-        vec3 sum = d.ambient.rgb;
-        for (int i = 0; i < d.counts.x; i++) {
-            sum += d.dir_colour[i].rgb * max(0.0, dot(n, d.dir_to_light[i].xyz));
-        }
-        for (int i = 0; i < d.counts.y; i++) {
-            vec3 to = d.point_position[i].xyz - v;
-            float dist = length(to);
-            vec3 dir = dist > 0.0 ? to / dist : to;
-            float atten = 1.0 / (d.point_colour[i].w + d.point_position[i].w * dist);
-            sum += d.point_colour[i].rgb * (atten * max(0.0, dot(n, dir)));
-        }
-        c = vec4(sum, 1.0);
-    } else if (mode == 1) {
-        c = in_colour;
-    } else {
-        c = vec4(0.0, 0.0, 0.0, 127.0 / 255.0);
-    }
-    v_colour = vec4(byte(c.r), byte(c.g), byte(c.b), byte(c.a));
+    v_position = v;
+    v_normal = n;
 }

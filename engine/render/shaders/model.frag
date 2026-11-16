@@ -1,11 +1,14 @@
 #version 450
-// A material's layers combined with the surface colour (the original's texture combiner
-// stages for the few shapes the game uses, `docs/assets.md`, "The renderer").
+// The surface colour (the lights summed per pixel) and a material's layers combined with it
+// (the original's texture combiner stages for the few shapes the game uses,
+// `docs/assets.md`, "The renderer").
 
 layout(location = 0) in vec4 v_colour;
 layout(location = 1) in vec2 v_uv;
 layout(location = 2) flat in int v_draw;
 layout(location = 3) in vec2 v_sphere;
+layout(location = 4) in vec3 v_position;
+layout(location = 5) in vec3 v_normal;
 
 struct Draw {
     vec4 mv[3];
@@ -28,11 +31,34 @@ layout(location = 1) out uint out_id;
 
 // combine codes (counts.z)
 const int VERTEX = 0, MODULATE = 1, MODULATE_UNLIT = 2, CROSSFADE = 3, OVER_PREV = 4, OVER_TEX = 5, ADD = 6;
+// flags (counts.w): 1 alpha test, 2 first layer unlit, 4 sphere map added (weight in bits 3-4)
+
+// What colour the surface has before its textures: lit by the ambient and the draw's lights
+// (the original's light model: the colour of each light by its distance and the cosine to the
+// normal), the vertex colours, or black at half alpha (a shadow).
+vec4 surface(Draw d) {
+    int mode = int(d.ambient.w);
+    if (mode == 1) return v_colour;
+    if (mode == 2) return vec4(0.0, 0.0, 0.0, 127.0 / 255.0);
+    vec3 n = normalize(v_normal);
+    vec3 sum = d.ambient.rgb;
+    for (int i = 0; i < d.counts.x; i++) {
+        sum += d.dir_colour[i].rgb * max(0.0, dot(n, d.dir_to_light[i].xyz));
+    }
+    for (int i = 0; i < d.counts.y; i++) {
+        vec3 to = d.point_position[i].xyz - v_position;
+        float dist = length(to);
+        vec3 dir = dist > 0.0 ? to / dist : to;
+        float atten = 1.0 / (d.point_colour[i].w + d.point_position[i].w * dist);
+        sum += d.point_colour[i].rgb * (atten * max(0.0, dot(n, dir)));
+    }
+    return vec4(clamp(sum, 0.0, 1.0), 1.0);
+}
 
 void main() {
     Draw d = draws[v_draw];
     int combine = d.counts.z;
-    vec4 ras = v_colour;
+    vec4 ras = surface(d);
     vec4 t0 = texture(layer0, v_uv);
     vec4 c;
     if (combine == VERTEX) {
