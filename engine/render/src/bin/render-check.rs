@@ -100,7 +100,7 @@ fn main() -> ExitCode {
     }
     let other_commands = log.other_draws.iter().filter(|g| g.0.tick == tick).count();
     let mut pixels: BTreeMap<Class, u64> = BTreeMap::new();
-    for &id in &picture.ids {
+    for &id in picture.ids.iter().chain(&picture.late_ids) {
         if id != 0 {
             *pixels.entry(scene.drawn[id as usize - 1].class).or_default() += 1;
         }
@@ -119,10 +119,14 @@ fn main() -> ExitCode {
     let missing_pixels = picture.ids.iter().filter(|&&id| id != 0 && scene.drawn[id as usize - 1].missing_texture).count();
     println!("drawn with a texture not found (white): {missing} draws, {missing_pixels} pixels; materials not drawn right: {unsupported:?}");
 
-    compare("rigid draws' pixels", &picture.rgba, &reference, |p| picture.ids[p] != 0);
+    let class_at = |id: u32| scene.drawn[id as usize - 1].class;
+    let rigid = |p: usize| picture.ids[p] != 0 && matches!(class_at(picture.ids[p]), Class::RigidStrip | Class::DisplayList);
+    compare("rigid draws' pixels", &picture.rgba, &reference, rigid);
+    compare("floors' own pixels", &picture.rgba, &reference, |p| picture.ids[p] != 0 && class_at(picture.ids[p]) == Class::Floor);
+    compare("shadows' own pixels", &picture.rgba, &reference, |p| picture.late_ids[p] != 0 && class_at(picture.late_ids[p]) == Class::Shadow);
     // where the error is: the models whose pixels are furthest off
     let mut by_model: BTreeMap<String, (u64, u64, [i64; 3])> = BTreeMap::new();
-    for (p, &id) in picture.ids.iter().enumerate().filter(|x| *x.1 != 0) {
+    for (p, &id) in picture.ids.iter().enumerate().filter(|x| rigid(x.0)) {
         let info = &scene.drawn[id as usize - 1];
         let off = (0..3).any(|c| (i32::from(picture.rgba[p * 4 + c]) - i32::from(reference[p * 4 + c])).abs() > 4);
         let e = by_model.entry(format!("{} {:?}", info.model, info.class)).or_default();
@@ -136,6 +140,26 @@ fn main() -> ExitCode {
     worst.sort_by_key(|w| std::cmp::Reverse((w.1).1));
     for (name, (n, off, signed)) in worst.iter().take(std::env::var("HF_WORST").ok().and_then(|v| v.parse().ok()).unwrap_or(0)) {
         println!("  {off:>6} of {n:>6} off (mean signed {:+.1} {:+.1} {:+.1}): {name}", signed[0] as f64 / *n as f64, signed[1] as f64 / *n as f64, signed[2] as f64 / *n as f64);
+    }
+    if let Some(n) = std::env::var("HF_FLOORS").ok().and_then(|v| v.parse::<usize>().ok()) {
+        // the floors' and shadows' pixels furthest off, by draw
+        let mut by_draw: BTreeMap<(u32, bool), (u64, u64)> = BTreeMap::new();
+        for p in 0..(WIDTH * HEIGHT) as usize {
+            for (id, late) in [(picture.ids[p], false), (picture.late_ids[p], true)] {
+                if id != 0 && matches!(class_at(id), Class::Floor | Class::Shadow) && (late == (class_at(id) == Class::Shadow)) {
+                    let off = (0..3).any(|c| (i32::from(picture.rgba[p * 4 + c]) - i32::from(reference[p * 4 + c])).abs() > 4);
+                    let e = by_draw.entry((id, late)).or_default();
+                    e.0 += 1;
+                    e.1 += u64::from(off);
+                }
+            }
+        }
+        let mut v: Vec<_> = by_draw.into_iter().collect();
+        v.sort_by_key(|x| std::cmp::Reverse((x.1).1));
+        for ((id, _), (cnt, off)) in v.into_iter().take(n) {
+            let info = &scene.drawn[id as usize - 1];
+            println!("  {off:>6} of {cnt:>6} off: {:?} {} {:?}", info.class, info.model, info.textures);
+        }
     }
     if std::env::var_os("HF_FLAGS").is_some() {
         let mut by_flags: BTreeMap<u32, (usize, Vec<String>)> = BTreeMap::new();
@@ -170,12 +194,16 @@ fn main() -> ExitCode {
             let (info, d) = (&scene.drawn[id as usize - 1], &scene.frame.draws[id as usize - 1]);
             println!("   {info:?}\n   {:?}\n   {:?}", d.material, d.lighting);
         }
+        if picture.late_ids[p] != 0 {
+            let (info, d) = (&scene.drawn[picture.late_ids[p] as usize - 1], &scene.frame.draws[picture.late_ids[p] as usize - 1]);
+            println!("   late: {info:?}\n   {:?}", d.material);
+        }
     }
     // (HF_EXCLUDE="x0,y0,x1,y1;...": boxes another pass paints over, left out of a second figure)
     let boxes: Vec<Vec<usize>> = std::env::var("HF_EXCLUDE").unwrap_or_default().split(';').filter(|b| !b.is_empty()).map(|b| b.split(',').filter_map(|v| v.parse().ok()).collect()).collect();
     if !boxes.is_empty() {
         let inside = |p: usize| boxes.iter().any(|b| (b[0]..b[2]).contains(&(p % WIDTH as usize)) && (b[1]..b[3]).contains(&(p / WIDTH as usize)));
-        compare("rigid draws' pixels outside the excluded boxes", &picture.rgba, &reference, |p| picture.ids[p] != 0 && !inside(p));
+        compare("rigid draws' pixels outside the excluded boxes", &picture.rgba, &reference, |p| rigid(p) && !inside(p));
     }
     compare("whole frame", &picture.rgba, &reference, |_| true);
 
@@ -192,5 +220,17 @@ fn main() -> ExitCode {
         })
         .collect();
     write_png(&out.join(format!("diff_{frame}.png")), &diff);
+    // where the shadows' passes drew (red: shadow draws, blue: the mask)
+    let passes: Vec<u8> = (0..(WIDTH * HEIGHT) as usize)
+        .flat_map(|p| {
+            let g = picture.rgba[p * 4] / 2;
+            match picture.late_ids[p] {
+                0 => [g, g, g, 255],
+                id if class_at(id) == Class::Shadow => [255, g, g, 255],
+                _ => [g, g, 255, 255],
+            }
+        })
+        .collect();
+    write_png(&out.join(format!("passes_{frame}.png")), &passes);
     ExitCode::SUCCESS
 }

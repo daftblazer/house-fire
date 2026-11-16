@@ -8,7 +8,7 @@ use ash::vk;
 use std::collections::HashMap;
 
 const COLOUR_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
-const ID_FORMAT: vk::Format = vk::Format::R32_UINT;
+const ID_FORMAT: vk::Format = vk::Format::R32G32_UINT;
 const DEPTH_FORMAT: vk::Format = vk::Format::D32_SFLOAT;
 
 /// The per-draw record the shaders read (`shaders/model.vert`, std430: all vec4s).
@@ -24,6 +24,10 @@ struct DrawRecord {
     point_position: [[f32; 4]; MAX_POINTS],
     counts: [i32; 4],
     params: [f32; 4],
+    /// x: the mesh's texture coordinate unit (`MeshData::uv_shift`).
+    extra: [f32; 4],
+    /// Layer 1's position-made coordinates (`extra.y` 1 when on): u then v, each (x, y, offset).
+    layer1: [[f32; 4]; 2],
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -32,6 +36,9 @@ struct PipelineKey {
     cull: Cull,
     depth_test: Option<Compare>,
     depth_write: bool,
+    write_colour: bool,
+    write_alpha: bool,
+    dst_alpha: Option<u8>,
 }
 
 struct MeshSet {
@@ -45,6 +52,7 @@ struct MeshSlot {
     first_index: u32,
     index_count: u32,
     vertex_offset: i32,
+    uv_unit: f32,
 }
 
 struct Tex {
@@ -127,7 +135,7 @@ impl<'g> Renderer<'g> {
         let framebuffer = unsafe { d.create_framebuffer(&vk::FramebufferCreateInfo::default().render_pass(render_pass).attachments(&views).width(width).height(height).layers(1), None) }.unwrap();
         let host = vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT;
         let colour_out = gpu.buffer(u64::from(width * height * 4), vk::BufferUsageFlags::TRANSFER_DST, host);
-        let ids_out = gpu.buffer(u64::from(width * height * 4), vk::BufferUsageFlags::TRANSFER_DST, host);
+        let ids_out = gpu.buffer(u64::from(width * height * 8), vk::BufferUsageFlags::TRANSFER_DST, host);
 
         let draw_layout = unsafe {
             d.create_descriptor_set_layout(
@@ -205,7 +213,7 @@ impl<'g> Renderer<'g> {
         let mut ids = Vec::new();
         for m in meshes {
             ids.push(MeshId(self.meshes.len() as u32));
-            self.meshes.push(MeshSlot { set, first_index: indices.len() as u32, index_count: m.indices.len() as u32, vertex_offset: vertices.len() as i32 });
+            self.meshes.push(MeshSlot { set, first_index: indices.len() as u32, index_count: m.indices.len() as u32, vertex_offset: vertices.len() as i32, uv_unit: f32::from(1u16 << m.uv_shift) });
             vertices.extend_from_slice(&m.vertices);
             indices.extend_from_slice(&m.indices);
         }
@@ -336,7 +344,13 @@ impl<'g> Renderer<'g> {
         let depth = vk::PipelineDepthStencilStateCreateInfo::default().depth_test_enable(key.depth_test.is_some())
             .depth_write_enable(key.depth_write)
             .depth_compare_op(key.depth_test.map_or(vk::CompareOp::ALWAYS, |c| vk::CompareOp::from_raw(i32::from(c.0))));
-        let all = vk::ColorComponentFlags::RGBA;
+        let mut all = vk::ColorComponentFlags::empty();
+        if key.write_colour {
+            all |= vk::ColorComponentFlags::R | vk::ColorComponentFlags::G | vk::ColorComponentFlags::B;
+        }
+        if key.write_alpha {
+            all |= vk::ColorComponentFlags::A;
+        }
         let factor = |f: Factor, src: bool| match f {
             Factor::Zero => vk::BlendFactor::ZERO,
             Factor::One => vk::BlendFactor::ONE,
@@ -369,7 +383,25 @@ impl<'g> Renderer<'g> {
                 .src_alpha_blend_factor(vk::BlendFactor::ONE)
                 .dst_alpha_blend_factor(vk::BlendFactor::ONE),
         };
-        let attachments = [colour_blend, vk::PipelineColorBlendAttachmentState::default().color_write_mask(vk::ColorComponentFlags::R)];
+        // a constant destination alpha replaces the alpha the blend makes: the shader writes
+        // the constant as the fragment's alpha (`record`), taken as it is
+        let colour_blend = match key.dst_alpha {
+            Some(_) => colour_blend
+                .blend_enable(true)
+                .src_color_blend_factor(if key.blend == Blend::Opaque { vk::BlendFactor::ONE } else { colour_blend.src_color_blend_factor })
+                .dst_color_blend_factor(if key.blend == Blend::Opaque { vk::BlendFactor::ZERO } else { colour_blend.dst_color_blend_factor })
+                .alpha_blend_op(vk::BlendOp::ADD)
+                .src_alpha_blend_factor(vk::BlendFactor::ONE)
+                .dst_alpha_blend_factor(vk::BlendFactor::ZERO),
+            None => colour_blend,
+        };
+        // the id picture: the depth-tested draws write the first channel, the shadows' passes the second
+        let id_mask = match (key.write_colour, key.depth_test.is_some()) {
+            (false, _) => vk::ColorComponentFlags::empty(),
+            (true, true) => vk::ColorComponentFlags::R,
+            (true, false) => vk::ColorComponentFlags::G,
+        };
+        let attachments = [colour_blend, vk::PipelineColorBlendAttachmentState::default().color_write_mask(id_mask)];
         let blend = vk::PipelineColorBlendStateCreateInfo::default().attachments(&attachments);
         let dynamic_states = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
         let dynamic = vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamic_states);
@@ -400,7 +432,7 @@ impl<'g> Renderer<'g> {
             self.draw_buffer = gpu.buffer((self.draw_capacity * std::mem::size_of::<DrawRecord>()) as u64, vk::BufferUsageFlags::STORAGE_BUFFER, vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT);
             self.bind_draw_buffer();
         }
-        let records: Vec<DrawRecord> = frame.draws.iter().map(|d| record(&frame.camera, d)).collect();
+        let records: Vec<DrawRecord> = frame.draws.iter().map(|d| record(&frame.camera, d, self.meshes[d.mesh.0 as usize].uv_unit)).collect();
         gpu.write(&self.draw_buffer, 0, bytes_of(&records));
         // the pipelines and descriptor sets a draw needs, made before recording
         let prepared: Vec<(vk::Pipeline, vk::DescriptorSet)> = frame
@@ -408,7 +440,7 @@ impl<'g> Renderer<'g> {
             .iter()
             .map(|d| {
                 let m = &d.material;
-                (self.pipeline(PipelineKey { blend: m.blend, cull: m.cull, depth_test: m.depth_test, depth_write: m.depth_write }), self.texture_set(m.layers))
+                (self.pipeline(PipelineKey { blend: m.blend, cull: m.cull, depth_test: m.depth_test, depth_write: m.depth_write, write_colour: m.write_colour, write_alpha: m.write_alpha, dst_alpha: m.dst_alpha }), self.texture_set(m.layers))
             })
             .collect();
 
@@ -466,9 +498,14 @@ impl<'g> Renderer<'g> {
         }
         let n = (w * h) as usize;
         let rgba = gpu.read(&self.colour_out, n * 4);
-        let raw = gpu.read(&self.ids_out, n * 4);
-        let ids = raw.as_chunks::<4>().0.iter().map(|c| u32::from_le_bytes(*c)).map(|i| if i == 0 { 0 } else { frame.draws[i as usize - 1].id }).collect();
-        Picture { width: w, height: h, rgba, ids }
+        let raw = gpu.read(&self.ids_out, n * 8);
+        let id_of = |c: &[u8]| match u32::from_le_bytes(c.try_into().unwrap()) {
+            0 => 0,
+            i => frame.draws[i as usize - 1].id,
+        };
+        let ids = raw.as_chunks::<8>().0.iter().map(|c| id_of(&c[..4])).collect();
+        let late_ids = raw.as_chunks::<8>().0.iter().map(|c| id_of(&c[4..])).collect();
+        Picture { width: w, height: h, rgba, ids, late_ids }
     }
 }
 
@@ -544,7 +581,7 @@ fn normal_matrix(m: [[f32; 3]; 3]) -> [[f32; 3]; 3] {
     cof.map(|r| r.map(|v| v * s))
 }
 
-fn record(camera: &Camera, d: &Draw) -> DrawRecord {
+fn record(camera: &Camera, d: &Draw, uv_unit: f32) -> DrawRecord {
     let view = d.view.unwrap_or(camera.view);
     let mv = concat(&view, &d.world);
     let mut r = DrawRecord::default();
@@ -586,6 +623,18 @@ fn record(camera: &Camera, d: &Draw) -> DrawRecord {
         r.counts[1] = points.len().min(MAX_POINTS) as i32;
     }
     let unlit_first = matches!(d.material.combine, Combine::Over { unlit_first: true, .. } | Combine::Add { unlit_first: true });
+    r.extra[0] = uv_unit;
+    // the constant alpha goes out as the fragment's alpha, except where the colour blend reads
+    // the fragment's alpha itself (then the alpha written is the fragment's own)
+    let reads_source_alpha = matches!(d.material.blend, Blend::Mix { src, dst } if [src, dst].iter().any(|f| matches!(f, Factor::SrcAlpha | Factor::InvSrcAlpha)));
+    if let Some(a) = d.material.dst_alpha.filter(|_| !reads_source_alpha) {
+        r.extra[2] = 1.0;
+        r.extra[3] = f32::from(a) / 255.0;
+    }
+    if let Some(g) = d.material.layer1_from_position {
+        r.extra[1] = 1.0;
+        r.layer1 = [[g.u[0], g.u[1], g.u[2], 0.0], [g.v[0], g.v[1], g.v[2], 0.0]];
+    }
     r.counts[2] = combine;
     // flags: 1 alpha test (its functions in bits 5 to 12), 2 first layer unlit, 4 sphere map added (weight in bits 3 and 4)
     let (sphere, weight) = match d.material.sphere {

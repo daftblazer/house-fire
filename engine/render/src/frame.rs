@@ -55,6 +55,9 @@ pub struct Vertex {
 pub struct MeshData {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
+    /// The texture coordinates are 4096ths of `1 << uv_shift` (a floor's run of tiles reaches
+    /// past 8, where the 16-bit range ends at shift 0).
+    pub uv_shift: u8,
 }
 
 /// How texture coordinates outside 0..1 are read.
@@ -205,9 +208,26 @@ pub struct Material {
     pub depth_write: bool,
     /// Which pixels are drawn by their alpha (none: all).
     pub alpha_test: Option<AlphaTest>,
+    /// Which of the picture's channels the draw writes (GXSetColorUpdate, GXSetAlphaUpdate).
+    pub write_colour: bool,
+    pub write_alpha: bool,
+    /// A constant written as the destination alpha instead of the draw's own (GXSetDstAlpha):
+    /// the picture keeps an alpha that the shadows' blend reads back.
+    pub dst_alpha: Option<u8>,
+    /// Layer 1 is read at the vertex position's x and y (in mesh units) instead of at the
+    /// vertex's own coordinates: the terrain's lot-wide colour texture.
+    pub layer1_from_position: Option<PositionUv>,
     /// A reflection added over the colour: layer 1 read through the sphere map of the surface
     /// (`Combine::Modulate` only).
     pub sphere: Option<SphereWeight>,
+}
+
+/// A texture coordinate made from a vertex position (a texture coordinate generator): each of
+/// u and v is a row (x factor, y factor, offset) applied to the position in the mesh's units.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PositionUv {
+    pub u: [f32; 3],
+    pub v: [f32; 3],
 }
 
 /// A light shining on the draw, in the draw's view space.
@@ -267,6 +287,9 @@ pub struct Picture {
     pub height: u32,
     pub rgba: Vec<u8>,
     pub ids: Vec<u32>,
+    /// The id of the last draw to cover each pixel among the ones with the depth test off (the
+    /// shadows' passes), which write no id above.
+    pub late_ids: Vec<u32>,
 }
 
 #[cfg(test)]

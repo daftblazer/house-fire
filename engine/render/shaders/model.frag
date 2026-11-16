@@ -9,6 +9,7 @@ layout(location = 2) flat in int v_draw;
 layout(location = 3) in vec2 v_sphere;
 layout(location = 4) in vec3 v_position;
 layout(location = 5) in vec3 v_normal;
+layout(location = 6) in vec2 v_uv1;
 
 struct Draw {
     vec4 mv[3];
@@ -20,6 +21,8 @@ struct Draw {
     vec4 point_position[4];
     ivec4 counts;
     vec4 params;
+    vec4 extra;
+    vec4 layer1[2];
 };
 layout(std430, set = 0, binding = 0) readonly buffer Draws { Draw draws[]; };
 
@@ -42,7 +45,7 @@ bool compare(int f, float a, float r) {
         default: return true;
     }
 }
-layout(location = 1) out uint out_id;
+layout(location = 1) out uvec2 out_id;
 
 // combine codes (counts.z)
 const int VERTEX = 0, MODULATE = 1, MODULATE_UNLIT = 2, CROSSFADE = 3, OVER_PREV = 4, OVER_TEX = 5, ADD = 6;
@@ -83,7 +86,7 @@ void main() {
     } else if (combine == MODULATE_UNLIT) {
         c = clamp(2.0 * t0, 0.0, 1.0);
     } else {
-        vec4 t1 = texture(layer1, v_uv);
+        vec4 t1 = texture(layer1, v_uv1);
         if (combine == CROSSFADE) {
             vec4 a = clamp(t0 * ras, 0.0, 1.0);
             vec4 b = clamp(t1 * ras, 0.0, 1.0);
@@ -113,6 +116,7 @@ void main() {
         bool pass = op == 0 ? p0 && p1 : (op == 1 ? p0 || p1 : (op == 2 ? p0 != p1 : p0 == p1));
         if (!pass) discard;
     }
+    if (d.extra.z != 0.0) c.a = d.extra.w;
     out_colour = c;
-    out_id = uint(v_draw) + 1u;
+    out_id = uvec2(uint(v_draw) + 1u);
 }

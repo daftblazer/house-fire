@@ -17,6 +17,8 @@ struct Draw {
     vec4 point_position[4];  // w: k1
     ivec4 counts;      // directionals, points, combine, flags
     vec4 params;       // crossfade share, alpha reference, sphere weight
+    vec4 extra;        // x: the mesh's texture coordinate unit; y: layer 1 from the position; z, w: constant alpha on, its value
+    vec4 layer1[2];    // layer 1 from the position: u then v as (x, y, offset)
 };
 
 layout(std430, set = 0, binding = 0) readonly buffer Draws { Draw draws[]; };
@@ -32,6 +34,7 @@ layout(location = 2) flat out int v_draw;
 layout(location = 3) out vec2 v_sphere;
 layout(location = 4) out vec3 v_position;
 layout(location = 5) out vec3 v_normal;
+layout(location = 6) out vec2 v_uv1;
 
 void main() {
     Draw d = draws[gl_InstanceIndex];
@@ -40,7 +43,8 @@ void main() {
     float w = -v.z;
     gl_Position = vec4(cam.p0.x * v.x + cam.p0.y * v.z, -(cam.p0.z * v.y + cam.p0.w * v.z),
                        cam.p1.x * v.z + cam.p1.y + w, w);
-    v_uv = vec2(in_uv) * (1.0 / 4096.0);
+    v_uv = vec2(in_uv) * (d.extra.x / 4096.0);
+    v_uv1 = d.extra.y != 0.0 ? vec2(dot(d.layer1[0].xy, vec2(in_position.xy)) + d.layer1[0].z, dot(d.layer1[1].xy, vec2(in_position.xy)) + d.layer1[1].z) : v_uv;
     v_draw = gl_InstanceIndex;
     v_colour = in_colour;
 

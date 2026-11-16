@@ -1815,28 +1815,29 @@ What is drawn, as the device's combiner stages made it (`erc_material.cpp`):
   and the bottle lamp's and the diamond's to 0.
 
 Figures (`render-check`, RGB, within 4 in every channel; the colour of a pixel our rigid draws
-cover last, against the reference):
+cover last, against the reference; frame 2400, 2401 the same to a pixel or two):
 
-| frame | rigid pixels | within 4 | beyond | PSNR | outside the portrait | beyond | PSNR |
-|---|---|---|---|---|---|---|---|
-| 2400 | 80,708 | 91.83% | 6,595 | 21.08 dB | 77,596 | 95.39% (3,579) | 28.37 dB |
-| 2401 | 80,713 | 91.83% | 6,596 | 21.09 dB | 77,601 | 95.39% (3,580) | 28.35 dB |
+| class (pixels it covers last) | pixels | within 4 | PSNR |
+|---|---|---|---|
+| rigid draws (strips and display lists) | 80,876 | 93.97% (4,880 beyond) | 21.70 dB |
+| the same outside the Sim's portrait square | 77,764 | 97.60% (1,864) | 34.10 dB |
+| floors' own pixels | 205,844 | 81.73% | 25.41 dB |
+| shadows' own pixels (the last Z-off draw) | 32,086 | 62.41% | 24.89 dB |
+| the whole frame | 286,720 | 85.18% | 24.01 dB |
 
-Draws by class, frame 2400 (2401 the same but for pixels, 13,023 and 67,690): rigid model
-strips 333 (13,019 pixels), display-list model draws 330 (67,689), skinned 119, projected
-shadows 658, overlay 57, other commands (floors) 198, unidentified 1; the last four are not
-drawn (R2 and the floors), so they cover none. 56 draws have a texture not found among the
-game's (made at run time; 47 pixels, the Persian rug).
+(Before the floors and shadows: rigid 92.93%, the whole frame 28.21%.)
 
-What the remaining 6,595 pixels are (frame 2400): 3,127 the Sim's portrait square (49..104 x
-347..402, painted over the road by a later draw: R2); 1,401 the windows' glass, drawn blended over
-what is behind it, which is the rooms' floors (the 'g' strips, not drawn: black here); 1,084 the
-birch tree's leaves, darker by a third in the reference at the pixels where a shadow pass lies on
-it (a shadow draw of the same tree: R2); about 240 the rose bushes (the same), 290 the bathroom
-counter (its edge texels), 185 the wall caps (coplanar and rounding), and the rest scattered
-(Sims' belongings, the TV, the jukebox). Without the portrait the figure is 95.4%, and without
-the glass and the shadowed leaves about 98.7%: the 99% of the rigid pixels needs the floors and
-the shadows (R2).
+Draws by class, frame 2400 (2401 the same): rigid model strips 333, display-list model draws 330,
+skinned 119 (not drawn: R2), projected shadows 658, the floors' strips 98 and the mask passes
+98 (the 'g' records of opcode 42), overlay 57 (not drawn), other commands 2 (two 'g' records with
+no vertices, not a draw), unidentified 1. 56 draws have a texture not found among the game's
+(made at run time; 47 pixels, the Persian rug).
+
+What the remaining rigid pixels are (frame 2400, 4,880): 3,116 the Sim's portrait square (49..104
+x 347..402, painted over the road by a later draw: R2); 1,091 the birch tree's leaves (below);
+466 the windows' glass (from 1,302 before the floors: its colour now blends over the right
+floor); 80 the wall caps, and the rest scattered (the Sims' clothes, 26 and 14 pixels, are
+skinned parts).
 
 The GX state of each draw is in the log since home-a36 (';', after each ERC_ApplyState: the
 applied copy at 0x80357DB8, so what GX holds, since the context's own Z and alpha fields are
@@ -1861,3 +1862,72 @@ and alpha, source x destination alpha + picture x (1 - destination alpha); the 6
 off" draws a frame). The registers are as ERC_ApplyState left them; a draw method that sets GX
 itself after it (a constant alpha for the mask?) is not seen. Fog is not shadowed in __GXData
 and not recorded.
+
+### The floors and the shadows (R2a)
+
+Floors. Each 'g' record of opcode 42 is a draw of its logged vertices (`Log::strip_vertices`,
+positions in the lot's frame: kept in 64ths of a tile in a 16-bit mesh and scaled back by the
+draw's matrix, texture coordinates in 512ths: a run's u reaches -19), lit by their vertex
+colours (0xRRGGBBAA, as the floor draws their lighting: 'Lighting::VertexColours'), with the
+camera's view and projection and a world matrix of identity. Its texture loads are those counted
+before it in the record (`others_before`; the strips' loads still go by the gap), its GX state is
+the first ';' after it: the state with the same strips before and `others_before` = its index
++ 1. The first gap's 74 'm' records are the floors' materials, one each in order (73 floors and
+the first strip's): a gap with as many materials as floors takes them so, and the terrain's are
+two layers (a cross-fade by the second one's factor, the ordinary two-layer path): the street
+and the road, the sidewalk and the wood draw right (the sidewalk's and the road's probed pixels match to within 2); the grass is `terrain_mom_house_detail` (64 x 64, repeated a tile) cross-faded with
+`terrain_mom_house_color`, a 256 x 256 aerial picture of the neighbourhood read at the position
+through a texture matrix (the material's uv source 3; the device's matrix is not in the log).
+The matrix is fitted (`TERRAIN_COLOUR_*` in scene.rs, u = x / 153 + 0.34, v = 0.47 - y / 147:
+the means of the lot's grass match within 2 of 255 and the road lines up); the detail does not
+line up exactly, so the terrain's pixels are 70 to 80% within 4. The floors are 81.73% within 4
+(205,844 pixels), not the 90%: the terrain's 20 to 25% is that texture alignment and the
+trilinear filtering of the detail (the console's level choice is not the GPU's); and the porch.
+
+What the passes are. The frame is a sequence of batches, each: floors (opaque, constant
+destination alpha 0x7F: cmode1 0x17F), their shadow draws (class "lighting off": blend
+destination alpha / inverse, Z off), then the mask (the same floor strips again, cmode0 0x215:
+alpha writes only, blend source factor the destination colour and destination zero, cmode1
+0x100), then the next batch's floors. Four batches on frame 2400: the lot's ground (floors 0..72,
+570 shadow draws, the mask from the 73rd floor record), the rooms of the house (shadow draws of the
+Sims and objects: `shadow_adult`) and two small ones. Objects (all strips of the models) come after the last batch, so a shadow only
+ever lies on a floor (the receiver's alpha 0x7F is the stencil: a shadow darkens by (1 - alpha):
+half) and never on a model drawn later. The mask pass draws no colour (our pipelines mask the
+channels); its constant alpha 0 (as recorded) cleans the floor's alpha for the next batch. Its
+effect on these frames' pictures is none (the same figures with or without), so it is drawn as
+recorded and costs nothing visible. Colour and alpha write masks (cmode0 bits 3, 4), the
+constant destination alpha (cmode1 bit 8, low byte) and the id buffers' second channel (for
+draws with the depth test off) are in `Material` and the pipeline key (`renderer.rs`); the
+constant goes out as the fragment's alpha (the shader), taken as it is by an alpha blend of
+(1, 0), except where the colour blend itself reads the fragment's alpha (windows, water): the
+alpha written is then the fragment's own.
+
+Fitted, shadows (`shadow_of` in scene.rs): the shadow draws are flat black at the light set's
+127/255 alpha with their polygon texture (`polyshadow`) left out, and write their own alpha
+instead of the constant 0 the state record shows, so that overlapping draws darken more (a
+tree's shadow is hundreds of overlapping leaf-sized polygons; each is dst x (1 - 0.5) where the
+alpha is 0.5, and writes 0.5 again: stacking to black as the reference has at its middle, 2 of
+255). The recorded constant 0 (no stacking) gave 54.7% on the shadows' pixels, the texture left
+on 58.2%, this 62.4%. The reference's walls' shadows are one flat half over the ground
+(stacking-free, uniform) where ours show the triangles' overlaps as a hatching: the wall caps'
+9,286 pixels are 47% off, the Mulberry tree's 23% and the roses' 62%: so the two are
+probably not one rule in the original (the walls' draws not stacking, the trees' stacking) and
+the log lacks what tells them apart (the constant alpha set after `ERC_ApplyState` by the draw's
+own method, or a different state set between the draws). Shadows are 62.41% within 4, not the
+90%: of the 12,061 pixels off, 4,379 are the wall caps' (the hatching), 1,393 the Mulberry
+tree's, 1,327 the picket fences', 1,268 the roses' and 708 the diagonal walls'. The porch under
+the house's wall is near black in the reference (a stack of several shadow draws, or a larger
+alpha there) and ours is half: not counted separately (unverified).
+
+Open: the birch tree's leaves (1,091 pixels of the rigid draws) are darker in the reference at
+pixels where its own shadow draws lie (down to 0, ours up to 120), but every shadow draw of the
+log comes before the tree's strips (strips 6 to 575 against 1425 and later), and draws after the
+mask only are the interface's. Moving the shadow and mask passes after the models (to darken
+the leaves) made the rigid figure worse (93.44%; checked) and is not in. Two 'g' records at the end of
+the lists (G196 and 197, no opcode 42: `[4, 0x81070B60, 0x28000000]`) are not decoded: not
+vertex strips (unverified: display-list calls).
+
+`render-check` prints the floors' and the shadows' own pixels (count, within 4, PSNR; the pixels
+whose last depth-tested draw is a floor, or whose last Z-off draw is a shadow), and writes
+`r1/passes_N.png` (red: where shadow draws lie, blue: the mask). `HF_FLOORS=n` lists the n
+floor or shadow draws with most pixels off.

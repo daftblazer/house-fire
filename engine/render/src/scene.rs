@@ -9,7 +9,7 @@ use housefire::disc::Disc;
 use housefire::draw::{Part, PartIndex};
 use housefire::model::SubModel;
 use housefire::texture::{self, Kind};
-use housefire::tree_log::{LightsRec, Log, MaterialRec, StateRec, StripRec, TexLoadRec};
+use housefire::tree_log::{LightsRec, Log, MaterialRec, StateRec, StripRec, StripVertex, TexLoadRec};
 use std::collections::{BTreeMap, HashMap};
 
 /// The alpha (of 255) below which a textured opaque pixel is not drawn, for a log without the
@@ -35,30 +35,36 @@ pub enum Class {
     Shadow,
     /// Drawn through another projection than the lot's camera (the interface's).
     Overlay,
-    /// Another command (the floors' strips, 'g' records).
+    /// A floor's strip of tiles ('g' records, opcode 42).
+    Floor,
+    /// A floor strip drawn again for the shadows' mask: alpha only.
+    FloorMask,
+    /// Another command (not a draw the lot's frame shows).
     Other,
     /// A strip whose vertices are not in `models.arc` (made at run time) or whose model is not read.
     Unidentified,
 }
 
 impl Class {
-    pub const ALL: [Class; 7] = [Class::RigidStrip, Class::DisplayList, Class::Skinned, Class::Shadow, Class::Overlay, Class::Other, Class::Unidentified];
+    pub const ALL: [Class; 9] = [Class::RigidStrip, Class::DisplayList, Class::Skinned, Class::Shadow, Class::Floor, Class::FloorMask, Class::Overlay, Class::Other, Class::Unidentified];
 
     pub fn name(self) -> &'static str {
         match self {
             Class::RigidStrip => "rigid model strip",
             Class::DisplayList => "display-list model draw",
             Class::Skinned => "skinned (not drawn: R2)",
-            Class::Shadow => "lighting off, shadows (not drawn: R2)",
+            Class::Shadow => "lighting off, shadows",
+            Class::Floor => "floors' strips",
+            Class::FloorMask => "floors again, the shadows' mask",
             Class::Overlay => "other projection, interface (not drawn)",
-            Class::Other => "other command, floors (not drawn)",
+            Class::Other => "other command (not drawn)",
             Class::Unidentified => "unidentified",
         }
     }
 
     /// Whether R1 draws it.
     pub fn drawn(self) -> bool {
-        matches!(self, Class::RigidStrip | Class::DisplayList)
+        matches!(self, Class::RigidStrip | Class::DisplayList | Class::Shadow | Class::Floor | Class::FloorMask)
     }
 }
 
@@ -331,7 +337,7 @@ fn material_of(m: &MaterialRec, lit: bool, bound: [Option<TextureRef>; 2]) -> (M
     let sphere = m.layers == 2 && l(1, 0x16) == 2;
     let mut unsupported = None;
     let two = m.layers == 2 && bound[1].is_some() && lit && !sphere;
-    let mut mat = Material { combine: Combine::Vertex, layers: [bound[0], None], blend: Blend::Opaque, cull: Cull::None, depth_test: Some(Compare::LEQUAL), depth_write: true, alpha_test: None, sphere: None };
+    let mut mat = Material { combine: Combine::Vertex, layers: [bound[0], None], blend: Blend::Opaque, cull: Cull::None, depth_test: Some(Compare::LEQUAL), depth_write: true, alpha_test: None, write_colour: true, write_alpha: true, dst_alpha: None, layer1_from_position: None, sphere: None };
     let sphere_weight = match by {
         1 => SphereWeight::PrevAlpha,
         2 => SphereWeight::Factor(f32::from(factor) / 255.0),
@@ -402,10 +408,121 @@ fn with_state(mut mat: Material, st: &StateRec) -> Material {
         2 => Cull::Back,
         _ => Cull::All,
     };
+    // the pixel engine's registers (their top byte is the register's number): colour update
+    // bit 3, alpha update bit 4 of cmode0; bit 8 of cmode1 a constant destination alpha, its
+    // value the low byte. Records with no registers (all zero) leave the writes on.
+    if st.pe[0] & 0xFF_FFFF != 0 {
+        mat.write_colour = st.pe[0] & 8 != 0;
+        mat.write_alpha = st.pe[0] & 0x10 != 0;
+        mat.dst_alpha = (st.pe[1] & 0x100 != 0).then_some(st.pe[1] as u8);
+    }
     mat
 }
 
+/// The projected shadows' material as fitted to the reference (`docs/assets.md`, "The renderer"):
+/// a flat black at half alpha (the light set's), the polygon's texture not applied, and the alpha
+/// they leave in the picture their own rather than the constant the state record shows, so
+/// shadows laid over each other darken the ground more (the trees' do).
+fn shadow_of(mut mat: Material) -> Material {
+    mat.combine = Combine::Vertex;
+    mat.layers = [None, None];
+    mat.dst_alpha = None;
+    mat
+}
+
+/// Floor positions are kept in 64ths of a tile and texture coordinates in 512ths (see
+/// `MeshData::uv_shift`); the draw's matrix scales the positions back.
+const FLOOR_POSITION_UNIT: f32 = 64.0;
+const FLOOR_UV_SHIFT: u8 = 3;
+
+/// The terrain's second layer (a lot-wide colour texture, 256 x 256: an aerial picture of the
+/// neighbourhood) is read at the position through the device's texture matrix (the material's
+/// uv source 3), which the log does not hold. Fitted from the reference's pixels, as `u = x /
+/// TERRAIN_COLOUR_TILES_X + TERRAIN_COLOUR_U0` and `v = y / TERRAIN_COLOUR_TILES_Y +
+/// TERRAIN_COLOUR_V0` (x and y in tiles; the lot's road lies at low y, which is the road of the
+/// picture, so v runs the other way): the means of the grass match the reference's within 2 of
+/// 255 over the lot, but the texture's fine detail does not line up (`docs/assets.md`).
+const TERRAIN_COLOUR_TILES_X: f32 = 153.25;
+const TERRAIN_COLOUR_TILES_Y: f32 = -147.0;
+const TERRAIN_COLOUR_U0: f32 = 0.34;
+const TERRAIN_COLOUR_V0: f32 = 0.47;
+
+fn terrain_colour_uv() -> PositionUv {
+    // positions are in 64ths of a tile
+    PositionUv {
+        u: [1.0 / (TERRAIN_COLOUR_TILES_X * FLOOR_POSITION_UNIT), 0.0, TERRAIN_COLOUR_U0],
+        v: [0.0, 1.0 / (TERRAIN_COLOUR_TILES_Y * FLOOR_POSITION_UNIT), TERRAIN_COLOUR_V0],
+    }
+}
+
+/// A floor's strip of float vertices (positions in the lot's frame) as a mesh.
+fn floor_mesh(vertices: &[StripVertex]) -> MeshData {
+    let mut mesh = MeshData { uv_shift: FLOOR_UV_SHIFT, ..MeshData::default() };
+    let fixed = |v: f32, unit: f32| (v * unit).round().clamp(-32768.0, 32767.0) as i16;
+    mesh.vertices = vertices
+        .iter()
+        .map(|&(p, uv, c)| Vertex {
+            position: [fixed(p[0], FLOOR_POSITION_UNIT), fixed(p[1], FLOOR_POSITION_UNIT), fixed(p[2], FLOOR_POSITION_UNIT), 0],
+            uv: [fixed(uv[0], 4096.0 / f32::from(1u16 << FLOOR_UV_SHIFT)), fixed(uv[1], 4096.0 / f32::from(1u16 << FLOOR_UV_SHIFT))],
+            colour: c.to_be_bytes(),
+            normal: [0, 0, 127, 0],
+        })
+        .collect();
+    strip_indices(&mut mesh.indices, 0, vertices.len() as u32);
+    mesh
+}
+
+/// Applies the texture loads before the `n`th to the device's two texture maps.
+fn load_until<'l>(loads: &'l [TexLoadRec], next: &mut usize, n: usize, state: &mut [Option<&'l TexLoadRec>; 2]) {
+    while *next < n.min(loads.len()) {
+        let l = &loads[*next];
+        state[l.map as usize & 1] = Some(l);
+        *next += 1;
+    }
+}
+
+/// The textures wanted so far, once each by the hash the log names them.
+#[derive(Default)]
+struct TextureCache {
+    ids: HashMap<u64, Option<TextureId>>,
+    list: Vec<Vec<(u32, u32, Vec<u32>)>>,
+}
+
 impl Assets {
+    /// What the device had bound to its first `layers` texture maps, as the layers read it.
+    fn bind_textures(&self, log: &Log, tick: u32, state: &[Option<&TexLoadRec>; 2], layers: usize, cache: &mut TextureCache, info: &mut DrawInfo) -> [Option<TextureRef>; 2] {
+        let mut bound: [Option<TextureRef>; 2] = [None, None];
+        for slot in 0..layers.min(2) {
+            let Some(load) = state[slot] else { continue };
+            let image = load.image();
+            let x = log.textures.iter().rfind(|x| x.image == image && x.tick <= tick).or_else(|| log.textures.iter().find(|x| x.image == image));
+            let id = x.and_then(|x| {
+                *cache.ids.entry(x.hash).or_insert_with(|| {
+                    self.decode(x.hash).map(|levels| {
+                        cache.list.push(levels);
+                        TextureId(cache.list.len() as u32 - 1)
+                    })
+                })
+            });
+            info.textures[slot] = x.and_then(|x| self.by_hash.get(&x.hash)).map(|s| s.name.clone());
+            let Some(texture) = id else {
+                info.missing_texture = true;
+                continue;
+            };
+            let mode0 = u32::from_be_bytes(load.obj[..4].try_into().unwrap());
+            // the minifying filter as the hardware codes it: bit 2 linear, the low two
+            // bits the mip levels (0 none, 1 the nearest level, 2 two mixed)
+            let min = (mode0 >> 5) & 7;
+            let mipmaps = match min & 3 {
+                0 => Mipmaps::Off,
+                1 => Mipmaps::Nearest,
+                _ => Mipmaps::Linear,
+            };
+            bound[slot] = Some(TextureRef { texture, wrap: (wrap_of(mode0), wrap_of(mode0 >> 2)), linear: min & 4 != 0 || mode0 & 0x10 != 0 && min & 3 == 0, mipmaps });
+        }
+        bound
+    }
+
     /// The frame drawn by the strips of `tick`.
     pub fn scene(&self, log: &Log, tick: u32) -> Scene {
         let strips: Vec<usize> = (0..log.strips.len()).filter(|&i| log.strips[i].tick == tick).collect();
@@ -424,9 +541,11 @@ impl Assets {
         for m in &log.states {
             states.entry(m.strips_before).or_default().push(m);
         }
-        let mut loads: BTreeMap<usize, Vec<&TexLoadRec>> = BTreeMap::new();
-        for m in &log.tex_loads {
-            loads.entry(m.strips_before).or_default().push(m);
+        // the floors' strips ('g' records) by the number of strips before them, with their vertices
+        let vertices_of: HashMap<usize, &Vec<StripVertex>> = log.strip_vertices.iter().map(|(j, v)| (*j, v)).collect();
+        let mut floors: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        for (j, g) in log.other_draws.iter().enumerate().filter(|(_, g)| g.0.tick == tick) {
+            floors.entry(g.1).or_default().push(j);
         }
         let mut views: BTreeMap<usize, Vec<(Mat3x4, u32)>> = BTreeMap::new();
         let mut worlds: BTreeMap<usize, Vec<(Mat3x4, u32)>> = BTreeMap::new();
@@ -450,8 +569,8 @@ impl Assets {
         let mut texture_state: [Option<&TexLoadRec>; 2] = [None, None];
         let (mut view, mut world, mut projection): (Option<Mat3x4>, Option<Mat3x4>, Option<[f32; 6]>) = (None, None, None);
         let mut main_projection: Option<[f32; 6]> = None;
-        let mut hash_textures: HashMap<u64, Option<TextureId>> = HashMap::new();
-        let mut texture_list: Vec<Vec<(u32, u32, Vec<u32>)>> = Vec::new();
+        let mut cache = TextureCache::default();
+        let mut next_load = 0;
         let mut mesh_keys: HashMap<(usize, bool), Option<usize>> = HashMap::new();
         let mut meshes: Vec<MeshData> = Vec::new();
         let (mut last_material, mut last_lights): (Option<&MaterialRec>, Option<&LightsRec>) = (None, None);
@@ -459,9 +578,6 @@ impl Assets {
         let mut camera_view: Option<Mat3x4> = None;
 
         for k in 0..s1 {
-            for l in loads.get(&k).into_iter().flatten() {
-                texture_state[l.map as usize & 1] = Some(l);
-            }
             if let Some(v) = views.get(&k) {
                 view = v.last().map(|x| x.0);
             }
@@ -471,6 +587,47 @@ impl Assets {
             if let Some(p) = projections.get(&k) {
                 projection = p.last().map(|x| x.0);
             }
+            // the texture loads up to `n` (a floor's strip counts the loads before it)
+            if k >= s0 {
+                // the floors' materials are the gap's, one each in order, when the gap has as
+                // many (the first gap does: the mask passes and the later floors have none)
+                let gap_floors = floors.get(&k).map_or(&[][..], |v| &v[..]);
+                let gap_materials: Vec<&MaterialRec> = mats.get(&k).map_or(Vec::new(), |v| v.iter().filter(|m| m.tick == tick).copied().collect());
+                for (i, &j) in gap_floors.iter().enumerate() {
+                    let (g, _, ld) = &log.other_draws[j];
+                    load_until(&log.tex_loads, &mut next_load, *ld, &mut texture_state);
+                    let Some(vertices) = vertices_of.get(&j).filter(|_| g.words[0] >> 24 == 0x2A) else {
+                        let info = DrawInfo { class: Class::Other, strip: k, model: format!("g{j}"), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None };
+                        all.push(info);
+                        continue;
+                    };
+                    // its own state: the first applied after its record (both counts place it)
+                    let st = states.get(&k).and_then(|v| v.iter().find(|s| s.tick == tick && s.others_before == j + 1));
+                    let masks = st.is_some_and(|s| s.pe[0] & 0xFF_FFFF != 0 && s.pe[0] & 8 == 0);
+                    let mut info = DrawInfo { class: if masks { Class::FloorMask } else { Class::Floor }, strip: k, model: format!("g{j}"), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None };
+                    let own = gap_materials.get(i).filter(|_| gap_materials.len() >= gap_floors.len());
+                    let bound = self.bind_textures(log, tick, &texture_state, own.map_or(1, |m| m.layers as usize), &mut cache, &mut info);
+                    let mut material = match own {
+                        Some(m) => material_of(m, true, bound).0,
+                        None => Material { combine: Combine::Modulate { unlit: false }, layers: [bound[0], None], blend: Blend::Opaque, cull: Cull::None, depth_test: Some(Compare::LEQUAL), depth_write: true, alpha_test: None, write_colour: true, write_alpha: true, dst_alpha: None, layer1_from_position: None, sphere: None },
+                    };
+                    if material.layers[1].is_some() {
+                        material.layer1_from_position = Some(terrain_colour_uv());
+                    }
+                    if let Some(st) = st {
+                        material = with_state(material, st);
+                    }
+                    meshes.push(floor_mesh(vertices));
+                    let scale = 1.0 / FLOOR_POSITION_UNIT;
+                    let world = [scale, 0.0, 0.0, 0.0, 0.0, scale, 0.0, 0.0, 0.0, 0.0, scale, 0.0];
+                    let Some(view) = view.or(camera_view) else { continue };
+                    camera_view = camera_view.or(Some(view));
+                    draws.push(Draw { mesh: MeshId(meshes.len() as u32 - 1), world, view: Some(view), material, lighting: Lighting::VertexColours, id: drawn.len() as u32 + 1 });
+                    drawn.push(info.clone());
+                    all.push(info);
+                }
+            }
+            load_until(&log.tex_loads, &mut next_load, log.tex_loads.partition_point(|l| l.strips_before <= k), &mut texture_state);
             if k < s0 {
                 continue;
             }
@@ -504,40 +661,15 @@ impl Assets {
                     all.push(info);
                     continue;
                 };
-                let mut bound: [Option<TextureRef>; 2] = [None, None];
-                for slot in 0..(m.layers as usize).min(2) {
-                    let Some(load) = texture_state[slot] else { continue };
-                    let image = load.image();
-                    let x = log.textures.iter().rfind(|x| x.image == image && x.tick <= tick).or_else(|| log.textures.iter().find(|x| x.image == image));
-                    let id = x.and_then(|x| {
-                        *hash_textures.entry(x.hash).or_insert_with(|| {
-                            self.decode(x.hash).map(|levels| {
-                                texture_list.push(levels);
-                                TextureId(texture_list.len() as u32 - 1)
-                            })
-                        })
-                    });
-                    info.textures[slot] = x.and_then(|x| self.by_hash.get(&x.hash)).map(|s| s.name.clone());
-                    let Some(texture) = id else {
-                        info.missing_texture = true;
-                        continue;
-                    };
-                    let mode0 = u32::from_be_bytes(load.obj[..4].try_into().unwrap());
-                    // the minifying filter as the hardware codes it: bit 2 linear, the low two
-                    // bits the mip levels (0 none, 1 the nearest level, 2 two mixed)
-                    let min = (mode0 >> 5) & 7;
-                    let mipmaps = match min & 3 {
-                        0 => Mipmaps::Off,
-                        1 => Mipmaps::Nearest,
-                        _ => Mipmaps::Linear,
-                    };
-                    bound[slot] = Some(TextureRef { texture, wrap: (wrap_of(mode0), wrap_of(mode0 >> 2)), linear: min & 4 != 0 || mode0 & 0x10 != 0 && min & 3 == 0, mipmaps });
-                }
+                let bound = self.bind_textures(log, tick, &texture_state, m.layers as usize, &mut cache, &mut info);
                 let lighting = lighting_of(lr);
                 let (mut material, unsupported) = material_of(m, matches!(lighting, Lighting::Lit { .. } | Lighting::VertexColours), bound);
                 // the draw's own state: the first applied after its record, before the next strip
                 if let Some(st) = states.get(&(k + 1)).and_then(|v| v.iter().find(|s| s.tick == tick)) {
                     material = with_state(material, st);
+                    if class == Class::Shadow {
+                        material = shadow_of(material);
+                    }
                 }
                 info.unsupported = unsupported;
                 info.flags = [0, 1].map(|i| u32::from_be_bytes(m.layer[i][4..8].try_into().unwrap()));
@@ -548,7 +680,7 @@ impl Assets {
             all.push(info);
         }
         let camera = Camera { view: camera_view.unwrap_or(IDENTITY), projection: main_projection.unwrap_or([0.0; 6]) };
-        Scene { frame: Frame { camera, draws }, drawn, all, meshes, textures: texture_list }
+        Scene { frame: Frame { camera, draws }, drawn, all, meshes, textures: cache.list }
     }
 
     /// Which class a strip is and, for a model's, its part.
@@ -585,7 +717,7 @@ mod tests {
 
     #[test]
     fn state_record_sets_blend_depth_and_alpha_test() {
-        let base = Material { combine: Combine::Vertex, layers: [None, None], blend: Blend::Opaque, cull: Cull::Back, depth_test: None, depth_write: false, alpha_test: None, sphere: None };
+        let base = Material { combine: Combine::Vertex, layers: [None, None], blend: Blend::Opaque, cull: Cull::Back, depth_test: None, depth_write: false, alpha_test: None, write_colour: true, write_alpha: true, dst_alpha: None, layer1_from_position: None, sphere: None };
         // as the frames' blended glass: on by flag 0x40, src alpha / inverse, Z <= with writes, alpha >= 5
         let st = StateRec { tick: 0, context: 0, mtx_mode: 0, strips_before: 0, others_before: 0, z: (true, 3, true), alpha: (6, 5, 0, 7, 0), z_before_tex: false, blend: [1, 4, 5, 0], word574: 0, blend_flags: 0x48, cull: 0, pe: [0; 4] };
         let m = with_state(base, &st);
@@ -597,6 +729,29 @@ mod tests {
         let st = StateRec { z: (false, 3, true), alpha: (7, 0, 1, 7, 0), blend_flags: 0x08, ..st };
         let m = with_state(base, &st);
         assert_eq!((m.blend, m.depth_test, m.depth_write, m.alpha_test), (Blend::Opaque, None, false, None));
+    }
+
+    #[test]
+    fn pixel_engine_registers_set_the_write_masks_and_constant_alpha() {
+        let base = Material { combine: Combine::Vertex, layers: [None, None], blend: Blend::Opaque, cull: Cull::None, depth_test: None, depth_write: false, alpha_test: None, write_colour: true, write_alpha: true, dst_alpha: None, layer1_from_position: None, sphere: None };
+        let st = StateRec { tick: 0, context: 0, mtx_mode: 0, strips_before: 0, others_before: 0, z: (false, 3, false), alpha: (7, 0, 1, 7, 0), z_before_tex: false, blend: [1, 2, 0, 0], word574: 0, blend_flags: 0x148, cull: 0, pe: [0x4100_0215, 0x4200_0100, 0, 0] };
+        // the mask pass: alpha only, constant alpha 0
+        let m = with_state(base, &st);
+        assert_eq!((m.write_colour, m.write_alpha, m.dst_alpha), (false, true, Some(0)));
+        // an opaque draw: both, with the receivers' constant alpha 0x7F
+        let st = StateRec { pe: [0x4100_001C, 0x4200_017F, 0, 0], ..st };
+        let m = with_state(base, &st);
+        assert_eq!((m.write_colour, m.write_alpha, m.dst_alpha), (true, true, Some(0x7F)));
+    }
+
+    #[test]
+    fn floor_strips_keep_tile_units_in_fixed_point() {
+        let mesh = floor_mesh(&[([1.0, 2.0, 0.0, 0.0], [-18.0, 1.0], 0x80_80_70_80), ([2.0, 2.0, 0.0, 0.0], [-17.0, 1.0], 0), ([1.0, 3.0, 0.0, 0.0], [-18.0, 0.0], 0)]);
+        assert_eq!(mesh.vertices[0].position, [64, 128, 0, 0]);
+        // 4096ths of 8: -18 is -9216
+        assert_eq!(mesh.vertices[0].uv, [-9216, 512]);
+        assert_eq!(mesh.vertices[0].colour, [0x80, 0x80, 0x70, 0x80]);
+        assert_eq!(mesh.indices, [0, 1, 2]);
     }
 
     #[test]
