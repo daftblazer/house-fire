@@ -23,6 +23,8 @@ struct Draw {
     vec4 params;
     vec4 extra;
     vec4 layer1[2];
+    vec4 proj[2];
+    ivec4 skin;
 };
 layout(std430, set = 0, binding = 0) readonly buffer Draws { Draw draws[]; };
 

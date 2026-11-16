@@ -1819,22 +1819,24 @@ cover last, against the reference; frame 2400, 2401 the same to a pixel or two):
 
 | class (pixels it covers last) | pixels | within 4 | PSNR |
 |---|---|---|---|
-| rigid draws (strips and display lists) | 80,876 | 93.96% (4,882 beyond) | 21.70 dB |
-| the same outside the Sim's portrait square | 77,764 | 97.60% (1,864) | 34.10 dB |
-| floors' own pixels | 205,844 | 82.54% | 25.74 dB |
-| shadows' own pixels (the last Z-off draw) | 32,086 | 67.61% | 27.29 dB |
-| the whole frame | 286,720 | 85.76% | 24.18 dB |
+| rigid draws (strips and display lists) | 79,400 | 97.61% (1,900 beyond) | 30.79 dB |
+| floors' own pixels | 205,803 | 82.57% | 25.87 dB |
+| Sims' own pixels (skinned parts, the portrait's draws) | 1,517 | 0.13% (no texture) | 12.37 dB |
+| the portrait's square (viewport) | 3,136 | 51.88% | 14.22 dB |
+| shadows' own pixels (the last Z-off draw), the Sims' included | 32,189 | 67.71% | 27.30 dB |
+| the whole frame | 286,720 | 86.30% | 26.21 dB |
 
-(Before the floors and shadows: rigid 92.93%, the whole frame 28.21%.)
+(Before the floors and shadows: rigid 92.93%, the whole frame 28.21%. Before the Sims (R2b): rigid
+93.96% with the portrait's square the road's, floors 82.54%, shadows 67.61%, whole 85.76%.)
 
 Draws by class, frame 2400 (2401 the same): rigid model strips 333, display-list model draws 330,
-skinned 119 (not drawn: R2), projected shadows 658, the floors' strips 98 and the mask passes
-98 (the 'g' records of opcode 42), overlay 57 (not drawn), other commands 2 (two 'g' records with
+skinned 85, projected shadows 692 (658 and the Sims' 34: `shadow_adult` is a skinned part drawn with lighting off), the floors' strips 98 and the mask passes
+98 (the 'g' records of opcode 42), overlay 57 (the portrait's: R2b), other commands 2 (two 'g' records with
 no vertices, not a draw), unidentified 1. 56 draws have a texture not found among the game's
 (made at run time; 47 pixels, the Persian rug).
 
-What the remaining rigid pixels are (frame 2400, 4,880): 3,116 the Sim's portrait square (49..104
-x 347..402, painted over the road by a later draw: R2); 1,091 the birch tree's leaves (below);
+What the remaining rigid pixels are (frame 2400, now 1,900; before R2b 4,880, of which 3,116 were the
+Sim's portrait square, 49..104 x 347..402, painted over the road by a later draw): 1,091 the birch tree's leaves (below);
 466 the windows' glass (from 1,302 before the floors: its colour now blends over the right
 floor); 80 the wall caps, and the rest scattered (the Sims' clothes, 26 and 14 pixels, are
 skinned parts).
@@ -1944,3 +1946,56 @@ vertex strips (unverified: display-list calls).
 whose last depth-tested draw is a floor, or whose last Z-off draw is a shadow), and writes
 `r1/passes_N.png` (red: where shadow draws lie, blue: the mask). `HF_FLOORS=n` lists the n
 floor or shadow draws with most pixels off.
+
+### The Sims and the portrait (R2b)
+
+GPU skinning. A blended part (3 or 4 matrix slots) is drawn from the vertices of its model, never
+touched on the CPU: `skin.comp` (a compute pass, one dispatch for each skinned draw, before the
+render pass) blends each vertex's s16 position through the draw's four bones by its four weight
+bytes and turns its normal by the heaviest bone's, into a buffer of vertices (position and normal,
+32 bytes) that the vertex shader (`model.vert` built with `-DSKINNED`) reads by the vertex index
+plus the draw's offset; the colour and texture coordinates stay in the mesh. The meshes are
+uploaded once (`Renderer::load_meshes`: weights go in a second buffer, two words a vertex), the
+bones (a '$' record's four 3x4 matrices, as logged, to the bit: they carry the 1/4096 scale and the
+Sim's place, so the draw's world matrix is the identity) and the output are per frame. The
+reference skinner, `housefire::skin` (`engine/src/skin.rs`, moved out of the lockstep study
+unchanged: `LOCKSTEP_ANIM_SKIN` gives the same 308 primitives, 21,066 vertices, 0 positions and 0
+normals different before and after), computes in the original's own fused arithmetic; the GPU does
+it in single floats. `render-check` prints the comparison for every logged '+' primitive it drew:
+frame 2400, 152 of the tick's 154, 10,442 vertices, max position error 3.8e-6 lot units, normals
+within the quantisation of the bytes (0.008 of a unit); none over 1e-3. The 2 left are strips whose
+part is not found (below).
+
+Not the models' arrays. The models' positions are not always the ones the original had in
+memory when it drew: for the Sims' faces (eyes, noses, mouths) a few vertices differ (12 primitives
+of frame 2400, errors to 6e-3 lot units against the log; shaped at run time, unverified), so a
+skinned mesh takes its positions, normals and weights from the draw's '+' record (the first 4,000
+in the draw window, which this frame is in) and the texture coordinates from the model
+(`skinned_mesh` in scene.rs; a mesh for each distinct content). A '+' record's 'heaviest' is the
+bone carried into its first vertex. Three skinned strips (strips 705, 719, 762: 80, 17, 11
+vertices) have no model found: their first position bytes are not a model's (the morphed
+vertices, probably), so they are not drawn, and two of them have a '+' record that is not compared.
+
+The portrait. The 57 overlay draws are the Sim's portrait in the corner (the head, hair, glasses
+and jacket: skinned parts, drawn through their own camera, `use_view`, and a projection of
+(8.144, 0, 8.144, 0, -0.001, -0.5005): 1:1, a square viewport), after the lot's draws, over the
+road. The viewport and the backdrop are not in the log: GXSetViewport's six floats are in the
+render context at +0x6D4 (`ERC_ApplyState`'s applied copy), which the ';' records do not hold, and
+no '}' record shows a GXCopyTex or a scissor. Fitted from the reference frames
+(`PORTRAIT_VIEWPORT` 49, 347, 56 x 56; the backdrop's rectangle `PORTRAIT_BACKDROP` 50, 347, 54 x
+56, colour (218, 238, 254), a fill before the portrait's draws: the 'g' records G196 and G197 at
+the same place are display-list calls, not decoded, and may be it). A record needed to take them
+from the log: the ';' record gaining the context's +0x6D4 (six floats) and the 2D layer's
+quad (the two display lists' bytes). The renderer takes a per-draw projection and viewport
+(`Draw::projection`, `Draw::viewport`; a draw with a viewport clears the depth there first, and the
+frame's backdrop is filled once) and the projection is now in the per-draw record, not a push
+constant. The portrait's silhouette matches the reference's (95% of the pixels not the backdrop's
+agree), the rigid figure goes 93.96 to 97.61%.
+
+What is left. The Sims' own pixels (1,517: 1,457 the portrait, 60 in the house, the rest hidden by
+the walls) are 0.13% within 4: their texture is made at run time, a 128 x 128 C8 image with two
+palettes in `x` records (hash only: the image, its palettes and how the original composes the face,
+hair and clothes from `rletextu.arc` are not in the log), so the skinned and overlay draws
+are drawn white and lit (the frame's "texture not found" draws go from 56 to 194, 138 of them the Sims'). Composing the Sim's texture
+is the next step (R2c); until then the figure cannot reach 85%. The Sims' shadows are in the
+shadows' class now (67.61 to 67.71%).

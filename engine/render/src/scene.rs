@@ -9,7 +9,7 @@ use housefire::disc::Disc;
 use housefire::draw::{Part, PartIndex};
 use housefire::model::SubModel;
 use housefire::texture::{self, Kind};
-use housefire::tree_log::{LightsRec, Log, MaterialRec, StateRec, StripRec, StripVertex, TexLoadRec};
+use housefire::tree_log::{LightsRec, Log, MaterialRec, SkinVerticesRec, StateRec, StripRec, StripVertex, TexLoadRec};
 use std::collections::{BTreeMap, HashMap};
 
 /// The alpha (of 255) below which a textured opaque pixel is not drawn, for a log without the
@@ -21,6 +21,22 @@ pub const ALPHA_REF: u8 = 128;
 /// alpha, with no alpha test. Read from the log's material records, and checked by the pixels
 /// those draws cover (`docs/assets.md`, "The renderer"); the blend state itself is not logged.
 pub const LAYER_BLENDED: u8 = 0x40;
+
+/// The interface's portrait viewport of the home lot's frames (pixels from the top left): a
+/// square 56 pixels wide, read off the reference frames (the portrait's pixels in
+/// `world_02400.png`: 49..104 by 347..402). Not in the log: GXSetViewport's six floats are in the
+/// render context at +0x6D4 (`ERC_ApplyState`'s applied copy), which the ';' records do not
+/// carry (`docs/assets.md`, "The renderer"). Fitted for these frames.
+pub const PORTRAIT_VIEWPORT: Viewport = Viewport { x: 49, y: 347, width: 56, height: 56 };
+
+/// The portrait's backdrop: the rectangle behind the head, filled before its draws. Its pixels
+/// are one colour in the reference (`PORTRAIT_BACKDROP_COLOUR`, 54 pixels wide from x 50 and 56
+/// tall from y 347, read off `world_02400.png`: the dark shoulders cover its bottom rows). It is
+/// not one of the strips the log records (the two display-list calls ahead of the portrait's
+/// draws, 'g' records G196 and G197, are the 2D layer's and not decoded); fitted for these frames.
+pub const PORTRAIT_BACKDROP: Viewport = Viewport { x: 50, y: 347, width: 54, height: 56 };
+/// The backdrop's colour in 8-bit RGB, the reference's own (218, 238, 254).
+pub const PORTRAIT_BACKDROP_COLOUR: [u8; 3] = [218, 238, 254];
 
 /// What a draw of the frame is, for the report.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -52,19 +68,19 @@ impl Class {
         match self {
             Class::RigidStrip => "rigid model strip",
             Class::DisplayList => "display-list model draw",
-            Class::Skinned => "skinned (not drawn: R2)",
+            Class::Skinned => "skinned (the Sims' parts)",
             Class::Shadow => "lighting off, shadows",
             Class::Floor => "floors' strips",
             Class::FloorMask => "floors again, the shadows' mask",
-            Class::Overlay => "other projection, interface (not drawn)",
+            Class::Overlay => "other projection, interface (the portrait)",
             Class::Other => "other command (not drawn)",
             Class::Unidentified => "unidentified",
         }
     }
 
-    /// Whether R1 draws it.
+    /// Whether the renderer draws it.
     pub fn drawn(self) -> bool {
-        matches!(self, Class::RigidStrip | Class::DisplayList | Class::Shadow | Class::Floor | Class::FloorMask)
+        matches!(self, Class::RigidStrip | Class::DisplayList | Class::Skinned | Class::Shadow | Class::Floor | Class::FloorMask | Class::Overlay)
     }
 }
 
@@ -82,6 +98,8 @@ pub struct DrawInfo {
     pub flags: [u32; 2],
     /// Whether the material is of a kind not drawn yet (a sphere map, the added-by-table blend).
     pub unsupported: Option<&'static str>,
+    /// For a skinned draw, its '$' record (`Log::skins`): the bones it was drawn with.
+    pub skin: Option<usize>,
 }
 
 /// A texture of `textures.arc` or `datasets.arc`: where its bytes are.
@@ -253,6 +271,40 @@ fn mesh_of(sub: &SubModel, display_list: bool) -> Option<MeshData> {
         }
     }
     Some(mesh)
+}
+
+/// A skinned part's mesh with the vertex data the original had in memory when it drew it (a
+/// '+' record: positions, weights, normals, the bone carried into the first vertex). The
+/// models' own positions are the same for most parts; the Sims' faces differ in a few vertices
+/// (eyes, noses and mouths shaped at run time), so the logged data is what is drawn; the texture
+/// coordinates are the model's. The bone that turns a normal is the first of the largest
+/// weights, the one before it when a vertex has none (the original's loop).
+fn skinned_mesh(mut mesh: MeshData, plus: &SkinVerticesRec) -> Option<MeshData> {
+    let n = plus.count as usize;
+    if mesh.vertices.len() != n || plus.positions.len() != n * 8 || plus.weights.len() != n * 4 || plus.normals.len() != n * 4 {
+        return None;
+    }
+    let mut heaviest = (plus.heaviest & 3) as u8;
+    for (i, v) in mesh.vertices.iter_mut().enumerate() {
+        let p = &plus.positions[i * 8..];
+        v.position = [be16(p, 0) as i16, be16(p, 2) as i16, be16(p, 4) as i16, 0];
+        let nrm = &plus.normals[i * 4..];
+        v.normal = [nrm[0] as i8, nrm[1] as i8, nrm[2] as i8, 0];
+        let weights: [u8; 4] = plus.weights[i * 4..i * 4 + 4].try_into().unwrap();
+        let mut most = 0;
+        for (j, &b) in weights.iter().enumerate() {
+            if b > most {
+                (most, heaviest) = (b, j as u8);
+            }
+        }
+        mesh.skin.push(SkinWeights { weights, heaviest });
+    }
+    Some(mesh)
+}
+
+/// What a '+' record's vertex data is, for telling meshes of one batch apart.
+fn plus_key(plus: &SkinVerticesRec) -> u64 {
+    [&plus.positions, &plus.weights, &plus.normals].iter().fold(u64::from(plus.heaviest), |h, b| h ^ fnv1a(b).rotate_left(17))
 }
 
 /// A triangle strip of `count` vertices from `first`, as a list (every second triangle turned
@@ -568,7 +620,13 @@ impl Assets {
                 worlds.entry(m.strips_before).or_default().push((mat3x4(&m.values), m.tick));
             }
         }
-        let skinned_at: std::collections::BTreeSet<usize> = log.skins.iter().map(|k| k.strips_before).collect();
+        let plus_of: HashMap<usize, &SkinVerticesRec> = log.skin_vertices.iter().map(|v| (v.skin, v)).collect();
+        // the skinned draws' '$' records (the bones) by the number of strips before them: a
+        // strip's own is in the gap after it
+        let mut skins_at: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+        for (i, k) in log.skins.iter().enumerate().filter(|(_, k)| k.tick == tick) {
+            skins_at.entry(k.strips_before).or_default().push(i);
+        }
 
         // the device's state, carried from the log's start: a record before strip k + 1 and after
         // strip k is the draw of strip k setting itself up, so a draw takes the first such record
@@ -578,7 +636,7 @@ impl Assets {
         let mut main_projection: Option<[f32; 6]> = None;
         let mut cache = TextureCache::default();
         let mut next_load = 0;
-        let mut mesh_keys: HashMap<(usize, bool), Option<usize>> = HashMap::new();
+        let mut mesh_keys: HashMap<(usize, bool, u64), Option<usize>> = HashMap::new();
         let mut meshes: Vec<MeshData> = Vec::new();
         let (mut last_material, mut last_lights): (Option<&MaterialRec>, Option<&LightsRec>) = (None, None);
         let (mut draws, mut drawn, mut all) = (Vec::new(), Vec::new(), Vec::new());
@@ -604,14 +662,14 @@ impl Assets {
                     let (g, _, ld) = &log.other_draws[j];
                     load_until(&log.tex_loads, &mut next_load, *ld, &mut texture_state);
                     let Some(vertices) = vertices_of.get(&j).filter(|_| g.words[0] >> 24 == 0x2A) else {
-                        let info = DrawInfo { class: Class::Other, strip: k, model: format!("g{j}"), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None };
+                        let info = DrawInfo { class: Class::Other, strip: k, model: format!("g{j}"), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None, skin: None };
                         all.push(info);
                         continue;
                     };
                     // its own state: the first applied after its record (both counts place it)
                     let st = states.get(&k).and_then(|v| v.iter().find(|s| s.tick == tick && s.others_before == j + 1));
                     let masks = st.is_some_and(|s| s.pe[0] & 0xFF_FFFF != 0 && s.pe[0] & 8 == 0);
-                    let mut info = DrawInfo { class: if masks { Class::FloorMask } else { Class::Floor }, strip: k, model: format!("g{j}"), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None };
+                    let mut info = DrawInfo { class: if masks { Class::FloorMask } else { Class::Floor }, strip: k, model: format!("g{j}"), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None, skin: None };
                     let own = gap_materials.get(i).filter(|_| gap_materials.len() >= gap_floors.len());
                     let bound = self.bind_textures(log, tick, &texture_state, own.map_or(1, |m| m.layers as usize), &mut cache, &mut info);
                     let mut material = match own {
@@ -629,7 +687,7 @@ impl Assets {
                     let world = [scale, 0.0, 0.0, 0.0, 0.0, scale, 0.0, 0.0, 0.0, 0.0, scale, 0.0];
                     let Some(view) = view.or(camera_view) else { continue };
                     camera_view = camera_view.or(Some(view));
-                    draws.push(Draw { mesh: MeshId(meshes.len() as u32 - 1), world, view: Some(view), material, lighting: Lighting::VertexColours, id: drawn.len() as u32 + 1 });
+                    draws.push(Draw { mesh: MeshId(meshes.len() as u32 - 1), world, bones: None, projection: None, viewport: None, view: Some(view), material, lighting: Lighting::VertexColours, id: drawn.len() as u32 + 1 });
                     drawn.push(info.clone());
                     all.push(info);
                 }
@@ -647,21 +705,35 @@ impl Assets {
             let use_projection = projections.get(&(k + 1)).and_then(|v| v.iter().find(|x| x.1 == tick)).map(|x| x.0).or(projection);
             main_projection = main_projection.or(projection).or(use_projection);
             let strip: &StripRec = &log.strips[k];
-            let (class, part) = self.identify(strip, k, lr, use_projection, main_projection, &skinned_at);
-            let mut info = DrawInfo { class, strip: k, model: part.map(|p| p.record.name.clone()).unwrap_or_default(), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None };
-            if class.drawn() {
-                let part = part.unwrap();
-                let (Some(m), Some(lr), Some(view), Some(world)) = (m, lr, use_view, use_world) else {
+            let (class, part) = self.identify(strip, k, lr, use_projection, main_projection, &skins_at);
+            let mut info = DrawInfo { class, strip: k, model: part.map(|p| p.record.name.clone()).unwrap_or_default(), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None, skin: None };
+            if let Some(part) = part.filter(|_| class.drawn()) {
+                // a blended part is drawn through the bones its '$' record logged
+                let skin = part.skinned().then(|| skins_at.get(&(k + 1)).and_then(|v| v.iter().copied().find(|&i| log.skins[i].count == strip.words[1]))).flatten();
+                let world = if part.skinned() { Some(IDENTITY) } else { use_world };
+                let (Some(m), Some(lr), Some(view), Some(world)) = (m, lr, use_view, world) else {
                     info.class = Class::Unidentified;
                     all.push(info);
                     continue;
                 };
-                let key = (part.batch as *const SubModel as usize, class == Class::DisplayList);
+                if part.skinned() && skin.is_none() {
+                    info.class = Class::Unidentified;
+                    all.push(info);
+                    continue;
+                }
+                info.skin = skin;
+                let plus = skin.and_then(|i| plus_of.get(&i)).copied();
+                let key = (part.batch as *const SubModel as usize, class == Class::DisplayList, plus.map_or(0, plus_key));
                 let mesh_index = *mesh_keys.entry(key).or_insert_with(|| {
-                    mesh_of(part.batch, class == Class::DisplayList).map(|mesh| {
-                        meshes.push(mesh);
-                        meshes.len() - 1
-                    })
+                    mesh_of(part.batch, class == Class::DisplayList)
+                        .and_then(|mesh| match plus {
+                            Some(p) => skinned_mesh(mesh, p),
+                            None => (!part.skinned()).then_some(mesh),
+                        })
+                        .map(|mesh| {
+                            meshes.push(mesh);
+                            meshes.len() - 1
+                        })
                 });
                 let Some(mesh_index) = mesh_index else {
                     info.class = Class::Unidentified;
@@ -681,17 +753,29 @@ impl Assets {
                 info.unsupported = unsupported;
                 info.flags = [0, 1].map(|i| u32::from_be_bytes(m.layer[i][4..8].try_into().unwrap()));
                 camera_view = camera_view.or(Some(view));
-                draws.push(Draw { mesh: MeshId(mesh_index as u32), world, view: Some(view), material, lighting, id: drawn.len() as u32 + 1 });
+                let overlay = class == Class::Overlay;
+                draws.push(Draw {
+                    mesh: MeshId(mesh_index as u32),
+                    world,
+                    bones: skin.map(|i| Box::new(log.skins[i].bones)),
+                    projection: overlay.then_some(use_projection).flatten(),
+                    viewport: overlay.then_some(PORTRAIT_VIEWPORT),
+                    view: Some(view),
+                    material,
+                    lighting,
+                    id: drawn.len() as u32 + 1,
+                });
                 drawn.push(info.clone());
             }
             all.push(info);
         }
         let camera = Camera { view: camera_view.unwrap_or(IDENTITY), projection: main_projection.unwrap_or([0.0; 6]) };
-        Scene { frame: Frame { camera, draws }, drawn, all, meshes, textures: cache.list }
+        let backdrop = draws.iter().any(|d| d.viewport.is_some()).then_some((PORTRAIT_BACKDROP, PORTRAIT_BACKDROP_COLOUR));
+        Scene { frame: Frame { camera, draws, backdrop }, drawn, all, meshes, textures: cache.list }
     }
 
     /// Which class a strip is and, for a model's, its part.
-    fn identify<'a>(&'a self, s: &StripRec, k: usize, lights: Option<&LightsRec>, projection: Option<[f32; 6]>, main: Option<[f32; 6]>, skinned_at: &std::collections::BTreeSet<usize>) -> (Class, Option<Part<'a>>) {
+    fn identify<'a>(&'a self, s: &StripRec, k: usize, lights: Option<&LightsRec>, projection: Option<[f32; 6]>, main: Option<[f32; 6]>, skins_at: &BTreeMap<usize, Vec<usize>>) -> (Class, Option<Part<'a>>) {
         let op = s.words[0] >> 24;
         if op != 0x38 && op != 0x42 {
             return (Class::Other, None);
@@ -706,13 +790,14 @@ impl Assets {
             return (Class::Overlay, part);
         }
         let Some(part) = part else {
-            return (if skinned_at.contains(&k) || skinned_at.contains(&(k + 1)) { Class::Skinned } else { Class::Unidentified }, None);
+            return (if skins_at.contains_key(&k) || skins_at.contains_key(&(k + 1)) { Class::Skinned } else { Class::Unidentified }, None);
         };
-        if part.skinned() {
-            return (Class::Skinned, Some(part));
-        }
+        // a Sim's projected shadow is a skinned part too (`shadow_adult`) drawn with lighting off
         if lights.is_some_and(|l| l.flags() & 0x4000 != 0) {
             return (Class::Shadow, Some(part));
+        }
+        if part.skinned() {
+            return (Class::Skinned, Some(part));
         }
         (if list { Class::DisplayList } else { Class::RigidStrip }, Some(part))
     }
@@ -759,6 +844,25 @@ mod tests {
         assert_eq!(mesh.vertices[0].uv, [-9216, 512]);
         assert_eq!(mesh.vertices[0].colour, [0x80, 0x80, 0x70, 0x80]);
         assert_eq!(mesh.indices, [0, 1, 2]);
+    }
+
+    #[test]
+    fn skinned_mesh_takes_the_logged_vertices_and_carries_the_heaviest_bone() {
+        let mesh = MeshData { vertices: vec![Vertex { uv: [7, 8], ..Vertex::default() }; 3], ..MeshData::default() };
+        let mut positions = Vec::new();
+        for x in [1i16, -2, 3] {
+            positions.extend_from_slice(&x.to_be_bytes());
+            positions.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+        }
+        // vertex 0: bones 1 and 2 tie, so the first (1); vertex 1 has no weight and keeps it; vertex 2: bone 3
+        let plus = SkinVerticesRec { skin: 0, count: 3, flags: 1, heaviest: 2, positions, weights: vec![0, 9, 9, 0, 0, 0, 0, 0, 0, 0, 0, 5], normals: [0, 0, 127, 0].repeat(3), sent: Vec::new() };
+        let m = skinned_mesh(mesh, &plus).unwrap();
+        assert_eq!(m.vertices[1].position[0], -2);
+        assert_eq!(m.vertices[2].uv, [7, 8]);
+        assert_eq!(m.vertices[0].normal, [0, 0, 127, 0]);
+        assert_eq!(m.skin.iter().map(|w| w.heaviest).collect::<Vec<_>>(), [1, 1, 3]);
+        // a record for another vertex count is not this mesh
+        assert!(skinned_mesh(MeshData::default(), &plus).is_none());
     }
 
     #[test]

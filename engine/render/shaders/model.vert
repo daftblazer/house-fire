@@ -19,14 +19,18 @@ struct Draw {
     vec4 params;       // crossfade share, alpha reference, sphere weight
     vec4 extra;        // x: the mesh's texture coordinate unit; y: layer 1 from the position; z, w: constant alpha on, its value
     vec4 layer1[2];    // layer 1 from the position: u then v as (x, y, offset)
+    vec4 proj[2];      // the projection: clip x = p.x * x + p.y * z; y = p.z * y + p.w * z; z = p.x * z + p.y
+    ivec4 skin;        // x: added to the vertex index to find a skinned vertex in `skinned`
+};
+
+// a skinned vertex as the compute pass (skin.comp) leaves it
+struct Skinned {
+    vec4 position;
+    vec4 normal;
 };
 
 layout(std430, set = 0, binding = 0) readonly buffer Draws { Draw draws[]; };
-
-layout(push_constant) uniform Camera {
-    vec4 p0;  // clip x = p.x * x + p.y * z; y = p.z * y + p.w * z
-    vec4 p1;  // z = p.x * z + p.y
-} cam;
+layout(std430, set = 0, binding = 1) readonly buffer SkinnedVertices { Skinned skinned[]; };
 
 layout(location = 0) out vec4 v_colour;
 layout(location = 1) out vec2 v_uv;
@@ -38,17 +42,24 @@ layout(location = 6) out vec2 v_uv1;
 
 void main() {
     Draw d = draws[gl_InstanceIndex];
+#ifdef SKINNED
+    Skinned sk = skinned[gl_VertexIndex + d.skin.x];
+    vec4 p = vec4(sk.position.xyz, 1.0);
+    vec3 in_n = sk.normal.xyz;
+#else
     vec4 p = vec4(vec3(in_position.xyz), 1.0);
+    vec3 in_n = in_normal.xyz;
+#endif
     vec3 v = vec3(dot(d.mv[0], p), dot(d.mv[1], p), dot(d.mv[2], p));
     float w = -v.z;
-    gl_Position = vec4(cam.p0.x * v.x + cam.p0.y * v.z, -(cam.p0.z * v.y + cam.p0.w * v.z),
-                       cam.p1.x * v.z + cam.p1.y + w, w);
+    gl_Position = vec4(d.proj[0].x * v.x + d.proj[0].y * v.z, -(d.proj[0].z * v.y + d.proj[0].w * v.z),
+                       d.proj[1].x * v.z + d.proj[1].y + w, w);
     v_uv = vec2(in_uv) * (d.extra.x / 4096.0);
     v_uv1 = d.extra.y != 0.0 ? vec2(dot(d.layer1[0].xy, vec2(in_position.xy)) + d.layer1[0].z, dot(d.layer1[1].xy, vec2(in_position.xy)) + d.layer1[1].z) : v_uv;
     v_draw = gl_InstanceIndex;
     v_colour = in_colour;
 
-    vec3 n = vec3(dot(d.nm[0].xyz, in_normal.xyz), dot(d.nm[1].xyz, in_normal.xyz), dot(d.nm[2].xyz, in_normal.xyz));
+    vec3 n = vec3(dot(d.nm[0].xyz, in_n), dot(d.nm[1].xyz, in_n), dot(d.nm[2].xyz, in_n));
     float nl = length(n);
     n = nl > 0.0 ? n / nl : n;
     // the sphere map: the view-space position reflected about the normal, turned into a pair

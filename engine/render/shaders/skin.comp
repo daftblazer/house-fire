@@ -1,0 +1,60 @@
+#version 450
+// GPU skinning of a Sim's parts: each vertex's position is blended through up to four bone
+// matrices by its weight bytes, and its normal turned by the heaviest bone's matrix. The
+// arithmetic is the original's loop at 0x801A6C48 (housefire::skin) in single floats, without
+// its fused-multiply-add rounding and its quantisation of the normal to bytes.
+
+layout(local_size_x = 64) in;
+
+// the mesh set's vertices as the renderer keeps them (frame.rs, Vertex): 20 bytes, five words
+layout(std430, set = 0, binding = 0) readonly buffer Vertices { uint vertices[]; };
+// a vertex's four weight bytes, and its normal's bone
+layout(std430, set = 0, binding = 1) readonly buffer Weights { uvec2 weights[]; };
+// each skinned draw's four bones: three rows of (x, y, z, translation) each
+layout(std430, set = 0, binding = 2) readonly buffer Bones { vec4 bones[]; };
+
+struct Skinned {
+    vec4 position;
+    vec4 normal;
+};
+layout(std430, set = 0, binding = 3) writeonly buffer Out { Skinned skinned[]; };
+
+layout(push_constant) uniform Job {
+    uint first;   // the mesh's first vertex in the set
+    uint count;
+    uint bones;   // the draw's first row in `bones`
+    uint base;    // where its vertices go in `skinned`
+} job;
+
+float s16(uint word, int half_word) {
+    return float(bitfieldExtract(int(word), half_word * 16, 16));
+}
+
+float s8(uint word, int byte_index) {
+    return float(bitfieldExtract(int(word), byte_index * 8, 8));
+}
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= job.count) {
+        return;
+    }
+    uint at = (job.first + i) * 5;
+    vec4 p = vec4(s16(vertices[at], 0), s16(vertices[at], 1), s16(vertices[at + 1], 0), 1.0);
+    uvec2 w = weights[job.first + i];
+    vec3 position = vec3(0.0);
+    for (uint j = 0; j < 4; j++) {
+        uint byte_weight = (w.x >> (8 * j)) & 255u;
+        if (byte_weight == 0u) {
+            continue;
+        }
+        uint row = job.bones + j * 3;
+        position += vec3(dot(bones[row], p), dot(bones[row + 1], p), dot(bones[row + 2], p)) * (float(byte_weight) / 255.0);
+    }
+    uint n = vertices[at + 4];
+    vec3 normal = vec3(s8(n, 0), s8(n, 1), s8(n, 2));
+    uint row = job.bones + w.y * 3;
+    vec3 turned = vec3(dot(bones[row].xyz, normal), dot(bones[row + 1].xyz, normal), dot(bones[row + 2].xyz, normal));
+    float len = length(turned);
+    skinned[job.base + i] = Skinned(vec4(position, 1.0), vec4(len > 0.0 ? turned / len : turned, 0.0));
+}

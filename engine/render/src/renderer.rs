@@ -28,6 +28,35 @@ struct DrawRecord {
     extra: [f32; 4],
     /// Layer 1's position-made coordinates (`extra.y` 1 when on): u then v, each (x, y, offset).
     layer1: [[f32; 4]; 2],
+    /// The projection (`Camera::projection`, or the draw's own): the first four values, then z's two and padding.
+    proj: [[f32; 4]; 2],
+    /// x: added to a vertex's index to find it among the skinned vertices (`skin.comp`'s output).
+    skin: [i32; 4],
+}
+
+/// A skinned draw's job for the compute pass (`shaders/skin.comp`'s push constants).
+#[derive(Clone, Copy)]
+#[repr(C)]
+struct SkinJob {
+    first: u32,
+    count: u32,
+    bones: u32,
+    base: u32,
+}
+
+/// A vertex the compute pass leaves: the blended position and the turned normal (`skin.comp`).
+const SKINNED_VERTEX_BYTES: usize = 32;
+
+/// The compute pass's work group size (`skin.comp`'s local_size_x).
+const SKIN_GROUP: u32 = 64;
+
+/// One skinned draw's blended vertices, read back from the GPU (`Renderer::read_skinned`).
+pub struct SkinnedDraw {
+    /// The draw's place in the frame.
+    pub draw: usize,
+    pub positions: Vec<[f32; 3]>,
+    /// The normals turned by the heaviest bone, unit length.
+    pub normals: Vec<[f32; 3]>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -39,11 +68,16 @@ struct PipelineKey {
     write_colour: bool,
     write_alpha: bool,
     dst_alpha: Option<u8>,
+    /// The vertices come from the compute pass (a skinned mesh's draw).
+    skinned: bool,
 }
 
 struct MeshSet {
     vertices: Buffer,
     indices: Buffer,
+    /// The weights of a set with skinned meshes (two words a vertex), and the compute pass's
+    /// descriptor set over them.
+    skin: Option<(Buffer, vk::DescriptorSet)>,
 }
 
 #[derive(Clone, Copy)]
@@ -52,6 +86,8 @@ struct MeshSlot {
     first_index: u32,
     index_count: u32,
     vertex_offset: i32,
+    vertex_count: u32,
+    skinned: bool,
     uv_unit: f32,
 }
 
@@ -74,7 +110,19 @@ pub struct Renderer<'g> {
     tex_layout: vk::DescriptorSetLayout,
     pipeline_layout: vk::PipelineLayout,
     vert: vk::ShaderModule,
+    vert_skinned: vk::ShaderModule,
     frag: vk::ShaderModule,
+    skin_layout: vk::DescriptorSetLayout,
+    skin_pipeline_layout: vk::PipelineLayout,
+    skin_pipeline: vk::Pipeline,
+    skin_module: vk::ShaderModule,
+    /// Each skinned draw's four bones (twelve vec4s), and the vertices they blend into.
+    bones_buffer: Buffer,
+    skinned_buffer: Buffer,
+    bones_capacity: usize,
+    skinned_capacity: usize,
+    /// Where the last frame's skinned draws went in `skinned_buffer`: (draw, first vertex, count).
+    last_skinned: Vec<(usize, u32, u32)>,
     pipelines: HashMap<PipelineKey, vk::Pipeline>,
     samplers: HashMap<(Wrap, Wrap, bool, Mipmaps), vk::Sampler>,
     pool: vk::DescriptorPool,
@@ -139,11 +187,10 @@ impl<'g> Renderer<'g> {
 
         let draw_layout = unsafe {
             d.create_descriptor_set_layout(
-                &vk::DescriptorSetLayoutCreateInfo::default().bindings(&[vk::DescriptorSetLayoutBinding::default()
-                    .binding(0)
-                    .descriptor_type(vk::DescriptorType::STORAGE_BUFFER)
-                    .descriptor_count(1)
-                    .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)]),
+                &vk::DescriptorSetLayoutCreateInfo::default().bindings(&[
+                    vk::DescriptorSetLayoutBinding::default().binding(0).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).descriptor_count(1).stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT),
+                    vk::DescriptorSetLayoutBinding::default().binding(1).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).descriptor_count(1).stage_flags(vk::ShaderStageFlags::VERTEX),
+                ]),
                 None,
             )
         }
@@ -151,22 +198,42 @@ impl<'g> Renderer<'g> {
         let tex_bindings = [0, 1].map(|b| vk::DescriptorSetLayoutBinding::default().binding(b).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).descriptor_count(1).stage_flags(vk::ShaderStageFlags::FRAGMENT));
         let tex_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&tex_bindings), None) }.unwrap();
         let layouts = [draw_layout, tex_layout];
-        let push = [vk::PushConstantRange::default().stage_flags(vk::ShaderStageFlags::VERTEX).size(32)];
-        let pipeline_layout = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&layouts).push_constant_ranges(&push), None) }.unwrap();
+        let pipeline_layout = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&layouts), None) }.unwrap();
+        // the skinning pass: a mesh set's vertices and weights, the bones, the output
+        let skin_bindings = [0, 1, 2, 3].map(|b| vk::DescriptorSetLayoutBinding::default().binding(b).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).descriptor_count(1).stage_flags(vk::ShaderStageFlags::COMPUTE));
+        let skin_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&skin_bindings), None) }.unwrap();
+        let skin_layouts = [skin_layout];
+        let skin_push = [vk::PushConstantRange::default().stage_flags(vk::ShaderStageFlags::COMPUTE).size(std::mem::size_of::<SkinJob>() as u32)];
+        let skin_pipeline_layout = unsafe { d.create_pipeline_layout(&vk::PipelineLayoutCreateInfo::default().set_layouts(&skin_layouts).push_constant_ranges(&skin_push), None) }.unwrap();
         let module = |spv: &[u8]| {
             let words: Vec<u32> = spv.as_chunks::<4>().0.iter().map(|c| u32::from_le_bytes(*c)).collect();
             unsafe { d.create_shader_module(&vk::ShaderModuleCreateInfo::default().code(&words), None) }.unwrap()
         };
         let vert = module(include_bytes!(concat!(env!("OUT_DIR"), "/model.vert.spv")));
+        let vert_skinned = module(include_bytes!(concat!(env!("OUT_DIR"), "/model_skinned.vert.spv")));
         let frag = module(include_bytes!(concat!(env!("OUT_DIR"), "/model.frag.spv")));
+        let skin_module = module(include_bytes!(concat!(env!("OUT_DIR"), "/skin.comp.spv")));
+        let skin_pipeline = unsafe {
+            d.create_compute_pipelines(
+                vk::PipelineCache::null(),
+                &[vk::ComputePipelineCreateInfo::default().layout(skin_pipeline_layout).stage(vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::COMPUTE).module(skin_module).name(c"main"))],
+                None,
+            )
+        }
+        .map_err(|e| e.1)
+        .unwrap()[0];
         let pool_sizes = [
             vk::DescriptorPoolSize::default().ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).descriptor_count(8192),
-            vk::DescriptorPoolSize::default().ty(vk::DescriptorType::STORAGE_BUFFER).descriptor_count(4),
+            vk::DescriptorPoolSize::default().ty(vk::DescriptorType::STORAGE_BUFFER).descriptor_count(256),
         ];
         let pool = unsafe { d.create_descriptor_pool(&vk::DescriptorPoolCreateInfo::default().max_sets(4100).pool_sizes(&pool_sizes), None) }.unwrap();
         let draw_set = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(pool).set_layouts(&[draw_layout])) }.unwrap()[0];
         let draw_capacity = 4096;
         let draw_buffer = gpu.buffer((draw_capacity * std::mem::size_of::<DrawRecord>()) as u64, vk::BufferUsageFlags::STORAGE_BUFFER, host);
+        let storage = vk::BufferUsageFlags::STORAGE_BUFFER;
+        let (bones_capacity, skinned_capacity) = (64, 8192);
+        let bones_buffer = gpu.buffer((bones_capacity * 192) as u64, storage, host);
+        let skinned_buffer = gpu.buffer((skinned_capacity * SKINNED_VERTEX_BYTES) as u64, storage, host);
         let mut r = Renderer {
             gpu,
             width,
@@ -182,7 +249,17 @@ impl<'g> Renderer<'g> {
             tex_layout,
             pipeline_layout,
             vert,
+            vert_skinned,
             frag,
+            skin_layout,
+            skin_pipeline_layout,
+            skin_pipeline,
+            skin_module,
+            bones_buffer,
+            skinned_buffer,
+            bones_capacity,
+            skinned_capacity,
+            last_skinned: Vec::new(),
             pipelines: HashMap::new(),
             samplers: HashMap::new(),
             pool,
@@ -201,26 +278,60 @@ impl<'g> Renderer<'g> {
     }
 
     fn bind_draw_buffer(&self) {
-        let info = [vk::DescriptorBufferInfo::default().buffer(self.draw_buffer.buffer).range(vk::WHOLE_SIZE)];
-        let write = [vk::WriteDescriptorSet::default().dst_set(self.draw_set).dst_binding(0).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&info)];
+        let draws = [vk::DescriptorBufferInfo::default().buffer(self.draw_buffer.buffer).range(vk::WHOLE_SIZE)];
+        let skinned = [vk::DescriptorBufferInfo::default().buffer(self.skinned_buffer.buffer).range(vk::WHOLE_SIZE)];
+        let write = [
+            vk::WriteDescriptorSet::default().dst_set(self.draw_set).dst_binding(0).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&draws),
+            vk::WriteDescriptorSet::default().dst_set(self.draw_set).dst_binding(1).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&skinned),
+        ];
         unsafe { self.gpu.device.update_descriptor_sets(&write, &[]) };
+        // the compute pass reads the bones and writes the same skinned vertices
+        for set in self.mesh_sets.iter().filter_map(|m| m.skin.as_ref()) {
+            let bones = [vk::DescriptorBufferInfo::default().buffer(self.bones_buffer.buffer).range(vk::WHOLE_SIZE)];
+            let write = [
+                vk::WriteDescriptorSet::default().dst_set(set.1).dst_binding(2).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&bones),
+                vk::WriteDescriptorSet::default().dst_set(set.1).dst_binding(3).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&skinned),
+            ];
+            unsafe { self.gpu.device.update_descriptor_sets(&write, &[]) };
+        }
     }
 
     /// Uploads meshes into one vertex and one index buffer, once; the ids come back in order.
     pub fn load_meshes(&mut self, meshes: &[MeshData]) -> Vec<MeshId> {
         let set = self.mesh_sets.len();
         let (mut vertices, mut indices) = (Vec::new(), Vec::<u32>::new());
+        let mut weights: Vec<[u32; 2]> = Vec::new();
         let mut ids = Vec::new();
         for m in meshes {
             ids.push(MeshId(self.meshes.len() as u32));
-            self.meshes.push(MeshSlot { set, first_index: indices.len() as u32, index_count: m.indices.len() as u32, vertex_offset: vertices.len() as i32, uv_unit: f32::from(1u16 << m.uv_shift) });
+            let skinned = !m.skin.is_empty();
+            assert!(!skinned || m.skin.len() == m.vertices.len(), "a skinned mesh has a blend for every vertex");
+            self.meshes.push(MeshSlot { set, first_index: indices.len() as u32, index_count: m.indices.len() as u32, vertex_offset: vertices.len() as i32, vertex_count: m.vertices.len() as u32, skinned, uv_unit: f32::from(1u16 << m.uv_shift) });
             vertices.extend_from_slice(&m.vertices);
             indices.extend_from_slice(&m.indices);
+            // two words a vertex: the weight bytes, the normal's bone (zeros for a rigid mesh)
+            if skinned || !weights.is_empty() {
+                weights.resize(vertices.len() - m.vertices.len(), [0, 0]);
+                weights.extend(m.skin.iter().map(|w| [u32::from_le_bytes(w.weights), u32::from(w.heaviest)]));
+                weights.resize(vertices.len(), [0, 0]);
+            }
         }
-        self.mesh_sets.push(MeshSet {
-            vertices: self.gpu.upload(bytes_of(&vertices), vk::BufferUsageFlags::VERTEX_BUFFER),
-            indices: self.gpu.upload(bytes_of(&indices), vk::BufferUsageFlags::INDEX_BUFFER),
+        let vertex_buffer = self.gpu.upload(bytes_of(&vertices), vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::STORAGE_BUFFER);
+        let skin = (!weights.is_empty()).then(|| {
+            let weight_buffer = self.gpu.upload(bytes_of(&weights), vk::BufferUsageFlags::STORAGE_BUFFER);
+            let layouts = [self.skin_layout];
+            let descriptor = unsafe { self.gpu.device.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(self.pool).set_layouts(&layouts)) }.unwrap()[0];
+            let vertex_info = [vk::DescriptorBufferInfo::default().buffer(vertex_buffer.buffer).range(vk::WHOLE_SIZE)];
+            let weight_info = [vk::DescriptorBufferInfo::default().buffer(weight_buffer.buffer).range(vk::WHOLE_SIZE)];
+            let write = [
+                vk::WriteDescriptorSet::default().dst_set(descriptor).dst_binding(0).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&vertex_info),
+                vk::WriteDescriptorSet::default().dst_set(descriptor).dst_binding(1).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&weight_info),
+            ];
+            unsafe { self.gpu.device.update_descriptor_sets(&write, &[]) };
+            (weight_buffer, descriptor)
         });
+        self.mesh_sets.push(MeshSet { vertices: vertex_buffer, indices: self.gpu.upload(bytes_of(&indices), vk::BufferUsageFlags::INDEX_BUFFER), skin });
+        self.bind_draw_buffer();
         ids
     }
 
@@ -315,7 +426,7 @@ impl<'g> Renderer<'g> {
             return p;
         }
         let stages = [
-            vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(self.vert).name(c"main"),
+            vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::VERTEX).module(if key.skinned { self.vert_skinned } else { self.vert }).name(c"main"),
             vk::PipelineShaderStageCreateInfo::default().stage(vk::ShaderStageFlags::FRAGMENT).module(self.frag).name(c"main"),
         ];
         let bindings = [vk::VertexInputBindingDescription::default().stride(std::mem::size_of::<Vertex>() as u32).input_rate(vk::VertexInputRate::VERTEX)];
@@ -432,7 +543,35 @@ impl<'g> Renderer<'g> {
             self.draw_buffer = gpu.buffer((self.draw_capacity * std::mem::size_of::<DrawRecord>()) as u64, vk::BufferUsageFlags::STORAGE_BUFFER, vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT);
             self.bind_draw_buffer();
         }
-        let records: Vec<DrawRecord> = frame.draws.iter().map(|d| record(&frame.camera, d, self.meshes[d.mesh.0 as usize].uv_unit)).collect();
+        // the skinned draws: each gets its own run of blended vertices and four bones
+        let mut jobs: Vec<(usize, usize, SkinJob)> = Vec::new();
+        let mut bone_rows: Vec<[f32; 4]> = Vec::new();
+        let mut skinned_vertices = 0u32;
+        let mut skin_delta = vec![0i32; frame.draws.len()];
+        for (i, d) in frame.draws.iter().enumerate() {
+            let mesh = self.meshes[d.mesh.0 as usize];
+            let Some(bones) = d.bones.as_ref().filter(|_| mesh.skinned) else { continue };
+            jobs.push((mesh.set, i, SkinJob { first: mesh.vertex_offset as u32, count: mesh.vertex_count, bones: bone_rows.len() as u32, base: skinned_vertices }));
+            for m in bones.iter() {
+                bone_rows.extend(m.chunks(4).map(|r| [r[0], r[1], r[2], r[3]]));
+            }
+            // the vertex shader finds a vertex by its index plus the mesh's offset in the set
+            skin_delta[i] = skinned_vertices as i32 - mesh.vertex_offset;
+            skinned_vertices += mesh.vertex_count;
+        }
+        if bone_rows.len() > self.bones_capacity * 12 || skinned_vertices as usize > self.skinned_capacity {
+            let host = vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT;
+            self.bones_capacity = self.bones_capacity.max((bone_rows.len() / 12).next_power_of_two());
+            self.skinned_capacity = self.skinned_capacity.max((skinned_vertices as usize).next_power_of_two());
+            let old = (std::mem::replace(&mut self.bones_buffer, gpu.buffer((self.bones_capacity * 192) as u64, vk::BufferUsageFlags::STORAGE_BUFFER, host)), std::mem::replace(&mut self.skinned_buffer, gpu.buffer((self.skinned_capacity * SKINNED_VERTEX_BYTES) as u64, vk::BufferUsageFlags::STORAGE_BUFFER, host)));
+            unsafe { gpu.device.device_wait_idle().ok() };
+            gpu.destroy_buffer(old.0);
+            gpu.destroy_buffer(old.1);
+            self.bind_draw_buffer();
+        }
+        gpu.write(&self.bones_buffer, 0, bytes_of(&bone_rows));
+        self.last_skinned = jobs.iter().map(|&(_, i, j)| (i, j.base, j.count)).collect();
+        let records: Vec<DrawRecord> = frame.draws.iter().enumerate().map(|(i, d)| record(&frame.camera, d, self.meshes[d.mesh.0 as usize].uv_unit, skin_delta[i])).collect();
         gpu.write(&self.draw_buffer, 0, bytes_of(&records));
         // the pipelines and descriptor sets a draw needs, made before recording
         let prepared: Vec<(vk::Pipeline, vk::DescriptorSet)> = frame
@@ -440,17 +579,27 @@ impl<'g> Renderer<'g> {
             .iter()
             .map(|d| {
                 let m = &d.material;
-                (self.pipeline(PipelineKey { blend: m.blend, cull: m.cull, depth_test: m.depth_test, depth_write: m.depth_write, write_colour: m.write_colour, write_alpha: m.write_alpha, dst_alpha: m.dst_alpha }), self.texture_set(m.layers))
+                (self.pipeline(PipelineKey { blend: m.blend, cull: m.cull, depth_test: m.depth_test, depth_write: m.depth_write, write_colour: m.write_colour, write_alpha: m.write_alpha, dst_alpha: m.dst_alpha, skinned: d.bones.is_some() && self.meshes[d.mesh.0 as usize].skinned }), self.texture_set(m.layers))
             })
             .collect();
 
-        let p = frame.camera.projection;
-        let push: [f32; 8] = [p[0], p[1], p[2], p[3], p[4], p[5], 0.0, 0.0];
         let d = &gpu.device;
         let cb = unsafe { d.allocate_command_buffers(&vk::CommandBufferAllocateInfo::default().command_pool(gpu.pool).command_buffer_count(1)) }.unwrap()[0];
         let (w, h) = (self.width, self.height);
         unsafe {
             d.begin_command_buffer(cb, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)).unwrap();
+            if !jobs.is_empty() {
+                // the skinning pass: every skinned draw's vertices, before the render pass reads them
+                d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::COMPUTE, self.skin_pipeline);
+                for (set, _, job) in &jobs {
+                    let descriptor = self.mesh_sets[*set].skin.as_ref().expect("a skinned mesh's set has weights").1;
+                    d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::COMPUTE, self.skin_pipeline_layout, 0, &[descriptor], &[]);
+                    d.cmd_push_constants(cb, self.skin_pipeline_layout, vk::ShaderStageFlags::COMPUTE, 0, bytes_of(std::slice::from_ref(job)));
+                    d.cmd_dispatch(cb, job.count.div_ceil(SKIN_GROUP), 1, 1);
+                }
+                let barrier = [vk::MemoryBarrier::default().src_access_mask(vk::AccessFlags::SHADER_WRITE).dst_access_mask(vk::AccessFlags::SHADER_READ | vk::AccessFlags::HOST_READ)];
+                d.cmd_pipeline_barrier(cb, vk::PipelineStageFlags::COMPUTE_SHADER, vk::PipelineStageFlags::VERTEX_SHADER | vk::PipelineStageFlags::HOST, vk::DependencyFlags::empty(), &barrier, &[], &[]);
+            }
             let clears = [
                 vk::ClearValue { color: vk::ClearColorValue { float32: [0.0; 4] } },
                 vk::ClearValue { color: vk::ClearColorValue { uint32: [0; 4] } },
@@ -463,10 +612,27 @@ impl<'g> Renderer<'g> {
             );
             d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: 0.0, y: 0.0, width: w as f32, height: h as f32, min_depth: 0.0, max_depth: 1.0 }]);
             d.cmd_set_scissor(cb, 0, &[vk::Rect2D { offset: vk::Offset2D::default(), extent: vk::Extent2D { width: w, height: h } }]);
-            d.cmd_push_constants(cb, self.pipeline_layout, vk::ShaderStageFlags::VERTEX, 0, bytes_of(&push));
             d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, self.pipeline_layout, 0, &[self.draw_set], &[]);
             let (mut last_pipeline, mut last_set, mut last_mesh_set) = (vk::Pipeline::null(), vk::DescriptorSet::null(), usize::MAX);
+            let mut last_viewport: Option<Viewport> = None;
             for (i, draw) in frame.draws.iter().enumerate() {
+                if draw.viewport != last_viewport {
+                    // an inner viewport (the interface's portrait) draws on a cleared depth buffer
+                    let v = draw.viewport.unwrap_or(Viewport { x: 0, y: 0, width: w, height: h });
+                    let rect = vk::Rect2D { offset: vk::Offset2D { x: v.x as i32, y: v.y as i32 }, extent: vk::Extent2D { width: v.width, height: v.height } };
+                    d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: v.x as f32, y: v.y as f32, width: v.width as f32, height: v.height as f32, min_depth: 0.0, max_depth: 1.0 }]);
+                    d.cmd_set_scissor(cb, 0, &[rect]);
+                    if draw.viewport.is_some() {
+                        let clear = [vk::ClearAttachment::default().aspect_mask(vk::ImageAspectFlags::DEPTH).clear_value(vk::ClearValue { depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 } })];
+                        d.cmd_clear_attachments(cb, &clear, &[vk::ClearRect { rect, base_array_layer: 0, layer_count: 1 }]);
+                        if let Some((b, rgb)) = frame.backdrop {
+                            let rect = vk::Rect2D { offset: vk::Offset2D { x: b.x as i32, y: b.y as i32 }, extent: vk::Extent2D { width: b.width, height: b.height } };
+                            let colour = [vk::ClearAttachment::default().aspect_mask(vk::ImageAspectFlags::COLOR).color_attachment(0).clear_value(vk::ClearValue { color: vk::ClearColorValue { float32: [f32::from(rgb[0]) / 255.0, f32::from(rgb[1]) / 255.0, f32::from(rgb[2]) / 255.0, 1.0] } })];
+                            d.cmd_clear_attachments(cb, &colour, &[vk::ClearRect { rect, base_array_layer: 0, layer_count: 1 }]);
+                        }
+                    }
+                    last_viewport = draw.viewport;
+                }
                 let (pipeline, set) = prepared[i];
                 if pipeline != last_pipeline {
                     d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::GRAPHICS, pipeline);
@@ -509,6 +675,26 @@ impl<'g> Renderer<'g> {
     }
 }
 
+impl Renderer<'_> {
+    /// The blended vertices of the last frame's skinned draws, read back from the GPU (for
+    /// checking them against the reference skinner).
+    pub fn read_skinned(&self) -> Vec<SkinnedDraw> {
+        let total = self.last_skinned.iter().map(|&(_, b, c)| (b + c) as usize).max().unwrap_or(0);
+        let raw = self.gpu.read(&self.skinned_buffer, total * SKINNED_VERTEX_BYTES);
+        let floats: Vec<f32> = raw.as_chunks::<4>().0.iter().map(|c| f32::from_le_bytes(*c)).collect();
+        self.last_skinned
+            .iter()
+            .map(|&(draw, base, count)| {
+                let vertex = |v: u32, at: usize| {
+                    let o = (base + v) as usize * 8 + at;
+                    [floats[o], floats[o + 1], floats[o + 2]]
+                };
+                SkinnedDraw { draw, positions: (0..count).map(|v| vertex(v, 0)).collect(), normals: (0..count).map(|v| vertex(v, 4)).collect() }
+            })
+            .collect()
+    }
+}
+
 impl Drop for Renderer<'_> {
     fn drop(&mut self) {
         let gpu = self.gpu;
@@ -525,6 +711,11 @@ impl Drop for Renderer<'_> {
             d.destroy_pipeline_layout(self.pipeline_layout, None);
             d.destroy_descriptor_set_layout(self.draw_layout, None);
             d.destroy_descriptor_set_layout(self.tex_layout, None);
+            d.destroy_pipeline(self.skin_pipeline, None);
+            d.destroy_pipeline_layout(self.skin_pipeline_layout, None);
+            d.destroy_descriptor_set_layout(self.skin_layout, None);
+            d.destroy_shader_module(self.skin_module, None);
+            d.destroy_shader_module(self.vert_skinned, None);
             d.destroy_shader_module(self.vert, None);
             d.destroy_shader_module(self.frag, None);
             d.destroy_framebuffer(self.framebuffer, None);
@@ -536,13 +727,16 @@ impl Drop for Renderer<'_> {
         for s in self.mesh_sets.drain(..) {
             gpu.destroy_buffer(s.vertices);
             gpu.destroy_buffer(s.indices);
+            if let Some((weights, _)) = s.skin {
+                gpu.destroy_buffer(weights);
+            }
         }
         // the images and buffers made in `new` are plain handles: take them out by value
         let (colour, ids, depth) = (std::mem::replace(&mut self.colour, empty_image()), std::mem::replace(&mut self.ids, empty_image()), std::mem::replace(&mut self.depth, empty_image()));
         gpu.destroy_image(colour);
         gpu.destroy_image(ids);
         gpu.destroy_image(depth);
-        for b in [&self.colour_out, &self.ids_out, &self.draw_buffer] {
+        for b in [&self.colour_out, &self.ids_out, &self.draw_buffer, &self.bones_buffer, &self.skinned_buffer] {
             unsafe {
                 d.destroy_buffer(b.buffer, None);
                 d.free_memory(b.memory, None);
@@ -581,10 +775,13 @@ fn normal_matrix(m: [[f32; 3]; 3]) -> [[f32; 3]; 3] {
     cof.map(|r| r.map(|v| v * s))
 }
 
-fn record(camera: &Camera, d: &Draw, uv_unit: f32) -> DrawRecord {
+fn record(camera: &Camera, d: &Draw, uv_unit: f32, skin_delta: i32) -> DrawRecord {
     let view = d.view.unwrap_or(camera.view);
     let mv = concat(&view, &d.world);
     let mut r = DrawRecord::default();
+    let p = d.projection.unwrap_or(camera.projection);
+    r.proj = [[p[0], p[1], p[2], p[3]], [p[4], p[5], 0.0, 0.0]];
+    r.skin[0] = skin_delta;
     for i in 0..3 {
         r.mv[i] = [mv[i * 4], mv[i * 4 + 1], mv[i * 4 + 2], mv[i * 4 + 3]];
     }

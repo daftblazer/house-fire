@@ -53,6 +53,45 @@ fn compare(label: &str, ours: &[u8], reference: &[u8], keep: impl Fn(usize) -> b
     println!("{label}: {n} pixels, {:.2}% within 4 in every channel, {} beyond, PSNR {psnr:.2} dB", 100.0 * within as f64 / n.max(1) as f64, n - within);
 }
 
+/// The GPU-skinned positions of every skinned draw against the reference skinner (`housefire::skin`),
+/// from each '$' record's bones and the '+' record's inputs; one line.
+fn skin_check(log: &housefire::tree_log::Log, tick: u32, scene: &housefire_render::scene::Scene, renderer: &Renderer) {
+    let gpu = renderer.read_skinned();
+    let wanted: Vec<usize> = (0..log.skin_vertices.len()).filter(|&i| log.skins.get(log.skin_vertices[i].skin).is_some_and(|k| k.tick == tick)).collect();
+    let (mut primitives, mut vertices, mut worst, mut worst_normal) = (0usize, 0usize, 0f32, 0f32);
+    let mut compared = std::collections::BTreeSet::new();
+    let mut over = Vec::new();
+    for g in &gpu {
+        let Some(skin) = scene.drawn[scene.frame.draws[g.draw].id as usize - 1].skin else { continue };
+        let Some(v) = log.skin_vertices.iter().find(|v| v.skin == skin) else { continue };
+        let reference = housefire::skin::skin(&log.skins[skin].bones, v.heaviest as usize, v.count as usize, &v.positions, &v.weights, &v.normals);
+        if reference.len() != g.positions.len() {
+            over.push(format!("draw {} (strip {}): {} vertices on the GPU, {} logged", g.draw, scene.drawn[scene.frame.draws[g.draw].id as usize - 1].strip, g.positions.len(), reference.len()));
+            continue;
+        }
+        let mut here = 0f32;
+        for ((r, p), n) in reference.iter().zip(&g.positions).zip(&g.normals) {
+            here = here.max((0..3).map(|c| (r.position[c] - p[c]).abs()).fold(0.0, f32::max));
+            if let Some(rn) = r.normal {
+                let len = rn.iter().map(|&b| f32::from(b) * f32::from(b)).sum::<f32>().sqrt().max(1.0);
+                worst_normal = worst_normal.max((0..3).map(|c| (f32::from(rn[c]) / len - n[c]).abs()).fold(0.0, f32::max));
+            }
+        }
+        if here > 1e-3 {
+            over.push(format!("draw {} (strip {}): max error {here}", g.draw, scene.drawn[scene.frame.draws[g.draw].id as usize - 1].strip));
+        }
+        worst = worst.max(here);
+        primitives += 1;
+        vertices += reference.len();
+        compared.insert(skin);
+    }
+    let missing = wanted.iter().filter(|&&i| !compared.contains(&log.skin_vertices[i].skin)).count();
+    println!("GPU skinning against the reference skinner: {primitives} of {} logged primitives compared ({missing} not drawn: no part found), {vertices} vertices, max abs position error {worst:.2e} lot units, max normal component error {worst_normal:.3} (against the unit of the quantised bytes); {} over 1e-3", wanted.len(), over.len());
+    for line in over.iter().take(10) {
+        println!("  {line}");
+    }
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     let (Some(log_path), Some(iso), Some(frame)) = (args.get(1), args.get(2), args.get(3).and_then(|f| f.parse::<u32>().ok())) else {
@@ -93,6 +132,8 @@ fn main() -> ExitCode {
     }
     let picture = renderer.render(&scene.frame);
 
+    skin_check(&log, tick, &scene, &renderer);
+
     // the report: every draw of the frame by class, and the pixels each class covers
     let mut draws: BTreeMap<Class, usize> = BTreeMap::new();
     for d in &scene.all {
@@ -123,6 +164,14 @@ fn main() -> ExitCode {
     let rigid = |p: usize| picture.ids[p] != 0 && matches!(class_at(picture.ids[p]), Class::RigidStrip | Class::DisplayList);
     compare("rigid draws' pixels", &picture.rgba, &reference, rigid);
     compare("floors' own pixels", &picture.rgba, &reference, |p| picture.ids[p] != 0 && class_at(picture.ids[p]) == Class::Floor);
+    // the Sims' own pixels: where the last draw is a skinned part or the portrait's; and the
+    // portrait's whole square, backdrop included
+    compare("Sims' own pixels (skinned parts and the portrait's draws)", &picture.rgba, &reference, |p| picture.ids[p] != 0 && matches!(class_at(picture.ids[p]), Class::Skinned | Class::Overlay));
+    let portrait = housefire_render::scene::PORTRAIT_VIEWPORT;
+    compare("portrait square (the viewport)", &picture.rgba, &reference, |p| {
+        let (x, y) = ((p % WIDTH as usize) as u32, (p / WIDTH as usize) as u32);
+        (portrait.x..portrait.x + portrait.width).contains(&x) && (portrait.y..portrait.y + portrait.height).contains(&y)
+    });
     compare("shadows' own pixels", &picture.rgba, &reference, |p| picture.late_ids[p] != 0 && class_at(picture.late_ids[p]) == Class::Shadow);
     // where the error is: the models whose pixels are furthest off
     let mut by_model: BTreeMap<String, (u64, u64, [i64; 3])> = BTreeMap::new();

@@ -50,11 +50,23 @@ pub struct Vertex {
     pub normal: [i8; 4],
 }
 
+/// A skinned vertex's blend: the four bones' weight bytes (of 255) and the bone that turns its
+/// normal, the first of the largest weights (carried from the vertex before when a vertex has
+/// none; `housefire::skin`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SkinWeights {
+    pub weights: [u8; 4],
+    pub heaviest: u8,
+}
+
 /// A mesh's data, as kept in memory before it is uploaded: indexed triangles.
 #[derive(Clone, Debug, Default)]
 pub struct MeshData {
     pub vertices: Vec<Vertex>,
     pub indices: Vec<u32>,
+    /// The blend of each vertex of a skinned mesh (its positions are then the vertices' own,
+    /// blended on the GPU through a draw's bones); empty for a rigid mesh.
+    pub skin: Vec<SkinWeights>,
     /// The texture coordinates are 4096ths of `1 << uv_shift` (a floor's run of tiles reaches
     /// past 8, where the 16-bit range ends at shift 0).
     pub uv_shift: u8,
@@ -261,10 +273,27 @@ pub enum Lighting {
     Black,
 }
 
+/// A rectangle of the picture, in pixels from the top left (GXSetViewport's).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Viewport {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Draw {
     pub mesh: MeshId,
+    /// The matrix from the mesh's units (for a skinned mesh: from the blended positions) to the
+    /// world.
     pub world: Mat3x4,
+    /// A skinned mesh's bones: each a 3x4 matrix from the mesh's units to the world, the
+    /// vertices' weights choosing among them (`MeshData::skin`).
+    pub bones: Option<Box<[Mat3x4; 4]>>,
+    /// A projection other than the camera's, drawn inside `viewport` (the interface's draws).
+    pub projection: Option<[f32; 6]>,
+    pub viewport: Option<Viewport>,
     /// The view this draw is made with, where it is not the camera's (the engine sets its own
     /// for some draws).
     pub view: Option<Mat3x4>,
@@ -278,6 +307,9 @@ pub struct Draw {
 pub struct Frame {
     pub camera: Camera,
     pub draws: Vec<Draw>,
+    /// A rectangle filled with a colour (red, green, blue) before the first draw with a
+    /// viewport (the portrait's backdrop, under the Sim's head).
+    pub backdrop: Option<(Viewport, [u8; 3])>,
 }
 
 /// A rendered picture: colour (RGBA, rows from the top) and the id of the last draw to cover
