@@ -77,7 +77,16 @@
   layer. Not read. render-check's club reference is the full frame (work/frames-club3: the
   frame_ PNGs copied as world_), so the portrait and HUD count as misses in both modes. (The
   log's two frames in tick 964 were the 'two passes': split since 76f6c37.)
-- **The club in engine mode at 87.59% whole** (K2-K5; frame 3001 of club-d3000b.log, work/frames-club3;
+- **The club's Sims after D1** (2026-11-17): the persons' directions (data 1) are now the
+  original's at every tick (route followers turn them; turn-only routes from LookTowards;
+  `LOCKSTEP_DIRECTIONS=1` on club-d3000d.log: 84,780 person-ticks, 0 different). Club engine mode
+  87.59% to 91.08% whole, Sims' own 38.05% to 60.01%, rigid 92.02%, shadows 86.36%; home unchanged.
+  Left: the drawn heading is the direction's for 4 of the 8 drawn Sims (178, 172, 169, 164); 177 and
+  174 are drawn turned by 4 eighths from their direction, 171 by 3, 57 by 2: the bones' root turn is
+  not the direction alone (likely the animation's own root rotation, or the heading taken from the
+  follower's float angle, not data 1: unchecked). Route_Run's end-of-primitive write (8022081C) and
+  other LookTowards operands not made (not met on the club).
+- **The club in engine mode at 87.59% whole** (before D1, now 91.08%: above; K2-K5; frame 3001 of club-d3000b.log, work/frames-club3;
   log mode 97.62%): rigid 88.78%, floors 94.28%, shadows 84.26%, Sims 38.05%. K5: shadow shears
   from the sun and the light set, multi-tile objects lit at the leader's tile, lamps' lights
   at the grid's last build, floor coverings (flat opaque meshes under 0.05: drawn with the
