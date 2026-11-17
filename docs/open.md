@@ -41,3 +41,13 @@
   TERRAIN_COLOUR_* is fitted; next step: add +0x674 and +0x6A4 to the ';' record), trilinear LOD;
   `shadow_of` (flat black, alpha 127) fitted; the porch near black in the reference;
   birch leaves 1,091 px darker in the reference with no shadow draw after them.
+- **The engine mode's frame at 86.64% within 4, not R1's 91.82%** (render-check HF_ENGINE=1
+  --card, frame 2400, stage 5c; log mode 97.63%; with the log's light sets 89.18%). Left, by
+  pixels beyond: windows 2,394 (the frame lines lose the depth to the wall where the original's
+  win; matrices, meshes and materials equal the log's, order ruled out); walls, window walls,
+  diagonals and fence ~4,700 (14 of 35 wall light sets differ by one light); the money trunk
+  678 and the cheat gnome 78 drawn but not by the original (flags, fields, selectors, ResData,
+  lists, level ruled out; the draw records' 72 bounds bytes undecoded); walnut door 1,009,
+  outer lot 723, lattice door 571, aquarium 207. Still from the log in that mode: the camera,
+  the lot choice, the clock passes. Draw list (LOCKSTEP_FRAME_DRAWS=1039): 570 same, 3
+  DIFFERENT, 26 missing (objects' script animations, sink counter variants, wall caps).
