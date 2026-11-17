@@ -150,8 +150,8 @@ fn engine_frame(scene: &mut Scene, assets: &Assets, disc: &Disc, log: &housefire
     let catalog = housefire::anim::Catalog::read(disc, house as u32);
     let mut replay = housefire::replay::Replay::new(log, &lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, None, housefire::replay::RunWith { card_lot: start.card_lot, cat: Some(catalog.clone()) }).expect("the run");
     let no_sims = std::env::var_os("HF_NO_SIMS").is_some();
-    let plays = if no_sims { housefire::drawlist::Plays::default() } else { engine_scene::run_to(&mut replay, log, tick) };
-    let plan = engine_scene::plan(disc, card, log, tick, &view, house, lot_index, &plays).expect("the engine's lot");
+    let plays = if no_sims { housefire::drawlist::Plays::at(tick) } else { engine_scene::run_to(&mut replay, log, tick) };
+    let plan = engine_scene::plan(disc, card, log, tick, &view, (house, lot_index), &plays).expect("the engine's lot");
     let shaders = housefire::shader::index(disc);
     if let Ok(name) = std::env::var("HF_DRAWS") {
         for d in &plan.draws {

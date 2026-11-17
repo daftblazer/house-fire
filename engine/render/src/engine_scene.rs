@@ -527,7 +527,7 @@ impl Lot {
         let behind = copies(tick).saturating_sub(copies(build.tick)) as f32;
         // the own lights (from index 256) as the build logged them
         let logged: Vec<[f32; 3]> = build.lights.iter().skip(256).map(|l| l.0).collect();
-        let lot = housefire::drawlist::lot_draws_with(world, &self.resources, &self.models, &self.art, tick, None, &mut Default::default(), plays);
+        let lot = housefire::drawlist::lot_draws_with(world, &self.resources, &self.models, &self.art, None, &mut Default::default(), plays);
         for p in &lot.placements {
             let graphic = plays.graphic(world, p.leader);
             let Some((skeleton, anim)) = lot.guids.get(&p.leader).into_iter().flatten().filter_map(|g| self.resources.get(g)).find_map(|r| Some((self.models.sources.skeletons.get(&r.model)?, self.models.sources.anims.get(&r.animation(graphic))?))) else { continue };
@@ -559,19 +559,19 @@ impl Lot {
             }
             let Some(&first) = best.first() else { continue };
             let at = wrap_place(anim, (first + best[best.len() - 1]) / 2.0 + behind * frames_per_copy(anim.rate));
-            let play = out.0.entry(p.leader).or_insert(Play { graphic, frames: None, anchor: None });
+            let play = out.by_id.entry(p.leader).or_insert(Play { graphic, frames: None, anchor: None });
             play.anchor = Some(at);
         }
         out
     }
 
-    /// The draws of the lot as `world` has it at `tick`, seen from the eye of `view`. The clock the
+    /// The draws of the lot as `world` has it on the tick of `plays`, seen from the eye of `view`. The clock the
     /// light is made at is the world's own (globals 0, 5 and 6: the hour, minute and second).
-    pub fn plan(&self, world: &housefire::world::World, tick: u32, view: &Mat3x4, plays: &housefire::drawlist::Plays) -> Plan {
+    pub fn plan(&self, world: &housefire::world::World, view: &Mat3x4, plays: &housefire::drawlist::Plays) -> Plan {
         // the eye: -R^T t of the view
         let eye = [0, 1].map(|i| -(0..3).map(|r| view[4 * r + i] * view[4 * r + 3]).sum::<f32>());
-        let lot = housefire::drawlist::lot_draws_with(world, &self.resources, &self.models, &self.art, tick, Some(eye), &mut self.poses.borrow_mut(), plays);
-        let lamps = housefire::lamps::on_lot_at(&lot.placements, |id| lot.guids.get(&id).cloned().unwrap_or_default(), |id| plays.graphic(world, id), |id, anim| plays.place(id, anim, tick), &self.resources, &self.models.sources);
+        let lot = housefire::drawlist::lot_draws_with(world, &self.resources, &self.models, &self.art, Some(eye), &mut self.poses.borrow_mut(), plays);
+        let lamps = housefire::lamps::on_lot_at(&lot.placements, |id| lot.guids.get(&id).cloned().unwrap_or_default(), |id| plays.graphic(world, id), |id, anim| plays.place(id, anim), &self.resources, &self.models.sources);
         let g = |i: usize| world.globals.get(i).copied().map_or(0, i32::from);
         let clock = (g(0), g(5), g(6));
         let mut lights = housefire::lighting::LotLights::build(world, &self.resources, &lamps, clock);
@@ -611,7 +611,7 @@ pub fn save_file(disc: &housefire::disc::Disc, card: Option<&std::path::Path>) -
 /// The engine's lot (the disc's, or the card's save: `card` the memory card image; the lot the
 /// log ran on, `housefire::lotpick`) and its draws for `tick`, seen from the eye of `view`. The
 /// loaded lot is the world as the game starts the lot; the animation clock is the tick's.
-pub fn plan(disc: &housefire::disc::Disc, card: Option<&std::path::Path>, log: &housefire::tree_log::Log, tick: u32, view: &Mat3x4, house: usize, lot_index: Option<usize>, plays: &housefire::drawlist::Plays) -> Option<Plan> {
+pub fn plan(disc: &housefire::disc::Disc, card: Option<&std::path::Path>, log: &housefire::tree_log::Log, tick: u32, view: &Mat3x4, (house, lot_index): (usize, Option<usize>), plays: &housefire::drawlist::Plays) -> Option<Plan> {
     use housefire::{library::Library, save, world::World};
     let ngh = save_file(disc, card)?;
     let lib = Library::bustin_out(disc);
@@ -635,7 +635,7 @@ pub fn plan(disc: &housefire::disc::Disc, card: Option<&std::path::Path>, log: &
         world.clock_pass(log.passes.get(&t).is_some_and(|p| p.stopped_at != 0));
     }
     let plays = lot.anchored(&world, plays, log, tick);
-    Some(lot.plan(&world, tick, view, &plays))
+    Some(lot.plan(&world, view, &plays))
 }
 
 /// Runs the log's lot natively to the tick before `tick` (as the Sims' world is made) and
@@ -667,7 +667,7 @@ pub fn run_to(replay: &mut housefire::replay::Replay<'_>, log: &housefire::tree_
         observe(replay);
     }
     let now = copies(tick);
-    housefire::drawlist::Plays(seen.into_iter().map(|(id, (graphic, changed))| (id, Play { graphic, frames: changed.map(|t| now.saturating_sub(copies(t))), anchor: None })).collect())
+    housefire::drawlist::Plays { tick, by_id: seen.into_iter().map(|(id, (graphic, changed))| (id, Play { graphic, frames: changed.map(|t| now.saturating_sub(copies(t))), anchor: None })).collect() }
 }
 
 /// What the engine makes of a frame, to be put in the original's order (`assemble`).
@@ -835,7 +835,7 @@ impl<'a> Builder<'a> {
         scene.transient.clear();
         scene.frame.camera = Camera { view, projection };
         scene.frame.backdrop = None;
-        let plan = self.lot.plan(world, tick, &view, &housefire::drawlist::Plays::default());
+        let plan = self.lot.plan(world, &view, &housefire::drawlist::Plays::at(tick));
         let lighting = |d: &Planned, mat: MaterialFactors| lighting_for(&plan.lights.of(d), &view, mat);
         let made = self.assets.engine_draws(scene, &mut self.caches, &Inputs { draws: &plan.draws, models: &plan.models, shaders: &self.lot.shaders, lighting: &lighting, view });
         let floors: Vec<(usize, FloorDraws)> = plan.floors.iter().zip(self.assets.engine_floors(scene, &mut self.caches, &plan.floors, &self.lot.shaders, plan.terrain, view)).map(|(st, f)| (st.room, f)).collect();

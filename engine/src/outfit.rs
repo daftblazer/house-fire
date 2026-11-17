@@ -171,6 +171,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_description_from_the_logged_words() {
+        // the first words the observer logged for a Sim: gender and age words, then the looks from byte 8
+        let mut words = [0u32; 16];
+        words[..3].copy_from_slice(&[1, 1, 0x011D_0E1F]);
+        let d = Description::from_words(&words);
+        assert!(d.male && d.adult);
+        assert_eq!(d.looks[..4], [1, 29, 14, 31]);
+        // the same Sim as the save keeps it
+        let mut looks = [0u8; 20];
+        looks[..2].copy_from_slice(&[1, 1]);
+        looks[2..6].copy_from_slice(&[1, 29, 14, 31]);
+        assert_eq!(d, Description::from_save(&CreatedSim { guid: 0, first_name: String::new(), last_name: String::new(), looks }));
+    }
+
+    #[test]
     fn a_description_from_the_save() {
         // a made Sim's looks in the club save: male, adult, then the part indices
         let looks = [1, 1, 0, 0x24, 0x0e, 0x52, 0x1e, 0x1d, 0x0b, 0x12, 1, 5, 0x1f, 1, 1, 2, 0x0f, 1, 0, 4];

@@ -2682,6 +2682,45 @@ wall pieces' shader), `engine_scene::lighting_for` (a third argument), `Inputs::
 (takes the material factors): the log mode, lockstep's frame draws (583 the same, the output
 identical to before) and `runchecks` (10 of 10) are unchanged.
 
+### K2: the club from the engine's state
+
+`render-check HF_ENGINE=1 ... --lot 15` (club-d3000.log, frame 3001, tick 964; the recomp's world dumps
+are black on the club, so the reference is the whole frame with the 2D layer: the portrait square, 3,080
+pixels, cannot match). Engine mode went from 2.94% to 71.42% whole (log mode 93.79%, unchanged). Fixes in
+order, with the whole frame after each:
+- the lot: `--lot N` is lot N of the disc's own save (the club), house N + 1 (the club is house 16), no
+  card; with it the camera, floors and objects were already the club's (2.94%).
+- the rooms' ambient: an inside room's level (0.3 day, 0.2 night, blended across 18:00, times its
+  window brightness) applies to the colour (0.8, 0.8, 1.0), not the time of day's ambient colour
+  (0.6, 0.6, 0.8 at 18:35): logged ambient 25, 25, 31 of 255 in every room (`lighting::ROOM_AMBIENT_COLOUR`,
+  fitted; home's 7:36 has the same colour in both) 2.94% to 5.90%.
+- the animations the objects play: the club's scripts set a graphic number (data field 0) that picks the
+  animation (`ObjResources::animation`): the dance floor's beams and light pools, the laser show. The
+  run (`engine_scene::run_to`, the replay to the tick before) gives each object's graphic and the render
+  frames (the log's display copies) since it changed; `drawlist::Plays` carries them into the objects'
+  poses and the lamps' lights. The animations' own clocks are not kept by the simulation, so the place of
+  a moving lamp is found from the light grid the original last built (the log's 'e' records hold each
+  light's position): the first run of quarter frames whose light positions are the build's (to 0.012),
+  carried to the tick by `frames_per_copy` (rate / 30: the laser's 60 a second is 2 frames a copy, the
+  logged places 72.5 and 108.5 at copies 2,997 and 3,015). The draws' matrices then equal the log's
+  (checked for the dance floor's 62 + 120 + 47 + 40 + 4-vertex parts) and the light sets of the objects
+  are the log's but for a place 0.1 off. 5.90% to 57.4%.
+- the cones and pools (shader layer blend byte 2) add (source alpha, one) and write no depth; the
+  reflection layer of a floor (`reflect_test_06`) reads one point, the terrain shader's offset (the
+  logged position matrices have scales of 5e-7), not the position: 57.4% to 71.5%.
+- the Sims: the Sims' descriptions are the played save's made Sims (a card, `--card`, was needed); the
+  log's dressing records ('?', 16 words of the description each) give them from the log itself:
+  `Cast::complete_from` gives a Sim the save does not describe the logged description no Sim has (with no
+  card, all 9 in the order of the world: the records come in the Sims' creation order, the same as the
+  card's for 8 of 9; the ninth is the story Sim of open.md's "Fran", whom no file describes).
+Home: log mode identical; engine mode 97.23% to 97.24% (31 pixels: the objects now play their graphic's
+animation, the same for every object of home but one).
+Left, club engine mode (pixels beyond 4 in every channel of 81,954): the objects whose textures
+a lot's dataset overrides (the pool table's felt is `game_pooltable_club_x-02` in the log, the sub-model's own
+shader in the engine, ~7,000), the DJ booth's parts (~15,000: z-fighting of coplanar faces and its parts'
+states), the Sims' headings and the DJ's place (the DJ stands behind the booth in the log; the portrait's
+look), and the shadows (42,000: the indoor objects' shears, "What is left" of E1).
+
 ## The window
 
 `view LOG ISO --card CARD [--lot N] [--ticks N] [--frame-times FILE] [--shot TICK FILE]`
