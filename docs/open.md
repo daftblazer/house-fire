@@ -34,14 +34,11 @@
 - **The picture's state not recorded** (home-a36's ';' records have the context's state and
   the pixel engine's registers as ERC_ApplyState left them): fog, and GX calls a draw method
   makes after ERC_ApplyState (the shadow mask's constant alpha?).
-- **Floors 85.5% and shadows 86.6% within 4** (frame 2400, R2a/R2a2, left over from stage 5b;
-  against the frames with gcn-recomp's constant destination alpha):
-  terrain strips ~24,000 px off (second layer through GX_TEXMTX0 then the dual-texture matrix
-  0x40, which ERC_ApplyState loads natively from the context's +0x6A4: not in the log, so
-  TERRAIN_COLOUR_* is fitted; next step: add +0x674 and +0x6A4 to the ';' record), trilinear LOD;
-  `shadow_of` (flat black, alpha 127) fitted; the porch near black in the reference;
-  birch leaves 1,091 px darker in the reference with no shadow draw after them.
-- **The engine mode's frame at 94.09% rigid, 87.19% whole** (render-check HF_ENGINE=1 --card,
+- **Log mode's frame at 97.47% within 4** (frame 2400, after F1: floors 97.33%, shadows
+  97.84%, rigid 97.99%): floors 5,487 px off (trilinear LOD, the porch near black in the
+  reference, birch leaves 1,091 px darker with no shadow draw after them: unmeasured). The
+  terrain's second layer is the terrain shader's own map (PTTEXMTX0 from `Shader::position_uv`).
+- **The engine mode's frame at 94.09% rigid, 95.60% whole** (floors 96.22%, shadows 91.76%) (render-check HF_ENGINE=1 --card,
   frame 2400, after L1-L3 and S1; log mode 97.63 / 88.89%). Left: 15 object meshes' light sets
   (below); the money trunk 678 and the cheat gnome 78 drawn but not by the original (flags,
   fields, selectors, ResData, lists, level ruled out; the draw records' 72 bounds bytes
