@@ -3,7 +3,8 @@
 //! of that frame (`$HF_FRAMES/world_NNNNN.png`, the picture before the 2D layer). Writes our
 //! picture and a difference picture under `$HF_FRAMES/r1/` (`HF_OUT=name`: another folder).
 //!
-//! The engine mode (`HF_ENGINE=1`, with `--card CARD` for a save's lot): the lot's model draws
+//! The engine mode (`HF_ENGINE=1`, with `--card CARD` for a save's lot; `--lot N` for lot N of
+//! the disc's own save, the club's 15, with `--card` then naming only who the Sims are): the lot's model draws
 //! (objects, walls, the lot's own model), its floors (by room, lit from the light grid), the
 //! shadow pass and the camera (`scene::Camera` from the logged parameters) are made from the
 //! engine's own world (`engine_scene`) in place of the log's records, in the original's order
@@ -122,7 +123,15 @@ fn skin_check(log: &housefire::tree_log::Log, tick: u32, scene: &housefire_rende
 /// The engine mode (`HF_ENGINE=1`): the lot's draws from the engine's own world in place of the log's
 /// rigid and display-list draws, floors and shadows, and the Sims from its own run; the log's scene
 /// is changed in place (`engine_scene::assemble`).
-fn engine_frame(scene: &mut Scene, assets: &Assets, disc: &Disc, log: &housefire::tree_log::Log, tick: u32, card: Option<&Path>) {
+fn engine_frame(scene: &mut Scene, assets: &Assets, disc: &Disc, log: &housefire::tree_log::Log, tick: u32, card: Option<&Path>, lot_index: Option<usize>) {
+    // the lot's house number (its HouseData row, the lot's global 10, which the loaded lot does not
+    // keep): the disc's houses are numbered from 1 in the order of its lots (the club, lot 15, is
+    // house 16); a card's lot is the home (house 1); HF_HOUSE says another
+    // `--lot N` names a lot of the disc's own save (the club); the card then only says who the
+    // Sims are (their descriptions are the played save's made Sims). Without it the card's lot is
+    // the one the log ran on.
+    let (cast_card, card) = (card, if lot_index.is_some() { None } else { card });
+    let house = std::env::var("HF_HOUSE").ok().and_then(|v| v.parse().ok()).unwrap_or_else(|| if card.is_none() { lot_index.map_or(1, |k| k + 1) } else { 1 });
     // the camera: the engine's `scene::Camera` from the logged parameters (the lot's start has
     // no player input to run it from)
     let mut view = scene.frame.camera.view;
@@ -133,8 +142,16 @@ fn engine_frame(scene: &mut Scene, assets: &Assets, disc: &Disc, log: &housefire
         view = v;
         scene.frame.camera = frame::Camera { view: v, projection: pr };
     }
-    let house = std::env::var("HF_HOUSE").ok().and_then(|v| v.parse().ok()).unwrap_or(1);
-    let plan = engine_scene::plan(disc, card, log, tick, &view, house).expect("the engine's lot");
+    // the run to the tick before this one: the Sims' world, and what each object plays (its
+    // graphic and the render frames since a script set it); HF_NO_SIMS=1 keeps the log's Sims
+    // and the loaded lot's plays
+    let lib = housefire::library::Library::bustin_out(disc);
+    let start = housefire::replay::Start::read(disc, card.and_then(|p| p.to_str()), lot_index.map_or(-1, |k| k as i64)).expect("the lot");
+    let catalog = housefire::anim::Catalog::read(disc, house as u32);
+    let mut replay = housefire::replay::Replay::new(log, &lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, None, housefire::replay::RunWith { card_lot: start.card_lot, cat: Some(catalog.clone()) }).expect("the run");
+    let no_sims = std::env::var_os("HF_NO_SIMS").is_some();
+    let plays = if no_sims { housefire::drawlist::Plays::default() } else { engine_scene::run_to(&mut replay, log, tick) };
+    let plan = engine_scene::plan(disc, card, log, tick, &view, house, lot_index, &plays).expect("the engine's lot");
     let shaders = housefire::shader::index(disc);
     if let Ok(name) = std::env::var("HF_DRAWS") {
         for d in &plan.draws {
@@ -187,7 +204,7 @@ fn engine_frame(scene: &mut Scene, assets: &Assets, disc: &Disc, log: &housefire
     if std::env::var_os("HF_FLOORCMP").is_some() {
         studies::floor_cmp(&plan, log, tick);
     }
-    let floors: Vec<(usize, engine_scene::FloorDraws)> = plan.floors.iter().zip(assets.engine_floors(scene, &mut caches, &plan.floors, &shaders, view)).map(|(st, f)| (st.room, f)).collect();
+    let floors: Vec<(usize, engine_scene::FloorDraws)> = plan.floors.iter().zip(assets.engine_floors(scene, &mut caches, &plan.floors, &shaders, plan.terrain, view)).map(|(st, f)| (st.room, f)).collect();
     let sun = plan.lights.at(1.0, 1.0).sun.map_or([0.0; 3], |s| s.direction);
     let projection = scene.frame.camera.projection;
     if std::env::var_os("HF_PLACES").is_some() {
@@ -199,17 +216,17 @@ fn engine_frame(scene: &mut Scene, assets: &Assets, disc: &Disc, log: &housefire
     let by_room = assets.engine_shadows_by_room(scene, &mut caches, &plan, &view, &projection, sun);
     // the Sims from the engine's own run (HF_NO_SIMS=1 keeps the log's): the replay to the tick
     // before this one for the world, the animation frames through this one for the poses
-    let sims = if std::env::var_os("HF_NO_SIMS").is_some() {
+    let sims = if no_sims {
         None
     } else {
-        let lib = housefire::library::Library::bustin_out(disc);
-        let start = housefire::replay::Start::read(disc, card.and_then(|p| p.to_str()), -1).expect("the lot");
-        let catalog = housefire::anim::Catalog::read(disc, house as u32);
-        let mut replay = housefire::replay::Replay::new(log, &lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, None, housefire::replay::RunWith { card_lot: start.card_lot, cat: Some(catalog.clone()) }).expect("the run");
-        while replay.tick() + 1 < tick && replay.step() {}
-        let ngh = engine_scene::save_file(disc, card).expect("the save");
+        let ngh = engine_scene::save_file(disc, cast_card).expect("the save");
         let rigs = housefire::figure::Rigs::read(disc).expect("the skeletons");
-        let cast = housefire::figure::Cast::read(disc, &ngh).expect("the part tables");
+        let mut cast = housefire::figure::Cast::read(disc, &ngh).expect("the part tables");
+        // the Sims the save does not describe wear what the log's dressing records say
+        let who: Vec<i16> = replay.world().objects().filter(|o| o.person && o.on_lot()).filter_map(|o| o.person_data.get(31).copied()).collect();
+        let logged: Vec<housefire::outfit::Description> = log.dressed.iter().map(|r| housefire::outfit::Description::from_words(&r.description_words)).collect();
+        let given = cast.complete_from(&who, &logged);
+        println!("{given} of {} Sims described from the log's dressing records", who.len());
         let skins = sims::SimSkins::from_scene(scene).with_disc(disc);
         let wardrobe = sims::Wardrobe { rigs: &rigs, cast: &cast, catalog: &catalog, skins: &skins, models: &plan.models, shaders: &shaders };
         let plays = replay.sim_plays(tick);
@@ -265,7 +282,8 @@ fn main() -> ExitCode {
     let engine_mode = std::env::var_os("HF_ENGINE").is_some();
     if engine_mode {
         let card = args.iter().position(|a| a == "--card").and_then(|i| args.get(i + 1)).map(PathBuf::from);
-        engine_frame(&mut scene, &assets, &disc, &log, tick, card.as_deref());
+        let lot_index = args.iter().position(|a| a == "--lot").and_then(|i| args.get(i + 1)).and_then(|v| v.parse().ok());
+        engine_frame(&mut scene, &assets, &disc, &log, tick, card.as_deref(), lot_index);
     }
 
     if std::env::var_os("HF_FLOORDUMP").is_some() {

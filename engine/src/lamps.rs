@@ -106,11 +106,16 @@ pub fn bones_at(skeleton: &Skeleton, anim: &Anim, place: f32, root: &Mat4, scale
 /// object's matrix `root`: one for each node with the light channels. Empty for an object with
 /// none, or whose animation's nodes do not fit its skeleton.
 pub fn lights(skeleton: &Skeleton, anim: &Anim, root: &Mat4) -> Vec<LampLight> {
+    lights_at(skeleton, anim, root, IDLE_PLACE)
+}
+
+/// `lights` with the animation at `place`.
+pub fn lights_at(skeleton: &Skeleton, anim: &Anim, root: &Mat4, place: f32) -> Vec<LampLight> {
     if !anim.nodes.iter().any(is_light) {
         return Vec::new();
     }
     // a lamp's scale only scales the matrices' 3 x 3, not the translations the lights sit at
-    let Some((bones, poses)) = idle_bones(skeleton, anim, root, 1.0) else { return Vec::new() };
+    let Some((bones, poses)) = bones_at(skeleton, anim, place, root, 1.0) else { return Vec::new() };
     anim.nodes
         .iter()
         .zip(&poses)
@@ -163,11 +168,17 @@ pub struct Lamp {
 /// animation the lamp is posed from (`ObjResources::animation`: a lit lamp's "on", a dance
 /// floor's strobe).
 pub fn on_lot(placements: &[Placement], guids_of: impl Fn(i16) -> Vec<u32>, graphic: impl Fn(i16) -> i16, resources: &BTreeMap<u32, ObjResources>, sources: &Sources) -> Vec<Lamp> {
+    on_lot_at(placements, guids_of, graphic, |_, _| IDLE_PLACE, resources, sources)
+}
+
+/// `on_lot` with each lamp's animation at the place `place` gives for its leader and animation
+/// (the frame it has played to: the disco lights move).
+pub fn on_lot_at(placements: &[Placement], guids_of: impl Fn(i16) -> Vec<u32>, graphic: impl Fn(i16) -> i16, place: impl Fn(i16, &Anim) -> f32, resources: &BTreeMap<u32, ObjResources>, sources: &Sources) -> Vec<Lamp> {
     placements
         .iter()
         .filter_map(|p| {
             let (skeleton, anim) = guids_of(p.leader).iter().filter_map(|g| resources.get(g)).find_map(|r| Some((sources.skeletons.get(&r.model)?, sources.anims.get(&r.animation(graphic(p.leader)))?)))?;
-            let lights = lights(skeleton, anim, &object_matrix(p.x, p.y, p.angle));
+            let lights = lights_at(skeleton, anim, &object_matrix(p.x, p.y, p.angle), place(p.leader, anim));
             (!lights.is_empty()).then_some(Lamp { leader: p.leader, place: *p, lights })
         })
         .collect()

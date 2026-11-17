@@ -68,6 +68,13 @@ pub struct LotLights {
 pub const DAY_LEVEL: f32 = 0.3;
 pub const NIGHT_LEVEL: f32 = 0.2;
 
+/// The colour an inside room's ambient level is applied to. Not the time of day's own ambient
+/// colour: the club's frame at 18:35 (where the time of day's is 0.6, 0.6, 0.8) logs the rooms'
+/// ambient as 0.8, 0.8, 1.0 times the room's level (every room of the frame, to the byte), the
+/// colour the keys of 7:00 to 17:59 have, which home's morning (7:36) cannot tell apart. Fitted
+/// to the club's log; the game's source of it is not read.
+pub const ROOM_AMBIENT_COLOUR: [f32; 3] = [0.8, 0.8, 1.0];
+
 impl LotLights {
     /// The lights of the lot at the clock (hour, minute, second). `lamps` are the lot's lamps
     /// (`lamps::on_lot`), `res` the objects' resources (a window's kind comes from its model's key).
@@ -140,12 +147,12 @@ impl LotLights {
         }
         let ambients = (0..rooms)
             .map(|r| {
-                let factor = if r == 0 {
-                    tod.ambient_factor
+                if r == 0 {
+                    tod.ambient.map(|c| c * tod.ambient_factor)
                 } else {
-                    light::room_ambient(DAY_LEVEL, NIGHT_LEVEL, clock.0, clock.1, clock.2, light::window_brightness(openings[r], tiles[r].max(1) as i32))
-                };
-                tod.ambient.map(|c| c * factor)
+                    let level = light::room_ambient(DAY_LEVEL, NIGHT_LEVEL, clock.0, clock.1, clock.2, light::window_brightness(openings[r], tiles[r].max(1) as i32));
+                    ROOM_AMBIENT_COLOUR.map(|c| c * level)
+                }
             })
             .collect();
         let room_of = (0..height as i32).flat_map(|y| (0..width as i32).map(move |x| (x, y))).map(|(x, y)| room_at(x, y) as u8).collect();

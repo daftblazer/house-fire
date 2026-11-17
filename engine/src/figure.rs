@@ -70,6 +70,24 @@ impl Cast {
         Some(Cast { tables, by_neighbour })
     }
 
+    /// Gives the Sims that the save does not describe their descriptions from the log's dressing
+    /// records (`logged`: each Sim's description as the game read it), for the Sims `who` names by
+    /// neighbour id. A Sim whose saved description is one of the logged keeps it; the others take
+    /// the logged ones no Sim has, in order, when there are as many (the played save's made Sims
+    /// are the card's; a story Sim's description is in none of the files read). Returns how many
+    /// Sims were given one.
+    pub fn complete_from(&mut self, who: &[i16], logged: &[Description]) -> usize {
+        let unclaimed: Vec<Description> = logged.iter().filter(|d| !who.iter().any(|n| self.by_neighbour.get(n) == Some(d))).copied().collect();
+        let unmatched: Vec<i16> = who.iter().copied().filter(|n| self.by_neighbour.get(n).is_none_or(|d| !logged.contains(d))).collect();
+        if unclaimed.len() != unmatched.len() {
+            return 0;
+        }
+        for (n, d) in unmatched.iter().zip(&unclaimed) {
+            self.by_neighbour.insert(*n, *d);
+        }
+        unmatched.len()
+    }
+
     /// The description of the Sim whose neighbour id (person data 31) is `neighbour`.
     pub fn description(&self, neighbour: i16) -> Option<&Description> {
         self.by_neighbour.get(&neighbour)

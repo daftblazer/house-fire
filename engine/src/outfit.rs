@@ -70,6 +70,16 @@ pub struct Description {
 const FIRST_LOOK: usize = 8;
 
 impl Description {
+    /// The description as the observer logged it at a Sim's dressing: the first 16 words of the
+    /// guest's description (big-endian words of the same bytes the save keeps: gender, age, then
+    /// the looks from byte 8; the gender and age are words of their own).
+    pub fn from_words(words: &[u32; 16]) -> Description {
+        let bytes: Vec<u8> = words.iter().flat_map(|w| w.to_be_bytes()).collect();
+        let mut looks = [0; 18];
+        looks.copy_from_slice(&bytes[FIRST_LOOK..FIRST_LOOK + 18]);
+        Description { male: words[0] != 0, adult: words[1] != 0, looks }
+    }
+
     pub fn from_save(sim: &CreatedSim) -> Description {
         let mut looks = [0; 18];
         looks.copy_from_slice(&sim.looks[2..]);

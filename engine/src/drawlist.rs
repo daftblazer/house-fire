@@ -163,6 +163,50 @@ fn clock(frames: u32, rate: f32, loops: bool, tick: u32) -> f32 {
     if loops { at.rem_euclid(frames as f32) } else { at.min(frames.saturating_sub(1) as f32) }
 }
 
+/// What an object is playing: its graphic number (data field 0, which picks its animation among
+/// its states), the render frames (the guest's display copies) since its script changed it, when
+/// it did during the run, and the place its animation was found at when the log says (`anchor`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Play {
+    pub graphic: i16,
+    pub frames: Option<u32>,
+    /// The animation's frame, from the lights the original logged: it wins over `frames`.
+    pub anchor: Option<f32>,
+}
+
+/// The objects' plays that the run changed or kept, by id: an object not in it is as the loaded
+/// lot has it, playing from the start of the run.
+#[derive(Clone, Debug, Default)]
+pub struct Plays(pub BTreeMap<i16, Play>);
+
+/// The frames an animation of `rate` frames a second goes on by in one render frame (a display
+/// copy, a game tick's frame): the game runs 30 of them a second.
+pub fn frames_per_copy(rate: f32) -> f32 {
+    rate / TICKS_PER_SECOND
+}
+
+/// An animation's frame `at` as it plays: wrapped when it loops, else held at its last.
+pub fn wrap_place(anim: &Anim, at: f32) -> f32 {
+    if anim.end_mode() == 0 { at.rem_euclid(anim.frames as f32) } else { at.min(anim.frames.saturating_sub(1) as f32) }
+}
+
+impl Plays {
+    /// The graphic number of object `id`: the run's, else the loaded world's.
+    pub fn graphic(&self, world: &crate::world::World, id: i16) -> i16 {
+        self.0.get(&id).map_or_else(|| lamps::object_graphic(world, id), |p| p.graphic)
+    }
+
+    /// The frame the object's animation `anim` is at on `tick`: the anchored place, else from the
+    /// render frames since its graphic was set, else from the start of the run.
+    pub fn place(&self, id: i16, anim: &Anim, tick: u32) -> f32 {
+        match self.0.get(&id) {
+            Some(Play { anchor: Some(at), .. }) => *at,
+            Some(Play { frames: Some(frames), .. }) => wrap_place(anim, *frames as f32 * frames_per_copy(anim.rate)),
+            _ => idle_place(anim, tick),
+        }
+    }
+}
+
 fn kind_of(part: &Part<'_>) -> Kind {
     if part.batch.list.is_some() { Kind::ObjectList } else { Kind::ObjectPart }
 }
@@ -172,7 +216,7 @@ fn kind_of(part: &Part<'_>) -> Kind {
 /// matrices (a Sim's skin) is not an object's. An object plays its idle animation from the start
 /// of the run (`idle_place` at `tick`).
 pub fn object_draws(models: &Models, placements: &[Placement], guids_of: impl Fn(i16) -> Vec<u32>, resources: &BTreeMap<u32, ObjResources>, tick: u32) -> Vec<Draw> {
-    object_parts(models, placements, guids_of, resources, tick, &mut IdlePoses::default()).into_iter().map(|p| p.0).collect()
+    object_parts(models, placements, guids_of, resources, tick, &mut IdlePoses::default(), |_| 0, &Plays::default()).into_iter().map(|p| p.0).collect()
 }
 
 /// What an object's idle animation gives for a frame (the bones' matrices and the poses).
@@ -207,7 +251,7 @@ impl IdlePoses {
 
 /// `object_draws`, each with whether the part is drawn at its object's own matrix (no skeleton
 /// poses it).
-fn object_parts(models: &Models, placements: &[Placement], guids_of: impl Fn(i16) -> Vec<u32>, resources: &BTreeMap<u32, ObjResources>, tick: u32, poses: &mut IdlePoses) -> Vec<(Draw, bool)> {
+fn object_parts(models: &Models, placements: &[Placement], guids_of: impl Fn(i16) -> Vec<u32>, resources: &BTreeMap<u32, ObjResources>, tick: u32, poses: &mut IdlePoses, graphic: impl Fn(i16) -> i16, plays: &Plays) -> Vec<(Draw, bool)> {
     let mut out = Vec::new();
     for p in placements {
         let guids = guids_of(p.leader);
@@ -222,7 +266,8 @@ fn object_parts(models: &Models, placements: &[Placement], guids_of: impl Fn(i16
             drawn.push(record);
             let rec = models.parts.record(record);
             let skeleton = models.sources.skeletons.get(&r.model).or_else(|| models.sources.skeletons.get(&id));
-            let posed = skeleton.zip(models.sources.anims.get(&r.idle)).and_then(|(s, a)| poses.pose((p.leader, record), (r.model, r.idle), (s, a), idle_place(a, tick), (&root, rec.scale)));
+            let playing = r.animation(graphic(p.leader));
+            let posed = skeleton.zip(models.sources.anims.get(&playing)).and_then(|(s, a)| poses.pose((p.leader, record), (r.model, playing), (s, a), plays.place(p.leader, a, tick), (&root, rec.scale)));
             let bones = posed.as_ref().map(|b| &b.0);
             let hidden = |bone: Option<usize>| posed.as_ref().zip(bone).is_some_and(|(p, b)| p.1.get(b).is_some_and(|pose| pose.flags & NODE_HIDDEN != 0));
             for part in models.parts.parts_of(record).filter(|p| !p.skinned() && !hidden(p.bone())) {
@@ -583,11 +628,11 @@ impl LotArt {
 /// `res` is `quickdata::object_resources` of the disc's `SimsObjects`, `house` the lot's house
 /// number (its `HouseData` row: the loaded lot does not keep it).
 pub fn lot_draws_of(world: &crate::world::World, res: &BTreeMap<u32, ObjResources>, models: &Models, disc: &Disc, house: usize, tick: u32, eye: Option<[f32; 2]>) -> LotDraws {
-    lot_draws_with(world, res, models, &LotArt::read(disc, house), tick, eye, &mut IdlePoses::default())
+    lot_draws_with(world, res, models, &LotArt::read(disc, house), tick, eye, &mut IdlePoses::default(), &Plays::default())
 }
 
 /// `lot_draws_of` with the disc's art read already (a caller that draws every tick).
-pub fn lot_draws_with(world: &crate::world::World, res: &BTreeMap<u32, ObjResources>, models: &Models, art: &LotArt, tick: u32, eye: Option<[f32; 2]>, poses: &mut IdlePoses) -> LotDraws {
+pub fn lot_draws_with(world: &crate::world::World, res: &BTreeMap<u32, ObjResources>, models: &Models, art: &LotArt, tick: u32, eye: Option<[f32; 2]>, poses: &mut IdlePoses, plays: &Plays) -> LotDraws {
     let (fences, patterns, outer_lot) = (&art.fences, &art.patterns, art.outer_lot);
     let parts: Vec<crate::scene::Part> = world
         .objects()
@@ -602,7 +647,7 @@ pub fn lot_draws_with(world: &crate::world::World, res: &BTreeMap<u32, ObjResour
     }
     let guids_of = |id: i16| world.find_object(id).map(|o| o.guid).into_iter().chain(named.get(&id).into_iter().flatten().copied()).collect::<Vec<u32>>();
     let guids: BTreeMap<i16, Vec<u32>> = placements.iter().map(|p| (p.leader, guids_of(p.leader))).collect();
-    let parts = object_parts(models, &placements, guids_of, res, tick, poses);
+    let parts = object_parts(models, &placements, guids_of, res, tick, poses, |id| plays.graphic(world, id), plays);
     let mut draws: Vec<Draw> = parts.iter().map(|p| p.0).collect();
     let pieces = crate::scene::wall_pieces(&world.walls, 64, fences);
     let windows = window_edges(models, &placements, guids_of, res);

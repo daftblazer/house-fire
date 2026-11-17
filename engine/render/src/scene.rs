@@ -22,6 +22,8 @@ pub const ALPHA_REF: u8 = 128;
 /// alpha, with no alpha test. Read from the log's material records, and checked by the pixels
 /// those draws cover (`docs/assets.md`, "The renderer"); the blend state itself is not logged.
 pub const LAYER_BLENDED: u8 = 0x40;
+/// The layer's blend byte (+0x11) of an additive layer.
+const LAYER_BLEND_ADD: u8 = 2;
 
 /// Whether a state's viewport (`StateRec::viewport`: left, top, width, height, near, far) is
 /// an inner one: the lot's is the whole 640 by 448 picture.
@@ -459,7 +461,9 @@ pub(crate) fn material_of(m: &MaterialRec, lit: bool, bound: [Option<TextureRef>
         if bound[0].is_some() {
             mat.combine = Combine::Modulate { unlit: l(0, 0x15) == 1 };
             if m.layer[0][7] & LAYER_BLENDED != 0 {
-                mat.blend = Blend::ALPHA;
+                // the layer's blend byte: 2 adds the source's alpha times its colour (the dance
+                // floor's light cones and pools), else the colour is mixed over by its alpha
+                mat.blend = if l(0, 0x11) == LAYER_BLEND_ADD { Blend::ADD } else { Blend::ALPHA };
             } else {
                 mat.alpha_test = Some(AlphaTest::at_least(ALPHA_REF));
             }
@@ -541,6 +545,12 @@ fn logged_position_uv(m: &[[f32; 12]; 2]) -> PositionUv {
 /// positions (the texture matrix being the identity, as the logged terrain draws have it).
 pub(crate) fn shader_position_uv(offset: [f32; 2], scale: [f32; 2]) -> PositionUv {
     PositionUv { u: [scale[0] / FLOOR_POSITION_UNIT, 0.0, offset[0]], v: [0.0, scale[1] / FLOOR_POSITION_UNIT, offset[1]] }
+}
+
+/// A second layer read at one point whatever the position (the logged reflection layers of the
+/// floors: the matrices' position terms are about 5e-7).
+pub(crate) fn constant_uv(at: [f32; 2]) -> PositionUv {
+    PositionUv { u: [0.0, 0.0, at[0]], v: [0.0, 0.0, at[1]] }
 }
 
 /// A floor mesh's world matrix: its positions are 64ths of a tile.
