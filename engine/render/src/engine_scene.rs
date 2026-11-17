@@ -603,9 +603,11 @@ impl Lot {
                 }
             }
             let Some(&first) = best.first() else { continue };
-            let at = wrap_place(anim, (first + best[best.len() - 1]) / 2.0 + behind * frames_per_copy(anim.rate));
-            let play = out.by_id.entry(p.leader).or_insert(Play { graphic, frames: None, anchor: None });
+            let mid = (first + best[best.len() - 1]) / 2.0;
+            let at = wrap_place(anim, mid + behind * frames_per_copy(anim.rate));
+            let play = out.by_id.entry(p.leader).or_insert(Play { graphic, frames: None, anchor: None, anchor_at_build: None });
             play.anchor = Some(at);
+            play.anchor_at_build = Some(mid);
         }
         out
     }
@@ -616,7 +618,7 @@ impl Lot {
         // the eye: -R^T t of the view
         let eye = [0, 1].map(|i| -(0..3).map(|r| view[4 * r + i] * view[4 * r + 3]).sum::<f32>());
         let lot = housefire::drawlist::lot_draws_with(world, &self.resources, &self.models, &self.art, Some(eye), &mut self.poses.borrow_mut(), plays);
-        let lamps = housefire::lamps::on_lot_at(&lot.placements, |id| lot.guids.get(&id).cloned().unwrap_or_default(), |id| plays.graphic(world, id), |id, anim| plays.place(id, anim), &self.resources, &self.models.sources);
+        let lamps = housefire::lamps::on_lot_at(&lot.placements, |id| lot.guids.get(&id).cloned().unwrap_or_default(), |id| plays.graphic(world, id), |id, anim| plays.place_at_build(id, anim), &self.resources, &self.models.sources);
         let g = |i: usize| world.globals.get(i).copied().map_or(0, i32::from);
         let clock = (g(0), g(5), g(6));
         let mut lights = housefire::lighting::LotLights::build(world, &self.resources, &lamps, clock);
@@ -712,7 +714,7 @@ pub fn run_to(replay: &mut housefire::replay::Replay<'_>, log: &housefire::tree_
         observe(replay);
     }
     let now = copies(tick) + DISPLAY_COPIES_AFTER_TICK;
-    housefire::drawlist::Plays { tick, by_id: seen.into_iter().map(|(id, (graphic, changed))| (id, Play { graphic, frames: changed.map(|t| now.saturating_sub(copies(t))), anchor: None })).collect() }
+    housefire::drawlist::Plays { tick, by_id: seen.into_iter().map(|(id, (graphic, changed))| (id, Play { graphic, frames: changed.map(|t| now.saturating_sub(copies(t))), anchor: None, anchor_at_build: None })).collect() }
 }
 
 /// What the engine makes of a frame, to be put in the original's order (`assemble`).

@@ -172,6 +172,9 @@ pub struct Play {
     pub frames: Option<u32>,
     /// The animation's frame, from the lights the original logged: it wins over `frames`.
     pub anchor: Option<f32>,
+    /// The same animation's frame at the light grid's last build (the lights' places the grid
+    /// and the lit draws read): `anchor` less the display copies since.
+    pub anchor_at_build: Option<f32>,
 }
 
 /// The objects' plays on a tick: those the run changed or kept, by id (an object not in it is as
@@ -211,6 +214,17 @@ impl Plays {
             Some(Play { anchor: Some(at), .. }) => *at,
             Some(Play { frames: Some(frames), .. }) => wrap_place(anim, *frames as f32 * frames_per_copy(anim.rate)),
             _ => idle_place(anim, self.tick),
+        }
+    }
+}
+
+impl Plays {
+    /// The frame the animation was at when the light grid was last built, which is where the
+    /// lamps' lights are for the grid and the lit draws (`place` when the log does not say).
+    pub fn place_at_build(&self, id: i16, anim: &Anim) -> f32 {
+        match self.by_id.get(&id) {
+            Some(Play { anchor_at_build: Some(at), .. }) => *at,
+            _ => self.place(id, anim),
         }
     }
 }

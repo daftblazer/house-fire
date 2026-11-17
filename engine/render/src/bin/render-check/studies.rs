@@ -91,7 +91,19 @@ pub fn light_study(made: &[engine_scene::Made], oracle: &[([f32; 12], Lighting, 
         if !counted.insert((d.centre[0].to_bits(), d.centre[1].to_bits(), d.edge.map(|e| (e[1][0].to_bits(), e[1][1].to_bits())))) { continue; }
         let places = |ps: &[frame::Point]| { let mut k: Vec<String> = ps.iter().map(|p| format!("{:.1?}", to_world(p.position))).collect(); k.sort(); k };
         let (l, e) = (places(logged), places(&ours));
+        // the same lights up to a moving lamp's drift (0.15 of a tile), whatever the order
+        let close = |a: &[frame::Point], b: &[frame::Point]| a.iter().all(|p| b.iter().any(|q| (0..3).all(|k| (to_world(p.position)[k] - to_world(q.position)[k]).abs() < 0.15))) && b.iter().all(|q| a.iter().any(|p| (0..3).all(|k| (to_world(p.position)[k] - to_world(q.position)[k]).abs() < 0.15)));
         let kind = if d.edge.is_some() { "wall or fence" } else { "object" };
+        if std::env::var_os("HF_CELLSTUDY").is_some() && d.edge.is_none() {
+            // the grid points (offsets from the place's floor) whose set is the log's
+            let (fx, fy) = (d.origin[0].floor() as i32, d.origin[1].floor() as i32);
+            let hits: Vec<(i32, i32)> = (-1..=2).flat_map(|dx| (-1..=2).map(move |dy| (dx, dy))).filter(|&(dx, dy)| {
+                let Lighting::Lit { points, .. } = engine_scene::lighting_for(&plan.lights.at_in(d.centre, [(fx + dx) as f32, (fy + dy) as f32]), &view, None) else { return false };
+                close(&points, logged)
+            }).collect();
+            let angle = plan.placements.iter().find(|p| p.leader == d.object).map(|p| p.angle);
+            println!("CELL {} origin {:?} angle {angle:?} hits {hits:?}", m.info.model, d.origin);
+        }
         let t = tally.entry(kind).or_default();
         if l == e {
             t.0 += 1;
@@ -301,6 +313,17 @@ pub fn draw_order(scene: &Scene) {
 }
 
 pub fn list_model(scene: &Scene, name: &str) {
+    // HF_LISTLIGHT=1 adds each draw's logged light set in world space
+    let v = scene.frame.camera.view;
+    let to_world = |p: [f32; 3]| -> [f32; 3] { let q = [p[0] - v[3], p[1] - v[7], p[2] - v[11]]; [0, 1, 2].map(|c| (0..3).map(|r| v[4 * r + c] * q[r]).sum::<f32>()) };
+    if std::env::var_os("HF_LISTLIGHT").is_some() {
+        for (i, d) in scene.frame.draws.iter().enumerate().filter(|(_, d)| scene.drawn[d.id as usize - 1].model[..] == *name) {
+            if let Lighting::Lit { ambient, points, directionals } = &d.lighting {
+                let pts: Vec<String> = points.iter().map(|p| format!("{:.2?} col {:.3?} k {} {}", to_world(p.position), p.colour, p.k0, p.k1)).collect();
+                println!("  light {i}: amb {ambient:.3?} dirs {} pts {}", directionals.len(), pts.join(" | "));
+            }
+        }
+    }
     // (study aid: the draws of a model in draw order: its mesh's vertices, textures, flags, state)
     for (i, d) in scene.frame.draws.iter().enumerate().filter(|(_, d)| scene.drawn[d.id as usize - 1].model[..] == *name) {
         let info = &scene.drawn[d.id as usize - 1];
