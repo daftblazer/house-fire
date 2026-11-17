@@ -44,33 +44,50 @@ fn decoded(l: &Logged) -> Vec<[u8; 3]> {
     texture::decode_indexed(Kind::Palette8, 128, 128, &l.texels, &pal, l.format).unwrap_or_default().iter().map(|&c| [c as u8, (c >> 8) as u8, (c >> 16) as u8]).collect()
 }
 
+/// The mean absolute difference per channel of two pictures.
+fn mean_error(a: &[[u8; 3]], b: &[[u8; 3]]) -> f64 {
+    let sum: u64 = a.iter().zip(b).map(|(a, b)| a.iter().zip(b).map(|(&x, &y)| u64::from(x.abs_diff(y))).sum::<u64>()).sum();
+    sum as f64 / (3 * a.len()) as f64
+}
+
+/// A picture is a logged texture's when its mean error against it is under this (the logged
+/// image is quantized: a few levels).
+const NEAR: f64 = 8.0;
+
 pub fn study(log: &Log, d: &Disc, ngh: &[u8]) {
     let logs = logged(log);
     println!("sim textures: the log has {} 128 x 128 C8 images with their palettes", logs.len());
     for (i, l) in logs.iter().enumerate() {
-        println!("  log {i}: first set up at tick {}, {} palette entries of format {}", l.tick, l.palette.len(), l.format);
+        println!("  log {i}: first set up at tick {}, {} palette entries of format {}", l.tick, l.palette.iter().rposition(|&e| e != 0).map_or(0, |p| p + 1), l.format);
     }
     let Some(cast) = Cast::read(d, ngh) else { return println!("sim textures: no cast") };
     let arc = d.read("rletextu.arc").unwrap_or_default();
     let made = housefire::save::read_created_sims(ngh).unwrap_or_default();
     let decoded: Vec<Vec<[u8; 3]>> = logs.iter().map(decoded).collect();
+    let (mut same, mut paired) = (0, 0);
     for m in &made {
         let desc = Description::from_save(m);
-        for tinted_clothes in [true, false] {
-            let stack = sim_texture::layer_stack(&cast.tables, &desc, Conditions { tinted_clothes });
-            let Some(pic) = sim_texture::picture(&arc, &stack) else {
-                println!("sim {} {}: a layer is not in rletextu.arc ({} layers)", m.first_name, m.last_name, stack.len());
-                continue;
-            };
-            let errs: Vec<String> = decoded
-                .iter()
-                .enumerate()
-                .map(|(i, img)| {
-                    let e: u64 = img.iter().zip(&pic).map(|(a, b)| a.iter().zip(b).map(|(&x, &y)| u64::from(x.abs_diff(y))).sum::<u64>()).sum();
-                    format!("log {i}: {:.2}", e as f64 / (3 * 128 * 128) as f64)
-                })
-                .collect();
-            println!("sim {} {} (male {}, adult {}, {} layers, tinted clothes {tinted_clothes}): mean abs error {}", m.first_name, m.last_name, desc.male, desc.adult, stack.len(), errs.join(", "));
-        }
+        let stack = sim_texture::layer_stack(&cast.tables, &desc, Conditions { tinted_clothes: true });
+        let Some(pics) = sim_texture::pictures(&arc, &stack) else {
+            println!("sim {} {}: a layer is not in rletextu.arc ({} layers)", m.first_name, m.last_name, stack.len());
+            continue;
+        };
+        // the log texture it is nearest to, if near
+        let Some((i, err)) = decoded.iter().enumerate().map(|(i, img)| (i, mean_error(img, &pics.indexing))).min_by(|a, b| a.1.total_cmp(&b.1)).filter(|&(_, e)| e < NEAR) else { continue };
+        let t = sim_texture::reduce(&pics);
+        let l = &logs[i];
+        let texels = t.indices.iter().zip(&l.texels).filter(|(a, b)| a != b).count();
+        let entries = (0..256).filter(|&k| t.palette.get(k).copied().unwrap_or(0) != l.palette[k]).count();
+        paired += 1;
+        same += usize::from(texels == 0 && entries == 0);
+        println!(
+            "sim {} {} ({} layers) = log {i} (error before the palette {err:.2}): {} palette entries, {texels} of {} texels and {entries} of 256 palette entries differ",
+            m.first_name,
+            m.last_name,
+            stack.len(),
+            t.palette.len(),
+            t.indices.len()
+        );
     }
+    println!("sim textures: {same} of {paired} paired Sims equal ({} logged textures)", logs.len());
 }

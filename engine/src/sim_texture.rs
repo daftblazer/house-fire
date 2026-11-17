@@ -15,6 +15,7 @@
 //! GPU-free and deterministic: floats only in the tints, as the original's.
 
 use crate::outfit::{Description, PartTables, Slot};
+use crate::quantizer::Quantizer;
 use crate::rle_texture::{self, RleTexture};
 
 /// The composed picture's side before the blur, and the image's after it.
@@ -301,12 +302,18 @@ pub fn compose(planes: &[Plane]) -> Vec<u32> {
 /// The composed picture blurred and halved: each output texel the 1 2 1 / 2 4 2 / 1 2 1 kernel
 /// (sixteenths, rounded) about the picture's texel (2x, 2y), the edges repeating; as red, green
 /// and blue bytes.
-pub fn halve(full: &[u32]) -> Vec<[u8; 3]> {
+///
+/// The original blurs the picture twice, once to build the palette and once to index (its rows
+/// go through three buffers swapped by pointer, and after the first pass's 127 swaps the second
+/// starts with two of them exchanged): in the second pass (`indexing`) the output's second row
+/// has the picture's first row, not its second, before it.
+pub fn halve(full: &[u32], indexing: bool) -> Vec<[u8; 3]> {
     let at = |x: usize, y: usize, c: u32| (full[y * FULL + x] >> (8 * c)) & 0xFF;
     let mut out = Vec::with_capacity(SIDE * SIDE);
     for y in 0..SIDE {
         // the row before the first repeats the first
-        let rows = [(2 * y).saturating_sub(1), 2 * y, 2 * y + 1];
+        let before = if indexing && y == 1 { 0 } else { (2 * y).saturating_sub(1) };
+        let rows = [before, 2 * y, 2 * y + 1];
         for x in 0..SIDE {
             let cols = [(2 * x).saturating_sub(1), 2 * x, (2 * x + 1).min(FULL - 1)];
             let mut px = [0u8; 3];
@@ -325,9 +332,16 @@ pub fn halve(full: &[u32]) -> Vec<[u8; 3]> {
     out
 }
 
-/// The 128 x 128 picture of a Sim before it is reduced to a palette, from the disc's
-/// `rletextu.arc` (`arc` its bytes): `None` if a layer's resource is not there.
-pub fn picture(arc: &[u8], stack: &[Layer]) -> Option<Vec<[u8; 3]>> {
+/// The 128 x 128 pictures of a Sim before they are reduced to a palette: the one its palette is
+/// made from and the one its texels are indexed from (they differ in one row, `halve`).
+pub struct Pictures {
+    pub palette: Vec<[u8; 3]>,
+    pub indexing: Vec<[u8; 3]>,
+}
+
+/// The pictures of a Sim from the disc's `rletextu.arc` (`arc` its bytes): `None` if a layer's
+/// resource is not there.
+pub fn pictures(arc: &[u8], stack: &[Layer]) -> Option<Pictures> {
     let entries = crate::arc::entries(arc)?;
     let planes: Option<Vec<Plane>> = stack
         .iter()
@@ -336,5 +350,41 @@ pub fn picture(arc: &[u8], stack: &[Layer]) -> Option<Vec<[u8; 3]>> {
             Some(Plane::new(&rle_texture::read(crate::arc::bytes(arc, e))?, l.tint))
         })
         .collect();
-    Some(halve(&compose(&planes?)))
+    let full = compose(&planes?);
+    Some(Pictures { palette: halve(&full, false), indexing: halve(&full, true) })
+}
+
+/// A Sim's finished texture: its image as GX C8 indices (tiles of 8 texels by 4, tile after tile
+/// across the rows) and its palette's entries (RGB5A3, as the original writes them).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SimTexture {
+    pub indices: Vec<u8>,
+    pub palette: Vec<u16>,
+}
+
+/// The octree parameter the composer builds its quantizer with.
+const QUANTIZER_MEMORY: u32 = 0x7F00;
+
+/// The picture reduced to a palette of up to 256 colours and indexed, as the composer does:
+/// the palette made from the picture's colours in row order, then each texel's nearest entry.
+pub fn reduce(pictures: &Pictures) -> SimTexture {
+    let mut q = Quantizer::new(256, QUANTIZER_MEMORY);
+    for &px in &pictures.palette {
+        q.add(px);
+    }
+    q.finish();
+    // RGB5A3 with no transparency: 0x8000 and five bits of each colour
+    let palette = (0..q.len())
+        .map(|i| {
+            let [r, g, b] = q.colour(i);
+            0x8000 + (u16::from(r >> 3) << 10) + (u16::from(g >> 3) << 5) + u16::from(b >> 3)
+        })
+        .collect();
+    let mut indices = vec![0u8; SIDE * SIDE];
+    for (i, &px) in pictures.indexing.iter().enumerate() {
+        let (x, y) = (i % SIDE, i / SIDE);
+        let tile = (y / 4) * (SIDE / 8) + x / 8;
+        indices[tile * 32 + (y % 4) * 8 + x % 8] = q.nearest(px);
+    }
+    SimTexture { indices, palette }
 }

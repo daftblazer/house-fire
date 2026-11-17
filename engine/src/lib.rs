@@ -22,6 +22,7 @@ pub mod pose;
 pub mod primitives;
 pub mod replay;
 pub mod rle_texture;
+pub mod quantizer;
 pub mod sim_texture;
 pub mod quickdata;
 pub mod scene;
