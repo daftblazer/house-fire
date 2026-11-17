@@ -2177,11 +2177,28 @@ Where each part comes from (library: `drawlist`, `lighting`, `shader::index`; re
     0.275 ...) match the log's to the byte; 72 of the 98 object places have the four lights the
     log's set has (66 with the exact place, 71 with the grid point above); a lamp's light is its
     colour times the tint, its falloff 1 + 0.1 x reach x distance.
-  - a wall piece or fence is lit from the grid points at the two ends of its edge
-    (`LotLights::along`, `drawlist::edge_of`): the two strongest lights of each end, so a light
-    both ends share is in the set twice, as the log's sets are ([a, b, a, c]). 21 of 35 wall and
-    fence sets equal the log's; the rest differ by one light (the lamp at (15.5, 14.5), which the
-    engine keeps out of the room, is the common one).
+  - a wall piece or diagonal is lit from the grid points at the two ends of its edge
+    (`LotLights::along`, `drawlist::edge_of`), two lights from each end, so a light both ends
+    share is in the set twice, as the log's sets are ([a, b, a, c]). The two are not the cell's
+    first two (that gave 44 of 84 wall, diagonal and fence sets):
+    they are the cell's first slot and the first of slots 1 and 2 that is of the other kind (a
+    lamp, an own light, index 256 and up, against a window's light), else slot 1
+    (`LotLights::end_pair`). So a cell [window, window, lamp, lamp] gives (0, 2), [window, lamp,
+    ...] (0, 1), and [window, window, window, lamp] (0, 1): the lamp in the last slot is left out
+    (home, frame 2400; the club's walls are not checked). The rule is
+    fitted to the log; no single grid point gives such a pair, and why the original stops at slot
+    2 is not read (the walls' light set is not made by the object path, 0x8017BF80, which copies a
+    cell's lights for a place and room; its callers are 0x80053734 and 0x801648B8).
+  - a fence stands on its edge and takes all four lights of the grid point at the edge's first end
+    (`LotLights::fence`), like an object. (A fence's place is the
+    middle of its edge, a wall piece's the tile's centre.) All 84 wall, diagonal and fence sets
+    of the home lot are the log's (`HF_LIGHTSTUDY=1` with `HF_ORACLE=1` prints `LSUM` per kind,
+    and `LD` for each set that differs). The objects' sets: 69 of 79 places (`LSUM object`),
+    unchanged. What differs: the doors and windows on an edge (the room is not found by one rule:
+    the log's room is the one across the edge for windows at y = 14.0 and 15.0, the one before it for
+    the windows at x = 13.0, the back wall at y = 24.0 and the door at y = 15.0, not by `room_at`),
+    the trash can, the rose bushes and the cacti outdoors (a cell one tile off, or a place that is
+    not the object's own position), and the outer lot's model (no light set logged).
 - Diagonal walls (`drawlist::diagonal_draws`; they were the largest of C1's leftovers): the face
   of the tile's `wall_diagonal` model that turns to the eye. The model is turned 45 degrees in its
   own frame, so the face's normal is taken from the 5 seen tiles (a "/" faces (-1, -1) at turn 0 and
@@ -2198,6 +2215,9 @@ within 4 in every channel:
 |---|---|---|---|
 | rigid draws' pixels | 79,447: 97.63% | 81,608: 84.73% (12,464 beyond) | 86.62% (10,921 beyond) |
 | whole frame | 88.89% | 85.28% | 85.81% |
+
+L1 (the wall and fence light sets equal the log's): engine mode, rigid draws 89.17% to 91.32% on
+2400 (91.31% on 2401), whole frame 85.92% to 86.51% (86.50%); log mode unchanged.
 
 The engine mode is **below** the aim of 91.82% for the rigid pixels (C3 took it from 84.73% to
 86.64% on 2400, 86.62% on 2401). How it got there (frame 2400): the draws with the log's light sets
@@ -2241,7 +2261,7 @@ What is left, in pixels of the 10,725 beyond (frame 2400, 2401 within 15):
   frame meshes, 0 in the shader: not used by the renderer). The order did not matter (walls first:
   the same figure). Not found.
 - 2,147 + 851 + 1,228 + 459 of the walls, the windowed walls, the diagonals and the fence
-  (3 to 5 levels off): the light sets (14 of 35 differ in one light).
+  (3 to 5 levels off): the light sets (L1: the walls' and fences' now equal the log's).
 - 678 + 78 of the money trunk (object 248) and the cheat gnome (105), drawn by the engine, not
   by the original. Checked and ruled out: the log's object list (both in it), flags (2 and 2,048,
   others with 2 are drawn), the objects' data fields (only field 33 = 8, with 36 = 20 and 37 = 64,

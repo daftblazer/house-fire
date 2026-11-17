@@ -212,6 +212,30 @@ fn main() -> ExitCode {
                 let pts: Vec<String> = points.iter().map(|p| format!("pt {:.2?} col {:.3?} k1 {}", to_world(p.position), p.colour, p.k1)).collect();
                 println!("LS {} at {:?} amb {:.3?} {} {}", m.info.model, org, ambient, dirs.join(" "), pts.join(" "));
             }
+            // the engine's point lights against the log's (needs HF_ORACLE=1 for the log's), once for
+            // each place and edge: `LSUM` counts the same sets by kind, `LD` shows the ones that differ
+            let mut tally: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
+            let mut counted = std::collections::BTreeSet::new();
+            for m in &made {
+                let d = &plan.draws[m.from];
+                let Some(o) = oracle.iter().find(|o| (0..12).all(|i| (o.0[i] - m.draw.world[i]).abs() < 1e-4 * if i % 4 == 3 { 1.0 } else { 0.05 })) else { continue };
+                let Lighting::Lit { points: logged, .. } = &o.1 else { continue };
+                let Lighting::Lit { points: ours, .. } = engine_scene::lighting_for(&plan.lights.of(d), &view) else { continue };
+                if !counted.insert((d.origin[0].to_bits(), d.origin[1].to_bits(), d.edge.map(|e| (e[1][0].to_bits(), e[1][1].to_bits())))) { continue; }
+                let places = |ps: &[frame::Point]| { let mut k: Vec<String> = ps.iter().map(|p| format!("{:.1?}", to_world(p.position))).collect(); k.sort(); k };
+                let (l, e) = (places(logged), places(&ours));
+                let kind = if d.edge.is_some() { "wall or fence" } else { "object" };
+                let t = tally.entry(kind).or_default();
+                if l == e {
+                    t.0 += 1;
+                } else {
+                    t.1 += 1;
+                    println!("LD {kind} {} at {:?} edge {:?}\n    log {l:?}\n    eng {e:?}", m.info.model, d.origin, d.edge);
+                }
+            }
+            for (kind, (same, differ)) in tally {
+                println!("LSUM {kind}: same {same}, differ {differ}");
+            }
             println!("LS clock {:?}; the engine's sun {:?}", plan.clock, plan.lights.at(1.0, 1.0).sun);
             let mut shown = std::collections::BTreeSet::new();
             for (d, m) in made.iter().map(|m| (&plan.draws[m.from], m)) {

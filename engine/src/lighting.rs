@@ -184,6 +184,33 @@ impl LotLights {
             .collect()
     }
 
+    /// The four lights (source indices, 0xFFFF for an empty slot) of the light grid's cell at
+    /// `point` for `room`.
+    fn cell(&self, room: usize, point: [f32; 2]) -> Option<[u16; 4]> {
+        let geometry: Vec<([f32; 3], f32)> = self.sources.iter().map(|s| (s.at, s.reach)).collect();
+        let r = self.ranges.get(room)?;
+        light::cell_lights([point[0], point[1], light::GRID_Z], (r[2], r[3]), (r[0], r[1]), &geometry)
+    }
+
+    /// What lights a fence at (x, y) whose edge starts at `start`: the four lights of the light
+    /// grid's point there, as an object's, in the room of the tile.
+    pub fn fence(&self, x: f32, y: f32, start: [f32; 2]) -> Lights {
+        let room = self.room(x.floor() as i32, y.floor() as i32);
+        let points = self.cell(room, start).map_or(Vec::new(), |ids| ids.iter().filter(|&&i| i != 0xFFFF).map(|&i| self.sources[usize::from(i)]).collect());
+        Lights { ambient: self.ambients.get(room).copied().unwrap_or([0.0; 3]), sun: (room == 0).then_some(self.sun), points }
+    }
+
+    /// The two of a cell's four lights a wall piece takes at an end: the strongest, and the
+    /// first of the next two that is not of its kind (a lamp, an own light from 256, or a
+    /// window's other light), else the second. Fitted to the log's wall sets (home, frame 2400:
+    /// all 84 wall, diagonal and fence sets); the original's reason for slots 0 to 2 only (so a lamp
+    /// ranked last is left out beside three windows) is not known.
+    fn end_pair(slots: [u16; 4]) -> [u16; 2] {
+        let own = |i: u16| i >= 256 && i != 0xFFFF;
+        let second = slots[1..3].iter().copied().find(|&i| own(i) != own(slots[0])).unwrap_or(slots[1]);
+        [slots[0], second]
+    }
+
     /// The room an object at (x, y) is in (`room_at`: the tile before an edge).
     pub fn room_of_place(&self, x: f32, y: f32) -> usize {
         self.room_at(x, y)
@@ -193,22 +220,22 @@ impl LotLights {
     /// at its place.
     pub fn of(&self, d: &crate::drawlist::Draw) -> Lights {
         match d.edge {
+            // a fence stands on its edge (its place is the edge's middle), a wall piece's place is
+            // its tile's centre, half a tile off the edge
+            Some(ends) if (0..2).all(|k| (d.origin[k] - 0.5 * (ends[0][k] + ends[1][k])).abs() < 1e-3) => self.fence(d.origin[0], d.origin[1], ends[0]),
             Some(ends) => self.along(d.origin[0], d.origin[1], ends),
             None => self.at(d.origin[0], d.origin[1]),
         }
     }
 
-    /// What lights a wall piece or a fence on the edge from `ends[0]` to `ends[1]`, in the room of
-    /// the tile (x, y): the two strongest lights at each end (the original lights a wall from the
-    /// light grid's points at its ends: the log's sets are a pair of lights from each end,
-    /// the same light twice where the ends share it).
+    /// What lights a wall piece (or diagonal) on the edge from `ends[0]` to `ends[1]`, in the room
+    /// of the tile (x, y): two lights from the light grid's point at each end (`end_pair`; the
+    /// log's sets are such a pair from each end, the same light twice where the ends share it).
     pub fn along(&self, x: f32, y: f32, ends: [[f32; 2]; 2]) -> Lights {
         let room = self.room(x.floor() as i32, y.floor() as i32);
-        let geometry: Vec<([f32; 3], f32)> = self.sources.iter().map(|s| (s.at, s.reach)).collect();
         let mut points = Vec::new();
         for e in ends {
-            let ids = self.ranges.get(room).and_then(|r| light::cell_lights([e[0], e[1], light::GRID_Z], (r[2], r[3]), (r[0], r[1]), &geometry));
-            points.extend(ids.into_iter().flatten().take(2).filter(|&i| i != 0xFFFF).map(|i| self.sources[usize::from(i)]));
+            points.extend(self.cell(room, e).into_iter().flat_map(Self::end_pair).filter(|&i| i != 0xFFFF).map(|i| self.sources[usize::from(i)]));
         }
         Lights { ambient: self.ambients.get(room).copied().unwrap_or([0.0; 3]), sun: (room == 0).then_some(self.sun), points }
     }
@@ -234,12 +261,7 @@ impl LotLights {
     /// the home lot's 98 object places give the log's four lights, `docs/assets.md`).
     pub fn at(&self, x: f32, y: f32) -> Lights {
         let room = self.room_at(x, y);
-        let geometry: Vec<([f32; 3], f32)> = self.sources.iter().map(|s| (s.at, s.reach)).collect();
-        let points = self
-            .ranges
-            .get(room)
-            .and_then(|r| light::cell_lights([x.round(), y.round(), light::GRID_Z], (r[2], r[3]), (r[0], r[1]), &geometry))
-            .map_or(Vec::new(), |ids| ids.iter().filter(|&&i| i != 0xFFFF).map(|&i| self.sources[usize::from(i)]).collect());
+        let points = self.cell(room, [x.round(), y.round()]).map_or(Vec::new(), |ids| ids.iter().filter(|&&i| i != 0xFFFF).map(|&i| self.sources[usize::from(i)]).collect());
         Lights { ambient: self.ambients.get(room).copied().unwrap_or([0.0; 3]), sun: (room == 0).then_some(self.sun), points }
     }
 }
@@ -302,5 +324,15 @@ mod tests {
         assert_eq!(l.room(-1, 0), 0);
         assert_eq!(l.room(9, 9), 0);
         assert_eq!(l.room(1, 3), 1);
+    }
+
+    #[test]
+    fn a_wall_takes_the_strongest_light_and_the_first_other_kind_of_the_next_two() {
+        // windows (below 256) and lamps (from 256): [window, window, lamp, lamp] takes the lamp, a lamp
+        // ranked last beside three windows is left out
+        assert_eq!(LotLights::end_pair([1, 2, 256, 257]), [1, 256]);
+        assert_eq!(LotLights::end_pair([1, 2, 3, 256]), [1, 2]);
+        assert_eq!(LotLights::end_pair([256, 1, 2, 3]), [256, 1]);
+        assert_eq!(LotLights::end_pair([1, 256, 2, 257]), [1, 256]);
     }
 }
