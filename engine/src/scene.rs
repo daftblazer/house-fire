@@ -76,31 +76,154 @@ pub struct WallPiece {
     pub form: Form,
 }
 
-/// A wall part's form: straight, or reaching past one end to meet the wall round an outer
-/// corner: `_left_extends` at its end towards +t, `_right_extends` towards -t, t = (cos a, sin a)
-/// for its turn a.
+/// What a wall piece's model does at one end of its wall: nothing, reach past it to meet the wall
+/// round an outer corner, or close it (a free end: no wall of any kind leaves that corner).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum End {
+    Plain,
+    Extends,
+    Cap,
+}
+
+/// A wall piece's form, by what it does at its end towards +t (`left`) and its end towards -t
+/// (`right`), t = (cos a, sin a) for its turn a (the models' names: `_left_extends`,
+/// `_both_extends`, `_left_cap`, `_bothcap` and the mixed `_left_extends_cap`,
+/// `_right_extends_cap`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Form {
     #[default]
     Straight,
     LeftExtends,
     RightExtends,
+    BothExtends,
+    LeftCap,
+    RightCap,
+    BothCap,
+    /// Extends at the left end, closed at the right (the name's order is a guess: no part of the
+    /// lots seen has both).
+    LeftExtendsCap,
+    /// Extends at the right end, closed at the left (as `LeftExtendsCap`).
+    RightExtendsCap,
 }
 
-/// The form of the part on tile (px, py) whose wall is towards (wx, wy): at an end e (along the
-/// wall), an outer corner is a wall on the far tile's edge towards e, with none on the part's own
-/// tile's edge towards e and the wall not going on past e.
-fn form(px: i32, py: i32, wx: i32, wy: i32, solid: &dyn Fn(i32, i32, i32, i32) -> bool) -> Form {
-    // t = (cos a, sin a) for the part's turn: its normal (-sin a, cos a) is (-wx, -wy), so t is
-    // (-wy, wx)
-    let corner = |ex: i32, ey: i32| solid(px + wx, py + wy, ex, ey) && !solid(px, py, ex, ey) && !solid(px + ex, py + ey, wx, wy);
-    if corner(-wy, wx) {
-        Form::LeftExtends
-    } else if corner(wy, -wx) {
-        Form::RightExtends
-    } else {
-        Form::Straight
+impl Form {
+    pub fn of(left: End, right: End) -> Form {
+        match (left, right) {
+            (End::Plain, End::Plain) => Form::Straight,
+            (End::Extends, End::Plain) => Form::LeftExtends,
+            (End::Plain, End::Extends) => Form::RightExtends,
+            (End::Extends, End::Extends) => Form::BothExtends,
+            (End::Cap, End::Plain) => Form::LeftCap,
+            (End::Plain, End::Cap) => Form::RightCap,
+            (End::Cap, End::Cap) => Form::BothCap,
+            (End::Extends, End::Cap) => Form::LeftExtendsCap,
+            (End::Cap, End::Extends) => Form::RightExtendsCap,
+        }
     }
+
+    /// The suffix the form adds to a model's name.
+    pub fn suffix(self) -> &'static str {
+        match self {
+            Form::Straight => "",
+            Form::LeftExtends => "_left_extends",
+            Form::RightExtends => "_right_extends",
+            Form::BothExtends => "_both_extends",
+            Form::LeftCap => "_left_cap",
+            Form::RightCap => "_right_cap",
+            Form::BothCap => "_bothcap",
+            Form::LeftExtendsCap => "_left_extends_cap",
+            Form::RightExtendsCap => "_right_extends_cap",
+        }
+    }
+}
+
+/// A wall leaving a tile corner: its direction (an axis step for an edge, a diagonal step for a
+/// diagonal wall) and whether it is a fence.
+struct Arm {
+    dir: (i32, i32),
+    fence: bool,
+}
+
+/// The walls that leave the tile corner (px, py) (the corner of tiles (px - 1, py - 1) to (px, py)),
+/// along the four edges and the four diagonals through it. A fence's style is one of `fences`.
+fn arms(walls: &crate::routing::Walls, px: i32, py: i32, fences: &[u32]) -> Vec<Arm> {
+    let mut out = Vec::new();
+    // an edge's wall: between the tile (x, y) and the one (dx, dy) from it
+    let mut edge = |dir: (i32, i32), x: i32, y: i32, dx: i32, dy: i32| {
+        if walls.wall_between(x, y, dx, dy) {
+            out.push(Arm { dir, fence: fences.contains(&u32::from(walls.style(x, y, dx, dy))) });
+        }
+    };
+    edge((1, 0), px, py - 1, 0, 1);
+    edge((-1, 0), px - 1, py - 1, 0, 1);
+    edge((0, 1), px - 1, py, 1, 0);
+    edge((0, -1), px - 1, py - 1, 1, 0);
+    // a diagonal passes through the corner as the "\" of the tiles it is the north-west or
+    // south-east corner of, and the "/" of those it is the north-east or south-west corner of
+    for (dir, x, y, bit) in [((1, 1), px, py, 0x20), ((-1, -1), px - 1, py - 1, 0x20), ((-1, 1), px - 1, py, 0x10), ((1, -1), px, py - 1, 0x10)] {
+        if walls.diagonal_bits(x, y) == bit {
+            out.push(Arm { dir, fence: false });
+        }
+    }
+    out
+}
+
+/// What the corner (px, py), the end of a wall piece, asks of the piece's model. `own` is the
+/// direction of the piece's own wall from the corner (not counted); `side` says which side of the
+/// piece's face an arm is on (`Some(true)` behind the face, `Some(false)` in front, `None` along
+/// the wall's line). The end reaches past the corner when a wall (not a fence) leaves it behind
+/// the face, none leaves it in front and the wall does not go on (the outer corner); it is closed
+/// when no wall of any kind but the piece's own leaves it (a free end).
+fn end_at(walls: &crate::routing::Walls, px: i32, py: i32, fences: &[u32], own: (i32, i32), side: impl Fn((i32, i32)) -> Option<bool>) -> End {
+    let others: Vec<Arm> = arms(walls, px, py, fences).into_iter().filter(|a| a.dir != own).collect();
+    if others.is_empty() {
+        return End::Cap;
+    }
+    // (a diagonal wall at the corner is not a wall behind or in front: seen at the corners of
+    // the home lot's windows beside its diagonals)
+    let solid = |s: Option<bool>| others.iter().any(|a| !a.fence && (a.dir.0 == 0 || a.dir.1 == 0) && side(a.dir) == s);
+    if solid(Some(true)) && !solid(Some(false)) && !solid(None) {
+        End::Extends
+    } else {
+        End::Plain
+    }
+}
+
+/// The form of the part on tile (px, py) whose wall is towards (wx, wy): its ends are the wall's
+/// two corners, `left` the one towards t = (-wy, wx) (its normal (-sin a, cos a) is (-wx, -wy)).
+/// Behind its face is the side of its wall (+w).
+fn form(walls: &crate::routing::Walls, px: i32, py: i32, wx: i32, wy: i32, fences: &[u32]) -> Form {
+    let end = |ex: i32, ey: i32| {
+        let (cx, cy) = ((2 * px + 1 + wx + ex).div_euclid(2), (2 * py + 1 + wy + ey).div_euclid(2));
+        end_at(walls, cx, cy, fences, (-ex, -ey), |d| match d.0 * wx + d.1 * wy {
+            1 => Some(true),
+            -1 => Some(false),
+            _ => None,
+        })
+    };
+    Form::of(end(-wy, wx), end(wy, -wx))
+}
+
+/// The form of the face of the diagonal wall on tile (x, y) whose normal is `n` (a diagonal step,
+/// as `drawlist::diagonal_draws`): its ends are the line's two corners, `left` the one towards
+/// t = (n.y, -n.x) as for a straight part. An arm is behind the face when it points away from `n`.
+pub fn diagonal_form(walls: &crate::routing::Walls, x: i32, y: i32, n: [i32; 2], fences: &[u32]) -> Form {
+    let t = (n[1], -n[0]);
+    let ends = if walls.diagonal_bits(x, y) & 0x10 != 0 { [(x, y + 1), (x + 1, y)] } else { [(x, y), (x + 1, y + 1)] };
+    let end = |(cx, cy): (i32, i32)| {
+        // the own wall runs from the corner through the tile's centre
+        let own = (x * 2 + 1 - cx * 2, y * 2 + 1 - cy * 2);
+        end_at(walls, cx, cy, fences, own, |d| match d.0 * n[0] + d.1 * n[1] {
+            v if v < 0 => Some(true),
+            v if v > 0 => Some(false),
+            _ => None,
+        })
+    };
+    // the end towards +t is the one on t's side of the tile's centre
+    let [a, b] = ends;
+    let towards_t = (a.0 * 2 - (2 * x + 1)) * t.0 + (a.1 * 2 - (2 * y + 1)) * t.1 > 0;
+    let (left, right) = if towards_t { (end(a), end(b)) } else { (end(b), end(a)) };
+    Form::of(left, right)
 }
 
 impl WallPiece {
@@ -116,7 +239,7 @@ impl WallPiece {
 /// The pieces of the walls between the tiles of a `size`-tile lot: each edge with a wall once.
 pub fn wall_pieces(walls: &crate::routing::Walls, size: i32, fences: &[u32]) -> Vec<WallPiece> {
     let mut out = Vec::new();
-    let solid = |x: i32, y: i32, dx: i32, dy: i32| walls.wall_between(x, y, dx, dy) && !fences.contains(&u32::from(walls.style(x, y, dx, dy)));
+    
     for y in 0..size {
         for x in 0..size {
             for (dx, dy) in [(1, 0), (0, 1)] {
@@ -130,9 +253,9 @@ pub fn wall_pieces(walls: &crate::routing::Walls, size: i32, fences: &[u32]) -> 
                     out.push(WallPiece { x: cx + dx as f32 / 2.0, y: cy + dy as f32 / 2.0, angle, fence: true, pattern: style, cap: false, opening: walls.opening(x, y, dx, dy), form: Form::Straight });
                 } else {
                     let (here, there) = if dx == 1 { (90.0, -90.0) } else { (180.0, 0.0) };
-                    out.push(WallPiece { x: cx, y: cy, angle: here, fence: false, pattern: walls.pattern(x, y, dx, dy), cap: !walls.indoors(x, y), opening: walls.opening(x, y, dx, dy), form: form(x, y, dx, dy, &solid) });
+                    out.push(WallPiece { x: cx, y: cy, angle: here, fence: false, pattern: walls.pattern(x, y, dx, dy), cap: !walls.indoors(x, y), opening: walls.opening(x, y, dx, dy), form: form(walls, x, y, dx, dy, fences) });
                     let (nx, ny) = (x + dx, y + dy);
-                    out.push(WallPiece { x: cx + dx as f32, y: cy + dy as f32, angle: there, fence: false, pattern: walls.pattern(nx, ny, -dx, -dy), cap: !walls.indoors(nx, ny), opening: walls.opening(x, y, dx, dy), form: form(nx, ny, -dx, -dy, &solid) });
+                    out.push(WallPiece { x: cx + dx as f32, y: cy + dy as f32, angle: there, fence: false, pattern: walls.pattern(nx, ny, -dx, -dy), cap: !walls.indoors(nx, ny), opening: walls.opening(x, y, dx, dy), form: form(walls, nx, ny, -dx, -dy, fences) });
                 }
             }
         }

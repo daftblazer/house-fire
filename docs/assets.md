@@ -534,21 +534,29 @@ make a door edge (as routing's openings), a window's (an OBJD type 8 with field 
 `Object::window`) a window edge. At tick 1,000 every face drawn is of the engine's family: home
 47 plain, 12 window, 5 door; the club 36 plain, 3 door.
 
-A part's form (`scene::Form`, `WallPiece::form`): at an outer corner its model reaches past its
-end to meet the wall round the corner: `_left_extends` at its end towards +t, `_right_extends`
-towards -t (t = (cos a, sin a) for its turn a). An end is an outer corner when the tile across
-its wall has a wall towards that end, the part's own tile has none there and the wall does not go
-on (fences not counted). A draw shows its form by its positions (the strip's `at[2]`):
-`_right_extends` has its own, a 5-vertex cap is `_left_extends`'s, the rest are the straight
-models'. At tick 1,000 every draw so read agrees: home 111 straight, 2 left, 3 right; the club 90,
-4 and 6. A record is several sub-models drawn one after another at the part's place (each after
-its own world matrix): `wall_straight` [5, 6, 5, 18 vertices], the `_extends` forms the same
-counts with other positions, and the `_cap` / `_bothcap` forms add an end piece of 17 and 4
-vertices (`assets ISO recdiff DATASET/NAME ...` compares records). No part on either lot draws
-one: the parts whose wall ends in the open (home 14, mostly against the porch's fences; the
-club 4) draw the straight model's pieces, and no 17- or 4-vertex draw of a wall record's
-positions is at a wall part in either frame (`ASSETS_SHOW_PART_RECORDS`). So `Form::Straight` for
-them is the original's; when the `_cap` forms are used is not seen on these lots and not built.
+A part's form (`scene::Form`, `WallPiece::form`, `scene::diagonal_form`): by what its model does at
+each end of its wall (`scene::End`): reach past it (`_left_extends` at its end towards +t,
+`_right_extends` towards -t, `_both_extends`, t = (cos a, sin a) for its turn a), close it
+(`_left_cap`, `_right_cap`, `_bothcap`) or nothing. The ends are the wall's two corners; the walls
+that leave a corner are its arms (`scene::arms`: the four edges and the four diagonals through it,
+fences marked). An end reaches past its corner at an outer corner: an edge (not a fence, not a
+diagonal) leaves the corner behind the part's face, none in front of it and none goes on along the
+wall's line (for a straight part, behind is the side of its wall). An end is closed (a free end)
+when no arm but the part's own leaves the corner, fences and diagonals counted: a wall that stops
+in the open (the home lot's gap in the wall at x = 20, rows 17 to 19: `_right_cap` at (20.5, 16.5)
+and `_left_cap` at (20.5, 20.5)); the 14 ends against the porch's fences and the corners at a
+diagonal are plain. The same rule gives the diagonals' forms (a face's normal n is a diagonal step;
+t = (n.y, -n.x); behind is an arm pointing away from n): at tick 1,039 all 5 faces seen agree
+(`wall_diagonal` x2, `_left_extends`, `_right_extends`, `_both_extends`). A draw shows its form by
+its positions (the strip's `at[2]`), a cap's two pieces of 17 and 4 vertices come with the 6 and
+18 (the 5-vertex piece of the straight record is the undrawn one). At tick 1,039 every draw agrees
+(home 216 wall draws, none missing; the club's frame is not checked: no draw-window log has the
+study's clock). The mixed forms (`_left_extends_cap`, `_right_extends_cap`: one end each) are not
+seen on either lot; which of the two names is which end is a guess. A record missing for a family
+(a door's cap) draws the plain one. A record is several sub-models drawn one after another at the
+part's place (each after its own world matrix): `wall_straight` [5, 6, 5, 18 vertices], the
+`_extends` forms the same counts with other positions, and the cap forms add an end piece of 17 and
+4 vertices (`assets ISO recdiff DATASET/NAME ...` compares records).
 
 ## Floors
 
@@ -1848,12 +1856,10 @@ Left, with counts (tick 1,039).
   (`Tiled_Counter_Sink_Hole(Straight)`, `(Epikouros)`) at the two tiles beside the sink (22.5,
   23.5 and 23.5, 23.5): the engine draws the plain counter there (and 6 extras of it). Which
   variant a counter takes from the sink on it is not known.
-- 19 missing wall draws and 5 extra: the diagonal walls (a tile with a diagonal, `Walls::diagonal_bits`:
-  `wall_diagonal` and its `_left_extends`, `_right_extends`, `_both_extends` forms at the tile's
-  centre, turned 0 or 180 for a "/" (16) and 90 or -90 for a "\" (32); 15 draws at the 5 seen
-  tiles, which `scene::wall_pieces` does not make) and the `_left_cap`/`_right_cap` forms at the
-  two ends of a gap in a wall (20.5, 16.5 and 20.5, 20.5: 4 draws; the engine draws the straight
-  model there, the 5 extras). The rule for which end is extended or capped is not found.
+- 0 missing wall draws, 3 extra (L2: the diagonals' and the gap's forms, "A part's form" in "Walls"):
+  the 3 are the wall_straight piece at (13.5, 28.5), turned 180, at the screen's top edge (y -0.001),
+  which the log's screen test culls (the same cause as the objects there). The wall draws that are
+  the same went 197 to 216.
 - 218 extra, 147 of them off screen by the fitted box. The other 71 in the box are objects the
   original does not draw in the main pass: parts at the screen's top edge (the alarm clock, the
   back wall's windows, lamps, the sconces: bases within 0.05 of the edge), the 3 birch's crowns
@@ -2204,8 +2210,8 @@ Where each part comes from (library: `drawlist`, `lighting`, `shader::index`; re
   own frame, so the face's normal is taken from the 5 seen tiles (a "/" faces (-1, -1) at turn 0 and
   (1, 1) at 180, a "\" (1, -1) at 90 and (-1, 1) at -90); its pattern is the tile's byte on the sides
   opposite (the exterior siding of the corner). The forms that reach past an end
-  (`_left_extends` ...) are drawn plain (3 of the 5 tiles; the rule is still not found), the cap
-  forms at gaps in a wall are not made. The sink counters, the aquarium's fish and the pendulum are
+  (`_left_extends` ...) and the cap forms at a wall's free end are drawn by the form rule
+  (`scene::diagonal_form`; "A part's form"). The sink counters, the aquarium's fish and the pendulum are
   as before.
 
 Figures, frame 2400 (2401 the same to 10 pixels), the pixels the engine's model draws cover last,
@@ -2218,6 +2224,10 @@ within 4 in every channel:
 
 L1 (the wall and fence light sets equal the log's): engine mode, rigid draws 89.17% to 91.32% on
 2400 (91.31% on 2401), whole frame 85.92% to 86.51% (86.50%); log mode unchanged.
+
+L2 (the walls' forms): engine mode, rigid draws 91.32% to 92.32% on 2400 (92.31% on 2401), whole
+frame 86.51% to 86.71% (86.70%); log mode unchanged (97.63%, 88.89%). The windows' remaining error
+is their light sets ("What is left").
 
 The engine mode is **below** the aim of 91.82% for the rigid pixels (C3 took it from 84.73% to
 86.64% on 2400, 86.62% on 2401). How it got there (frame 2400): the draws with the log's light sets
@@ -2252,14 +2262,19 @@ What C3 found (frame 2400, pixels of the rigid draws beyond 4):
 
 What is left, in pixels of the 10,725 beyond (frame 2400, 2401 within 15):
 
-- 2,394 of the windows' objects (`_NEW_Single_Hung_Window`, 4,124 pixels; 2,333 even with the
-  log's light sets): the frames' white lines (the 53- and 52-vertex meshes, one place) come out dim
-  grey and hidden by the wall where the log's are bright lavender; without the walls (`HF_SKIP=wall_`)
-  the frame is there as a bright 3D outline, so the wall's face wins the depth at the window's
-  place. The logged matrices equal the engine's but for signed zeros; the meshes are the same
-  vertex for vertex; the materials the same (the log's layer flag words, 8 and 0x88 for the two
-  frame meshes, 0 in the shader: not used by the renderer). The order did not matter (walls first:
-  the same figure). Not found.
+- The windows' objects (`_NEW_Single_Hung_Window`, 4,124 pixels; ~2,394 beyond): not the wall's
+  form or its depth (L2: the pixel (225, 37) of 2400, a frame line, is drawn by the engine, not
+  hidden by the wall, at (65, 65, 81) where the log's is (254, 254, 226)). It is the light set: the
+  log lights each window's three meshes (10, 52 and 53 vertices, the engine's sub-models 2, 1 and 0,
+  the layer flags 72, 136 and 8) with one of two sets, the inside one (ambient 0.122, no sun, 4
+  points on the room's side, 0.8 in) and an outside one (ambient 0.161, the sun, 4 points other
+  than those, 0.8 out); the engine gives all three the inside set. The log's: at 8 of its 10
+  windows (the y = 14 and 15 walls and (13, 22.5)) the 52-vertex frame has the outside set and the
+  others the inside; at the other 2 ((13, 17.5), (23.5, 24)) the 10- and 53-vertex ones have the
+  outside and the 52-vertex the inside. With the log's sets by mesh (`HF_ORACLE` with the oracle
+  taken by vertex count, a local study edit, not kept) the rigid figure goes 92.78% to 95.13% in
+  engine mode. What decides the 8 and the 2, and the outside set's points, is not found (the
+  light code's: `lighting.rs`, `Light_FillWindow` in `light.rs`).
 - 2,147 + 851 + 1,228 + 459 of the walls, the windowed walls, the diagonals and the fence
   (3 to 5 levels off): the light sets (L1: the walls' and fences' now equal the log's).
 - 678 + 78 of the money trunk (object 248) and the cheat gnome (105), drawn by the engine, not
@@ -2375,9 +2390,8 @@ the engine has 8 the log has not (the diagonals', the trunk's and the gnome's).
 - The pieces' meshes cover the ground in triangles with gaps; the reference's wall shadows on the
   ground are whole: the log mode has the same (86.59% there with the log's own draws), the
   polygon texture's alpha is not applied (`shadow_of`).
-- The diagonals' shadows are the plain `wall_diagonal` with an 8-vertex piece where the log has
-  a second 5-vertex one (the forms that reach past an end: `_both_extends` and the others, the
-  rule not found, 5 tiles).
+- The diagonals' shadows are of the form's model now (`diagonal_form` of the face on the
+  outdoor side), no longer the plain one.
 - The money trunk's and the gnome's shadows are drawn (the engine draws the objects, the original
   does not).
 

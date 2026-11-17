@@ -278,12 +278,15 @@ fn wall_record(models: &Models, p: &WallPiece, window_of: &impl Fn([f32; 2]) -> 
             format!("_{}", window_of([p.x + 0.5 * s.round(), p.y - 0.5 * c.round()]).unwrap_or("standard_window"))
         }
     };
-    let form = match p.form {
-        Form::Straight => "",
-        Form::LeftExtends => "_left_extends",
-        Form::RightExtends => "_right_extends",
-    };
-    models.parts.record_by_id(crate::shader::name_hash(&format!("wall_straight{opening}{form}")))
+    let find = |form: Form| models.parts.record_by_id(crate::shader::name_hash(&format!("wall_straight{opening}{}", form.suffix())));
+    // (a family without the form's model draws its plain one)
+    find(p.form).or_else(|| find(Form::Straight))
+}
+
+/// The record of a diagonal wall's form (`wall_diagonal` and the forms' suffixes).
+fn diagonal_record(models: &Models, form: Form) -> Option<usize> {
+    let find = |form: Form| models.parts.record_by_id(crate::shader::name_hash(&format!("wall_diagonal{}", form.suffix())));
+    find(form).or_else(|| find(Form::Straight))
 }
 
 /// The bits of an object's `ResData` flags that say it casts a shadow (0x02000000: furniture,
@@ -323,10 +326,8 @@ pub fn wall_shadows(models: &Models, pieces: &[WallPiece], window_of: impl Fn([f
 /// reach past an end are not told apart, as `diagonal_draws`) at each diagonal tile's centre,
 /// turned so that its face looks outdoors: the angle whose normal (see `diagonal_draws`) leads to
 /// an outdoor tile.
-pub fn diagonal_shadows(models: &Models, walls: &crate::routing::Walls) -> Vec<Draw> {
+pub fn diagonal_shadows(models: &Models, walls: &crate::routing::Walls, fences: &[u32]) -> Vec<Draw> {
     let mut out = Vec::new();
-    let Some(record) = models.parts.record_by_id(crate::shader::name_hash("wall_diagonal")) else { return out };
-    let scale = models.parts.record(record).scale;
     let (w, h) = walls.size();
     for y in 0..h as i32 {
         for x in 0..w as i32 {
@@ -336,7 +337,9 @@ pub fn diagonal_shadows(models: &Models, walls: &crate::routing::Walls) -> Vec<D
             }
             // (the normals of the two faces: "/" at 0 and 180, "\\" at 90 and -90)
             let faces: [(f32, [i32; 2]); 2] = if bits & 0x10 != 0 { [(0.0, [-1, -1]), (180.0, [1, 1])] } else { [(90.0, [1, -1]), (-90.0, [-1, 1])] };
-            let Some(&(angle, _)) = faces.iter().find(|(_, n)| !walls.indoors(x + n[0], y + n[1])) else { continue };
+            let Some(&(angle, n)) = faces.iter().find(|(_, n)| !walls.indoors(x + n[0], y + n[1])) else { continue };
+            let Some(record) = diagonal_record(models, crate::scene::diagonal_form(walls, x, y, n, fences)) else { continue };
+            let scale = models.parts.record(record).scale;
             let (cx, cy) = (x as f32 + 0.5, y as f32 + 0.5);
             for part in models.parts.parts_of(record) {
                 out.push(Draw { kind: Kind::WallPiece, part: part.index, world: world_of(&wall_matrix(cx, cy, angle), scale), origin: [cx, cy], object: 0, shader: None, edge: None });
@@ -405,11 +408,10 @@ pub fn wall_draws(models: &Models, pieces: &[WallPiece], patterns: &[u32], eye: 
 /// The draws of the lot's diagonal walls (a tile whose `Walls::diagonal_bits` is 0x10, a "/" from
 /// (x, y + 1) to (x + 1, y), or 0x20, a "\\" from (x, y) to (x + 1, y + 1)): the family
 /// `wall_diagonal` at the tile's centre, turned 0 or 180 for a "/" and 90 or -90 for a "\\", the
-/// face drawn that turns to the eye, with the pattern of the side it faces. The forms that reach past
-/// an end of the line (`_left_extends`, `_right_extends`, `_both_extends`) are not told apart:
-/// 3 of the 5 tiles of the home lot that show one draw them, and the plain model is drawn
-/// (`docs/assets.md`, "The engine's draw list").
-pub fn diagonal_draws(models: &Models, walls: &crate::routing::Walls, patterns: &[u32], eye: [f32; 2]) -> Vec<Draw> {
+/// face drawn that turns to the eye, with the pattern of the side it faces, in the form its ends
+/// ask for (`scene::diagonal_form`: `_left_extends`, `_right_extends`, `_both_extends`, the cap forms;
+/// `docs/assets.md`, "The engine's draw list").
+pub fn diagonal_draws(models: &Models, walls: &crate::routing::Walls, fences: &[u32], patterns: &[u32], eye: [f32; 2]) -> Vec<Draw> {
     let mut out = Vec::new();
     let (w, h) = walls.size();
     for y in 0..h as i32 {
@@ -436,9 +438,8 @@ pub fn diagonal_draws(models: &Models, walls: &crate::routing::Walls, patterns: 
                 if (n[0] as f32) * (eye[0] - cx) + (n[1] as f32) * (eye[1] - cy) <= 0.0 {
                     continue;
                 }
-                // (the forms that reach past an end of the line are not told apart: the rule for which
-                // end reaches is not found, the plain model is drawn)
-                let Some(record) = models.parts.record_by_id(crate::shader::name_hash("wall_diagonal")) else { continue };
+                let form = crate::scene::diagonal_form(walls, x, y, n, fences);
+                let Some(record) = diagonal_record(models, form) else { continue };
                 let rec = models.parts.record(record);
                 let world = world_of(&wall_matrix(cx, cy, angle), rec.scale);
                 // the half tile it is on is across x (`light::cell_room_adds`): its room lights it.
@@ -542,11 +543,11 @@ pub fn lot_draws_with(world: &crate::world::World, res: &BTreeMap<u32, ObjResour
     let windows = window_edges(models, &placements, guids_of, res);
     let window_of = |at: [f32; 2]| windows.iter().find(|w| (w.0[0] - at[0]).abs() < 0.1 && (w.0[1] - at[1]).abs() < 0.1).map(|w| w.1);
     let mut shadows = wall_shadows(models, &pieces, window_of);
-    shadows.extend(diagonal_shadows(models, &world.walls));
+    shadows.extend(diagonal_shadows(models, &world.walls, fences));
     shadows.extend(object_shadows(&parts, guids_of, res));
     if let Some(eye) = eye {
         draws.extend(wall_draws(models, &pieces, patterns, eye, window_of));
-        draws.extend(diagonal_draws(models, &world.walls, patterns, eye));
+        draws.extend(diagonal_draws(models, &world.walls, fences, patterns, eye));
     }
     draws.extend(outer_lot.map(|id| lot_draws(models, id)).unwrap_or_default());
     LotDraws { draws, placements, pieces, shadows }
