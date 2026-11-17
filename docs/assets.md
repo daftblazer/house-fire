@@ -2493,10 +2493,10 @@ the engine has 8 the log has not (the diagonals', the trunk's and the gnome's).
   moved by z (a, b). Frame 2400's are (0.7188, -0.1843) for the 341 draws of the outdoor objects
   (the trees, the bushes, the mailbox ...), (0.8855, -0.2271) for the wall pieces' and fences', and a small different vector for each
   indoor object (a Sim's too). The sun there is (0.8223, -0.2109, -0.5285): the shears are its x
-  and y over 1.144 and over 0.9286, neither the sun's own vertical part (`SHADOW_SHEAR_OBJECT`,
-  `SHADOW_SHEAR_WALL`, fitted at this one clock). The indoor objects' shears, which should come
-  from their light sets, are not found: they are not sheared (their shadows are small and
-  indoors). Neither the 1.144 and 0.9286 nor the indoor rule is explained.
+  and y over 1.144 and over 0.9286, neither the sun's own vertical part. (K5 found the forms of
+  all three: the walls' is the sun's z plus 0.4, the objects' a linear fit of two lots' suns, the
+  indoor objects' an inverse-power sum over their light set: `engine_scene::wall_shear`,
+  `sun_shear`, `light_shear`, "K5" below.)
 - The pieces' meshes cover the ground in triangles with gaps; the reference's wall shadows on the
   ground are whole: the log mode has the same (86.59% there with the log's own draws), the
   polygon texture's alpha is not applied (`shadow_of`).
@@ -2765,6 +2765,48 @@ a lot's dataset overrides (the pool table's felt is `game_pooltable_club_x-02` i
 shader in the engine, ~7,000), the DJ booth's parts (~15,000: z-fighting of coplanar faces and its parts'
 states), the Sims' headings and the DJ's place (the DJ stands behind the booth in the log; the portrait's
 look), and the shadows (42,000: the indoor objects' shears, "What is left" of E1).
+
+K5 (the club, 80.53% to 87.52% whole; rigid 80.87% to 88.78%, floors 87.81% to 94.05%, shadows 69.17% to 84.00%, Sims 38.06% to 38.05%;
+log mode club 97.62% and home 97.47% unchanged, home engine mode 97.24% to 97.26%, its shadows 95.90% to 95.89%):
+- Shadows' shears (`engine_scene::wall_shear`, `sun_shear`, `light_shear`; studies `HF_SHEARS`, `HF_SIMSHEAR`). The club's sun
+  is (-0.4190, 0.8903, -0.2) (z set, not normalised), home's (0.8223, -0.2109, -0.5285); the logged shears: walls and fences
+  -0.6984, 1.4839 (club) and 0.8855, -0.2271 (home), i.e. the sun's x and y over its |z| + 0.4 on both lots (0.6000 and 0.9285
+  against 0.6000 and 0.9286); outdoor objects and Sims' shadows -0.5086, 1.0806 and 0.7188, -0.1843, divisors 0.8239 and 1.144,
+  which are 0.9744 |z| + 0.629 (two points: the slope and the base are fitted to them, `SHADOW_SHEAR_SCALE` 1.0262 over
+  `SHADOW_SHEAR_BASE` 0.6455). Indoors (the club: 26 objects of the main room, the Sims' shadows) the shear is the same form on
+  V, the sum over the draw's four lights of (place - light) / distance^1.7, with the light's position in 3D and the object
+  on the floor: shear = 1.0262 V_xy / (|V_z| + 0.6455). 26 objects within 0.02 of the logged shear (their length 0.2 to 0.9);
+  no colour or reach weights (they made it worse); the power is fitted (1.5 to 2.0 fit about as well); the nearest-light,
+  centroid and per-light-weight forms are worse (0.05 to 0.18). The Sims' own: the log's 9 shears within 0.05 of the engine's
+  (the Sim's tile centre against its real place). The shadows of both lots are drawn with them: club whole 80.53% to 81.30%
+  (the floors, 87.81% to 90.51%, take the Sims' and objects' shadows), home unchanged. Not explained: why the divisors
+  (0.4; 0.9744 and 0.629; the power 1.7).
+- Lights of an object are those of its LEADER'S tile, not of the middle of its footprint (`scene::Placement::lit_at`; the
+  draw's `origin`): a booth of three tiles, a dance floor of 25, the doors of two. The booth's leader is at (17.5, 16.5), its
+  footprint's middle (17.5, 17.5); the log's four lights of its draws are the lamp at (14.5, 19.5), (20.55, 18.81), (24.18, 15.61) and the lamp at (22.5, 13.5),
+  which the grid point (18, 17) gives (in another order) and (18, 18) does not (the fourth is the cyan lamp at (22.75, 18.8)): club whole 81.46% to 85.51%, rigid 81.12% to 87.60%, home 97.25% to 97.26%.
+  (The one-tile objects' places are unchanged: a tile's centre is x.5 and the point is rounded, x.5 up. A tie in y that
+  floors, as the doors', gives 173 pixels where 960 are off: the doors' two parts have two tiles, the leader's tile is 13.5, 17.5
+  and the logged set is the grid point (14, 17); unexplained, and the same floor in y makes the home lot's bookcase, counter
+  and sofa fall by 0.22% whole. `HF_CELLSTUDY` lists the grid points whose set is the log's.)
+- The lamps' lights: the grid's membership is from the lamps' places at the last build (`Play::anchor_at_build`,
+  `Plays::place_at_build`: the anchored place before the display copies since), the lit draws read the lights where the frame
+  has them (`LotLights::follow_lamps`; the logged lit draws show a lamp at 20.54 and 20.55 in the two frames of tick 964, the
+  build's place being 20.58): club whole 81.30% to 81.56%.
+- Floor coverings (`engine_scene::split_lot`, `lies_flat`, `COVERING_HEIGHT` 0.05; studies `HF_FLATSTUDY`, `HF_ROWFLAGS`,
+  `HF_LISTLIGHT`, `HF_LISTMODEL=SKINNED`): an opaque object draw whose mesh lies flat on the ground (every vertex under 0.05
+  high: the dance floor's plane at 0.018, home's rug at 0.010; every other opaque mesh of both lots reaches 0.05 or more) is drawn
+  in its room's batch right after the floors and before the shadows, with the ground's destination alpha 0x7F and no depth write
+  (the log's draw 938: depth true/false, dst 127; the order "Floor, RigidStrip/electronics_dance_floor/op, Shadow ..."), and the
+  object casts no shadow (the log has none of the dance floor's, whose other 39 parts are blended lights; the engine drew 40).
+  The Sims' shadows on the dance floor were hidden by it before: club whole 85.56% to 87.52%, floors 89.75% to 94.05%.
+- Rows' flags do not tell the dance floor from the other objects (0x02000000, like the booth's); `ROWFLAGS` of the club's kinds are
+  in the study output.
+Left (pixels beyond 4 of 286,720: 35,772): the five Sims (about 12k: the poses and headings, a black arm on the dancer, the
+portrait square 3k, which cannot match); the robe Sim the game does not draw (176; skipping her gives +0.26%; the log has no draw
+of her, no rule found in her state); the dance floor's 16.9k of 86,388 (its pools and cones under the Sims, the moving parts'
+places); the bar 1.2k, the booth 1.2k and the doors 960 (the tie above); the counter 0.5k; the selection ring under the portrait
+Sim is in the reference's 2D layer (also in log mode).
 
 ## The window
 
