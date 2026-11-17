@@ -77,14 +77,15 @@
   with clear (the dance floor's or lasers' render-to-texture?) between the scene and the 2D
   layer. Not read. render-check's club reference is the full frame (work/frames-club2: the
   frame_ PNGs copied as world_), so the portrait and HUD count as misses in both modes.
-- **The club in engine mode at 71.42% whole** (K2, frame 3001 of club-d3000.log; log mode
-  93.79%): rigid 69.64%, floors 83.76%, shadows 51.80%, Sims 19.01%. Left (81,954 px beyond 4):
-  the pool table's felt ~7k (the log's club dataset record `game_pooltable_club_x-02`, the
-  engine the global one: dataset-local model records not read), the DJ booth ~15k (the DJ Sim
-  stands behind it in the log, in front in ours), the Sims' headings, shadows ~42k (the indoor
-  shears, above). Still from the log in that mode (new with K2): a moving lamp's place (the
-  'e' light-grid positions, carried by display copies at rate/30), the Sims' identities (the
-  dressing records, by order; 8 of 9 against the card). ROOM_AMBIENT_COLOUR (0.8, 0.8, 1.0)
-  fitted from the club's logged 25,25,31. Home's engine-mode PNG differs by a few pixels after
-  K2 (whole 97.23 -> 97.24%, cause not isolated).
-
+- **The club in engine mode at 72.41% whole** (K2, K3; frame 3001 of club-d3000.log; log mode
+  93.79%): rigid 69.37%, floors 85.80%, shadows 51.18%, Sims 37.26%. Left: shadows 42.7k px
+  (the indoor shears, above); the dance floor's draws 36k of 86k off (unexamined); the pool
+  table's felt ~8.7k (the log's texture `game_pooltable_club_x`, the engine's shader gives
+  `aristoscratch_pool_table`: a dataset texture override, where kept not found); the DJ
+  booth's parts ~7.5k; four Sims' headings (logged 1, 4, 1, 1; ours 2-5: turns the engine
+  doesn't keep; poses right, 48-55 of 58 bones at the best heading); a Sim the game doesn't
+  draw (the robe Sim, 0 of 58 bones; she alone has data field 34 set: a guess; +0.2%). Still
+  from the log in that mode (K2): a moving lamp's place (the 'e' light-grid positions, carried
+  by display copies at rate/30), the Sims' identities (the dressing records, by order).
+  ROOM_AMBIENT_COLOUR (0.8, 0.8, 1.0) fitted from the club's logged 25,25,31. Home's
+  engine-mode PNG changed by a few pixels in K2 (whole 97.23 -> 97.24%, cause not isolated).
