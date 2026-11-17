@@ -829,7 +829,24 @@ pub struct Log {
     pub lights: Vec<LightsRec>,
     pub states: Vec<StateRec>,
     pub gx_calls: Vec<GxCallRec>,
+    pub texels: Vec<TexelsRec>,
     pub ticks: u32,
+}
+
+/// '`': a texture image's first level as it was when loaded for a draw in the draw window
+/// (after its 'l'), once for each address and content: the textures the game makes at run time
+/// (a Sim's skin and clothes) are in no archive.
+#[derive(Clone, Debug)]
+pub struct TexelsRec {
+    pub tick: u32,
+    pub image: u32,
+    pub width: u16,
+    pub height: u16,
+    /// The GX texture format (0 I4 ... 9 C8, 14 CMPR).
+    pub format: u8,
+    /// FNV-1a of `bytes`, as the 'x' records hash a first level.
+    pub hash: u64,
+    pub bytes: Vec<u8>,
 }
 
 /// '}': a GX call a draw method makes itself (not through ERC_ApplyState's context), in the
@@ -1064,6 +1081,21 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let bytes = r.b[r.p..r.p + LightsRec::LEN].to_vec();
                 r.p += LightsRec::LEN;
                 log.lights.push(LightsRec { tick, device, strips_before: log.strips.len(), bytes });
+            }
+            b'`' => {
+                if !r.has(4 + 4 + 2 + 2 + 1 + 4 + 8) {
+                    break;
+                }
+                let (tick, image) = (r.u32(), r.u32());
+                let (width, height) = (r.u16(), r.u16());
+                let (format, size) = (r.u8(), r.u32() as usize);
+                let hash = r.u32() as u64 | (r.u32() as u64) << 32;
+                if !r.has(size) {
+                    break;
+                }
+                let bytes = r.b[r.p..r.p + size].to_vec();
+                r.p += size;
+                log.texels.push(TexelsRec { tick, image, width, height, format, hash, bytes });
             }
             b'}' => {
                 if !r.has(GxCallRec::LEN) {
