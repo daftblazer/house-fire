@@ -317,10 +317,12 @@ pub fn list_model(scene: &Scene, name: &str) {
     let v = scene.frame.camera.view;
     let to_world = |p: [f32; 3]| -> [f32; 3] { let q = [p[0] - v[3], p[1] - v[7], p[2] - v[11]]; [0, 1, 2].map(|c| (0..3).map(|r| v[4 * r + c] * q[r]).sum::<f32>()) };
     if std::env::var_os("HF_LISTLIGHT").is_some() {
-        for (i, d) in scene.frame.draws.iter().enumerate().filter(|(_, d)| scene.drawn[d.id as usize - 1].model[..] == *name) {
+        for (i, d) in scene.frame.draws.iter().enumerate().filter(|(_, d)| scene.drawn[d.id as usize - 1].model[..] == *name || (name == "SKINNED" && scene.drawn[d.id as usize - 1].class == Class::Skinned)) {
             if let Lighting::Lit { ambient, points, directionals } = &d.lighting {
                 let pts: Vec<String> = points.iter().map(|p| format!("{:.2?} col {:.3?} k {} {}", to_world(p.position), p.colour, p.k0, p.k1)).collect();
-                println!("  light {i}: amb {ambient:.3?} dirs {} pts {}", directionals.len(), pts.join(" | "));
+                let dirs: Vec<String> = directionals.iter().map(|q| format!("{:.3?}", q.colour)).collect();
+                let at = d.bones.as_ref().map(|b| [b[0][3], b[0][7], b[0][11]]);
+                println!("  light {i}: amb {ambient:.3?} dirs {} at {at:.1?} pts {}", dirs.join(" "), pts.join(" | "));
             }
         }
     }

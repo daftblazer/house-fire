@@ -225,6 +225,16 @@ impl LotLights {
         *self.cells.borrow_mut().entry((room, point[0].to_bits(), point[1].to_bits())).or_insert_with(|| light::cell_lights([point[0], point[1], light::GRID_Z], (r[2], r[3]), (r[0], r[1]), &self.geometry))
     }
 
+    /// Lets the lamps' own lights (from index 256) be where `now` has them while the cells stay
+    /// the ones this build's places gave: the original's grid holds the lights of its last build,
+    /// but its lit draws read the lights' places of the frame (club frame 3001: the lamps'
+    /// logged places in the lit draws are the frame's, the grid's membership the build's).
+    pub fn follow_lamps(&mut self, now: &LotLights) {
+        if self.sources.len() == now.sources.len() {
+            self.sources[256..].clone_from_slice(&now.sources[256..]);
+        }
+    }
+
     /// Makes these lights use the cells `other` found, when they light the same ones
     /// (`same_geometry`): a lot's objects stand still, so their cells are the same frame after frame.
     pub fn share_cells(&mut self, other: &LotLights) {

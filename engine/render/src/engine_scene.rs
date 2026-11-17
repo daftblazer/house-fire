@@ -618,7 +618,9 @@ impl Lot {
         // the eye: -R^T t of the view
         let eye = [0, 1].map(|i| -(0..3).map(|r| view[4 * r + i] * view[4 * r + 3]).sum::<f32>());
         let lot = housefire::drawlist::lot_draws_with(world, &self.resources, &self.models, &self.art, Some(eye), &mut self.poses.borrow_mut(), plays);
-        let lamps = housefire::lamps::on_lot_at(&lot.placements, |id| lot.guids.get(&id).cloned().unwrap_or_default(), |id| plays.graphic(world, id), |id, anim| plays.place_at_build(id, anim), &self.resources, &self.models.sources);
+        let lamps_at = |at: &dyn Fn(i16, &housefire::anim::Anim) -> f32| housefire::lamps::on_lot_at(&lot.placements, |id| lot.guids.get(&id).cloned().unwrap_or_default(), |id| plays.graphic(world, id), at, &self.resources, &self.models.sources);
+        let lamps = lamps_at(&|id, anim| plays.place_at_build(id, anim));
+        let lamps_now = lamps_at(&|id, anim| plays.place(id, anim));
         let g = |i: usize| world.globals.get(i).copied().map_or(0, i32::from);
         let clock = (g(0), g(5), g(6));
         let mut lights = housefire::lighting::LotLights::build(world, &self.resources, &lamps, clock);
@@ -638,6 +640,8 @@ impl Lot {
             }
         };
         drop(cache);
+        // the lit draws read the lamps' lights where they are now, the cells and floors the build's
+        lights.follow_lamps(&housefire::lighting::LotLights::build(world, &self.resources, &lamps_now, clock));
         Plan { models: self.models.clone(), draws: lot.draws, placements: lot.placements, guids: lot.guids, resources: self.resources.clone(), pieces: lot.pieces, shadows: lot.shadows, floors, lamps, lights, terrain: self.terrain, clock }
     }
 }

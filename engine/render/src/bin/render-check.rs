@@ -251,6 +251,12 @@ fn engine_frame(scene: &mut Scene, assets: &Assets, disc: &Disc, log: &housefire
         for f in &figures {
             println!("Sim {} at {:?} heading {} (facing {}) play {:?}{}", f.id, f.place, f.heading, replay.world().find_object(f.id).map_or(0, |o| o.facing()), f.play, if portrait == Some(f.id) { ", the portrait's" } else { "" });
         }
+        // HF_OBJPOS=1: every object's id, leader, place (1/16 tiles) and facing (study aid)
+        if std::env::var_os("HF_OBJPOS").is_some() {
+            for o in replay.world().objects().filter(|o| o.on_lot() && !o.person) {
+                println!("OBJPOS {} leader {} x16 {} y16 {} facing {} level {}", o.id(), o.leader, o.x16, o.y16, o.facing(), o.level);
+            }
+        }
         // HF_SIMSTATE=1: each Sim's data fields, person data and sprite flags that are not zero (study aid)
         if std::env::var_os("HF_SIMSTATE").is_some() {
             for f in &figures {
