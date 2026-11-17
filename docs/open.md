@@ -2,7 +2,6 @@
 
 - **The bones' rest path** (state flag bit 2, 80158C84..80158D98): written from the code, never
   met on the home replay; check on the club replay.
-- **The scalar channels** (node words 5, 6; 801BD7BC): never read on the home replay; not built. The club's laser light needs them.
 - **One Sim animator speed** of 17,198 (an Animate the run list misses).
 - **Display-list ('g') draws** are not tied to model parts yet; 130 strips are followed by several world
   matrices.
@@ -31,9 +30,12 @@
   game writes her description.
 - **The child part tables** are read but unchecked: no logged Sim is a child.
 - **Description bytes 8, 10 and 16-22** (skin, body shape?) not yet understood.
-- **Lamps' "on" animations** (the club): which animation an object poses beyond its idle one
-  follows its state (lit or not); 11 of the club's 15 lamp colours wait on it, and the laser's
-  reach and place (1,258 of 1,386 grid cells from the engine alone).
+- **The club's laser place after tick 6** (K1): the lamps pose the animation their graphic
+  (data field 0) picks, from the engine alone (club: own lights' colours 15 of 15, places 14,
+  cells 1,386 of 1,386, sums 57,444 bit for bit); the laser's "fun" plays 1.98 frames per render
+  frame and a tick holds one or two render frames, which the simulation doesn't count, so the
+  lamps are posed at place 0 (one light's place at the tick-28 rebuild). The drawn objects'
+  models (drawlist's `idle_place`) still pose the idle animation, not the graphic's.
 - **The picture's state not recorded** (home-a36's ';' records have the context's state and
   the pixel engine's registers as ERC_ApplyState left them): fog, and GX calls a draw method
   makes after ERC_ApplyState (the shadow mask's constant alpha?).
