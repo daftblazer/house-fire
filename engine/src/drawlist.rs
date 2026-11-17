@@ -119,6 +119,20 @@ pub fn world_of(m: &Mat4, scale: f32) -> [f32; 12] {
     out
 }
 
+/// The part of the screen (0 to 1 across and down) a part's place may be in for the original to
+/// draw it, as (left, right, top, bottom): a model reaches past its place (a tree's crown, a
+/// wall's height). Fitted at tick 1,039 of home-a39.log (the log's draws' places span x 0.006 to
+/// 1.034, y -0.179 to 0.620) with a little room: the smallest box that holds every draw the log
+/// made. Not the original's own test (a bounding volume of the record against the frustum, not
+/// decoded): the renderer clips what is left.
+pub const VISIBLE: [f32; 4] = [0.0, 1.04, -0.19, 0.63];
+
+/// Whether the place of a draw (its `world`'s translation) is in `VISIBLE` of the screen seen by
+/// the camera with `view` and `projection`.
+pub fn in_view(view: &[f32; 12], projection: &[f32; 6], world: &[f32; 12]) -> bool {
+    crate::scene::Camera::on_screen(view, projection, [world[3], world[7], world[11]]).is_some_and(|s| (VISIBLE[0]..=VISIBLE[1]).contains(&s[0]) && (VISIBLE[2]..=VISIBLE[3]).contains(&s[1]))
+}
+
 /// The game's ticks a second (the animations' rates are frames a second).
 const TICKS_PER_SECOND: f32 = 30.0;
 
@@ -146,6 +160,12 @@ fn kind_of(part: &Part<'_>) -> Kind {
 /// matrices (a Sim's skin) is not an object's. An object plays its idle animation from the start
 /// of the run (`idle_place` at `tick`).
 pub fn object_draws(models: &Models, placements: &[Placement], guids_of: impl Fn(i16) -> Vec<u32>, resources: &BTreeMap<u32, ObjResources>, tick: u32) -> Vec<Draw> {
+    object_parts(models, placements, guids_of, resources, tick).into_iter().map(|p| p.0).collect()
+}
+
+/// `object_draws`, each with whether the part is drawn at its object's own matrix (no skeleton
+/// poses it).
+fn object_parts(models: &Models, placements: &[Placement], guids_of: impl Fn(i16) -> Vec<u32>, resources: &BTreeMap<u32, ObjResources>, tick: u32) -> Vec<(Draw, bool)> {
     let mut out = Vec::new();
     for p in placements {
         let guids = guids_of(p.leader);
@@ -172,7 +192,7 @@ pub fn object_draws(models: &Models, placements: &[Placement], guids_of: impl Fn
                 // the root's own 3 x 3 is a pure turn: the record's scale is applied with the
                 // bones' (`idle_bones`) or here
                 let scale = if bones.is_some() { 1.0 } else { rec.scale };
-                out.push(Draw { kind: kind_of(&part), part: part.index, world: world_of(&m, scale), origin: [p.x, p.y], object: p.leader, shader: None, edge: None });
+                out.push((Draw { kind: kind_of(&part), part: part.index, world: world_of(&m, scale), origin: [p.x, p.y], object: p.leader, shader: None, edge: None }, bones.is_none()));
             }
         }
     }
@@ -246,6 +266,106 @@ fn wall_matrix(x: f32, y: f32, angle: f32) -> Mat4 {
     m
 }
 
+/// The record of a wall piece's model by its opening (`window_of` gives the wall model's window
+/// name for the edge at a point, `WINDOW_WALLS`) and its form.
+fn wall_record(models: &Models, p: &WallPiece, window_of: &impl Fn([f32; 2]) -> Option<&'static str>) -> Option<usize> {
+    let opening = match p.opening {
+        Opening::None => String::new(),
+        Opening::Door => "_door".to_string(),
+        // the edge's middle, from the part's centre towards its wall
+        Opening::Window => {
+            let (s, c) = p.angle.to_radians().sin_cos();
+            format!("_{}", window_of([p.x + 0.5 * s.round(), p.y - 0.5 * c.round()]).unwrap_or("standard_window"))
+        }
+    };
+    let form = match p.form {
+        Form::Straight => "",
+        Form::LeftExtends => "_left_extends",
+        Form::RightExtends => "_right_extends",
+    };
+    models.parts.record_by_id(crate::shader::name_hash(&format!("wall_straight{opening}{form}")))
+}
+
+/// The bits of an object's `ResData` flags that keep it from casting a shadow: hung on a wall
+/// (0x40000000), a floor covering or an opening (the rug, doors and windows: 0x01000000) and
+/// the counters' (0x20000000). Read off the home lot's objects against the original's shadow
+/// draws (`docs/assets.md`, "The frame from the engine's state").
+pub const NO_SHADOW_FLAGS: u32 = 0x4000_0000 | 0x2000_0000 | 0x0100_0000;
+
+/// The shadow pass's draws of the lot's pieces: each fence and each wall piece on an outdoor tile
+/// (`WallPiece::cap`: the outside of a wall casts on the ground, the inside of a house does not),
+/// seen or not, draws every part of its model again (as strips, `Draw::part`'s vertex arrays)
+/// with the shadow material; `window_of` as for `wall_draws`. The original draws these before the
+/// objects' (found against home's 67 pieces, `docs/assets.md`).
+pub fn wall_shadows(models: &Models, pieces: &[WallPiece], window_of: impl Fn([f32; 2]) -> Option<&'static str>) -> Vec<Draw> {
+    let mut out = Vec::new();
+    for p in pieces.iter().filter(|p| p.fence || p.cap) {
+        let (record, matrix) = if p.fence {
+            let Some(name) = FENCE_MODELS.iter().find(|f| f.0 == p.pattern).map(|f| f.1) else { continue };
+            let Some(record) = models.parts.record_by_id(crate::shader::name_hash(name)) else { continue };
+            (record, lamps::object_matrix(p.x, p.y, p.angle))
+        } else {
+            // (the shadow is of the plain wall: an opening's hole is not in it)
+            let Some(record) = wall_record(models, &WallPiece { opening: Opening::None, ..*p }, &window_of) else { continue };
+            (record, wall_matrix(p.x, p.y, p.angle))
+        };
+        let world = world_of(&matrix, models.parts.record(record).scale);
+        for part in models.parts.parts_of(record) {
+            out.push(Draw { kind: Kind::WallPiece, part: part.index, world, origin: [p.x, p.y], object: 0, shader: None, edge: None });
+        }
+    }
+    out
+}
+
+/// The shadow pass's draws of the diagonal walls: the plain `wall_diagonal` model (its forms that
+/// reach past an end are not told apart, as `diagonal_draws`) at each diagonal tile's centre,
+/// turned so that its face looks outdoors: the angle whose normal (see `diagonal_draws`) leads to
+/// an outdoor tile.
+pub fn diagonal_shadows(models: &Models, walls: &crate::routing::Walls) -> Vec<Draw> {
+    let mut out = Vec::new();
+    let Some(record) = models.parts.record_by_id(crate::shader::name_hash("wall_diagonal")) else { return out };
+    let scale = models.parts.record(record).scale;
+    let (w, h) = walls.size();
+    for y in 0..h as i32 {
+        for x in 0..w as i32 {
+            let bits = walls.diagonal_bits(x, y);
+            if bits == 0 {
+                continue;
+            }
+            // (the normals of the two faces: "/" at 0 and 180, "\\" at 90 and -90)
+            let faces: [(f32, [i32; 2]); 2] = if bits & 0x10 != 0 { [(0.0, [-1, -1]), (180.0, [1, 1])] } else { [(90.0, [1, -1]), (-90.0, [-1, 1])] };
+            let Some(&(angle, _)) = faces.iter().find(|(_, n)| !walls.indoors(x + n[0], y + n[1])) else { continue };
+            let (cx, cy) = (x as f32 + 0.5, y as f32 + 0.5);
+            for part in models.parts.parts_of(record) {
+                out.push(Draw { kind: Kind::WallPiece, part: part.index, world: world_of(&wall_matrix(cx, cy, angle), scale), origin: [cx, cy], object: 0, shader: None, edge: None });
+            }
+        }
+    }
+    out
+}
+
+/// How far above the ground the shadow pass draws a part that its object's own matrix places (a
+/// part on a skeleton's bone is where the bone is): 0.1 on every one of the home lot's (the
+/// logged shadow draws' translations against the objects').
+pub const SHADOW_LIFT: f32 = 0.1;
+
+/// The shadow pass's draws of the objects: every part an object is drawn with, unless one of its
+/// resource rows has a `NO_SHADOW_FLAGS` bit. `parts` are the object draws (`object_parts`).
+fn object_shadows(parts: &[(Draw, bool)], guids_of: impl Fn(i16) -> Vec<u32>, resources: &BTreeMap<u32, ObjResources>) -> Vec<Draw> {
+    let mut casts: BTreeMap<i16, bool> = BTreeMap::new();
+    parts
+        .iter()
+        .filter(|(d, _)| matches!(d.kind, Kind::ObjectPart | Kind::ObjectList))
+        .filter(|(d, _)| *casts.entry(d.object).or_insert_with(|| guids_of(d.object).iter().filter_map(|g| resources.get(g)).all(|r| r.flags & NO_SHADOW_FLAGS == 0)))
+        .map(|&(mut d, rooted)| {
+            if rooted {
+                d.world[11] += SHADOW_LIFT;
+            }
+            d
+        })
+        .collect()
+}
+
 /// The draws of the lot's walls and fences: each piece (`scene::wall_pieces`) draws its family's
 /// model, by its opening (`window_of` gives the wall model's window name for the edge at a
 /// point, `WINDOW_WALLS`) and its form, at its place. A wall part's sub-models but the undrawn
@@ -263,21 +383,7 @@ pub fn wall_draws(models: &Models, pieces: &[WallPiece], patterns: &[u32], eye: 
             }
             continue;
         }
-        let opening = match p.opening {
-            Opening::None => String::new(),
-            Opening::Door => "_door".to_string(),
-            // the edge's middle, from the part's centre towards its wall
-            Opening::Window => {
-                let (s, c) = p.angle.to_radians().sin_cos();
-                format!("_{}", window_of([p.x + 0.5 * s.round(), p.y - 0.5 * c.round()]).unwrap_or("standard_window"))
-            }
-        };
-        let form = match p.form {
-            Form::Straight => "",
-            Form::LeftExtends => "_left_extends",
-            Form::RightExtends => "_right_extends",
-        };
-        let Some(record) = models.parts.record_by_id(crate::shader::name_hash(&format!("wall_straight{opening}{form}"))) else { continue };
+        let Some(record) = wall_record(models, p, &window_of) else { continue };
         let rec = models.parts.record(record);
         let world = world_of(&wall_matrix(p.x, p.y, p.angle), rec.scale);
         if !p.faces(eye) {
@@ -385,6 +491,9 @@ pub struct LotDraws {
     pub draws: Vec<Draw>,
     pub placements: Vec<Placement>,
     pub pieces: Vec<WallPiece>,
+    /// The shadow pass's draws (`object_shadows`, `wall_shadows`), in the order the original makes
+    /// them: the pieces', then the objects'.
+    pub shadows: Vec<Draw>,
 }
 
 /// `res` is `quickdata::object_resources` of the disc's `SimsObjects`, `house` the lot's house
@@ -403,16 +512,20 @@ pub fn lot_draws_of(world: &crate::world::World, res: &BTreeMap<u32, ObjResource
         .collect();
     let placements = crate::scene::placements(&parts);
     let guids_of = |id: i16| world.find_object(id).into_iter().chain(world.objects().filter(|o| o.leader == id)).map(|o| o.guid).collect::<Vec<u32>>();
-    let mut draws = object_draws(models, &placements, guids_of, res, tick);
+    let parts = object_parts(models, &placements, guids_of, res, tick);
+    let mut draws: Vec<Draw> = parts.iter().map(|p| p.0).collect();
     let pieces = crate::scene::wall_pieces(&world.walls, 64, &fences);
     let windows = window_edges(models, &placements, guids_of, res);
     let window_of = |at: [f32; 2]| windows.iter().find(|w| (w.0[0] - at[0]).abs() < 0.1 && (w.0[1] - at[1]).abs() < 0.1).map(|w| w.1);
+    let mut shadows = wall_shadows(models, &pieces, window_of);
+    shadows.extend(diagonal_shadows(models, &world.walls));
+    shadows.extend(object_shadows(&parts, guids_of, res));
     if let Some(eye) = eye {
         draws.extend(wall_draws(models, &pieces, &patterns, eye, window_of));
         draws.extend(diagonal_draws(models, &world.walls, &patterns, eye));
     }
     draws.extend(outer_lot.map(|id| lot_draws(models, id)).unwrap_or_default());
-    LotDraws { draws, placements, pieces }
+    LotDraws { draws, placements, pieces, shadows }
 }
 
 #[cfg(test)]

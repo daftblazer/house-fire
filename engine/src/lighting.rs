@@ -145,6 +145,50 @@ impl LotLights {
         usize::try_from(x).ok().zip(usize::try_from(y).ok()).and_then(|(x, y)| (x < self.width).then(|| self.room_of.get(y * self.width + x).copied()).flatten()).map_or(0, usize::from)
     }
 
+    /// The colour base and scale of the floor groups of `room` made of a material with the
+    /// diffuse and ambient triples `material` (`Shader::material`): from the room's ambient and,
+    /// outdoors, the sun's light times its downward part (the original's Light_RoomTriples and
+    /// Light_GroupScale: only room 0 has the sun).
+    pub fn floor_group(&self, room: usize, material: ([f32; 3], [f32; 3])) -> ([f32; 3], [f32; 3]) {
+        let ambient = self.ambients.get(room).copied().unwrap_or([light::NO_LIGHT; 3]);
+        let light = if room == 0 {
+            let down = (-self.sun.direction[2]).max(light::NO_LIGHT);
+            self.sun.colour.map(|c| (f64::from(down) * f64::from(c)) as f32)
+        } else {
+            [light::NO_LIGHT; 3]
+        };
+        light::group_colour(material.0, material.1, ambient, light)
+    }
+
+    /// The colours of floor corners `points` (grid points: x, y) of `room`, for floor groups with
+    /// `group` (`floor_group`): each the light grid's sum at the corner over the lights of the
+    /// cell's room (`light::cell_lights`), as `light::vertex_colour` makes the byte colour.
+    pub fn floor_colours(&self, room: usize, group: &([f32; 3], [f32; 3]), points: &[(i32, i32)]) -> Vec<[u8; 4]> {
+        let geometry: Vec<([f32; 3], f32)> = self.sources.iter().map(|s| (s.at, s.reach)).collect();
+        let ranges = self.ranges.get(room).copied();
+        points
+            .iter()
+            .map(|&(x, y)| {
+                let ids = ranges.and_then(|r| light::cell_lights([x as f32, y as f32, light::GRID_Z], (r[2], r[3]), (r[0], r[1]), &geometry));
+                let lights: Vec<light::Light> = ids
+                    .into_iter()
+                    .flatten()
+                    .filter(|&i| i != 0xFFFF)
+                    .map(|i| {
+                        let s = &self.sources[usize::from(i)];
+                        light::Light { x: s.at[0], y: s.at[1], height: s.at[2], reach: s.reach, colour: s.colour }
+                    })
+                    .collect();
+                light::vertex_colour(light::point_light(x as f32, y as f32, &lights), group.0, group.1)
+            })
+            .collect()
+    }
+
+    /// The room an object at (x, y) is in (`room_at`: the tile before an edge).
+    pub fn room_of_place(&self, x: f32, y: f32) -> usize {
+        self.room_at(x, y)
+    }
+
     /// What lights a draw of the lot's list: a wall piece or fence along its edge, anything else
     /// at its place.
     pub fn of(&self, d: &crate::drawlist::Draw) -> Lights {

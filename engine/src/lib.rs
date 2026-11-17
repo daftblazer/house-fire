@@ -10,6 +10,7 @@ pub mod disc;
 pub mod draw;
 pub mod drawlist;
 pub mod expression;
+pub mod floors;
 pub mod iff;
 pub mod library;
 pub mod model;

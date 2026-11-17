@@ -508,7 +508,7 @@ const TERRAIN_COLOUR_TILES_Y: f32 = -147.0;
 const TERRAIN_COLOUR_U0: f32 = 0.34;
 const TERRAIN_COLOUR_V0: f32 = 0.47;
 
-fn terrain_colour_uv() -> PositionUv {
+pub(crate) fn terrain_colour_uv() -> PositionUv {
     // positions are in 64ths of a tile
     PositionUv {
         u: [1.0 / (TERRAIN_COLOUR_TILES_X * FLOOR_POSITION_UNIT), 0.0, TERRAIN_COLOUR_U0],
@@ -516,8 +516,14 @@ fn terrain_colour_uv() -> PositionUv {
     }
 }
 
+/// A floor mesh's world matrix: its positions are 64ths of a tile.
+pub(crate) fn floor_world() -> Mat3x4 {
+    let scale = 1.0 / FLOOR_POSITION_UNIT;
+    [scale, 0.0, 0.0, 0.0, 0.0, scale, 0.0, 0.0, 0.0, 0.0, scale, 0.0]
+}
+
 /// A floor's strip of float vertices (positions in the lot's frame) as a mesh.
-fn floor_mesh(vertices: &[StripVertex]) -> MeshData {
+pub(crate) fn floor_mesh(vertices: &[StripVertex]) -> MeshData {
     let mut mesh = MeshData { uv_shift: FLOOR_UV_SHIFT, ..MeshData::default() };
     let fixed = |v: f32, unit: f32| (v * unit).round().clamp(-32768.0, 32767.0) as i16;
     mesh.vertices = vertices

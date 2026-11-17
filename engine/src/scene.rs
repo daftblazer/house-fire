@@ -206,6 +206,34 @@ pub fn floor_runs(walls: &crate::routing::Walls, size: i32, patterns: &[crate::q
     out
 }
 
+/// The tiles the lot's bare ground (the terrain) covers: x and y from 1 to 37, the light grid's
+/// points 1 to 38 (read off the original's terrain strips on home, `docs/assets.md`, "Floors").
+pub const TERRAIN_TILES: std::ops::RangeInclusive<i32> = 1..=37;
+
+/// The terrain's runs: along each row, each stretch of tiles in `TERRAIN_TILES` with no floor (the
+/// original draws the lot's ground, the house's `terrain` shader, there), with a half tile (255,
+/// cut by a diagonal wall) at either end taken in. A run's `value` is 0.
+pub fn terrain_runs(walls: &crate::routing::Walls) -> Vec<FloorRun> {
+    let mut out = Vec::new();
+    let (first, last) = (*TERRAIN_TILES.start(), *TERRAIN_TILES.end());
+    for y in TERRAIN_TILES {
+        let mut x = first;
+        while x <= last {
+            if walls.floor(x, y) != 0 {
+                x += 1;
+                continue;
+            }
+            let start = x;
+            while x <= last && walls.floor(x, y) == 0 {
+                x += 1;
+            }
+            let half = |t: i32| if walls.floor(t, y) == 255 { walls.diagonal_bits(t, y) } else { 0 };
+            out.push(FloorRun { y, x: start, n: x - start, value: 0, lead: if start > first { half(start - 1) } else { 0 }, trail: if x <= last { half(x) } else { 0 } });
+        }
+    }
+    out
+}
+
 /// The lot's camera as the original keeps it (`ESimsCam`'s parameters): where it looks (the target,
 /// its z 0.25 above the floor), from how far, turned how far about the vertical and tilted how far
 /// up (degrees).

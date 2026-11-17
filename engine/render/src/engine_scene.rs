@@ -14,6 +14,8 @@ use std::collections::HashMap;
 /// A planned draw as the renderer takes it, with its account.
 pub struct Made {
     pub draw: Draw,
+    /// Its place in the planned list (`Inputs::draws`).
+    pub from: usize,
     pub info: DrawInfo,
 }
 
@@ -53,14 +55,44 @@ pub struct Inputs<'a> {
     pub view: Mat3x4,
 }
 
+/// The textures bound so far, by the layer's name hash: the texture and whether it has clear pixels.
+pub type TextureCache = HashMap<u32, Option<(TextureRef, bool)>>;
+
 impl Assets {
+    /// The textures of a shader's first two layers (their names by hash in the archives), added to
+    /// `scene`'s when not in `cache` yet, and whether the first one has clear pixels; `info` takes
+    /// their names and whether one was not found.
+    pub fn bind_shader(&self, scene: &mut Scene, cache: &mut TextureCache, shader: Option<&Shader>, info: &mut DrawInfo) -> ([Option<TextureRef>; 2], bool) {
+        let mut bound: [Option<TextureRef>; 2] = [None, None];
+        let mut cutout = false;
+        if let Some(sh) = shader {
+            for (slot, l) in sh.layers.iter().take(2).enumerate() {
+                let found = cache.entry(l.texture).or_insert_with(|| {
+                    let hash = *self.by_name.get(&l.texture)?;
+                    let levels = self.decode(hash)?;
+                    let (wrap, linear, mipmaps) = sampler_of(self.by_hash[&hash].flags, levels.len() as u32);
+                    let cutout = levels[0].2.iter().any(|&p| p >> 24 != 255);
+                    scene.textures.push(levels);
+                    Some((TextureRef { texture: TextureId(scene.textures.len() as u32 - 1), wrap, linear, mipmaps }, cutout))
+                });
+                bound[slot] = found.map(|f| f.0);
+                if slot == 0 {
+                    cutout = found.is_some_and(|f| f.1);
+                }
+                info.missing_texture |= found.is_none();
+                info.textures[slot] = self.by_name.get(&l.texture).and_then(|h| self.by_hash.get(h)).map(|s| s.name.clone());
+            }
+        }
+        (bound, cutout)
+    }
+
     /// The renderer's draws for the engine's list. Meshes and textures are added to `scene`'s
     /// (the draws' ids are left for the caller, who places them).
     pub fn engine_draws(&self, scene: &mut Scene, input: &Inputs<'_>) -> Vec<Made> {
         let mut mesh_of_batch: HashMap<(usize, bool), Option<MeshId>> = HashMap::new();
-        let mut textures: HashMap<u32, Option<(TextureRef, bool)>> = HashMap::new();
+        let mut textures = TextureCache::new();
         let mut out = Vec::new();
-        for d in input.draws {
+        for (from, d) in input.draws.iter().enumerate() {
             let Some(part) = input.models.parts.parts_of(d.part.0).find(|p| p.index == d.part) else { continue };
             let list = part.batch.list.is_some();
             let mesh = *mesh_of_batch.entry((part.batch as *const _ as usize, list)).or_insert_with(|| {
@@ -72,25 +104,10 @@ impl Assets {
             let Some(mesh) = mesh else { continue };
             let shader = input.shaders.get(&d.shader.unwrap_or(part.batch.hash));
             let mut info = DrawInfo { class: if list { Class::DisplayList } else { Class::RigidStrip }, strip: 0, model: part.record.name.clone(), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None, skin: None };
-            let mut bound: [Option<TextureRef>; 2] = [None, None];
-            let mut cutout = false;
-            if let Some(sh) = shader {
-                for (slot, l) in sh.layers.iter().take(2).enumerate() {
-                    let found = textures.entry(l.texture).or_insert_with(|| {
-                        let hash = *self.by_name.get(&l.texture)?;
-                        let levels = self.decode(hash)?;
-                        let (wrap, linear, mipmaps) = sampler_of(self.by_hash[&hash].flags, levels.len() as u32);
-                        let cutout = levels[0].2.iter().any(|&p| p >> 24 != 255);
-                        scene.textures.push(levels);
-                        Some((TextureRef { texture: TextureId(scene.textures.len() as u32 - 1), wrap, linear, mipmaps }, cutout))
-                    });
-                    bound[slot] = found.map(|f| f.0);
-                    if slot == 0 {
-                        cutout = found.is_some_and(|f| f.1);
-                    }
-                    info.missing_texture |= found.is_none();
-                    info.textures[slot] = self.by_name.get(&l.texture).and_then(|h| self.by_hash.get(h)).map(|s| s.name.clone());
-                }
+            let (bound, cutout) = self.bind_shader(scene, &mut textures, shader, &mut info);
+            // the shadow sub-models (the walls' 5-vertex pieces) are drawn by the shadow pass alone
+            if info.textures[0].as_deref() == Some(SHADOW_TEXTURE) {
+                continue;
             }
             let lighting = (input.lighting)(d);
             let lit = matches!(lighting, Lighting::Lit { .. } | Lighting::VertexColours);
@@ -102,8 +119,139 @@ impl Assets {
             state_of(&mut material, d.kind, cutout, shader.and_then(|sh| sh.layers.first()).map(|l| l.value));
             out.push(Made {
                 draw: Draw { mesh, world: d.world, bones: None, projection: None, viewport: None, view: Some(input.view), material, lighting, id: 0 },
+                from,
                 info,
             });
+        }
+        out
+    }
+}
+
+/// The texture of the shadow sub-models: drawn by the shadow pass only (`shadow_material`).
+pub const SHADOW_TEXTURE: &str = "polyshadow";
+
+/// How far down a unit of the sun's horizontal direction a shadow falls: the shadow draws' view
+/// is the camera's with the lot's z sheared onto the ground, a point at height z moved by z times
+/// the sun's x and y over this (the logged shadow views of frame 2400 shear by (0.8855, -0.2271)
+/// where the sun's direction is (0.8223, -0.2109, -0.5285): the same 0.9286 for both axes, which
+/// is not the sun's own vertical part. Fitted at this one clock; whether it is a constant or the
+/// sun's plus 0.4 is not known.
+pub const SHADOW_SHEAR_Z: f32 = 0.9286;
+
+/// The view the shadows are drawn through: the camera's `view` after the shear that puts a point
+/// of height z on the ground along the sun's direction `sun` (`SHADOW_SHEAR_Z`).
+pub fn shadow_view(view: &Mat3x4, sun: [f32; 3]) -> Mat3x4 {
+    let (a, b) = (sun[0] / SHADOW_SHEAR_Z, sun[1] / SHADOW_SHEAR_Z);
+    let mut v = *view;
+    for r in 0..3 {
+        v[r * 4 + 2] = a * view[r * 4] + b * view[r * 4 + 1];
+    }
+    v
+}
+
+/// The material of a projected shadow's draw, as the log's 692 shadow draws of frame 2400 all
+/// have it: flat black (lighting off), blended by the picture's destination alpha (the floor's
+/// 0x7F, which a shadow leaves 0 so overlapping shadows do not stack), Z off, alpha test at least
+/// 5, a constant destination alpha of 0. The polygon texture's alpha is not applied (`scene.rs`,
+/// `shadow_of`).
+pub fn shadow_material() -> Material {
+    Material {
+        combine: Combine::Vertex,
+        layers: [None, None],
+        blend: Blend::Mix { src: Factor::DstAlpha, dst: Factor::InvDstAlpha },
+        cull: Cull::None,
+        depth_test: None,
+        depth_write: false,
+        alpha_test: Some(AlphaTest::at_least(ALPHA_TEST_BLENDED)),
+        write_colour: true,
+        write_alpha: true,
+        dst_alpha: Some(0),
+        layer1_from_position: None,
+        sphere: None,
+    }
+}
+
+impl Assets {
+    /// The shadow pass's draws of the planned parts (`drawlist::LotDraws::shadows`): each part's
+    /// vertex strip (its display list is the lit pass's) in the shadow material and lighting off.
+    pub fn engine_shadows(&self, scene: &mut Scene, models: &Models, shadows: &[Planned], view: Mat3x4) -> Vec<(usize, Made)> {
+        let mut mesh_of_batch: HashMap<usize, Option<MeshId>> = HashMap::new();
+        let mut out = Vec::new();
+        for (k, d) in shadows.iter().enumerate() {
+            let Some(part) = models.parts.parts_of(d.part.0).find(|p| p.index == d.part) else { continue };
+            let mesh = *mesh_of_batch.entry(part.batch as *const _ as usize).or_insert_with(|| {
+                mesh_of(part.batch, false).map(|m| {
+                    scene.meshes.push(m);
+                    MeshId(scene.meshes.len() as u32 - 1)
+                })
+            });
+            let Some(mesh) = mesh else { continue };
+            let info = DrawInfo { class: Class::Shadow, strip: 0, model: part.record.name.clone(), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None, skin: None };
+            out.push((k, Made { from: k, draw: Draw { mesh, world: d.world, bones: None, projection: None, viewport: None, view: Some(view), material: shadow_material(), lighting: Lighting::Black, id: 0 }, info }));
+        }
+        out
+    }
+}
+
+/// A floor strip's draw: its corners' colours as the mesh's vertex colours, the shader's material
+/// (the terrain's two layers cross-faded, an indoor floor's reflection), Z less-or-equal with
+/// writes, a constant destination alpha of 0x7F (the stencil the shadows read, `shadow_material`).
+/// The terrain's second layer is read at the position (`scene::terrain_colour_uv`).
+pub const DST_ALPHA_FLOOR: u8 = 0x7F;
+
+/// The mask pass over a floor strip, drawn after a batch's shadows: no colour, the alpha written 0
+/// where the floor's texture is not clear (the shadows' stencil is cleared for the next batch),
+/// no depth test; the floor's texture clamped and without mip levels, as the records show.
+fn mask_of(floor: &Material) -> Material {
+    let mut m = *floor;
+    m.layers = [floor.layers[0].map(|l| TextureRef { wrap: (Wrap::Clamp, Wrap::Clamp), mipmaps: Mipmaps::Off, ..l }), None];
+    m.combine = Combine::Modulate { unlit: false };
+    m.blend = Blend::Mix { src: Factor::Other, dst: Factor::Zero };
+    m.depth_test = None;
+    m.depth_write = false;
+    m.alpha_test = Some(AlphaTest::at_least(ALPHA_TEST_BLENDED));
+    m.write_colour = false;
+    m.write_alpha = true;
+    m.dst_alpha = Some(0);
+    m.layer1_from_position = None;
+    m.sphere = None;
+    m
+}
+
+/// The floor strips' draws and their masks, by strip (`housefire::floors::Strip` order).
+pub struct FloorDraws {
+    pub floor: Made,
+    pub mask: Made,
+}
+
+impl Assets {
+    pub fn engine_floors(&self, scene: &mut Scene, strips: &[housefire::floors::Strip], shaders: &HashMap<u32, Shader>, view: Mat3x4) -> Vec<FloorDraws> {
+        let mut textures = TextureCache::new();
+        let mut out = Vec::new();
+        for (k, st) in strips.iter().enumerate() {
+            let shader = shaders.get(&st.shader);
+            let mut info = DrawInfo { class: Class::Floor, strip: 0, model: format!("run{k}"), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None, skin: None };
+            let (bound, _) = self.bind_shader(scene, &mut textures, shader, &mut info);
+            let record = match shader {
+                Some(sh) => material_record(sh),
+                None => MaterialRec { tick: 0, layers: 1, layer: [[0; 0x18]; 2], textures: [(0, [0; 128]); 2], strips_before: 0 },
+            };
+            let (mut material, unsupported) = material_of(&record, true, bound);
+            info.unsupported = unsupported;
+            if material.layers[1].is_some() {
+                material.layer1_from_position = Some(crate::scene::terrain_colour_uv());
+            }
+            material.depth_test = Some(Compare::LEQUAL);
+            material.depth_write = true;
+            material.cull = Cull::None;
+            material.dst_alpha = Some(DST_ALPHA_FLOOR);
+            let vertices: Vec<_> = st.corners.iter().map(|&(p, uv, c)| ([p[0], p[1], p[2], 1.0], uv, u32::from_be_bytes(c))).collect();
+            scene.meshes.push(crate::scene::floor_mesh(&vertices));
+            let mesh = MeshId(scene.meshes.len() as u32 - 1);
+            let world = crate::scene::floor_world();
+            let draw = |material: Material| Draw { mesh, world, bones: None, projection: None, viewport: None, view: Some(view), material, lighting: Lighting::VertexColours, id: 0 };
+            let mask_info = DrawInfo { class: Class::FloorMask, ..info.clone() };
+            out.push(FloorDraws { floor: Made { draw: draw(material), from: k, info }, mask: Made { draw: draw(mask_of(&material)), from: k, info: mask_info } });
         }
         out
     }
@@ -171,6 +319,10 @@ pub struct Plan {
     pub resources: std::collections::BTreeMap<u32, housefire::quickdata::ObjResources>,
     /// The lot's wall and fence pieces.
     pub pieces: Vec<housefire::scene::WallPiece>,
+    /// The shadow pass's draws (`drawlist::LotDraws::shadows`).
+    pub shadows: Vec<Planned>,
+    /// The lot's floor strips (`housefire::floors`), by room.
+    pub floors: Vec<housefire::floors::Strip>,
     /// The lamps among the placements and their lights (`housefire::lamps`).
     pub lamps: Vec<housefire::lamps::Lamp>,
     pub lights: housefire::lighting::LotLights,
@@ -233,48 +385,96 @@ pub fn plan(disc: &housefire::disc::Disc, card: Option<&std::path::Path>, log: &
     let g = |i: usize| world.globals.get(i).copied().map_or(0, i32::from);
     let clock = (g(0), g(5), g(6));
     let lights = housefire::lighting::LotLights::build(&world, &res, &lamps, clock);
-    Some(Plan { models, draws: lot.draws, placements: lot.placements, guids, resources: res, pieces: lot.pieces, lamps, lights, clock })
+    let image = |name: &str| housefire::arc::entries(&quick).unwrap_or_default().into_iter().find(|e| e.name == name).and_then(|e| housefire::quickdata::Image::read(housefire::arc::bytes(&quick, &e)));
+    let patterns = image("SimsTiles").map(|img| housefire::quickdata::floor_patterns(&img)).unwrap_or_default();
+    let terrain = image("SimsUI").map(|img| housefire::quickdata::houses(&img)).and_then(|h| h.get(house).map(|h| h.terrain)).unwrap_or(0);
+    let shaders = housefire::shader::index(disc);
+    let floors = housefire::floors::strips(&world.walls, 64, &patterns, terrain, &lights, |id| shaders.get(&id).and_then(|s| s.material()));
+    Some(Plan { models, draws: lot.draws, placements: lot.placements, guids, resources: res, pieces: lot.pieces, shadows: lot.shadows, floors, lamps, lights, clock })
 }
 
-/// Puts the engine's draws where the log's first rigid or display-list draw was and takes the log's
-/// out (those of the Sims and what they hold stay the log's: they are the Sims' own, counted with
-/// the skinned parts). The opaque draws come first, then the blended ones. Returns how many log
+/// What the engine makes of a frame, to be put in the original's order (`assemble`).
+pub struct Engine {
+    /// Each floor strip's draws and the room (batch) it is in.
+    pub floors: Vec<(usize, FloorDraws)>,
+    /// The lot's own opaque draws (the ground the shadows fall on): after the first batch's floors.
+    pub lot: Vec<Made>,
+    /// The shadow draws by room.
+    pub shadows: Vec<Vec<Made>>,
+    /// The model draws (objects, walls, the lot's blended ones): after all batches, the opaque
+    /// ones first.
+    pub objects: Vec<Made>,
+}
+
+/// The room whose batch the log's Sims' shadows go in until the engine makes them (the home
+/// lot's Sims are in the main rooms, room 1).
+const SIMS_SHADOW_ROOM: usize = 1;
+
+/// Puts the engine's draws in the original's order and takes the log's out of the frame, but for
+/// the Sims' (their skinned parts, what they hold, their shadows) and the interface's. The order
+/// (`docs/assets.md`, "The floors and the shadows"): for each room's batch its floors, in the
+/// first batch the lot's own ground, the shadows (the Sims' in `SIMS_SHADOW_ROOM`'s), then the
+/// floors again as a mask that clears the shadows' stencil; then the models. Returns how many log
 /// draws it took out.
-pub fn splice(scene: &mut Scene, made: Vec<Made>) -> usize {
-    let is_model = |d: &Draw, drawn: &[DrawInfo]| matches!(drawn[d.id as usize - 1].class, Class::RigidStrip | Class::DisplayList);
+pub fn assemble(scene: &mut Scene, engine: Engine) -> usize {
     for d in &scene.frame.draws {
         let info = &mut scene.drawn[d.id as usize - 1];
         if matches!(info.class, Class::RigidStrip | Class::DisplayList) && (housefire::drawlist::is_sims(&info.model) || housefire::drawlist::is_held(&info.model)) {
             info.class = Class::Skinned;
         }
     }
-    let (mut opaque, mut blended): (Vec<Made>, Vec<Made>) = made.into_iter().partition(|m| m.draw.material.blend == Blend::Opaque);
-    opaque.append(&mut blended);
-    let mut engine = Some(opaque);
-    let mut out = Vec::new();
-    let mut removed = 0;
-    // the original draws every floor strip (and the masks of the shadows over them) before its
-    // first object: a blended draw (a window's glass, which writes depth) put in front of a
-    // floor strip hides it. So the engine's draws go at the first model draw after the last floor.
-    let last_floor = scene.frame.draws.iter().rposition(|d| matches!(scene.drawn[d.id as usize - 1].class, Class::Floor | Class::FloorMask)).unwrap_or(0);
-    for (at, d) in std::mem::take(&mut scene.frame.draws).into_iter().enumerate() {
-        if !is_model(&d, &scene.drawn) {
-            out.push(d);
-            continue;
-        }
-        removed += 1;
-        if at < last_floor {
-            continue;
-        }
-        if let Some(list) = engine.take() {
-            for mut m in list {
-                scene.drawn.push(m.info.clone());
-                scene.all.push(m.info);
-                m.draw.id = scene.drawn.len() as u32;
-                out.push(m.draw);
-            }
+    let (mut kept, mut sims_shadows, mut removed) = (Vec::new(), Vec::new(), 0);
+    for d in std::mem::take(&mut scene.frame.draws) {
+        let info = &scene.drawn[d.id as usize - 1];
+        match info.class {
+            Class::Shadow if housefire::drawlist::is_sims(&info.model) => sims_shadows.push(d),
+            Class::RigidStrip | Class::DisplayList | Class::Floor | Class::FloorMask | Class::Shadow => removed += 1,
+            _ => kept.push(d),
         }
     }
+    let mut out: Vec<Draw> = Vec::new();
+    let mut put = |scene: &mut Scene, out: &mut Vec<Draw>, mut m: Made| {
+        scene.drawn.push(m.info.clone());
+        scene.all.push(m.info);
+        m.draw.id = scene.drawn.len() as u32;
+        out.push(m.draw);
+    };
+    let rooms = engine.floors.iter().map(|f| f.0).chain(0..engine.shadows.len()).max().map_or(0, |m| m + 1);
+    let mut floors: Vec<Vec<FloorDraws>> = (0..rooms).map(|_| Vec::new()).collect();
+    for (room, f) in engine.floors {
+        floors[room].push(f);
+    }
+    let (mut lot, mut shadows) = (Some(engine.lot), engine.shadows.into_iter());
+    let mut sims = Some(sims_shadows);
+    for (room, batch) in floors.into_iter().enumerate() {
+        let (mut masks, mut batch_floors) = (Vec::new(), Vec::new());
+        for f in batch {
+            batch_floors.push(f.floor);
+            masks.push(f.mask);
+        }
+        for m in batch_floors {
+            put(scene, &mut out, m);
+        }
+        for m in lot.take().into_iter().flatten() {
+            put(scene, &mut out, m);
+        }
+        for m in shadows.next().unwrap_or_default() {
+            put(scene, &mut out, m);
+        }
+        if room == SIMS_SHADOW_ROOM {
+            out.extend(sims.take().into_iter().flatten());
+        }
+        for m in masks {
+            put(scene, &mut out, m);
+        }
+    }
+    out.extend(sims.take().into_iter().flatten());
+    let (mut opaque, mut blended): (Vec<Made>, Vec<Made>) = engine.objects.into_iter().partition(|m| m.draw.material.blend == Blend::Opaque);
+    opaque.append(&mut blended);
+    for m in opaque {
+        put(scene, &mut out, m);
+    }
+    out.extend(kept);
     scene.frame.draws = out;
     removed
 }

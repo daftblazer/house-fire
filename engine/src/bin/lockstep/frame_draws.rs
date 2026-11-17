@@ -23,13 +23,7 @@ use housefire::tree_log::{Log, StripRec};
 /// the 3 x 3 relative to its own scale).
 const TOLERANCE: f32 = 1e-4;
 
-/// The part of the screen (0 to 1 across and down) a part's place may be in for the original to
-/// draw it, as (left, right, top, bottom): a model reaches past its place (a tree's crown, a
-/// wall's height). Fitted at tick 1,039 of home-a39.log (the log's draws' places span x 0.006 to
-/// 1.034, y -0.179 to 0.620) with a little room: the smallest box that holds every draw the log
-/// made. Not the original's own test (a bounding volume of the record against the frustum, not
-/// decoded): the renderer clips what is left.
-const VISIBLE: [f32; 4] = [0.0, 1.04, -0.19, 0.63];
+use housefire::drawlist::VISIBLE;
 
 /// Whether a part's place (`world`'s translation) is in `VISIBLE` of the logged view's screen.
 fn on_screen(view: &[f32], projection: Option<[f32; 6]>, world: &[f32; 12]) -> bool {
