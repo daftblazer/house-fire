@@ -304,7 +304,11 @@ fn object_models<'a>(models: &'a Models, r: &'a ObjResources) -> impl Iterator<I
     // an object whose resources name no dataset (ResData flag 0x80000000: the parked scooter's
     // vehicle row, a model of `models.arc` alone) is not drawn with the lot's objects
     let placeholder = r.dataset == 0;
-    let named = [&r.model, &r.key].into_iter().find(|&&id| models.parts.record_by_id(id).is_some());
+    // (the one the object's own dataset lists comes first: the club's pool table names the stock
+    // table's model but its dataset lists the club's own, with the club's felt)
+    let listed = models.datasets.get(&r.dataset);
+    let found = |id: &&u32| models.parts.record_by_id(**id).is_some();
+    let named = [&r.model, &r.key].into_iter().filter(found).find(|id| listed.is_some_and(|l| l.contains(id))).or_else(|| [&r.model, &r.key].into_iter().find(found));
     let ids: &[u32] = match named {
         _ if placeholder => &[],
         Some(id) => std::slice::from_ref(id),

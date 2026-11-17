@@ -153,6 +153,19 @@ fn engine_frame(scene: &mut Scene, assets: &Assets, disc: &Disc, log: &housefire
     let plays = if no_sims { housefire::drawlist::Plays::at(tick) } else { engine_scene::run_to(&mut replay, log, tick) };
     let plan = engine_scene::plan(disc, card, log, tick, &view, (house, lot_index), &plays).expect("the engine's lot");
     let shaders = housefire::shader::index(disc);
+    // HF_SHADER=prefix: the shaders whose name starts so (layers' flags, words, bytes, values)
+    if let Ok(prefix) = std::env::var("HF_SHADER") {
+        let mut seen = std::collections::BTreeSet::new();
+        for s in shaders.values().filter(|s| s.name.to_lowercase().starts_with(&prefix.to_lowercase())) {
+            if seen.insert(s.name.clone()) {
+                println!("  shader {} head {:02x?}", s.name, &s.head[..]);
+                for l in &s.layers {
+                    println!("    layer tex {:08x} flags {:#x} word {:#x} bytes {:02x?} value {}", l.texture, l.flags, l.word, l.bytes, l.value);
+                }
+                println!("    tail {:02x?}", s.tail);
+            }
+        }
+    }
     if let Ok(name) = std::env::var("HF_DRAWS") {
         for d in &plan.draws {
             let part = plan.models.parts.parts_of(d.part.0).find(|p| p.index == d.part).unwrap();
@@ -445,6 +458,51 @@ fn main() -> ExitCode {
                 shown += 1;
                 println!("  {},{}: ours {:?} reference {:?} (strip {})", p % WIDTH as usize, p / WIDTH as usize, &picture.rgba[p * 4..p * 4 + 3], &reference[p * 4..p * 4 + 3], scene.drawn[id as usize - 1].strip);
             }
+        }
+    }
+    // HF_BLENDORDER=1: the blended model draws in draw order with their view depth
+    if std::env::var("HF_BLENDORDER").is_ok() {
+        let v = scene.frame.camera.view;
+        for d in scene.frame.draws.iter().filter(|d| d.material.blend != housefire_render::frame::Blend::Opaque && d.projection.is_none()) {
+            let info = &scene.drawn[d.id as usize - 1];
+            if !matches!(info.class, Class::RigidStrip | Class::DisplayList) {
+                continue;
+            }
+            let (x, y, z) = (d.world[3], d.world[7], d.world[11]);
+            let depth = v[8] * x + v[9] * y + v[10] * z + v[11];
+            let dist = ((v[0] * x + v[1] * y + v[2] * z + v[3]).powi(2) + (v[4] * x + v[5] * y + v[6] * z + v[7]).powi(2) + depth * depth).sqrt();
+            println!("blend {:5} depth {depth:8.3} dist {dist:8.3} {} {:?} {}", d.id, info.model, info.textures[0], d.world.map(|v| format!("{v:.3e}")).join(" "));
+        }
+    }
+    // HF_MODELMAP=name: the pixels of that model's draws, off ones in red, the rest in grey
+    if let Ok(name) = std::env::var("HF_MODELMAP") {
+        let map: Vec<u8> = (0..(WIDTH * HEIGHT) as usize)
+            .flat_map(|p| {
+                let id = picture.ids[p] as usize;
+                let g = reference[p * 4] / 3;
+                if id == 0 || scene.drawn[id - 1].model[..] != name {
+                    return [g, g, g, 255];
+                }
+                let off = (0..3).any(|c| (i32::from(picture.rgba[p * 4 + c]) - i32::from(reference[p * 4 + c])).abs() > 4);
+                if off { [255, 0, 0, 255] } else { [0, 200, 0, 255] }
+            })
+            .collect();
+        let dir = frames_dir.join(std::env::var("HF_OUT").unwrap_or_else(|_| "r1".into()));
+        std::fs::create_dir_all(&dir).unwrap();
+        write_png(&dir.join("modelmap.png"), &map);
+        // the same model's pixels by the texture of the last draw there
+        let mut by_texture: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+        for p in 0..(WIDTH * HEIGHT) as usize {
+            let id = picture.ids[p] as usize;
+            if id != 0 && scene.drawn[id - 1].model[..] == name {
+                let off = (0..3).any(|c| (i32::from(picture.rgba[p * 4 + c]) - i32::from(reference[p * 4 + c])).abs() > 4);
+                let e = by_texture.entry(format!("{:?}", scene.drawn[id - 1].textures[0])).or_default();
+                e.0 += 1;
+                e.1 += usize::from(off);
+            }
+        }
+        for (t, (n, off)) in by_texture {
+            println!("  {name} {t}: {off} of {n} off");
         }
     }
     for probe in std::env::var("HF_PROBE").unwrap_or_default().split(';').filter(|p| !p.is_empty()) {
