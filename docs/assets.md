@@ -2739,7 +2739,14 @@ K4 (the club, 72.41% to 80.53% whole; rigid 69.37% to 80.87%, floors 85.80% to 8
   frame's two passes' places (rotation 1-2% off the shown pass), now within 0.1%; 76.20% to 80.53%.
 - the log's frame holds the lot's draws twice (strips below and from 2,146 in this frame: two passes of floors, shadows,
   objects) and the picture is the second: with the first pass's model draws left out log mode is 97.62% (not 93.79%)
-  and the dance floor 2,165 of 87,447 off (`HF_DROPSTRIP=0,2146`). Log mode itself is unchanged.
+  and the dance floor 2,165 of 87,447 off (`HF_DROPSTRIP=0,2146`). The two passes are two frames: tick 964
+  holds display frames 3000 and 3001 (a tick holds one or two). The observer now writes its '|' record also
+  before a draw record when the display copies changed (recomp, src/tree_log.cpp `note_frames`), the parser
+  keeps them by the strips before (`Log::frame_strips`), and render-check takes a frame's strips from its
+  record to the next, leaving the tick's other frame's model draws out (log mode only). On club-d3000b.log
+  (the same run, recorded again with the new records; work/frames-club3, the full frames as world_): frame
+  3001 is strips 1,845..3,690, log mode 97.62% whole, rigid 98.65%; engine mode 80.53% as before. Home's
+  frames are one to a tick: both modes' PNGs the same.
 - a layer with lighting `unlit` (the cones, pools, flares, a street light) has lighting off in 9 of the log's 10 such
   draws; setting it changed no pixel (the combiner ignores the lights for it), so it is not applied.
 Studies (render-check): `HF_MODELMAP=name` (that model's pixels, off ones red, and by texture), `HF_MATS=name` (its draws'

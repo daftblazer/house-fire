@@ -308,10 +308,20 @@ fn main() -> ExitCode {
     let ticks: std::collections::BTreeSet<u32> = log.strips.iter().map(|s| s.tick).collect();
     let first_tick = *ticks.first().expect("no draw records");
     let first_frame = log.frames.iter().find(|f| f.0 == first_tick).map_or(0, |f| f.1);
-    let Some(&tick) = ticks.iter().nth(frame.wrapping_sub(first_frame) as usize) else {
+    // A frame's strips: from the frame record of its copies before it (frame - 1) to the next
+    // one, by the strips before them. Two frames can share a tick; then the tick's strips outside
+    // the frame's are left out below.
+    let strip_range = log.frame_strips.iter().position(|f| f.0 == frame.wrapping_sub(1)).map(|i| {
+        let start = log.frame_strips[i].1;
+        let end = log.frame_strips[i + 1..].iter().find(|f| f.0 >= frame && f.1 > start).map_or(log.strips.len(), |f| f.1);
+        start..end
+    });
+    let from_records = strip_range.as_ref().and_then(|r| log.strips.get(r.start)).map(|s| s.tick);
+    let Some(tick) = from_records.or_else(|| ticks.iter().nth(frame.wrapping_sub(first_frame) as usize).copied()) else {
         eprintln!("the log has draws for frames {first_frame}.. ({} of them)", ticks.len());
         return ExitCode::FAILURE;
     };
+    let shared_tick = strip_range.clone().filter(|r| log.strips.iter().enumerate().any(|(i, s)| s.tick == tick && !r.contains(&i)));
     let reference = read_png(&frames_dir.join(format!("world_{frame:05}.png"))).expect("the reference picture");
 
     let assets = Assets::new(&disc);
@@ -369,6 +379,15 @@ fn main() -> ExitCode {
             let i = &drawn[d.id as usize - 1];
             !(matches!(i.class, Class::RigidStrip | Class::DisplayList) && (lo..hi).contains(&i.strip))
         });
+    }
+    // a tick holding two frames: only this frame's strips (log mode's model draws)
+    if let Some(r) = shared_tick.as_ref().filter(|_| !engine_mode) {
+        let drawn = &scene.drawn;
+        scene.frame.draws.retain(|d| {
+            let i = &drawn[d.id as usize - 1];
+            !matches!(i.class, Class::RigidStrip | Class::DisplayList) || r.contains(&i.strip)
+        });
+        println!("frame {frame}: strips {}..{} of tick {tick}, which holds another frame's too", r.start, r.end);
     }
     let picture = renderer.render(&scene.frame);
 

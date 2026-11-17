@@ -826,6 +826,9 @@ pub struct Log {
     /// '|': (tick, the guest's display copies before it), when the count changed. The recomp's
     /// frame dump N is the N-th copy, so the frame drawn in tick t is the first count past it.
     pub frames: Vec<(u32, u32)>,
+    /// The same records by the strips before them: (display copies so far, strips before). A
+    /// frame begun inside a tick shows here among its tick's strips (two frames in one tick).
+    pub frame_strips: Vec<(u32, usize)>,
     pub lights: Vec<LightsRec>,
     pub states: Vec<StateRec>,
     pub gx_calls: Vec<GxCallRec>,
@@ -1100,6 +1103,7 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
                 let (tick, frames) = (r.u32(), r.u32());
                 log.frames.push((tick, frames));
+                log.frame_strips.push((frames, log.strips.len()));
             }
             b'[' => {
                 if !r.has(8 + LightsRec::LEN) {
