@@ -492,7 +492,7 @@ pub struct Door {
 /// edge of the tile: 1 towards y - 1, 2 towards x - 1, 4 towards y + 1, 8 towards x + 1 (each
 /// wall seen from both its tiles); 0x10 and 0x20 the diagonal walls. A door opens the wall
 /// between its two parts' tiles. The ground floor's (level 1) only, as the lot has one array.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Walls {
     width: u32,
     height: u32,

@@ -38,9 +38,12 @@ pub struct Lights {
 }
 
 /// The lot's lights.
+#[derive(Clone)]
 pub struct LotLights {
     /// The lights by index (the other lights from 0, the lamps' from 256); an unused slot is zero.
     sources: Vec<Source>,
+    /// The sources' places and reaches, as the cell lookups take them.
+    geometry: Vec<([f32; 3], f32)>,
     /// Each room's (other first, other end, own first, own end) in `sources`.
     ranges: Vec<[u32; 4]>,
     /// Each room's ambient colour.
@@ -137,7 +140,8 @@ impl LotLights {
             })
             .collect();
         let room_of = (0..height as i32).flat_map(|y| (0..width as i32).map(move |x| (x, y))).map(|(x, y)| room_at(x, y) as u8).collect();
-        LotLights { sources, ranges, ambients, sun: Sun { colour: sun_colour, direction }, room_of, width }
+        let geometry = geometry(&sources);
+        LotLights { sources, geometry, ranges, ambients, sun: Sun { colour: sun_colour, direction }, room_of, width }
     }
 
     /// The original's room of a tile (0 outside).
@@ -164,32 +168,47 @@ impl LotLights {
     /// `group` (`floor_group`): each the light grid's sum at the corner over the lights of the
     /// cell's room (`light::cell_lights`), as `light::vertex_colour` makes the byte colour.
     pub fn floor_colours(&self, room: usize, group: &([f32; 3], [f32; 3]), points: &[(i32, i32)]) -> Vec<[u8; 4]> {
-        let geometry: Vec<([f32; 3], f32)> = self.sources.iter().map(|s| (s.at, s.reach)).collect();
+        self.floor_lit(group, points, &self.floor_cells(room, points))
+    }
+
+    /// The light grid's cells (`light::cell_lights`) of floor corners `points` for `room`: which
+    /// lights reach each. They depend on the lights' places and reaches (`same_geometry`), not on
+    /// their colours, so a floor keeps them while the time of day changes the colours.
+    pub fn floor_cells(&self, room: usize, points: &[(i32, i32)]) -> Vec<Option<[u16; 4]>> {
         let ranges = self.ranges.get(room).copied();
+        points.iter().map(|&(x, y)| ranges.and_then(|r| light::cell_lights([x as f32, y as f32, light::GRID_Z], (r[2], r[3]), (r[0], r[1]), &self.geometry))).collect()
+    }
+
+    /// The colours of floor corners `points` with their `cells` (`floor_cells`).
+    pub fn floor_lit(&self, group: &([f32; 3], [f32; 3]), points: &[(i32, i32)], cells: &[Option<[u16; 4]>]) -> Vec<[u8; 4]> {
         points
             .iter()
-            .map(|&(x, y)| {
-                let ids = ranges.and_then(|r| light::cell_lights([x as f32, y as f32, light::GRID_Z], (r[2], r[3]), (r[0], r[1]), &geometry));
-                let lights: Vec<light::Light> = ids
-                    .into_iter()
-                    .flatten()
-                    .filter(|&i| i != 0xFFFF)
-                    .map(|i| {
-                        let s = &self.sources[usize::from(i)];
-                        light::Light { x: s.at[0], y: s.at[1], height: s.at[2], reach: s.reach, colour: s.colour }
-                    })
-                    .collect();
-                light::vertex_colour(light::point_light(x as f32, y as f32, &lights), group.0, group.1)
+            .zip(cells)
+            .map(|(&(x, y), ids)| {
+                let mut lights = [None; 4];
+                let mut n = 0;
+                for &i in ids.iter().flatten().filter(|&&i| i != 0xFFFF) {
+                    let s = &self.sources[usize::from(i)];
+                    lights[n] = Some(light::Light { x: s.at[0], y: s.at[1], height: s.at[2], reach: s.reach, colour: s.colour });
+                    n += 1;
+                }
+                let lights: [light::Light; 4] = lights.map(|l| l.unwrap_or(light::Light { x: 0.0, y: 0.0, height: 0.0, reach: 0.0, colour: [0.0; 3] }));
+                light::vertex_colour(light::point_light(x as f32, y as f32, &lights[..n]), group.0, group.1)
             })
             .collect()
+    }
+
+    /// Whether `other` lights the same cells as these lights (the same places, reaches, ranges and
+    /// rooms; the colours and the sun may differ).
+    pub fn same_geometry(&self, other: &LotLights) -> bool {
+        self.width == other.width && self.ranges == other.ranges && self.room_of == other.room_of && self.geometry == other.geometry
     }
 
     /// The four lights (source indices, 0xFFFF for an empty slot) of the light grid's cell at
     /// `point` for `room`.
     fn cell(&self, room: usize, point: [f32; 2]) -> Option<[u16; 4]> {
-        let geometry: Vec<([f32; 3], f32)> = self.sources.iter().map(|s| (s.at, s.reach)).collect();
         let r = self.ranges.get(room)?;
-        light::cell_lights([point[0], point[1], light::GRID_Z], (r[2], r[3]), (r[0], r[1]), &geometry)
+        light::cell_lights([point[0], point[1], light::GRID_Z], (r[2], r[3]), (r[0], r[1]), &self.geometry)
     }
 
     /// What lights a fence at (x, y) whose edge starts at `start`: the four lights of the light
@@ -283,6 +302,7 @@ mod tests {
         room_of[3 * 4 + 1] = 1;
         LotLights {
             sources: vec![Source { at: [0.0; 3], reach: 0.0, colour: [0.0; 3] }; 512],
+            geometry: vec![([0.0; 3], 0.0); 512],
             ranges: vec![[0, 0, 256, 256], [0, 0, 256, 256]],
             ambients: vec![[0.1; 3], [0.2; 3]],
             sun: Sun { colour: [1.0; 3], direction: [0.0, 0.0, -1.0] },

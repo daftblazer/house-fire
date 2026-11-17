@@ -433,6 +433,9 @@ pub struct Lot {
     patterns: Vec<housefire::quickdata::FloorPattern>,
     terrain: u32,
     pub shaders: HashMap<u32, Shader>,
+    /// The floor strips of the last plan with what they were made from: while the walls and the
+    /// lights' places are the same, only the colours (the time of day) need making again.
+    floor_cache: std::cell::RefCell<Option<(housefire::routing::Walls, housefire::lighting::LotLights, Vec<housefire::floors::Strip>)>>,
 }
 
 impl Lot {
@@ -443,7 +446,7 @@ impl Lot {
         let resources = housefire::arc::entries(&quick)?.into_iter().find(|e| e.name == "SimsObjects").and_then(|e| housefire::quickdata::Image::read(housefire::arc::bytes(&quick, &e))).map(|img| housefire::quickdata::object_resources(&img))?;
         let patterns = image("SimsTiles").map(|img| housefire::quickdata::floor_patterns(&img)).unwrap_or_default();
         let terrain = image("SimsUI").map(|img| housefire::quickdata::houses(&img)).and_then(|h| h.get(house).map(|h| h.terrain)).unwrap_or(0);
-        Some(Lot { art: housefire::drawlist::LotArt::read(disc, house), models: std::rc::Rc::new(Models::read(disc)), resources: std::rc::Rc::new(resources), patterns, terrain, shaders: housefire::shader::index(disc) })
+        Some(Lot { art: housefire::drawlist::LotArt::read(disc, house), models: std::rc::Rc::new(Models::read(disc)), resources: std::rc::Rc::new(resources), patterns, terrain, shaders: housefire::shader::index(disc), floor_cache: Default::default() })
     }
 
     /// The draws of the lot as `world` has it at `tick`, seen from the eye of `view`. The clock the
@@ -458,7 +461,21 @@ impl Lot {
         let g = |i: usize| world.globals.get(i).copied().map_or(0, i32::from);
         let clock = (g(0), g(5), g(6));
         let lights = housefire::lighting::LotLights::build(world, &self.resources, &lamps, clock);
-        let floors = housefire::floors::strips(&world.walls, housefire::light::GRID_SIZE as i32, &self.patterns, self.terrain, &lights, |id| self.shaders.get(&id).and_then(|s| s.material()));
+        let material = |id| self.shaders.get(&id).and_then(|s| s.material());
+        let mut cache = self.floor_cache.borrow_mut();
+        let floors = match cache.take() {
+            Some((walls, made_with, strips)) if walls == world.walls && made_with.same_geometry(&lights) => {
+                let floors = housefire::floors::relight(&strips, &lights, material);
+                *cache = Some((walls, made_with, strips));
+                floors
+            }
+            _ => {
+                let floors = housefire::floors::strips(&world.walls, housefire::light::GRID_SIZE as i32, &self.patterns, self.terrain, &lights, material);
+                *cache = Some((world.walls.clone(), lights.clone(), floors.clone()));
+                floors
+            }
+        };
+        drop(cache);
         Plan { models: self.models.clone(), draws: lot.draws, placements: lot.placements, guids, resources: self.resources.clone(), pieces: lot.pieces, shadows: lot.shadows, floors, lamps, lights, clock }
     }
 }
