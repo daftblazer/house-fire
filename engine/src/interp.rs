@@ -120,6 +120,9 @@ pub struct Sleep {
     early: bool,
     /// The Idle's parameter (its index in the frame), which an early wake sets to what is left.
     param: usize,
+    /// The sleeping frame's depth (the stack's length at the Idle): frames run on top of it (a
+    /// tree an engine call runs on the object, as DropOnto's placement tree) leave it asleep.
+    depth: usize,
 }
 
 impl Sleep {
@@ -135,6 +138,10 @@ impl Sleep {
     /// A pass reached the sleeping stack.
     pub fn pass_over(&mut self) {
         self.left = self.left.saturating_sub(1);
+    }
+    /// A pass over it taken back: the tick's pass reached it after a tree ran over the sleep.
+    pub fn unpass(&mut self) {
+        self.left += 1;
     }
     /// Slept, and is being stepped again.
     pub fn woke(&self) -> bool {
@@ -413,15 +420,27 @@ impl Interpreter {
     pub fn sleep(&mut self) -> &mut Sleep {
         &mut self.sleep
     }
+    /// Asleep, its sleeping frame on top (a frame run over it is stepped).
     pub fn asleep(&self) -> bool {
-        self.sleep.asleep()
+        self.sleep.asleep() && self.stack.len() == self.sleep.depth
     }
     pub fn pass_over(&mut self) {
         self.sleep.pass_over()
     }
-    /// The sleep and the top frame together, for Idle.
+    /// Asleep under a frame run over it (an engine call's tree on the object).
+    pub fn asleep_under(&self) -> bool {
+        self.sleep.asleep() && self.stack.len() > self.sleep.depth
+    }
+    /// The sleep and the top frame together, for Idle (the top frame the sleeping one).
     pub fn sleep_and_top(&mut self) -> (&mut Sleep, &mut Frame) {
+        self.sleep.depth = self.stack.len();
         (&mut self.sleep, self.stack.last_mut().expect("a frame"))
+    }
+    /// The sleep and its frame (the sleeping one, under any run over it; else the top), for a
+    /// wake.
+    pub fn sleep_and_sleeper(&mut self) -> (&mut Sleep, &mut Frame) {
+        let k = if self.sleep.sleeping && (1..=self.stack.len()).contains(&self.sleep.depth) { self.sleep.depth - 1 } else { self.stack.len() - 1 };
+        (&mut self.sleep, &mut self.stack[k])
     }
 
     pub fn done(&self) -> bool {

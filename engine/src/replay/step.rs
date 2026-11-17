@@ -109,6 +109,8 @@ impl<'l> Replay<'l> {
             h.now = sim.now();
             // The turns: the native simulator's against the lot objects the log stepped.
             let mut logged_turns: Vec<i16> = Vec::new();
+            // the sleepers a tree ran over this tick, in an earlier turn than their own
+            let mut ran_over: Vec<i16> = Vec::new();
             let mut seen: BTreeSet<u32> = BTreeSet::new();
             for &i in &by_tick[t as usize] {
                 if engine_run[i] {
@@ -728,6 +730,9 @@ impl<'l> Replay<'l> {
                     }
                 }
                 // the wakes the steps before asked for (an expression touched an object's lockout)
+                if let Some(w) = env("REPLAY_WATCH_D25").map(|v| atoi(&v) as i16) && let Some(o) = h.world.find_object(w) {
+                    println!("d25 t {} {}:{} by {} -> {:?}", s.tick, s.tree, s.node, o_id, o.data.get(25));
+                }
                 if has("REPLAY_SHOW_WAKES") && !h.world.wakes.is_empty() {
                     let prev = i.checked_sub(1).map(|k| &log.steps[k]);
                     let asleep: Vec<bool> = h.world.wakes.iter().map(|&(w, _)| h.world.find(w).is_some_and(|k| sim.stack_of(&h.world, k).asleep())).collect();
@@ -1165,6 +1170,18 @@ impl<'l> Replay<'l> {
                     f.params = s.params.clone();
                     f.locals = s.locals.clone();
                     f.stack_object = s.stack_object;
+                }
+                if interp.asleep_under() && !ran_over.contains(&o_id) {
+                    // A tree run over a sleeping stack by an earlier turn of the pass (DropOnto's
+                    // placement tree): the pass, reaching it later, does not count it.
+                    let actor = log.steps[..i].iter().rev().take_while(|p| p.tick == s.tick).find(|p| p.sim != s.sim).and_then(|p| ids.get(&p.sim).copied());
+                    if has("REPLAY_SHOW_WAKES") {
+                        println!("ran over t {} {o_id} by {actor:?}", s.tick);
+                    }
+                    if actor.is_some_and(|a| a < o_id) {
+                        interp.sleep().unpass();
+                        ran_over.push(o_id);
+                    }
                 }
                 if interp.asleep() {
                     if has("REPLAY_SHOW_MADE") {

@@ -106,7 +106,7 @@ impl Simulator {
             if i.stack().is_empty() {
                 continue;
             }
-            let (sleep, f) = i.sleep_and_top();
+            let (sleep, f) = i.sleep_and_sleeper();
             match how {
                 Wake::Lockout => sleep.wake_early(f),
                 Wake::Ended => {

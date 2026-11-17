@@ -55,7 +55,7 @@ impl Host for TestHost<'_> {
                 PrimResult::True
             }
             2 => {
-                let s = interp.sleep();
+                let (s, _) = interp.sleep_and_top();
                 if s.woke() {
                     s.wake();
                     return PrimResult::True;

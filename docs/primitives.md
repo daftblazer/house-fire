@@ -75,8 +75,13 @@ the object ran (`Simulator::end_turn`). A sleep ends early when:
   No stack object: the script error 21.
 The wakes are applied after the waking turn (`Simulator::apply_wakes`).
 
-Left on the home log: two waits at the 1800 parameter (1482, 5084) woken at a different count,
-and three stacks the log ran while native has them asleep (ticks 2, 1455, 5083).
+A sleep belongs to its Idle's frame. A tree the engine runs on a sleeping object (DropOnto's
+placement tree on the counter 54 at 1455 and the table 47 at 5083; 251's at ticks 2, 260, 497,
+4922) is pushed over that frame and stepped; the sleep goes on under it (`Interpreter::asleep`,
+the stack at the Idle's depth). When an earlier turn of the pass ran it (the table under Sim
+12's drop), the pass reaching it that tick does not count it: the table's wake at 5084 has
+426 left, one more than a counted pass. (Seen once; the reverse order, the counter before Sim
+237, counts as usual.) With these every Idle parameter on both full logs is the original's.
 
 ## LookTowards (opcode 22): a turn on the walker, not native yet
 
