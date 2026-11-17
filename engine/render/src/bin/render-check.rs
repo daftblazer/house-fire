@@ -403,13 +403,6 @@ fn main() -> ExitCode {
         let floors: Vec<(usize, engine_scene::FloorDraws)> = plan.floors.iter().zip(assets.engine_floors(&mut scene, &mut caches, &plan.floors, &shaders, view)).map(|(st, f)| (st.room, f)).collect();
         let sun = plan.lights.at(1.0, 1.0).sun.map_or([0.0; 3], |s| s.direction);
         let projection = scene.frame.camera.projection;
-        let mut by_room: Vec<Vec<engine_scene::Made>> = Vec::new();
-        let room_of = |d: &housefire::drawlist::Draw| if d.kind == housefire::drawlist::Kind::WallPiece { 0 } else { plan.lights.room_of_place(d.origin[0], d.origin[1]) };
-        let view_of = |d: &housefire::drawlist::Draw| match (d.kind, room_of(d)) {
-            (housefire::drawlist::Kind::WallPiece, _) => engine_scene::shadow_view(&view, sun, engine_scene::SHADOW_SHEAR_WALL),
-            (_, 0) => engine_scene::shadow_view(&view, sun, engine_scene::SHADOW_SHEAR_OBJECT),
-            _ => engine_scene::shadow_view(&view, [0.0; 3], 1.0),
-        };
         if std::env::var_os("HF_PLACES").is_some() {
             let proj = scene.frame.camera.projection;
             let mut seen = std::collections::BTreeSet::new();
@@ -440,19 +433,7 @@ fn main() -> ExitCode {
                 println!("SHEARE {} {:?} kind {:?} origin ({:.2},{:.2}) shear ({:.4},{:.4}) room {} sun {} lights {}", scene.drawn[l.id as usize - 1].model, d.object, d.kind, d.origin[0], d.origin[1], a, b, plan.lights.room_of_place(d.origin[0], d.origin[1]), ls.sun.is_some(), pts.join(" "));
             }
         }
-        for (k, m) in assets.engine_shadows(&mut scene, &mut caches, &plan.models, &plan.shadows, &view_of) {
-            let d = &plan.shadows[k];
-            // (the original draws what its bounds put on the screen: a tall model's place can be
-            // off it; the pieces' are not drawn off the screen)
-            if d.kind == housefire::drawlist::Kind::WallPiece && !housefire::drawlist::in_view(&view, &projection, &d.world) {
-                continue;
-            }
-            let room = room_of(d);
-            if by_room.len() <= room {
-                by_room.resize_with(room + 1, Vec::new);
-            }
-            by_room[room].push(m);
-        }
+        let by_room = assets.engine_shadows_by_room(&mut scene, &mut caches, &plan, &view, &projection, sun);
         // the Sims from the engine's own run (HF_NO_SIMS=1 keeps the log's): the replay to the tick
         // before this one for the world, the animation frames through this one for the poses
         let sims = if std::env::var_os("HF_NO_SIMS").is_some() {
@@ -479,20 +460,6 @@ fn main() -> ExitCode {
             let mut sim_cache = sims::SimCaches::default();
             Some(assets.engine_sims(&mut scene, &mut caches, &mut sim_cache, &wardrobe, &figures, &plan.lights, sun, view, portrait))
         };
-        if std::env::var_os("HF_SIMLIST").is_some() {
-            // study aid: the Sims' draws as the log has them and as the engine makes them (model,
-            // vertices, skinned)
-            let describe = |d: &frame::Draw, info: &housefire_render::scene::DrawInfo, meshes: &[frame::MeshData]| format!("{:?} {} v{} skin {}", info.class, info.model, meshes.get(d.mesh.0 as usize).map_or(0, |m| m.vertices.len()), d.bones.is_some());
-            for d in &scene.frame.draws {
-                let info = &scene.drawn[d.id as usize - 1];
-                if matches!(info.class, Class::Overlay) || (matches!(info.class, Class::Skinned) && d.projection.is_none()) && housefire::drawlist::is_sims(&info.model) {
-                    println!("LOG    {}", describe(d, info, &scene.meshes));
-                }
-            }
-            for m in sims.iter().flat_map(|s| s.house.iter().chain(&s.portrait).chain(&s.leak)) {
-                println!("ENGINE {}", describe(&m.draw, &m.info, &scene.meshes));
-            }
-        }
         let (lot, objects): (Vec<engine_scene::Made>, Vec<engine_scene::Made>) = made.into_iter().partition(|m| plan.draws[m.from].kind == housefire::drawlist::Kind::LotList && m.draw.material.blend == frame::Blend::Opaque);
         println!("engine floors: {} strips in rooms {:?}; shadows {} planned, per room {:?}", floors.len(), floors.iter().map(|f| f.0).collect::<std::collections::BTreeSet<_>>(), plan.shadows.len(), by_room.iter().map(Vec::len).collect::<Vec<_>>());
         let removed = engine_scene::assemble(&mut scene, engine_scene::Engine { floors, lot, shadows: by_room, objects, sims });
@@ -591,17 +558,6 @@ fn main() -> ExitCode {
     let missing_pixels = picture.ids.iter().filter(|&&id| id != 0 && scene.drawn[id as usize - 1].missing_texture).count();
     println!("drawn with a texture not found (white): {missing} draws, {missing_pixels} pixels; materials not drawn right: {unsupported:?}");
 
-    if std::env::var_os("HF_LIGHTS").is_some() {
-        let mut by: BTreeMap<String, usize> = BTreeMap::new();
-        for d in &scene.frame.draws {
-            if matches!(scene.drawn[d.id as usize - 1].class, Class::RigidStrip | Class::DisplayList) {
-                *by.entry(format!("{:?}", d.lighting)).or_default() += 1;
-            }
-        }
-        for (k, v) in by {
-            println!("LIGHT {v}: {k}");
-        }
-    }
     let class_at = |id: u32| scene.drawn[id as usize - 1].class;
     let rigid = |p: usize| picture.ids[p] != 0 && matches!(class_at(picture.ids[p]), Class::RigidStrip | Class::DisplayList);
     compare("rigid draws' pixels", &picture.rgba, &reference, rigid);
@@ -609,18 +565,6 @@ fn main() -> ExitCode {
     // the Sims' own pixels: where the last draw is a skinned part or the portrait's; and the
     // portrait's whole square, backdrop included
     compare("Sims' own pixels (skinned parts and the portrait's draws)", &picture.rgba, &reference, |p| picture.ids[p] != 0 && matches!(class_at(picture.ids[p]), Class::Skinned | Class::Overlay));
-    if std::env::var_os("HF_SIMS").is_some() {
-        let mut by: BTreeMap<String, (u64, u64)> = BTreeMap::new();
-        for (p, &id) in picture.ids.iter().enumerate().filter(|x| *x.1 != 0 && matches!(class_at(*x.1), Class::Skinned | Class::Overlay)) {
-            let off = (0..3).any(|c| (i32::from(picture.rgba[p * 4 + c]) - i32::from(reference[p * 4 + c])).abs() > 4);
-            let e = by.entry(format!("{} strip {}", scene.drawn[id as usize - 1].model, scene.drawn[id as usize - 1].strip)).or_default();
-            e.0 += 1;
-            e.1 += u64::from(off);
-        }
-        for (k, v) in by {
-            println!("  SIM {k}: {} px, {} off", v.0, v.1);
-        }
-    }
     // the portrait's viewport as the log has it, in whole pixels
     if let Some(v) = scene.frame.draws.iter().find_map(|d| d.viewport) {
         let (px, py, pw, ph) = v.pixels();

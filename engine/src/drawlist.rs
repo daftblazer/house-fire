@@ -7,7 +7,7 @@
 //! frame: 3 x 4, row by row, the translation last, its 3 x 3 the rotation times the record's
 //! scale (the positions' 16-bit units folded in).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::anim::Anim;
 use crate::disc::Disc;
@@ -288,21 +288,45 @@ fn wall_matrix(x: f32, y: f32, angle: f32) -> Mat4 {
     m
 }
 
-/// The record of a wall piece's model by its opening (`window_of` gives the wall model's window
-/// name for the edge at a point, `WINDOW_WALLS`) and its form.
-fn wall_record(models: &Models, p: &WallPiece, window_of: &impl Fn([f32; 2]) -> Option<&'static str>) -> Option<usize> {
-    let opening = match p.opening {
-        Opening::None => String::new(),
-        Opening::Door => "_door".to_string(),
-        // the edge's middle, from the part's centre towards its wall
-        Opening::Window => {
-            let (s, c) = p.angle.to_radians().sin_cos();
-            format!("_{}", window_of([p.x + 0.5 * s.round(), p.y - 0.5 * c.round()]).unwrap_or("standard_window"))
-        }
-    };
-    let find = |form: Form| models.parts.record_by_id(crate::shader::name_hash(&format!("wall_straight{opening}{}", form.suffix())));
-    // (a family without the form's model draws its plain one)
-    find(p.form).or_else(|| find(Form::Straight))
+/// The records of the wall pieces' models, each found once: a model is looked up by a name made
+/// of its opening, window and form (a format and a hash), and the lot's hundred pieces are of a
+/// few dozen kinds. `window_of` gives the wall model's window name for the edge at a point
+/// (`WINDOW_WALLS`).
+struct WallRecords<'a, W> {
+    models: &'a Models,
+    window_of: W,
+    /// By the opening (0 none, 1 door, 2 window), the window's name and the form.
+    found: HashMap<(u8, &'static str, Form), Option<usize>>,
+}
+
+impl<'a, W: Fn([f32; 2]) -> Option<&'static str>> WallRecords<'a, W> {
+    fn new(models: &'a Models, window_of: W) -> Self {
+        WallRecords { models, window_of, found: HashMap::new() }
+    }
+
+    /// The record of a wall piece's model by its opening and its form.
+    fn of(&mut self, p: &WallPiece) -> Option<usize> {
+        let (opening, window) = match p.opening {
+            Opening::None => (0, ""),
+            Opening::Door => (1, ""),
+            // the edge's middle, from the part's centre towards its wall
+            Opening::Window => {
+                let (s, c) = p.angle.to_radians().sin_cos();
+                (2, (self.window_of)([p.x + 0.5 * s.round(), p.y - 0.5 * c.round()]).unwrap_or("standard_window"))
+            }
+        };
+        let models = self.models;
+        *self.found.entry((opening, window, p.form)).or_insert_with(|| {
+            let infix = match opening {
+                0 => String::new(),
+                1 => "_door".to_string(),
+                _ => format!("_{window}"),
+            };
+            let find = |form: Form| models.parts.record_by_id(crate::shader::name_hash(&format!("wall_straight{infix}{}", form.suffix())));
+            // (a family without the form's model draws its plain one)
+            find(p.form).or_else(|| find(Form::Straight))
+        })
+    }
 }
 
 /// The record of a diagonal wall's form (`wall_diagonal` and the forms' suffixes).
@@ -326,6 +350,7 @@ pub const NO_SHADOW_FLAGS: u32 = 0x4000_0000 | 0x2000_0000;
 /// objects' (found against home's 67 pieces, `docs/assets.md`).
 pub fn wall_shadows(models: &Models, pieces: &[WallPiece], window_of: impl Fn([f32; 2]) -> Option<&'static str>) -> Vec<Draw> {
     let mut out = Vec::new();
+    let mut records = WallRecords::new(models, window_of);
     for p in pieces.iter().filter(|p| p.fence || p.cap) {
         let (record, matrix) = if p.fence {
             let Some(name) = FENCE_MODELS.iter().find(|f| f.0 == p.pattern).map(|f| f.1) else { continue };
@@ -333,7 +358,7 @@ pub fn wall_shadows(models: &Models, pieces: &[WallPiece], window_of: impl Fn([f
             (record, lamps::object_matrix(p.x, p.y, p.angle))
         } else {
             // (the shadow is of the plain wall: an opening's hole is not in it)
-            let Some(record) = wall_record(models, &WallPiece { opening: Opening::None, ..*p }, &window_of) else { continue };
+            let Some(record) = records.of(&WallPiece { opening: Opening::None, ..*p }) else { continue };
             (record, wall_matrix(p.x, p.y, p.angle))
         };
         let world = world_of(&matrix, models.parts.record(record).scale);
@@ -357,9 +382,7 @@ pub fn diagonal_shadows(models: &Models, walls: &crate::routing::Walls, fences: 
             if bits == 0 {
                 continue;
             }
-            // (the normals of the two faces: "/" at 0 and 180, "\\" at 90 and -90)
-            let faces: [(f32, [i32; 2]); 2] = if bits & 0x10 != 0 { [(0.0, [-1, -1]), (180.0, [1, 1])] } else { [(90.0, [1, -1]), (-90.0, [-1, 1])] };
-            let Some(&(angle, n)) = faces.iter().find(|(_, n)| !walls.indoors(x + n[0], y + n[1])) else { continue };
+            let Some((angle, n)) = crate::scene::diagonal_faces(bits).into_iter().find(|(_, n)| !walls.indoors(x + n[0], y + n[1])) else { continue };
             let Some(record) = diagonal_record(models, crate::scene::diagonal_form(walls, x, y, n, fences)) else { continue };
             let scale = models.parts.record(record).scale;
             let (cx, cy) = (x as f32 + 0.5, y as f32 + 0.5);
@@ -400,6 +423,7 @@ fn object_shadows(parts: &[(Draw, bool)], guids_of: impl Fn(i16) -> Vec<u32>, re
 /// is indoors or not; a fence's only sub-model is drawn always.
 pub fn wall_draws(models: &Models, pieces: &[WallPiece], patterns: &[u32], eye: [f32; 2], window_of: impl Fn([f32; 2]) -> Option<&'static str>) -> Vec<Draw> {
     let mut out = Vec::new();
+    let mut records = WallRecords::new(models, window_of);
     for p in pieces {
         if p.fence {
             let Some(name) = FENCE_MODELS.iter().find(|f| f.0 == p.pattern).map(|f| f.1) else { continue };
@@ -410,7 +434,7 @@ pub fn wall_draws(models: &Models, pieces: &[WallPiece], patterns: &[u32], eye: 
             }
             continue;
         }
-        let Some(record) = wall_record(models, p, &window_of) else { continue };
+        let Some(record) = records.of(p) else { continue };
         let rec = models.parts.record(record);
         let world = world_of(&wall_matrix(p.x, p.y, p.angle), rec.scale);
         if !p.faces(eye) {
@@ -444,19 +468,9 @@ pub fn diagonal_draws(models: &Models, walls: &crate::routing::Walls, fences: &[
             }
             let (cx, cy) = (x as f32 + 0.5, y as f32 + 0.5);
             // the line's ends: corners of the tile
-            let (end0, end1) = if bits & 0x10 != 0 { ((x, y + 1), (x + 1, y)) } else { ((x, y), (x + 1, y + 1)) };
-            let angles: [f32; 2] = if bits & 0x10 != 0 { [0.0, 180.0] } else { [90.0, -90.0] };
-            for angle in angles {
-                // the face's normal, a half tile's side (the model is turned 45 degrees in its own
-                // frame, so the piece's own turn does not tell): "/" at 0 faces (-1, -1), at 180 (1, 1);
-                // "\\" at 90 faces (1, -1), at -90 (-1, 1). Drawn when it turns to the eye (the 5
-                // tiles seen on the home lot agree)
-                let n: [i32; 2] = match (bits & 0x10 != 0, angle == 0.0 || angle == 90.0) {
-                    (true, true) => [-1, -1],
-                    (true, false) => [1, 1],
-                    (false, true) => [1, -1],
-                    (false, false) => [-1, 1],
-                };
+            let ends = crate::scene::diagonal_ends(bits, x, y).map(|(ex, ey)| [ex as f32, ey as f32]);
+            for (angle, n) in crate::scene::diagonal_faces(bits) {
+                // a face is drawn when it turns to the eye (the 5 tiles seen on the home lot agree)
                 if (n[0] as f32) * (eye[0] - cx) + (n[1] as f32) * (eye[1] - cy) <= 0.0 {
                     continue;
                 }
@@ -472,7 +486,6 @@ pub fn diagonal_draws(models: &Models, walls: &crate::routing::Walls, fences: &[
                 let pattern = patterns.get(usize::from(chosen)).copied();
                 for part in models.parts.parts_of(record).filter(|q| q.batch.hash != UNDRAWN_WALL_SUB) {
                     let face = part.batch.list.is_some() && part.batch.count >= WALL_FACE_VERTICES;
-                    let ends = [[end0.0 as f32, end0.1 as f32], [end1.0 as f32, end1.1 as f32]];
                     out.push(Draw { kind: Kind::WallPiece, part: part.index, world, origin: place, centre: place, object: 0, shader: face.then_some(pattern).flatten(), edge: Some(ends) });
                 }
             }

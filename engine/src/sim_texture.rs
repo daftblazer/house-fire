@@ -361,36 +361,47 @@ impl SimTexture {
     /// console's decoder reads it.
     pub fn decode(&self) -> Option<Vec<crate::texture::Rgba>> {
         let mut palette = self.palette.clone();
-        palette.resize(256, 0);
+        palette.resize(PALETTE_ENTRIES, 0);
         let bytes: Vec<u8> = palette.iter().flat_map(|e| e.to_be_bytes()).collect();
-        // (the palette's entries are RGB5A3: the format 2 of a GXTlutObj)
-        crate::texture::decode_indexed(crate::texture::Kind::Palette8, SIDE as u32, SIDE as u32, &self.indices, &bytes, 2)
+        crate::texture::decode_indexed(crate::texture::Kind::Palette8, SIDE as u32, SIDE as u32, &self.indices, &bytes, TLUT_RGB5A3)
     }
 }
 
 /// The octree parameter the composer builds its quantizer with.
 const QUANTIZER_MEMORY: u32 = 0x7F00;
 
+/// The palette's size, a C8 image's colours.
+pub const PALETTE_ENTRIES: usize = 256;
+
+/// The palette entries' format, the format 2 of a GXTlutObj (RGB5A3), and the high bit it sets on
+/// a colour with no transparency.
+const TLUT_RGB5A3: u8 = 2;
+const RGB5A3_OPAQUE: u16 = 0x8000;
+
+/// A C8 tile's texels: 8 across, 4 down.
+const TILE_WIDTH: usize = 8;
+const TILE_HEIGHT: usize = 4;
+
 /// The picture reduced to a palette of up to 256 colours and indexed, as the composer does:
 /// the palette made from the picture's colours in row order, then each texel's nearest entry.
 pub fn reduce(pictures: &Pictures) -> SimTexture {
-    let mut q = Quantizer::new(256, QUANTIZER_MEMORY);
+    let mut q = Quantizer::new(PALETTE_ENTRIES, QUANTIZER_MEMORY);
     for &px in &pictures.palette {
         q.add(px);
     }
     q.finish();
-    // RGB5A3 with no transparency: 0x8000 and five bits of each colour
+    // RGB5A3 with no transparency: the opaque bit and five bits of each colour
     let palette = (0..q.len())
         .map(|i| {
             let [r, g, b] = q.colour(i);
-            0x8000 + (u16::from(r >> 3) << 10) + (u16::from(g >> 3) << 5) + u16::from(b >> 3)
+            RGB5A3_OPAQUE + (u16::from(r >> 3) << 10) + (u16::from(g >> 3) << 5) + u16::from(b >> 3)
         })
         .collect();
     let mut indices = vec![0u8; SIDE * SIDE];
     for (i, &px) in pictures.indexing.iter().enumerate() {
         let (x, y) = (i % SIDE, i / SIDE);
-        let tile = (y / 4) * (SIDE / 8) + x / 8;
-        indices[tile * 32 + (y % 4) * 8 + x % 8] = q.nearest(px);
+        let tile = (y / TILE_HEIGHT) * (SIDE / TILE_WIDTH) + x / TILE_WIDTH;
+        indices[tile * TILE_WIDTH * TILE_HEIGHT + (y % TILE_HEIGHT) * TILE_WIDTH + x % TILE_WIDTH] = q.nearest(px);
     }
     SimTexture { indices, palette }
 }

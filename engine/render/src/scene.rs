@@ -102,6 +102,13 @@ pub struct DrawInfo {
     pub skin: Option<usize>,
 }
 
+impl DrawInfo {
+    /// A draw of `class` in strip `strip` whose model is `model`, with nothing found lacking yet.
+    pub fn new(class: Class, strip: usize, model: String) -> DrawInfo {
+        DrawInfo { class, strip, model, missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None, skin: None }
+    }
+}
+
 /// A texture of `textures.arc` or `datasets.arc`: where its bytes are.
 pub(crate) struct TextureSource {
     pub(crate) name: String,
@@ -213,6 +220,20 @@ pub struct Scene {
     /// The textures wanted, by the hash the log names them: (their RGBA levels), indexed by
     /// `TextureId` once loaded in this order.
     pub textures: Vec<Vec<(u32, u32, Vec<u32>)>>,
+}
+
+impl Scene {
+    /// Appends a mesh for the renderer to upload; its id.
+    pub fn add_mesh(&mut self, mesh: MeshData) -> MeshId {
+        self.meshes.push(mesh);
+        MeshId(self.meshes.len() as u32 - 1)
+    }
+
+    /// Appends a texture's levels for the renderer to upload; its id.
+    pub fn add_texture(&mut self, levels: Vec<(u32, u32, Vec<u32>)>) -> TextureId {
+        self.textures.push(levels);
+        TextureId(self.textures.len() as u32 - 1)
+    }
 }
 
 fn be16(b: &[u8], p: usize) -> u16 {
@@ -499,12 +520,12 @@ fn shadow_of(mut mat: Material) -> Material {
 const FLOOR_POSITION_UNIT: f32 = 64.0;
 const FLOOR_UV_SHIFT: u8 = 3;
 
-/// The terrain's second layer (a lot-wide colour texture, 256 x 256: an aerial picture of the
-/// neighbourhood) is read at the position through GX_TEXMTX0 and then GX_PTTEXMTX0, both of
-/// which the log's ';' records hold. The post-transform matrix is the terrain shader's own
-/// (`Shader::position_uv`).
-/// The second layer's uv from the draw's logged matrices: the position through GX_TEXMTX0, then
-/// GX_PTTEXMTX0 (3x4 by rows each; only the x and y rows of the second matter for a 2D uv).
+/// The second layer of the terrain (a lot-wide colour texture, 256 x 256: an aerial picture of
+/// the neighbourhood) is read at the position through GX_TEXMTX0 and then GX_PTTEXMTX0, both of
+/// which the log's ';' records hold (the post-transform matrix is the terrain shader's own,
+/// `Shader::position_uv`). Its uv from the draw's logged matrices: the position through the
+/// first, then the second (3x4 by rows each; only the x and y rows of the second matter for a
+/// 2D uv).
 /// The floor's mesh units are 64ths of the position.
 fn logged_position_uv(m: &[[f32; 12]; 2]) -> PositionUv {
     let (t, p) = (&m[0], &m[1]);
@@ -712,14 +733,14 @@ impl Assets {
                     let (g, _, ld) = &log.other_draws[j];
                     load_until(&log.tex_loads, &mut next_load, *ld, &mut texture_state);
                     let Some(vertices) = vertices_of.get(&j).filter(|_| g.words[0] >> 24 == 0x2A) else {
-                        let info = DrawInfo { class: Class::Other, strip: k, model: format!("g{j}"), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None, skin: None };
+                        let info = DrawInfo::new(Class::Other, k, format!("g{j}"));
                         all.push(info);
                         continue;
                     };
                     // its own state: the first applied after its record (both counts place it)
                     let st = states.get(&k).and_then(|v| v.iter().find(|s| s.tick == tick && s.others_before == j + 1));
                     let masks = st.is_some_and(|s| s.pe[0] & 0xFF_FFFF != 0 && s.pe[0] & 8 == 0);
-                    let mut info = DrawInfo { class: if masks { Class::FloorMask } else { Class::Floor }, strip: k, model: format!("g{j}"), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None, skin: None };
+                    let mut info = DrawInfo::new(if masks { Class::FloorMask } else { Class::Floor }, k, format!("g{j}"));
                     let own = gap_materials.get(i).filter(|_| gap_materials.len() >= gap_floors.len());
                     let bound = self.bind_textures(log, (tick, k + 1), &texture_state, own.map_or(1, |m| m.layers as usize), &mut cache, &mut info);
                     let mut material = match own {
@@ -733,8 +754,7 @@ impl Assets {
                         material = with_state(material, st);
                     }
                     meshes.push(floor_mesh(vertices));
-                    let scale = 1.0 / FLOOR_POSITION_UNIT;
-                    let world = [scale, 0.0, 0.0, 0.0, 0.0, scale, 0.0, 0.0, 0.0, 0.0, scale, 0.0];
+                    let world = floor_world();
                     let Some(view) = view.or(camera_view) else { continue };
                     camera_view = camera_view.or(Some(view));
                     draws.push(Draw { mesh: MeshId(meshes.len() as u32 - 1), world, bones: None, projection: None, viewport: None, view: Some(view), material, lighting: Lighting::VertexColours, id: drawn.len() as u32 + 1 });
@@ -756,7 +776,7 @@ impl Assets {
             main_projection = main_projection.or(projection).or(use_projection);
             let strip: &StripRec = &log.strips[k];
             let (class, part) = self.identify(strip, k, lr, use_projection, main_projection, &skins_at);
-            let mut info = DrawInfo { class, strip: k, model: part.map(|p| p.record.name.clone()).unwrap_or_default(), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None, skin: None };
+            let mut info = DrawInfo::new(class, k, part.map(|p| p.record.name.clone()).unwrap_or_default());
             if let Some(part) = part.filter(|_| class.drawn()) {
                 // a blended part is drawn through the bones its '$' record logged
                 let skin = part.skinned().then(|| skins_at.get(&(k + 1)).and_then(|v| v.iter().copied().find(|&i| log.skins[i].count == strip.words[1]))).flatten();

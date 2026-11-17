@@ -17,7 +17,7 @@ pub struct Layer {
 }
 
 /// A shader: its name, the 78 bytes after it (its layer count, a byte, first; the material's
-/// colours, `Shader::material`), its layers and the 28 bytes after them (not read yet).
+/// colours, `Shader::material`), its layers and the 28 bytes after them (the last four words: `Shader::position_uv`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Shader {
     pub name: String,
@@ -34,9 +34,7 @@ impl Shader {
         let w = |i: usize| Some(f32::from_bits(be32(&self.head, 2 + 4 * i)?));
         Some(([w(7)?, w(8)?, w(9)?], [w(4)?, w(5)?, w(6)?]))
     }
-}
 
-impl Shader {
     /// The position-to-uv map of a terrain's second layer, from the last four words of the tail:
     /// the offset (u, v) then the scale (u, v) per unit of position, in tiles (the 3x4 matrix the
     /// device loads as GX_PTTEXMTX0 is `[[su, 0, 0, u0], [0, sv, 0, v0]]`; checked against the

@@ -7,10 +7,10 @@
 //! game makes of a Sim's skin, face, hair and clothes: `SimSkins`) and, where the engine does
 //! not know it, a Sim's heading.
 
-use crate::engine_scene::{lighting_for, material_record, shadow_material, state_of, Caches, Made};
+use crate::engine_scene::{lighting_for, shader_material, shadow_material, shadow_view, Caches, Made, SHADOW_SHEAR_OBJECT};
 use crate::frame::*;
-use crate::scene::{material_of, mesh_of, Assets, Class, DrawInfo, Scene, PORTRAIT_BACKDROP, PORTRAIT_BACKDROP_COLOUR};
-use housefire::anim::Catalog;
+use crate::scene::{mesh_of, Assets, Class, DrawInfo, Scene, PORTRAIT_BACKDROP, PORTRAIT_BACKDROP_COLOUR};
+use housefire::anim::{Anim, Catalog};
 use housefire::drawlist::{Kind, Models};
 use housefire::figure::{self, Cast, Rigs};
 use housefire::lighting::LotLights;
@@ -144,7 +144,8 @@ impl SimSkins {
         let arc = self.rle.as_deref()?;
         let stack = housefire::sim_texture::layer_stack(tables, d, housefire::sim_texture::Conditions { tinted_clothes: true });
         let texture = housefire::sim_texture::reduce(&housefire::sim_texture::pictures(arc, &stack)?);
-        Some(vec![(128, 128, texture.decode()?)])
+        let side = housefire::sim_texture::SIDE as u32;
+        Some(vec![(side, side, texture.decode()?)])
     }
 }
 
@@ -202,6 +203,39 @@ fn skinned_mesh_of(sub: &housefire::model::SubModel) -> Option<MeshData> {
     Some(mesh)
 }
 
+/// The light a Sim in the house has: the four lights of the grid point of the tile it stands in
+/// (an object's are the nearest whole tile's: the logged sets of both Sims of frame 2400 are the
+/// tile's, which a position on a tile's half (24.5) tells apart), and the fill `SIM_FILL`.
+fn house_lighting(lights: &LotLights, place: [f32; 2], view: &Mat3x4) -> Lighting {
+    let grid = [place[0].floor(), place[1].floor()];
+    let Lighting::Lit { ambient, mut directionals, points } = lighting_for(&lights.at_in(place, grid), view, None) else { unreachable!("lighting_for lights") };
+    let to_light = std::array::from_fn(|r| view[r * 4] * SIM_FILL.1[0] + view[r * 4 + 1] * SIM_FILL.1[1] + view[r * 4 + 2] * SIM_FILL.1[2]);
+    directionals.push(Directional { colour: [SIM_FILL.0; 3], to_light });
+    Lighting::Lit { ambient, directionals, points }
+}
+
+/// The light of the portrait's draws.
+fn portrait_lighting() -> Lighting {
+    Lighting::Lit {
+        ambient: PORTRAIT_AMBIENT,
+        directionals: PORTRAIT_LIGHTS.iter().map(|&(colour, to_light)| Directional { colour, to_light }).collect(),
+        points: Vec::new(),
+    }
+}
+
+impl Figure {
+    /// The animation the Sim plays and the place it is at, when the catalog has it.
+    fn pose<'a>(&self, w: &Wardrobe<'a>) -> Option<(&'a Anim, f32)> {
+        let (id, at, backward) = self.play?;
+        w.catalog.by_id.get(&id).map(|a| (a, figure::pose_place(a.frames, at, backward)))
+    }
+
+    /// Its bones in the form the renderer takes, at `heading`.
+    fn bone_rows(&self, w: &Wardrobe, pose: Option<(&Anim, f32)>, heading: u8) -> Vec<Mat3x4> {
+        figure::bones(w.rigs.of(&self.description), pose, &figure::root(self.place[0], self.place[1], heading)).iter().map(figure::rows).collect()
+    }
+}
+
 impl Assets {
     /// The Sims' draws for `figures`, standing in the lot lit by `lights`, seen through `view`
     /// (`sun`: the direction the sun shines in, for the shadows outdoors); the portrait of
@@ -210,50 +244,19 @@ impl Assets {
     pub fn engine_sims(&self, scene: &mut Scene, caches: &mut Caches, cache: &mut SimCaches, w: &Wardrobe, figures: &[Figure], lights: &LotLights, sun: [f32; 3], view: Mat3x4, portrait: Option<i16>) -> SimDraws {
         let mut out = SimDraws::default();
         for f in figures {
-            let nodes = w.rigs.of(&f.description);
-            let pose = f.play.and_then(|(id, at, backward)| w.catalog.by_id.get(&id).map(|a| (a, figure::pose_place(a.frames, at, backward))));
-            let bones: Vec<Mat3x4> = figure::bones(nodes, pose, &figure::root(f.place[0], f.place[1], f.heading)).iter().map(figure::rows).collect();
+            let bones = f.bone_rows(w, f.pose(w), f.heading);
             let outfit = w.cast.tables.dress(&f.description);
             let records: Vec<(Slot, usize)> = Slot::ALL.iter().filter_map(|&s| Some((s, w.models.parts.record_by_id(outfit.part(s))?))).collect();
-            let skin_names: Vec<String> = HOUSE_ORDER.iter().filter_map(|s| records.iter().find(|r| r.0 == *s)).map(|r| w.models.parts.record(r.1).name.clone()).collect();
-            let looks: LooksKey = (f.description.male, f.description.adult, f.description.looks);
-            let engine_skin = *cache.engine_skins.entry(looks).or_insert_with(|| {
-                let levels = w.skins.engine_levels(&w.cast.tables, &f.description)?;                scene.textures.push(levels);
-                let (wrap_u, wrap_v, linear, mipmaps) = SKIN_SAMPLER;
-                Some(TextureRef { texture: TextureId(scene.textures.len() as u32 - 1), wrap: (wrap_u, wrap_v), linear, mipmaps })
-            });
-            // (the log's, for the part names it drew, when the engine makes none)
-            let skin = engine_skin.or_else(|| {
-                skin_names.iter().find(|n| w.skins.by_part.contains_key(*n)).map(|n| {
-                    let (levels, tex) = &w.skins.by_part[n];
-                    *cache.skins.entry(n.clone()).or_insert_with(|| {
-                        scene.textures.push(levels.clone());
-                        TextureRef { texture: TextureId(scene.textures.len() as u32 - 1), ..*tex }
-                    })
-                })
-            });
+            let skin = Self::skin_of(scene, cache, w, f, &records);
             let room = lights.room_of_place(f.place[0], f.place[1]);
-            // a Sim takes the four lights of the light grid's point of the tile it stands in (an
-            // object's are the nearest whole tile's: the logged sets of both Sims of frame 2400 are
-            // the tile's, which a position on a tile's half (24.5) tells apart)
-            let grid = [f.place[0].floor(), f.place[1].floor()];
-            let house_light = {
-                let Lighting::Lit { ambient, mut directionals, points } = lighting_for(&lights.at_in(f.place, grid), &view, None) else { unreachable!() };
-                let to_light = std::array::from_fn(|r| view[r * 4] * SIM_FILL.1[0] + view[r * 4 + 1] * SIM_FILL.1[1] + view[r * 4 + 2] * SIM_FILL.1[2]);
-                directionals.push(Directional { colour: [SIM_FILL.0; 3], to_light });
-                Lighting::Lit { ambient, directionals, points }
-            };
+            let house_light = house_lighting(lights, f.place, &view);
             let order = |slots: &[Slot]| -> Vec<usize> { slots.iter().filter_map(|s| records.iter().find(|r| r.0 == *s).map(|r| r.1)).collect() };
             for r in order(&HOUSE_ORDER) {
                 self.sim_part_draws(scene, caches, cache, w, r, &bones, skin, &house_light, view, None, &mut out.house);
             }
             if portrait == Some(f.id) {
                 let pview = portrait_view(f.place, f.heading);
-                let plight = Lighting::Lit {
-                    ambient: PORTRAIT_AMBIENT,
-                    directionals: PORTRAIT_LIGHTS.iter().map(|&(colour, to_light)| Directional { colour, to_light }).collect(),
-                    points: Vec::new(),
-                };
+                let plight = portrait_lighting();
                 let overlay = Some((PORTRAIT_PROJECTION, PORTRAIT_VIEWPORT));
                 for r in order(&PORTRAIT_ORDER) {
                     self.sim_part_draws(scene, caches, cache, w, r, &bones, skin, &plight, pview, overlay, &mut out.portrait);
@@ -267,7 +270,7 @@ impl Assets {
             // flat on the ground (indoors) or sheared along the sun (outdoors)
             let shadow_name = if f.description.adult { "shadow_adult" } else { "shadow_child" };
             if let Some(r) = w.models.parts.record_by_id(name_hash(shadow_name)) {
-                let sview = if room == 0 { crate::engine_scene::shadow_view(&view, sun, crate::engine_scene::SHADOW_SHEAR_OBJECT) } else { crate::engine_scene::shadow_view(&view, [0.0; 3], 1.0) };
+                let sview = if room == 0 { shadow_view(&view, sun, SHADOW_SHEAR_OBJECT) } else { shadow_view(&view, [0.0; 3], 1.0) };
                 let mut parts = Vec::new();
                 self.sim_part_draws(scene, caches, cache, w, r, &bones, None, &Lighting::Black, sview, None, &mut parts);
                 for mut m in parts {
@@ -281,6 +284,22 @@ impl Assets {
         out
     }
 
+    /// The run-time texture of a Sim's parts: the engine's, made once for each looks; else (the
+    /// engine makes none) the log's for the first of its part names the log drew.
+    fn skin_of(scene: &mut Scene, cache: &mut SimCaches, w: &Wardrobe, f: &Figure, records: &[(Slot, usize)]) -> Option<TextureRef> {
+        let looks: LooksKey = (f.description.male, f.description.adult, f.description.looks);
+        let engine_skin = *cache.engine_skins.entry(looks).or_insert_with(|| {
+            let levels = w.skins.engine_levels(&w.cast.tables, &f.description)?;
+            let (wrap_u, wrap_v, linear, mipmaps) = SKIN_SAMPLER;
+            Some(TextureRef { texture: scene.add_texture(levels), wrap: (wrap_u, wrap_v), linear, mipmaps })
+        });
+        engine_skin.or_else(|| {
+            let name = HOUSE_ORDER.iter().filter_map(|s| records.iter().find(|r| r.0 == *s)).map(|r| &w.models.parts.record(r.1).name).find(|n| w.skins.by_part.contains_key(*n))?;
+            let (levels, tex) = &w.skins.by_part[name];
+            Some(*cache.skins.entry(name.clone()).or_insert_with(|| TextureRef { texture: scene.add_texture(levels.clone()), ..*tex }))
+        })
+    }
+
     /// The draws of every batch of record `r` through the Sim's `bones`: a batch on one bone
     /// hangs from it (its matrix is the draw's world), a blended one takes its matrices' bones
     /// (up to four) for the GPU's skinning.
@@ -290,43 +309,17 @@ impl Assets {
             let batch = part.batch;
             let bone = |slot: u16| bones.get(usize::from(slot)).copied();
             let (mesh, world, matrices) = if part.skinned() {
-                let mesh = *cache.meshes.entry(batch as *const _ as usize).or_insert_with(|| {
-                    skinned_mesh_of(batch).map(|m| {
-                        scene.meshes.push(m);
-                        MeshId(scene.meshes.len() as u32 - 1)
-                    })
-                });
-                let mut four = [IDENTITY; 4];
-                let mut set = [false; 4];
-                for &(slot, index) in &batch.matrices {
-                    if let (Some(b), Some(s)) = (bone(slot), four.get_mut(usize::from(index))) {
-                        *s = b;
-                        set[usize::from(index)] = true;
-                    }
-                }
-                let first = four[0];
-                for (k, s) in set.iter().enumerate() {
-                    if !s {
-                        four[k] = first;
-                    }
-                }
-                (mesh, IDENTITY, Some(Box::new(four)))
+                let mesh = *cache.meshes.entry(batch as *const _ as usize).or_insert_with(|| skinned_mesh_of(batch).map(|m| scene.add_mesh(m)));
+                (mesh, IDENTITY, Some(Box::new(skin_matrices(batch, bone))))
             } else {
                 let Some(&(slot, _)) = batch.matrices.first() else { continue };
                 let Some(world) = bone(slot) else { continue };
-                let list = batch.list.is_some();
-                let mesh = *caches.meshes.entry((batch as *const _ as usize, list)).or_insert_with(|| {
-                    mesh_of(batch, list).map(|m| {
-                        scene.meshes.push(m);
-                        MeshId(scene.meshes.len() as u32 - 1)
-                    })
-                });
-                (mesh, world, None)
+                (caches.mesh(scene, batch, batch.list.is_some()), world, None)
             };
             let Some(mesh) = mesh else { continue };
             let shader = w.shaders.get(&batch.hash);
             let class = if overlay.is_some() { Class::Overlay } else { Class::Skinned };
-            let mut info = DrawInfo { class, strip: 0, model: part.record.name.clone(), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None, skin: None };
+            let mut info = DrawInfo::new(class, 0, part.record.name.clone());
             let (mut bound, cutout) = self.bind_shader(scene, &mut caches.textures, shader, &mut info);
             // the shader's blank layer names the Sim's own image
             if shader.is_some_and(|sh| sh.name == SIM_BLANK_SHADER) {
@@ -334,16 +327,31 @@ impl Assets {
                 info.missing_texture = false;
             }
             let lit = matches!(lighting, Lighting::Lit { .. } | Lighting::VertexColours);
-            let (mut material, unsupported) = match shader {
-                Some(sh) => material_of(&material_record(sh), lit, bound),
-                None => material_of(&housefire::tree_log::MaterialRec { tick: 0, layers: 0, layer: [[0; 0x18]; 2], textures: [(0, [0; 128]); 2], strips_before: 0 }, lit, bound),
-            };
-            info.unsupported = unsupported;
-            state_of(&mut material, Kind::ObjectPart, cutout, shader.and_then(|sh| sh.layers.first()).map(|l| l.value));
+            let material = shader_material(shader, lit, bound, cutout, Kind::ObjectPart, &mut info);
             let draw = Draw { mesh, world, bones: matrices, projection: overlay.map(|o| o.0), viewport: overlay.map(|o| o.1), view: Some(view), material, lighting: lighting.clone(), id: 0 };
             out.push(Made { draw, from: 0, info });
         }
     }
+}
+
+/// The four bones a blended batch skins with: the bone of each of its matrices (by their index
+/// in the batch, up to four), a matrix with none (or an index out of range) taking the first's.
+fn skin_matrices(batch: &housefire::model::SubModel, bone: impl Fn(u16) -> Option<Mat3x4>) -> [Mat3x4; 4] {
+    let mut four = [IDENTITY; 4];
+    let mut set = [false; 4];
+    for &(slot, index) in &batch.matrices {
+        if let (Some(b), Some(s)) = (bone(slot), four.get_mut(usize::from(index))) {
+            *s = b;
+            set[usize::from(index)] = true;
+        }
+    }
+    let first = four[0];
+    for (k, s) in set.iter().enumerate() {
+        if !s {
+            four[k] = first;
+        }
+    }
+    four
 }
 
 /// The headings (eighths of a turn) that put each Sim's bones where the log's '$' records have
@@ -361,10 +369,9 @@ pub fn headings_from_log(log: &housefire::tree_log::Log, tick: u32, wardrobe: &W
     }
     let mut out = HashMap::new();
     for f in figures {
-        let nodes = wardrobe.rigs.of(&f.description);
-        let pose = f.play.and_then(|(id, at, backward)| wardrobe.catalog.by_id.get(&id).map(|a| (a, figure::pose_place(a.frames, at, backward))));
+        let pose = f.pose(wardrobe);
         let score = |h: u8| -> f32 {
-            let rows: Vec<Mat3x4> = figure::bones(nodes, pose, &figure::root(f.place[0], f.place[1], h)).iter().map(figure::rows).collect();
+            let rows = f.bone_rows(wardrobe, pose, h);
             logged.iter().map(|l| rows.iter().map(|r| (0..12).map(|i| (r[i] - l[i]).abs()).fold(0.0f32, f32::max)).fold(f32::MAX, f32::min).min(1.0)).sum()
         };
         if let Some(best) = (0..8u8).min_by(|&a, &b| score(a).total_cmp(&score(b))) {

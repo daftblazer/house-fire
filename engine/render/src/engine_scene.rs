@@ -73,7 +73,7 @@ pub type TextureCache = HashMap<u32, Option<(TextureRef, bool)>>;
 #[derive(Default)]
 pub struct Caches {
     /// A model's batch (its address in the `Models`) as a mesh, as a display list or as strips.
-    pub(crate) meshes: HashMap<(usize, bool), Option<MeshId>>,
+    meshes: HashMap<(usize, bool), Option<MeshId>>,
     pub(crate) textures: TextureCache,
     /// A floor strip's mesh by a hash of its corners.
     floors: HashMap<u64, MeshId>,
@@ -81,6 +81,30 @@ pub struct Caches {
     /// and the place) instead of added to the scene's for good: for a window, where the light
     /// moves their colours every tick.
     pub transient_floors: bool,
+}
+
+impl Caches {
+    /// The mesh of a model's batch, as a display list or as strips, added to `scene` the first time.
+    pub(crate) fn mesh(&mut self, scene: &mut Scene, batch: &housefire::model::SubModel, list: bool) -> Option<MeshId> {
+        *self.meshes.entry((batch as *const _ as usize, list)).or_insert_with(|| mesh_of(batch, list).map(|m| scene.add_mesh(m)))
+    }
+}
+
+/// The material record of a draw with no shader of its own: `layers` layers, all zero.
+pub(crate) fn blank_record(layers: u32) -> MaterialRec {
+    MaterialRec { tick: 0, layers, layer: [[0; 0x18]; 2], textures: [(0, [0; 128]); 2], strips_before: 0 }
+}
+
+/// A draw's material from its shader (none: the blank one) with the textures bound to it, in the
+/// GX state of its `kind`; `info` takes what the material lacks.
+pub(crate) fn shader_material(shader: Option<&Shader>, lit: bool, bound: [Option<TextureRef>; 2], cutout: bool, kind: Kind, info: &mut DrawInfo) -> Material {
+    let (mut material, unsupported) = match shader {
+        Some(sh) => material_of(&material_record(sh), lit, bound),
+        None => material_of(&blank_record(0), lit, bound),
+    };
+    info.unsupported = unsupported;
+    state_of(&mut material, kind, cutout, shader.and_then(|sh| sh.layers.first()).map(|l| l.value));
+    material
 }
 
 impl Assets {
@@ -97,8 +121,7 @@ impl Assets {
                     let levels = self.decode(hash)?;
                     let (wrap, linear, mipmaps) = sampler_of(self.by_hash[&hash].flags, levels.len() as u32);
                     let cutout = levels[0].2.iter().any(|&p| p >> 24 != 255);
-                    scene.textures.push(levels);
-                    Some((TextureRef { texture: TextureId(scene.textures.len() as u32 - 1), wrap, linear, mipmaps }, cutout))
+                    Some((TextureRef { texture: scene.add_texture(levels), wrap, linear, mipmaps }, cutout))
                 });
                 bound[slot] = found.map(|f| f.0);
                 if slot == 0 {
@@ -118,27 +141,16 @@ impl Assets {
         for (from, d) in input.draws.iter().enumerate() {
             let Some(part) = input.models.parts.parts_of(d.part.0).find(|p| p.index == d.part) else { continue };
             let list = part.batch.list.is_some();
-            let mesh = *caches.meshes.entry((part.batch as *const _ as usize, list)).or_insert_with(|| {
-                mesh_of(part.batch, list).map(|m| {
-                    scene.meshes.push(m);
-                    MeshId(scene.meshes.len() as u32 - 1)
-                })
-            });
-            let Some(mesh) = mesh else { continue };
+            let Some(mesh) = caches.mesh(scene, part.batch, list) else { continue };
             let shader = input.shaders.get(&d.shader.unwrap_or(part.batch.hash));
-            let mut info = DrawInfo { class: if list { Class::DisplayList } else { Class::RigidStrip }, strip: 0, model: part.record.name.clone(), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None, skin: None };
+            let mut info = DrawInfo::new(if list { Class::DisplayList } else { Class::RigidStrip }, 0, part.record.name.clone());
             let (bound, cutout) = self.bind_shader(scene, &mut caches.textures, shader, &mut info);
             if info.textures[0].as_deref() == Some(PLACEHOLDER_TEXTURE) {
                 continue;
             }
             let lighting = (input.lighting)(d, shader.and_then(|sh| sh.material()));
             let lit = matches!(lighting, Lighting::Lit { .. } | Lighting::VertexColours);
-            let (mut material, unsupported) = match shader {
-                Some(sh) => material_of(&material_record(sh), lit, bound),
-                None => material_of(&MaterialRec { tick: 0, layers: 0, layer: [[0; 0x18]; 2], textures: [(0, [0; 128]); 2], strips_before: 0 }, lit, bound),
-            };
-            info.unsupported = unsupported;
-            state_of(&mut material, d.kind, cutout, shader.and_then(|sh| sh.layers.first()).map(|l| l.value));
+            let material = shader_material(shader, lit, bound, cutout, d.kind, &mut info);
             out.push(Made {
                 draw: Draw { mesh, world: d.world, bones: None, projection: None, viewport: None, view: Some(input.view), material, lighting, id: 0 },
                 from,
@@ -198,17 +210,45 @@ impl Assets {
         let mut out = Vec::new();
         for (k, d) in shadows.iter().enumerate() {
             let Some(part) = models.parts.parts_of(d.part.0).find(|p| p.index == d.part) else { continue };
-            let mesh = *caches.meshes.entry((part.batch as *const _ as usize, false)).or_insert_with(|| {
-                mesh_of(part.batch, false).map(|m| {
-                    scene.meshes.push(m);
-                    MeshId(scene.meshes.len() as u32 - 1)
-                })
-            });
-            let Some(mesh) = mesh else { continue };
-            let info = DrawInfo { class: Class::Shadow, strip: 0, model: part.record.name.clone(), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None, skin: None };
+            let Some(mesh) = caches.mesh(scene, part.batch, false) else { continue };
+            let info = DrawInfo::new(Class::Shadow, 0, part.record.name.clone());
             out.push((k, Made { from: k, draw: Draw { mesh, world: d.world, bones: None, projection: None, viewport: None, view: Some(view_of(d)), material: shadow_material(), lighting: Lighting::Black, id: 0 }, info }));
         }
         out
+    }
+}
+
+impl Plan {
+    /// The room a planned shadow falls in: the outdoors (0) for a wall piece's, else its place's.
+    fn shadow_room(&self, d: &Planned) -> usize {
+        if d.kind == Kind::WallPiece { 0 } else { self.lights.room_of_place(d.origin[0], d.origin[1]) }
+    }
+}
+
+impl Assets {
+    /// The shadow pass's draws of the plan by the room they fall in, seen through `view` and
+    /// `projection` with the sun shining in direction `sun`: a wall piece's shadow is sheared by
+    /// the wall's divisor along the sun, an outdoor object's by the object's, an indoor one's not.
+    pub fn engine_shadows_by_room(&self, scene: &mut Scene, caches: &mut Caches, plan: &Plan, view: &Mat3x4, projection: &[f32; 6], sun: [f32; 3]) -> Vec<Vec<Made>> {
+        let view_of = |d: &Planned| match (d.kind, plan.shadow_room(d)) {
+            (Kind::WallPiece, _) => shadow_view(view, sun, SHADOW_SHEAR_WALL),
+            (_, 0) => shadow_view(view, sun, SHADOW_SHEAR_OBJECT),
+            _ => shadow_view(view, [0.0; 3], 1.0),
+        };
+        let mut by_room: Vec<Vec<Made>> = Vec::new();
+        for (k, m) in self.engine_shadows(scene, caches, &plan.models, &plan.shadows, &view_of) {
+            let d = &plan.shadows[k];
+            // (the original draws what its bounds put on the screen: the pieces' are not drawn off it)
+            if d.kind == Kind::WallPiece && !housefire::drawlist::in_view(view, projection, &d.world) {
+                continue;
+            }
+            let room = plan.shadow_room(d);
+            if by_room.len() <= room {
+                by_room.resize_with(room + 1, Vec::new);
+            }
+            by_room[room].push(m);
+        }
+        by_room
     }
 }
 
@@ -248,11 +288,11 @@ impl Assets {
         let mut out = Vec::new();
         for (k, st) in strips.iter().enumerate() {
             let shader = shaders.get(&st.shader);
-            let mut info = DrawInfo { class: Class::Floor, strip: 0, model: format!("run{k}"), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None, skin: None };
+            let mut info = DrawInfo::new(Class::Floor, 0, format!("run{k}"));
             let (bound, _) = self.bind_shader(scene, &mut caches.textures, shader, &mut info);
             let record = match shader {
                 Some(sh) => material_record(sh),
-                None => MaterialRec { tick: 0, layers: 1, layer: [[0; 0x18]; 2], textures: [(0, [0; 128]); 2], strips_before: 0 },
+                None => blank_record(1),
             };
             let (mut material, unsupported) = material_of(&record, true, bound);
             info.unsupported = unsupported;
@@ -634,25 +674,7 @@ impl<'a> Builder<'a> {
         let made = self.assets.engine_draws(scene, &mut self.caches, &Inputs { draws: &plan.draws, models: &plan.models, shaders: &self.lot.shaders, lighting: &lighting, view });
         let floors: Vec<(usize, FloorDraws)> = plan.floors.iter().zip(self.assets.engine_floors(scene, &mut self.caches, &plan.floors, &self.lot.shaders, view)).map(|(st, f)| (st.room, f)).collect();
         let sun = plan.lights.at(1.0, 1.0).sun.map_or([0.0; 3], |s| s.direction);
-        let mut by_room: Vec<Vec<Made>> = Vec::new();
-        let room_of = |d: &Planned| if d.kind == Kind::WallPiece { 0 } else { plan.lights.room_of_place(d.origin[0], d.origin[1]) };
-        let view_of = |d: &Planned| match (d.kind, room_of(d)) {
-            (Kind::WallPiece, _) => shadow_view(&view, sun, SHADOW_SHEAR_WALL),
-            (_, 0) => shadow_view(&view, sun, SHADOW_SHEAR_OBJECT),
-            _ => shadow_view(&view, [0.0; 3], 1.0),
-        };
-        for (k, m) in self.assets.engine_shadows(scene, &mut self.caches, &plan.models, &plan.shadows, &view_of) {
-            let d = &plan.shadows[k];
-            // (the original draws what its bounds put on the screen: the pieces' are not drawn off it)
-            if d.kind == Kind::WallPiece && !housefire::drawlist::in_view(&view, &projection, &d.world) {
-                continue;
-            }
-            let room = room_of(d);
-            if by_room.len() <= room {
-                by_room.resize_with(room + 1, Vec::new);
-            }
-            by_room[room].push(m);
-        }
+        let by_room = self.assets.engine_shadows_by_room(scene, &mut self.caches, &plan, &view, &projection, sun);
         let (lot, objects): (Vec<Made>, Vec<Made>) = made.into_iter().partition(|m| plan.draws[m.from].kind == Kind::LotList && m.draw.material.blend == Blend::Opaque);
         let counts = Counts { planned: plan.draws.len(), shadows: plan.shadows.len(), floors: floors.len(), draws: 0 };
         let sims = sims.map(|(w, figures, portrait)| self.assets.engine_sims(scene, &mut self.caches, &mut self.sim_cache, w, figures, &plan.lights, sun, view, portrait));

@@ -6,7 +6,7 @@
 //!
 //! Lines: the logged textures, then for each Sim and each pairing the mean absolute error of
 //! the engine's picture (before the palette) against the log's image through its palette, and
-//! once the quantizer is the original's, the number of differing indices and palette entries.
+//! the number of differing indices and palette entries after the quantizer.
 
 use housefire::disc::Disc;
 use housefire::figure::Cast;
@@ -77,16 +77,17 @@ pub fn study(log: &Log, d: &Disc, ngh: &[u8]) {
         let t = sim_texture::reduce(&pics);
         let l = &logs[i];
         let texels = t.indices.iter().zip(&l.texels).filter(|(a, b)| a != b).count();
-        let entries = (0..256).filter(|&k| t.palette.get(k).copied().unwrap_or(0) != l.palette[k]).count();
+        let entries = (0..sim_texture::PALETTE_ENTRIES).filter(|&k| t.palette.get(k).copied().unwrap_or(0) != l.palette[k]).count();
         paired += 1;
         same += usize::from(texels == 0 && entries == 0);
         println!(
-            "sim {} {} ({} layers) = log {i} (error before the palette {err:.2}): {} palette entries, {texels} of {} texels and {entries} of 256 palette entries differ",
+            "sim {} {} ({} layers) = log {i} (error before the palette {err:.2}): {} palette entries, {texels} of {} texels and {entries} of {} palette entries differ",
             m.first_name,
             m.last_name,
             stack.len(),
             t.palette.len(),
-            t.indices.len()
+            t.indices.len(),
+            sim_texture::PALETTE_ENTRIES
         );
     }
     println!("sim textures: {same} of {paired} paired Sims equal ({} logged textures)", logs.len());
