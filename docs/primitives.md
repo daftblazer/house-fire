@@ -403,6 +403,9 @@ elsewhere). At 800822F8 `housepre[n - 1]`, from a table of the 16 sets' ids in t
 (ticks 1, 100, 1,000) hold n = 1 and the flag 0: House1Preload and housepre01, the two the log
 asks for. The club's (tick 100) holds n = 16, the flag 0. What the flag and the other branches
 of the switch are (House2/3Preload) is still to read.
+n is the lot's house number, its global 10 (1 to 16 for the save's 16 lots; the club 16): the
+replay reads the sets by it (it took house 1's for every lot before, and the club's Animate
+was 310 different, 41 after, all but one past the held frame at 3204).
 The engine's own (iteration 123, `anim::Loads`): the animations in memory start as those the
 lot's preload sets hold (the archive's entry ids found in the sets' bytes); an ask for one not in
 memory asks for its load and is answered loaded from the next tick. Lockstep

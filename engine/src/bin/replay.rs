@@ -85,6 +85,9 @@ fn main() -> ExitCode {
         }
     }
     let house = start.house.as_ref();
+    // The animations in memory at the start: the lot's preload sets, by its house number (the
+    // lot's global 10; the original's 0x802E68F8: housepre<n>, primitives.md "loads").
+    let house_number = env("REPLAY_HOUSE").and_then(|v| v.parse().ok()).unwrap_or_else(|| the_globals.get(10).map_or(1, |&n| n.max(1) as u32));
     if has("REPLAY_SHOW_LOT_CHUNKS") {
         // study: the lot's chunks and its arrays as read
         let kinds: Vec<(String, usize)> = the_lot.chunks.iter().map(|(k, c)| (k.clone(), c.len())).collect();
@@ -102,7 +105,7 @@ fn main() -> ExitCode {
         }
     }
     if !bench {
-        let Some((counts, _)) = run(&log, &lib, (the_lot, house), the_globals, neighbours, None, RunWith { card_lot, goals: start.goals.clone(), cat: (!log.tracks.is_empty()).then(|| housefire::anim::Catalog::read(&d, env("REPLAY_HOUSE").and_then(|v| v.parse().ok()).unwrap_or(1))) }) else { return ExitCode::from(1) };
+        let Some((counts, _)) = run(&log, &lib, (the_lot, house), the_globals, neighbours, None, RunWith { card_lot, goals: start.goals.clone(), cat: (!log.tracks.is_empty()).then(|| housefire::anim::Catalog::read(&d, house_number)) }) else { return ExitCode::from(1) };
         for (k, n) in &counts.map {
             println!("  {k:<66} {n}");
         }

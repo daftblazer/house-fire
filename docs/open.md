@@ -24,7 +24,7 @@ engineering of the original's code, not more fitting. The list below this sectio
    marks; 20,153 / 2,772 uses, all the log's): home.log 5,519, club.log 29,895 (Animate 44 the
    bulk of both), home-full 1,556, club-full 3,095. The largest kinds now: home-full the
    frames' parameters 469, Relationship2 26 107, places with no native walk 224, scope 8 152,
-   scope 18 116; club-full Animate 780 (470 with no archive animation, 310 different), 22 189,
+   scope 18 116; club-full Animate 511 (470 with no archive animation, 41 different: the preload set by the lot's house number, 2026-11-17; 40 of them after the held frame), 22 189,
    26 146, scope 18 252, routing slots 200. IdleForInput (17) native since as well (primitives.md):
    home-full 1,511, club-full 2,295. Relationship2 (26) native since: home.log 5,362, club.log
    28,937, home-full 1,399, club-full 2,137. `replay`'s "primitives by opcode"
