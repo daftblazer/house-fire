@@ -1996,12 +1996,16 @@ the first strip's): a gap with as many materials as floors takes them so, and th
 two layers (a cross-fade by the second one's factor, the ordinary two-layer path): the street
 and the road, the sidewalk and the wood draw right (the sidewalk's and the road's probed pixels match to within 2); the grass is `terrain_mom_house_detail` (64 x 64, repeated a tile) cross-faded with
 `terrain_mom_house_color`, a 256 x 256 aerial picture of the neighbourhood read at the position
-through a texture matrix (the material's uv source 3; the device's matrix is not in the log).
-The matrix is fitted (`TERRAIN_COLOUR_*` in scene.rs, u = x / 153 + 0.34, v = 0.47 - y / 147:
-the means of the lot's grass match within 2 of 255 and the road lines up); the detail does not
-line up exactly, so the terrain's pixels are 70 to 80% within 4. The floors are 81.73% within 4
-(205,844 pixels), not the 90%: the terrain's 20 to 25% is that texture alignment and the
-trilinear filtering of the detail (the console's level choice is not the GPU's); and the porch.
+through the texture matrices (the material's uv source 3): GX_TEXMTX0 then GX_PTTEXMTX0, both in
+every ';' record (F1: `StateRec::tex_mtx`; home's terrain draws hold TEXMTX0 = identity and
+PTTEXMTX0 = [[0.0083, 0, 0, 0.333], [0, 0.0093, 0, -0.676]], so u = 0.0083 x + 0.333 and
+v = 0.0093 y - 0.676 with x, y in tiles; 1/256-scale TEXMTX0s belong to the shadow batch's
+draws). Log mode builds the uv from them (`scene::logged_position_uv`): floors 85.51 -> 97.33%
+within 4, whole 88.89 -> 97.47% (frame 2400). The four floats are the terrain shader's own
+(its tail's last four words: u0, v0, su, sv; `Shader::position_uv`), which engine mode uses
+(`scene::shader_position_uv`): floors 84.58 -> 96.22%, whole 87.19 -> 95.60%. The earlier fit
+(`TERRAIN_COLOUR_*`, u = x / 153 + 0.34) is removed. The floors were 81.73% within 4 before F1; what is left is
+the trilinear filtering of the detail (the console's level choice is not the GPU's); and the porch.
 
 What the passes are. The frame is a sequence of batches, each: floors (opaque, constant
 destination alpha 0x7F: cmode1 0x17F), their shadow draws (class "lighting off": blend
@@ -2040,8 +2044,7 @@ GX_TEXMTX0 for them (an identity: ERC_ApplyState loads the model matrix there, w
 identity for the floors), so u, v before the second transform are the position in tiles. The
 second transform is the post matrix of dual-texture (0x40, from the device's projection): it is
 loaded by ERC_ApplyState's native path, not through the hooked GXLoadTexMtxImm, so it is not in
-the records. The fit (`TERRAIN_COLOUR_*`) stays. The records' other texture matrix, a 1/256 scale
-at the shadow batch's start, is not the terrain's.
+the '}' records; the ';' records' applied copy (+0x674, +0x6A4) holds both (F1).
 
 Shadows are 67.61% within 4, floors 82.54%, not the 90%: of the shadows' 10,394 pixels off the
 wall caps' hatching is the largest (the reference's wall shadows are one flat half, ours show
@@ -2362,7 +2365,7 @@ the shader's diffuse and ambient and the room's ambient and, outdoors, the sun's
 downward part): of the 2,934 corners the log holds, 2,440 exactly and 494 within 4, none beyond
 (`HF_FLOORCMP=1`), at the engine's clock of 7:36:32 (the original's relight was a few seconds
 before its own). The material is the shader's (the terrain's two layers cross-faded, the second
-read at the position by the fitted `TERRAIN_COLOUR_*`; an indoor floor's reflection), Z
+read at the position by the shader's own map (`Shader::position_uv`); an indoor floor's reflection), Z
 less-or-equal with writes, no alpha test (the shader's flag would give the wood one the logged
 draws do not have: +0.2% of the whole frame), a destination alpha of 0x7F. The mask draws (the floor
 again: alpha written 0, no colour, the floor's texture clamped and alpha tested at 5) come after

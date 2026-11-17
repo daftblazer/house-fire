@@ -211,7 +211,7 @@ impl Assets {
 /// A floor strip's draw: its corners' colours as the mesh's vertex colours, the shader's material
 /// (the terrain's two layers cross-faded, an indoor floor's reflection), Z less-or-equal with
 /// writes, a constant destination alpha of 0x7F (the stencil the shadows read, `shadow_material`).
-/// The terrain's second layer is read at the position (`scene::terrain_colour_uv`).
+/// The terrain's second layer is read at the position (`scene::shader_position_uv`).
 pub const DST_ALPHA_FLOOR: u8 = 0x7F;
 
 /// The mask pass over a floor strip, drawn after a batch's shadows: no colour, the alpha written 0
@@ -253,7 +253,7 @@ impl Assets {
             let (mut material, unsupported) = material_of(&record, true, bound);
             info.unsupported = unsupported;
             if material.layers[1].is_some() {
-                material.layer1_from_position = Some(crate::scene::terrain_colour_uv());
+                material.layer1_from_position = shader.and_then(|sh| sh.position_uv()).map(|(o, s)| crate::scene::shader_position_uv(o, s));
             }
             material.depth_test = Some(Compare::LEQUAL);
             material.depth_write = true;

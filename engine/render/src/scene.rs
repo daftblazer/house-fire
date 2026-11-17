@@ -500,17 +500,9 @@ const FLOOR_POSITION_UNIT: f32 = 64.0;
 const FLOOR_UV_SHIFT: u8 = 3;
 
 /// The terrain's second layer (a lot-wide colour texture, 256 x 256: an aerial picture of the
-/// neighbourhood) is read at the position through the device's texture matrix (the material's
-/// uv source 3), which the log does not hold. Fitted from the reference's pixels, as `u = x /
-/// TERRAIN_COLOUR_TILES_X + TERRAIN_COLOUR_U0` and `v = y / TERRAIN_COLOUR_TILES_Y +
-/// TERRAIN_COLOUR_V0` (x and y in tiles; the lot's road lies at low y, which is the road of the
-/// picture, so v runs the other way): the means of the grass match the reference's within 2 of
-/// 255 over the lot, but the texture's fine detail does not line up (`docs/assets.md`).
-const TERRAIN_COLOUR_TILES_X: f32 = 153.25;
-const TERRAIN_COLOUR_TILES_Y: f32 = -147.0;
-const TERRAIN_COLOUR_U0: f32 = 0.34;
-const TERRAIN_COLOUR_V0: f32 = 0.47;
-
+/// neighbourhood) is read at the position through GX_TEXMTX0 and then GX_PTTEXMTX0, both of
+/// which the log's ';' records hold. The post-transform matrix is the terrain shader's own
+/// (`Shader::position_uv`).
 /// The second layer's uv from the draw's logged matrices: the position through GX_TEXMTX0, then
 /// GX_PTTEXMTX0 (3x4 by rows each; only the x and y rows of the second matter for a 2D uv).
 /// The floor's mesh units are 64ths of the position.
@@ -523,12 +515,10 @@ fn logged_position_uv(m: &[[f32; 12]; 2]) -> PositionUv {
     PositionUv { u: row(0), v: row(1) }
 }
 
-pub(crate) fn terrain_colour_uv() -> PositionUv {
-    // positions are in 64ths of a tile
-    PositionUv {
-        u: [1.0 / (TERRAIN_COLOUR_TILES_X * FLOOR_POSITION_UNIT), 0.0, TERRAIN_COLOUR_U0],
-        v: [0.0, 1.0 / (TERRAIN_COLOUR_TILES_Y * FLOOR_POSITION_UNIT), TERRAIN_COLOUR_V0],
-    }
+/// The second layer's uv from a terrain shader's own map (`Shader::position_uv`) on the floor's
+/// positions (the texture matrix being the identity, as the logged terrain draws have it).
+pub(crate) fn shader_position_uv(offset: [f32; 2], scale: [f32; 2]) -> PositionUv {
+    PositionUv { u: [scale[0] / FLOOR_POSITION_UNIT, 0.0, offset[0]], v: [0.0, scale[1] / FLOOR_POSITION_UNIT, offset[1]] }
 }
 
 /// A floor mesh's world matrix: its positions are 64ths of a tile.
@@ -737,7 +727,7 @@ impl Assets {
                         None => Material { combine: Combine::Modulate { unlit: false }, layers: [bound[0], None], blend: Blend::Opaque, cull: Cull::None, depth_test: Some(Compare::LEQUAL), depth_write: true, alpha_test: None, write_colour: true, write_alpha: true, dst_alpha: None, layer1_from_position: None, sphere: None },
                     };
                     if material.layers[1].is_some() {
-                        material.layer1_from_position = Some(st.map_or_else(terrain_colour_uv, |st| logged_position_uv(&st.tex_mtx)));
+                        material.layer1_from_position = st.map(|st| logged_position_uv(&st.tex_mtx));
                     }
                     if let Some(st) = st {
                         material = with_state(material, st);
