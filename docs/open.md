@@ -1,5 +1,70 @@
 # Open problems
 
+## Hardest first (ranked 2026-11-17, master e290d68; for the strongest model, not for packets)
+
+Ranked by how much hangs on each and how little a fitted answer helps. Each needs reverse
+engineering of the original's code, not more fitting. The list below this section is unchanged.
+
+1. **The simulation run free.** Nothing runs without a log yet: `replay` follows the log step by
+   step and sets every native difference back to the log's (replay.rs, 6,153 lines, against
+   simulator.rs 288). The 0-difference figures therefore say "each step agrees given the log's
+   state before it", not "the engine plays the game". What the log still supplies (home / club
+   replay): primitives answered from the log 24,516 / 31,648 (Animate 44: 4,032 / 27,666;
+   CompleteGoal 56: 20,153 / 2,772; opcode 17: 45 / 800; Relationship2 26: 107 / 146; 22: 51 /
+   189; change suit 6: 13 / 70; 12, 24, 41 on home), locals set to the log's 20,615 / 12,491,
+   parameters 423 / 110, places with no native walk 224 / 196, route runs not modelled 1 / 26,
+   routing slots from a stack variable 81 / 200, the club's autonomy candidates different 82,
+   trees not found on the disc 13 / 82 steps (367, 8217, 8233, 8235, 8236, 8312, 8330), the
+   household and later-made objects not run, the funds, the random numbers. Longest run of
+   steps with nothing set: home 50,938. First: a free mode (the log only as the player's
+   commands, dialog answers and random seed) that reports the first tick and step where the
+   native stack leaves the log's; then that tick driven to the log's end, on home then club.
+   Everything after stage 4 (saves, menus, story, multiplayer) stands on this.
+2. **The original's loop of frames and ticks** (one cause under at least six items): how many
+   simulation ticks and animation frames a display frame holds, and their order. Not modelled,
+   so: 20 of home's 1,186 walking places a frame early or late (plan.md "Next"); the walkers'
+   frame phase fitted once per log (3,736 of 3,835 ticks, a 0.042 drift unexplained,
+   simulation.md 1553); the club's laser place after tick 6 (1.98 animation frames per render
+   frame, below); the male's head a tick behind (below); which bone set a skinned draw uses (296
+   of 4,712, below); which loads pause whose Animate (primitives.md 412-418). The simulation must
+   stay deterministic to the bit, so the answer is a frame clock inside the simulation's state,
+   read from the game's main loop, with the '|' frame records as the answer key. Lead
+   (2026-11-17): the unpaced run (`FAST=1 work/record.sh`) plays the same inputs with another
+   count of ticks and frames per poll, and is exact run to run: two pacings of one session to
+   read the rule from.
+3. **The planner and the walk, natively and whole.** The pieces agree where the log is between
+   them; free, the walk parts at six frames and stays off (the door's fast mode, a ramp, two
+   brakes, a walk begun at speed: simulation.md 940). Fitted or unread: the planner's weight 3
+   (2.5 to 3.5 fit, simulation.md 854), the ground's own cost (1160), a link the original does
+   not make (1294), plans' second searches (1244), 34 footprints not found (1583), walls'
+   corners (787). Club: the planning step not the log's 8 times, obstacles not all the
+   planner's 4. Item 1 cannot pass a walk without this.
+4. **The Sims' root turn and the tracks not made** (club Sims' own pixels 60.01%, home 92.50%):
+   4 of the club's 8 drawn Sims are turned 2 to 4 eighths from their direction though data 1 is
+   the original's at all 84,780 person-ticks, so the bones' root takes its turn from somewhere
+   else (the animation's root rotation, or the follower's float angle: unchecked; 1 of 2 tries
+   left). With it: walk, turn and idle tracks, the face weights after tick 643.
+5. **The shadows' shears from the code, not fitted** (home engine shadows 95.90%, club 86.36%):
+   the divisors 0.4 and 0.9744|z|+0.629 and the power 1.7 were fitted on two suns and have
+   no source; two packets (W1, E1) stuck on home. Read the original's shadow projection (the
+   draw method after ERC_ApplyState) for the matrix it builds from the sun and the light set.
+6. **What the original does not draw**: the money trunk (678 px), the gnome (78), the club's robe
+   Sim (+0.26%). No screen box, flag, field, selector, ResData, list or level tells them from
+   their drawn neighbours; the rule is unknown. Probably one visibility test (room, portal or
+   a per-object draw state) not yet seen by the observer: a store watch on the draw list's
+   build is the lead.
+7. **The club's own render-to-texture**: the world dumps are black there (an EFB copy with clear
+   between the scene and the 2D layer, unread), so the club has no clean reference, and the
+   dance floor is the biggest single miss (16.9k of 35.6k px). Likely one mechanism.
+8. **Fran's description**: her bytes are in no card block and no disc file searched; the story
+   mode writes them somewhere not found. The first piece of stage 9 (the story mode) and a
+   test of whether the save and neighbourhood formats are really understood.
+
+Not hard, only work (good packets): the light sets' grid lookup (0x80169ABC, 15 meshes), models
+as plain arrays, the multiplayer blockers, the simulation speed list, the device run (needs SSH).
+
+## The rest
+
 - **The bones' rest path** (state flag bit 2, 80158C84..80158D98): written from the code, never
   met on the home replay; check on the club replay.
 - **One Sim animator speed** of 17,198 (an Animate the run list misses).
