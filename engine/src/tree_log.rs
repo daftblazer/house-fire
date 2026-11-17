@@ -798,6 +798,10 @@ pub struct Log {
     pub steps: Vec<StepRec>,
     pub places: Vec<PlaceRec>,
     pub motives: Vec<MotiveRec>,
+    /// A person's direction (data 1) when it changed, at the start of a tick ('_'): (tick, id, direction).
+    pub directions: Vec<(u32, i16, i16)>,
+    /// The steps logged before each tick's 'K' record (tick n's steps are from `tick_steps[n - 1]`).
+    pub tick_steps: Vec<usize>,
     pub scores: Vec<ScoreRec>,
     pub bases: Vec<BaseRec>,
     pub choice_lists: Vec<ChoiceListRec>,
@@ -1096,6 +1100,7 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
                 r.u32();
                 log.ticks += 1;
+                log.tick_steps.push(log.steps.len());
             }
             b'|' => {
                 if !r.has(8) {
@@ -2133,6 +2138,14 @@ pub fn read_log(path: &str) -> Option<Log> {
                     break;
                 }
                 r.p += 7;
+            }
+            b'_' => {
+                // a person's direction (data 1) changed (before the tick's 'K')
+                if !r.has(4) {
+                    break;
+                }
+                let id = r.i16();
+                log.directions.push((log.ticks, id, r.i16()));
             }
             b'N' => {
                 // a person's motives changed (before the tick's 'K')
