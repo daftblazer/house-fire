@@ -2439,3 +2439,24 @@ a tile's corner as the save keeps it, its centre as the run has it; the draws ma
 list does not see it), the 2 Sims moved; 10 objects' data differ (listed by `HF_WORLD_DIFF=1`);
 the clock is the same, 7:36:32 (the loaded 7:04:00 and 1,038 passes less the stopped ones, as
 `engine_scene::plan` counts them).
+
+## The budget
+
+Measured with `view` (stage 5d, W3; `Renderer::stats`, printed at the `--shot` tick, and the
+frame-time columns) on the home lot, tick 1039, 640 x 448, 1,200 ticks, on the PC (a Radeon,
+radv, under headless gamescope): 1,549 draws (776 of the lot's models, 98 floor strips, 649
+shadows; the Sims not drawn yet), 97,363 triangles, 2.55 MB of textures (RGBA8, every level)
+and 1.50 MB of meshes resident. The GPU's time 0.14 ms a frame (p99 0.22); the CPU's: the tick
+0.22 ms (worst 3.7), building the frame from the world 2.66 ms, the whole frame 6.7 ms with the
+wait for the GPU.
+
+Against the RK3566 (Mali-G52 2EE, two cores at 800 MHz; four Cortex-A55), by the figures, not
+yet run there: 2.9 M triangles and, at an overdraw of about 3, under 30 M pixels a second are a
+small part of what the GPU does, and 4 MB of resident data fits easily. The CPU is the risk: the
+A55 has measured about 6.7x the PC on the planner (docs/plan.md), so the frame build would be
+about 18 ms of the 33 ms frame, beside the tick's 1.5 ms (worst ~25 ms past the load), and 1,549
+draw calls a frame on the Mali driver are to be measured. The way down: build the draws of
+objects that did not move once and keep them (only the Sims, animated objects and the floors'
+light change each tick), and the shadows in one draw per batch. The device run is the user's
+(SSH, as for the benchmark): an aarch64 build of `view` with `--ticks 1200 --frame-times`.
+

@@ -148,6 +148,17 @@ pub struct Renderer<'g> {
     mesh_sets: Vec<MeshSet>,
     textures: Vec<Tex>,
     white: TextureId,
+    /// Bytes uploaded for good: textures (RGBA8, every level) and meshes (vertices and indices).
+    resident: (usize, usize),
+}
+
+/// What a frame costs the GPU, for the budget (`docs/assets.md`, "The budget").
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Stats {
+    pub draws: usize,
+    pub triangles: usize,
+    pub texture_bytes: usize,
+    pub mesh_bytes: usize,
 }
 
 fn bytes_of<T: Copy>(v: &[T]) -> &[u8] {
@@ -286,6 +297,7 @@ impl<'g> Renderer<'g> {
             transient_capacity: (0, 0),
             mesh_sets: Vec::new(),
             textures: Vec::new(),
+            resident: (0, 0),
             white: TextureId(0),
         };
         // the transient meshes' set is the first, its buffers the host's to write each frame
@@ -314,6 +326,12 @@ impl<'g> Renderer<'g> {
             ];
             unsafe { self.gpu.device.update_descriptor_sets(&write, &[]) };
         }
+    }
+
+    /// The frame's draws and triangles, and what is resident.
+    pub fn stats(&self, frame: &Frame) -> Stats {
+        let triangles = frame.draws.iter().map(|d| self.slot(d.mesh).index_count as usize / 3).sum();
+        Stats { draws: frame.draws.len(), triangles, texture_bytes: self.resident.0, mesh_bytes: self.resident.1 }
     }
 
     fn slot(&self, id: MeshId) -> MeshSlot {
@@ -368,6 +386,7 @@ impl<'g> Renderer<'g> {
                 weights.resize(vertices.len(), [0, 0]);
             }
         }
+        self.resident.1 += std::mem::size_of_val(vertices.as_slice()) + std::mem::size_of_val(indices.as_slice());
         let vertex_buffer = self.gpu.upload(bytes_of(&vertices), vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::STORAGE_BUFFER);
         let skin = (!weights.is_empty()).then(|| {
             let weight_buffer = self.gpu.upload(bytes_of(&weights), vk::BufferUsageFlags::STORAGE_BUFFER);
@@ -430,6 +449,7 @@ impl<'g> Renderer<'g> {
             gpu.device.cmd_pipeline_barrier(cb, vk::PipelineStageFlags::TRANSFER, vk::PipelineStageFlags::FRAGMENT_SHADER, vk::DependencyFlags::empty(), &[], &[], &[to_read]);
         });
         gpu.destroy_buffer(staging);
+        self.resident.0 += levels.iter().map(|l| l.2.len() * 4).sum::<usize>();
         self.textures.push(Tex { image });
         TextureId(self.textures.len() as u32 - 1)
     }

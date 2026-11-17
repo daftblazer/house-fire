@@ -361,6 +361,7 @@ fn run(args: Args) -> Result<(), String> {
             write_png(path, &picture.rgba);
             let sims = replay.world().objects().filter(|o| o.person && o.on_lot()).count();
             println!("world at tick {tick} against the loaded save: {}", loaded.account(&Snapshot::of(replay.world())));
+            println!("budget at tick {tick}: {:?}", renderer.stats(&frame));
             println!("shot of tick {tick}: {} draws ({} planned, {} floor strips, {} shadows); the Sims ({sims} on the lot) are not drawn", counts.draws, counts.planned, counts.floors, counts.shadows);
         }
         let (image, _) = unsafe { swapchain.loader.acquire_next_image(swapchain.chain, u64::MAX, swapchain.acquire, vk::Fence::null()) }.map_err(|e| format!("acquire: {e}"))?;
