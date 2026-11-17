@@ -167,11 +167,27 @@ pub struct Plan {
     pub placements: Vec<housefire::scene::Placement>,
     /// The GUIDs of each placement's parts, by leader.
     pub guids: std::collections::BTreeMap<i16, Vec<u32>>,
+    /// What the objects draw with, by GUID (`quickdata::object_resources`).
+    pub resources: std::collections::BTreeMap<u32, housefire::quickdata::ObjResources>,
+    /// The lot's wall and fence pieces.
+    pub pieces: Vec<housefire::scene::WallPiece>,
     /// The lamps among the placements and their lights (`housefire::lamps`).
     pub lamps: Vec<housefire::lamps::Lamp>,
     pub lights: housefire::lighting::LotLights,
     /// The clock the light is made at (hour, minute, second).
     pub clock: (i32, i32, i32),
+}
+
+/// The lot's camera at `tick` as `scene::Camera` makes it from the parameters: the live ones of
+/// the last 'c' record at or before the tick (the lot loaded from a save has no player input to
+/// run the camera's easing from, so its parameters are the log's), the view from them and the
+/// projection from the wanted distance (`docs/assets.md`, "The camera").
+pub fn camera(log: &housefire::tree_log::Log, tick: u32) -> Option<(Mat3x4, [f32; 6])> {
+    use housefire::scene::Camera;
+    let c = log.cams.iter().rfind(|c| c.tick <= tick)?;
+    let l = c.live;
+    let cam = Camera { target: [l[0], l[1], l[2]], distance: l[3], rotation: l[4], tilt: l[5] };
+    Some((cam.view(), Camera::projection(c.wanted[3])))
 }
 
 /// The engine's lot (the disc's, or the card's save: `card` the memory card image; the lot the
@@ -217,7 +233,7 @@ pub fn plan(disc: &housefire::disc::Disc, card: Option<&std::path::Path>, log: &
     let g = |i: usize| world.globals.get(i).copied().map_or(0, i32::from);
     let clock = (g(0), g(5), g(6));
     let lights = housefire::lighting::LotLights::build(&world, &res, &lamps, clock);
-    Some(Plan { models, draws: lot.draws, placements: lot.placements, guids, lamps, lights, clock })
+    Some(Plan { models, draws: lot.draws, placements: lot.placements, guids, resources: res, pieces: lot.pieces, lamps, lights, clock })
 }
 
 /// Puts the engine's draws where the log's first rigid or display-list draw was and takes the log's

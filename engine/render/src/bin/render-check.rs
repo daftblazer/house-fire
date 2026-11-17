@@ -142,6 +142,11 @@ fn main() -> ExitCode {
     if engine_mode {
         let card = args.iter().position(|a| a == "--card").and_then(|i| args.get(i + 1)).map(PathBuf::from);
         let view = scene.frame.camera.view;
+        if let Some((v, pr)) = engine_scene::camera(&log, tick) {
+            let dv = v.iter().zip(view.iter()).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+            let dp = pr.iter().zip(scene.frame.camera.projection.iter()).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
+            println!("camera from the logged parameters against the logged view: view {dv:.2e}, projection {dp:.2e}");
+        }
         let house = std::env::var("HF_HOUSE").ok().and_then(|v| v.parse().ok()).unwrap_or(1);
         let plan = engine_scene::plan(&disc, card.as_deref(), &log, tick, &view, house).expect("the engine's lot");
         let shaders = housefire::shader::index(&disc);
@@ -181,6 +186,16 @@ fn main() -> ExitCode {
             made.retain(|m| m.info.textures[0].as_deref() != Some(texture.as_str()));
         }
         let planned = made.len();
+        if std::env::var_os("HF_SHADOWPARTS").is_some() {
+            let mut by: BTreeMap<(String, usize, bool), usize> = BTreeMap::new();
+            for (d, m) in plan.draws.iter().zip(&made) {
+                let part = plan.models.parts.parts_of(d.part.0).find(|p| p.index == d.part).unwrap();
+                *by.entry((part.record.name.clone(), part.batch.count, m.info.textures[0].as_deref() == Some("polyshadow"))).or_default() += 1;
+            }
+            for ((n, c, is), k) in by {
+                println!("  SP {n} count {c} shadow {is}: {k}");
+            }
+        }
         if std::env::var_os("HF_LIGHTSTUDY").is_some() {
             // the log's light sets in world space, once for each object place; the engine's lamps
             let v = view;
@@ -268,10 +283,55 @@ fn main() -> ExitCode {
                 println!("MAT {n:>4} e.g. {ex}: {k}");
             }
         }
+        if std::env::var_os("HF_SHADOWMATCH").is_some() {
+            let near = |a: &[f32; 12], b: &[f32; 12]| (0..12).all(|i| (a[i] - b[i]).abs() <= 1e-4 * if i % 4 == 3 { 1.0 } else { a[0].abs().max(a[5]).max(a[10]).max(1e-9) });
+            let sh: Vec<&frame::Draw> = scene.frame.draws.iter().filter(|d| matches!(scene.drawn[d.id as usize - 1].class, Class::Shadow)).collect();
+            let counts: Vec<usize> = plan.draws.iter().map(|d| plan.models.parts.parts_of(d.part.0).find(|p| p.index == d.part).unwrap().batch.count).collect();
+            let mut used = vec![0usize; made.len()];
+            let mut by: BTreeMap<String, usize> = BTreeMap::new();
+            for d in &sh {
+                let n = scene.meshes[d.mesh.0 as usize].vertices.len();
+                let hit = plan.draws.iter().enumerate().find(|(k, p)| counts[*k] == n && near(&d.world, &p.world));
+                match hit {
+                    Some((k, _)) => used[k] += 1,
+                    None => *by.entry(format!("shadow UNMATCHED: {} v{n}", scene.drawn[d.id as usize - 1].model)).or_default() += 1,
+                }
+            }
+            for (k, m) in made.iter().enumerate() {
+                let d = &plan.draws[k];
+                let flags: Vec<String> = plan.guids.get(&d.object).map(|g| g.iter().filter_map(|g| plan.resources.get(g)).map(|r| format!("{:08x}/ds{:x}", r.flags, r.dataset)).collect()).unwrap_or_default();
+                *by.entry(format!("{} {:?} {:?}: {}", m.info.model, d.kind, flags, if used[k] > 0 { "SHADOW" } else { "none" })).or_default() += 1;
+            }
+            for (k, v) in by { println!("SM {v:>4} {k}"); }
+        }
         let removed = engine_scene::splice(&mut scene, made);
         println!("engine mode: {} draws planned, {planned} made; the log's {removed} rigid and display-list draws left out", plan.draws.len());
     }
 
+    if std::env::var_os("HF_FLOORDUMP").is_some() {
+        for (i, d) in scene.frame.draws.iter().enumerate() {
+            let info = &scene.drawn[d.id as usize - 1];
+            if matches!(info.class, Class::Floor) {
+                let m = &scene.meshes[d.mesh.0 as usize];
+                let xs: Vec<f32> = m.vertices.iter().map(|v| v.position[0] as f32 / 64.0).collect();
+                let ys: Vec<f32> = m.vertices.iter().map(|v| v.position[1] as f32 / 64.0).collect();
+                let f = |v: &[f32], g: fn(f32, f32) -> f32, z: f32| v.iter().copied().fold(z, g);
+                println!("FD {i} {} v{} x {}..{} y {}..{} tex {:?} blend {:?} comb {:?} c0 {:02x?} c1 {:02x?}", info.model, m.vertices.len(), f(&xs, f32::min, 99.0), f(&xs, f32::max, -99.0), f(&ys, f32::min, 99.0), f(&ys, f32::max, -99.0), info.textures, d.material.blend, d.material.combine, m.vertices[0].colour, m.vertices[1].colour);
+            }
+        }
+    }
+    if std::env::var_os("HF_SHADOWDUMP").is_some() {
+        for (i, d) in scene.frame.draws.iter().enumerate() {
+            let info = &scene.drawn[d.id as usize - 1];
+            if matches!(info.class, Class::Shadow) {
+                let w = d.world;
+                if std::env::var_os("HF_SHADOWDUMP").is_some_and(|v| v == "mat") {
+                    println!("SDM {:?} {:?}", d.material, d.lighting);
+                }
+                println!("SD {i} {} v{} at {:.3} {:.3} {:.3} rot {:.1} scale {:.4} {:.4}", info.model, scene.meshes[d.mesh.0 as usize].vertices.len(), w[3], w[7], w[11], w[4].atan2(w[0]).to_degrees(), w[0].hypot(w[4]), w[10]);
+            }
+        }
+    }
     if std::env::var_os("HF_ORDER").is_some() {
         // (study aid: the draws in order, runs of the same class, model and blend collapsed)
         let mut last = String::new();
