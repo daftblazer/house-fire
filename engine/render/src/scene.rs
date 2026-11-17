@@ -103,8 +103,10 @@ pub struct DrawInfo {
 }
 
 /// A texture of `textures.arc` or `datasets.arc`: where its bytes are.
-struct TextureSource {
-    name: String,
+pub(crate) struct TextureSource {
+    pub(crate) name: String,
+    /// The LFXT header's flags word.
+    pub(crate) flags: u16,
     in_datasets: bool,
     /// The LFXT's offset in its archive's data.
     at: usize,
@@ -112,11 +114,14 @@ struct TextureSource {
 
 /// The game's files a frame is made from.
 pub struct Assets {
-    parts: PartIndex,
+    pub(crate) parts: PartIndex,
     textures_arc: Vec<u8>,
     datasets_arc: Vec<u8>,
     /// FNV-1a of a texture's first level, as the observer hashes the images it sees.
-    by_hash: HashMap<u64, TextureSource>,
+    pub(crate) by_hash: HashMap<u64, TextureSource>,
+    /// A texture's first level's FNV-1a by the CRC-32 of its name in capitals (how a shader's
+    /// layer names it); `textures.arc`'s first, then the datasets'.
+    pub(crate) by_name: HashMap<u32, u64>,
 }
 
 fn fnv1a(b: &[u8]) -> u64 {
@@ -129,11 +134,15 @@ impl Assets {
         let textures_arc = disc.read("textures.arc").unwrap_or_default();
         let datasets_arc = disc.read("datasets.arc").unwrap_or_default();
         let mut by_hash = HashMap::new();
+        let mut by_name = HashMap::new();
         for e in arc::entries(&textures_arc).unwrap_or_default() {
             let b = arc::bytes(&textures_arc, &e);
             if let Some(t) = texture::read(b) {
                 let first = (t.width as usize * t.height as usize * t.kind.bits() as usize) / 8;
-                by_hash.entry(fnv1a(&b[t.texels.0..t.texels.0 + first])).or_insert(TextureSource { name: t.name.clone(), in_datasets: false, at: e.offset as usize });
+                let hash = fnv1a(&b[t.texels.0..t.texels.0 + first]);
+                by_name.entry(e.id).or_insert(hash);
+                by_name.entry(housefire::shader::name_hash(&t.name)).or_insert(hash);
+                by_hash.entry(hash).or_insert(TextureSource { name: t.name.clone(), flags: t.flags, in_datasets: false, at: e.offset as usize });
             }
         }
         // those kept inside datasets.arc's entries (the lots' and objects' own)
@@ -144,18 +153,20 @@ impl Assets {
                 let at = p + q;
                 if let Some((t, end)) = texture::read_prefix(&b[at..]) {
                     let first = (t.width as usize * t.height as usize * t.kind.bits() as usize) / 8;
-                    by_hash.entry(fnv1a(&b[at + t.texels.0..at + t.texels.0 + first])).or_insert(TextureSource { name: format!("{}/{}", e.name, t.name), in_datasets: true, at: e.offset as usize + at });
+                    let hash = fnv1a(&b[at + t.texels.0..at + t.texels.0 + first]);
+                    by_name.entry(housefire::shader::name_hash(&t.name)).or_insert(hash);
+                    by_hash.entry(hash).or_insert(TextureSource { name: format!("{}/{}", e.name, t.name), flags: t.flags, in_datasets: true, at: e.offset as usize + at });
                     p = at + end;
                 } else {
                     p = at + 4;
                 }
             }
         }
-        Assets { parts, textures_arc, datasets_arc, by_hash }
+        Assets { parts, textures_arc, datasets_arc, by_hash, by_name }
     }
 
     /// A texture's mip levels as RGBA (the levels whole tiles of the format hold).
-    fn decode(&self, hash: u64) -> Option<Vec<(u32, u32, Vec<u32>)>> {
+    pub(crate) fn decode(&self, hash: u64) -> Option<Vec<(u32, u32, Vec<u32>)>> {
         let s = self.by_hash.get(&hash)?;
         let data = if s.in_datasets { &self.datasets_arc } else { &self.textures_arc };
         let (t, _) = texture::read_prefix(&data[s.at..])?;
@@ -206,7 +217,7 @@ fn be16(b: &[u8], p: usize) -> u16 {
 }
 
 /// A batch of a model as a mesh: strip order as it is, or the display list's primitives.
-fn mesh_of(sub: &SubModel, display_list: bool) -> Option<MeshData> {
+pub(crate) fn mesh_of(sub: &SubModel, display_list: bool) -> Option<MeshData> {
     let n = sub.count;
     if sub.positions.len() != 8 * n {
         return None; // float positions (the cursors)
@@ -320,23 +331,23 @@ fn strip_indices(out: &mut Vec<u32>, first: u32, count: u32) {
     }
 }
 
-fn mat3x4(v: &[f32]) -> Mat3x4 {
+pub(crate) fn mat3x4(v: &[f32]) -> Mat3x4 {
     v[..12].try_into().unwrap()
 }
 
-fn apply(m: &Mat3x4, p: [f32; 3]) -> [f32; 3] {
+pub(crate) fn apply(m: &Mat3x4, p: [f32; 3]) -> [f32; 3] {
     std::array::from_fn(|r| m[r * 4] * p[0] + m[r * 4 + 1] * p[1] + m[r * 4 + 2] * p[2] + m[r * 4 + 3])
 }
 
 /// A colour's channels in 0..1 as the game's conversion makes them bytes, back as 0..1.
-fn byte(v: f32) -> f32 {
+pub(crate) fn byte(v: f32) -> f32 {
     (v.clamp(0.0, 1.0) * 255.0 + 0.5).floor() / 255.0
 }
 
 /// The light set the device was given (`ERC_SetLights`, the recomp's `erc_lights.cpp`): the
 /// ambient and each light's colour times its tint as bytes; directionals turned by the device's
 /// matrix, points moved into view space by the view the device had.
-fn lighting_of(l: &LightsRec) -> Lighting {
+pub(crate) fn lighting_of(l: &LightsRec) -> Lighting {
     let flags = l.flags();
     if flags & 0x4000 != 0 {
         return Lighting::Black;
@@ -383,7 +394,7 @@ fn wrap_of(v: u32) -> Wrap {
 /// them (`erc_material.cpp`). The state a draw is made in beyond that (blend, depth, cull,
 /// alpha compare) is guessed from the material here, and replaced by the draw's own state
 /// record where the log has one (`with_state`).
-fn material_of(m: &MaterialRec, lit: bool, bound: [Option<TextureRef>; 2]) -> (Material, Option<&'static str>) {
+pub(crate) fn material_of(m: &MaterialRec, lit: bool, bound: [Option<TextureRef>; 2]) -> (Material, Option<&'static str>) {
     let l = |i: usize, o: usize| m.layer[i][o];
     let (mode, blend, by, enabled, factor) = (l(1, 0x10), l(1, 0x11), l(1, 0x12), l(1, 0x13), l(1, 0x14));
     let sphere = m.layers == 2 && l(1, 0x16) == 2;
@@ -437,7 +448,7 @@ fn material_of(m: &MaterialRec, lit: bool, bound: [Option<TextureRef>; 2]) -> (M
 }
 
 /// The material in the GX state the device applied for the draw (the log's ';' record).
-fn with_state(mut mat: Material, st: &StateRec) -> Material {
+pub(crate) fn with_state(mut mat: Material, st: &StateRec) -> Material {
     mat.blend = if st.blend_flags & 0x40 == 0 {
         Blend::Opaque
     } else {

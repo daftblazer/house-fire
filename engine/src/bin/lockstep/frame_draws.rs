@@ -16,7 +16,7 @@
 
 use crate::*;
 use housefire::draw::Part;
-use housefire::drawlist::{self, Draw, Kind, Models};
+use housefire::drawlist::{self, is_held, is_sims, Draw, Kind, Models};
 use housefire::tree_log::{Log, StripRec};
 
 /// A world matrix element is the same when it differs by less than this (the translation's tiles;
@@ -44,19 +44,6 @@ struct LogDraw<'a> {
     kind: Kind,
     candidates: Vec<Part<'a>>,
     world: [f32; 12],
-}
-
-/// Whether a record is a Sim's: an outfit's parts are named by two lowercase letters and an
-/// underscore (am_ub_..., af_...), and the shadows `shadow_...`.
-fn is_sims(name: &str) -> bool {
-    let b = name.as_bytes();
-    b.len() > 3 && b[0].is_ascii_lowercase() && b[1].is_ascii_lowercase() && b[2] == b'_' || name.starts_with("shadow_")
-}
-
-/// Whether a record is an object a Sim carries (`Carry_...`, `Prop_...`) or the Sim's diamond: drawn
-/// on the Sim's own bones, not the lot's.
-fn is_held(name: &str) -> bool {
-    name.starts_with("Carry_") || name.starts_with("Prop_") || name == "Diamond"
 }
 
 fn kind_of(part: &Part<'_>, outer_lot: Option<usize>) -> Kind {
@@ -166,7 +153,13 @@ pub fn frame_draws(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quic
     let mut counts = BTreeMap::new();
     let theirs = log_draws(log, &models, tick, outer_record, &mut counts);
 
-    let pieces = housefire::scene::wall_pieces(&world.walls, 64, &housefire::quickdata::fence_styles(&housefire::quickdata::Image::read(housefire::arc::bytes(&quick, &housefire::arc::entries(&quick).unwrap_or_default().into_iter().find(|e| e.name == "SimsTiles").unwrap())).unwrap()));
+    // the engine's list, with the eye of the log's view of the tick (the camera is not the engine's own
+    // yet), eye = -R^T t
+    let view = log.matrices.iter().find(|m| !m.projection && m.id == 0xF0 && m.tick == tick).map(|m| m.values.clone()).unwrap_or_default();
+    let projection: Option<[f32; 6]> = log.matrices.iter().find(|m| m.projection && m.id == 0 && m.tick == tick).and_then(|m| m.values.get(..6)?.try_into().ok());
+    let eye = (view.len() >= 12).then(|| [0, 1].map(|i| -(0..3).map(|r| view[4 * r + i] * view[4 * r + 3]).sum::<f32>()));
+    let lot = drawlist::lot_draws_of(world, res, &models, d, house, tick, eye);
+    let (pieces, placements) = (lot.pieces, lot.placements);
     if std::env::var_os("LOCKSTEP_FRAME_WALLS").is_some() {
         // the log's wall draws by their place: the records every draw there could be, and each
         // draw's vertices and place in the first of them
@@ -192,12 +185,6 @@ pub fn frame_draws(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quic
         }
     }
     // the engine's list
-    let parts: Vec<housefire::scene::Part> = world
-        .objects()
-        .filter(|w| w.on_lot() && !w.person)
-        .map(|w| housefire::scene::Part { id: w.id(), leader: if w.leader != 0 { w.leader } else { w.id() }, x16: w.x16, y16: w.y16, facing: i32::from(w.facing()), wall: res.get(&w.guid).is_some_and(|r| r.on_wall()) })
-        .collect();
-    let placements = housefire::scene::placements(&parts);
     if std::env::var_os("LOCKSTEP_FRAME_DETAIL").is_some() {
         for p in &placements {
             let guids: Vec<u32> = world.find_object(p.leader).into_iter().chain(world.objects().filter(|o| o.leader == p.leader)).map(|o| o.guid).collect();
@@ -219,18 +206,7 @@ pub fn frame_draws(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quic
             }
         }
     }
-    let mut mine: Vec<Draw> = drawlist::object_draws(&models, &placements, |id| world.find_object(id).into_iter().chain(world.objects().filter(|o| o.leader == id)).map(|o| o.guid).collect(), res, tick);
-    // the eye: the log's view of the tick (the camera is not the engine's own yet), eye = -R^T t
-    let view = log.matrices.iter().find(|m| !m.projection && m.id == 0xF0 && m.tick == tick).map(|m| m.values.clone()).unwrap_or_default();
-    let projection: Option<[f32; 6]> = log.matrices.iter().find(|m| m.projection && m.id == 0 && m.tick == tick).and_then(|m| m.values.get(..6)?.try_into().ok());
-    if view.len() >= 12 {
-        let eye = [0, 1, 2].map(|i| -(0..3).map(|r| view[4 * r + i] * view[4 * r + 3]).sum::<f32>());
-        let guids_of = |id: i16| world.find_object(id).into_iter().chain(world.objects().filter(|o| o.leader == id)).map(|o| o.guid).collect::<Vec<u32>>();
-        let windows = drawlist::window_edges(&models, &placements, guids_of, res);
-        let window_of = |at: [f32; 2]| windows.iter().find(|w| (w.0[0] - at[0]).abs() < 0.1 && (w.0[1] - at[1]).abs() < 0.1).map(|w| w.1);
-        mine.extend(drawlist::wall_draws(&models, &pieces, [eye[0], eye[1]], window_of));
-    }
-    mine.extend(outer_lot.map(|id| drawlist::lot_draws(&models, id)).unwrap_or_default());
+    let mine: Vec<Draw> = lot.draws;
 
     // matching: per log draw, the engine draws of its part; the same when a world agrees
     let part_of = |d: &Draw| -> Part<'_> { models.parts.parts_of(d.part.0).find(|p| p.index == d.part).unwrap() };

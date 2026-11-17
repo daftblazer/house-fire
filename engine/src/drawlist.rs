@@ -57,6 +57,14 @@ pub struct Draw {
     pub part: (usize, usize, usize),
     /// 3 x 4, row by row.
     pub world: [f32; 12],
+    /// The place on the lot (x, y, in tiles) of what the draw is part of: an object's, a wall
+    /// piece's; the lot's own models, the origin. What the lights rank the draw by.
+    pub origin: [f32; 2],
+    /// The object's leader id (0 for a wall piece or the lot's own model).
+    pub object: i16,
+    /// The shader (`shaders.arc` id) the part is drawn with in place of its sub-model's own: a
+    /// wall face's is its pattern's.
+    pub shader: Option<u32>,
 }
 
 /// What the draws are made from on the disc: the model records, the skeletons and animations
@@ -162,7 +170,7 @@ pub fn object_draws(models: &Models, placements: &[Placement], guids_of: impl Fn
                 // the root's own 3 x 3 is a pure turn: the record's scale is applied with the
                 // bones' (`idle_bones`) or here
                 let scale = if bones.is_some() { 1.0 } else { rec.scale };
-                out.push(Draw { kind: kind_of(&part), part: part.index, world: world_of(&m, scale) });
+                out.push(Draw { kind: kind_of(&part), part: part.index, world: world_of(&m, scale), origin: [p.x, p.y], object: p.leader, shader: None });
             }
         }
     }
@@ -173,8 +181,12 @@ pub fn object_draws(models: &Models, placements: &[Placement], guids_of: impl Fn
 /// the first word of its record, the model's id in the object's dataset), else the records of its
 /// dataset (each with its id and its place in the index).
 fn object_models<'a>(models: &'a Models, r: &ObjResources) -> impl Iterator<Item = (u32, usize)> + 'a {
+    // an object with no model and no dataset has only the placeholder record (`tom_debug`) as its
+    // resources' first word: the original draws nothing for it
+    let placeholder = r.model == 0 && r.dataset == 0;
     let named = [r.model, r.key].into_iter().find(|&id| models.parts.record_by_id(id).is_some());
     let ids: Vec<u32> = match named {
+        _ if placeholder => Vec::new(),
         Some(id) => vec![id],
         None => models.datasets.get(&r.dataset).cloned().unwrap_or_default(),
     };
@@ -186,12 +198,16 @@ fn object_models<'a>(models: &'a Models, r: &ObjResources) -> impl Iterator<Item
 pub fn lot_draws(models: &Models, outer_lot: u32) -> Vec<Draw> {
     let Some(record) = models.parts.record_by_id(outer_lot) else { return Vec::new() };
     let scale = models.parts.record(record).scale;
-    models.parts.parts_of(record).map(|part| Draw { kind: Kind::LotList, part: part.index, world: world_of(&IDENTITY, scale) }).collect()
+    models.parts.parts_of(record).map(|part| Draw { kind: Kind::LotList, part: part.index, world: world_of(&IDENTITY, scale), origin: [0.0; 2], object: 0, shader: None }).collect()
 }
 
 /// The wall models' sub-model that is not drawn in the lot's view (its hash, one of the two
 /// 5-vertex pieces of each wall record: `docs/assets.md`, "The engine's draw list").
 const UNDRAWN_WALL_SUB: u32 = 0x0906_522f;
+
+/// The vertices of a wall part's face (18, 23 with a door's or window's hole) against its pieces
+/// beside it (5 and 6).
+const WALL_FACE_VERTICES: usize = 18;
 
 /// The models of the fence styles the lots use (the style the lot's wall array keeps, as
 /// `SimsTiles`' `FenceData` rows number them): the home lot's picket fence (style 2). The other
@@ -222,7 +238,7 @@ fn wall_matrix(x: f32, y: f32, angle: f32) -> Mat4 {
 /// point, `WINDOW_WALLS`) and its form, at its place. A wall part's sub-models but the undrawn
 /// one are drawn when the part faces the eye (`WallPiece::faces`), the 6-vertex one whether the part
 /// is indoors or not; a fence's only sub-model is drawn always.
-pub fn wall_draws(models: &Models, pieces: &[WallPiece], eye: [f32; 2], window_of: impl Fn([f32; 2]) -> Option<&'static str>) -> Vec<Draw> {
+pub fn wall_draws(models: &Models, pieces: &[WallPiece], patterns: &[u32], eye: [f32; 2], window_of: impl Fn([f32; 2]) -> Option<&'static str>) -> Vec<Draw> {
     let mut out = Vec::new();
     for p in pieces {
         if p.fence {
@@ -230,7 +246,7 @@ pub fn wall_draws(models: &Models, pieces: &[WallPiece], eye: [f32; 2], window_o
             let Some(record) = models.parts.record_by_id(crate::shader::name_hash(name)) else { continue };
             let rec = models.parts.record(record);
             for part in models.parts.parts_of(record) {
-                out.push(Draw { kind: Kind::WallPiece, part: part.index, world: world_of(&lamps::object_matrix(p.x, p.y, p.angle), rec.scale) });
+                out.push(Draw { kind: Kind::WallPiece, part: part.index, world: world_of(&lamps::object_matrix(p.x, p.y, p.angle), rec.scale), origin: [p.x, p.y], object: 0, shader: None });
             }
             continue;
         }
@@ -255,7 +271,11 @@ pub fn wall_draws(models: &Models, pieces: &[WallPiece], eye: [f32; 2], window_o
             continue;
         }
         for part in models.parts.parts_of(record).filter(|q| q.batch.hash != UNDRAWN_WALL_SUB) {
-            out.push(Draw { kind: Kind::WallPiece, part: part.index, world });
+            // the face (the 18 or 23 vertex list) is drawn with the pattern's shader, the pieces
+            // beside it (caps, 5 and 6 vertices) with their own
+            let face = part.batch.list.is_some() && part.batch.count >= WALL_FACE_VERTICES;
+            let shader = face.then(|| patterns.get(usize::from(p.pattern)).copied()).flatten();
+            out.push(Draw { kind: Kind::WallPiece, part: part.index, world, origin: [p.x, p.y], object: 0, shader });
         }
     }
     out
@@ -274,6 +294,55 @@ pub fn window_edges(models: &Models, placements: &[Placement], guids_of: impl Fn
             WINDOW_WALLS.iter().find(|w| w.0 == name).map(|w| ([p.x, p.y], w.1))
         })
         .collect()
+}
+
+/// Whether a record is a Sim's: an outfit's parts are named by two lowercase letters and an
+/// underscore (am_ub_..., af_...), and the shadows `shadow_...`.
+pub fn is_sims(name: &str) -> bool {
+    let b = name.as_bytes();
+    b.len() > 3 && b[0].is_ascii_lowercase() && b[1].is_ascii_lowercase() && b[2] == b'_' || name.starts_with("shadow_")
+}
+
+/// Whether a record is an object a Sim carries (`Carry_...`, `Prop_...`) or the Sim's diamond: drawn
+/// on the Sim's own bones, not the lot's.
+pub fn is_held(name: &str) -> bool {
+    name.starts_with("Carry_") || name.starts_with("Prop_") || name == "Diamond"
+}
+
+/// The lot's draws from the engine's world alone: its objects' (`object_draws`), its walls' (seen
+/// from `eye`, `wall_draws`) and the house's own lot model (`lot_draws`), with the placements the
+/// objects were drawn at.
+pub struct LotDraws {
+    pub draws: Vec<Draw>,
+    pub placements: Vec<Placement>,
+    pub pieces: Vec<WallPiece>,
+}
+
+/// `res` is `quickdata::object_resources` of the disc's `SimsObjects`, `house` the lot's house
+/// number (its `HouseData` row: the loaded lot does not keep it).
+pub fn lot_draws_of(world: &crate::world::World, res: &BTreeMap<u32, ObjResources>, models: &Models, disc: &Disc, house: usize, tick: u32, eye: Option<[f32; 2]>) -> LotDraws {
+    let quick = disc.read("quickdat.arc").unwrap_or_default();
+    let image = |name: &str| crate::arc::entries(&quick).unwrap_or_default().into_iter().find(|e| e.name == name).and_then(|e| crate::quickdata::Image::read(crate::arc::bytes(&quick, &e)));
+    let tiles = image("SimsTiles");
+    let fences = tiles.as_ref().map(crate::quickdata::fence_styles).unwrap_or_default();
+    let patterns = tiles.as_ref().map(crate::quickdata::wall_patterns).unwrap_or_default();
+    let outer_lot = image("SimsUI").map(|img| crate::quickdata::houses(&img)).and_then(|h| h.get(house).map(|h| h.outer_lot));
+    let parts: Vec<crate::scene::Part> = world
+        .objects()
+        .filter(|w| w.on_lot() && !w.person)
+        .map(|w| crate::scene::Part { id: w.id(), leader: if w.leader != 0 { w.leader } else { w.id() }, x16: w.x16, y16: w.y16, facing: i32::from(w.facing()), wall: res.get(&w.guid).is_some_and(|r| r.on_wall()) })
+        .collect();
+    let placements = crate::scene::placements(&parts);
+    let guids_of = |id: i16| world.find_object(id).into_iter().chain(world.objects().filter(|o| o.leader == id)).map(|o| o.guid).collect::<Vec<u32>>();
+    let mut draws = object_draws(models, &placements, guids_of, res, tick);
+    let pieces = crate::scene::wall_pieces(&world.walls, 64, &fences);
+    let windows = window_edges(models, &placements, guids_of, res);
+    let window_of = |at: [f32; 2]| windows.iter().find(|w| (w.0[0] - at[0]).abs() < 0.1 && (w.0[1] - at[1]).abs() < 0.1).map(|w| w.1);
+    if let Some(eye) = eye {
+        draws.extend(wall_draws(models, &pieces, &patterns, eye, window_of));
+    }
+    draws.extend(outer_lot.map(|id| lot_draws(models, id)).unwrap_or_default());
+    LotDraws { draws, placements, pieces }
 }
 
 #[cfg(test)]

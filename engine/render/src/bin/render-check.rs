@@ -12,6 +12,8 @@ use housefire::disc::Disc;
 use housefire::tree_log::read_log;
 use housefire_render::gpu::Gpu;
 use housefire_render::renderer::Renderer;
+use housefire_render::engine_scene;
+use housefire_render::frame::{self, Lighting};
 use housefire_render::scene::{Assets, Class};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -19,6 +21,10 @@ use std::process::ExitCode;
 
 const WIDTH: u32 = 640;
 const HEIGHT: u32 = 448;
+
+fn fnv(v: &[u32]) -> u64 {
+    v.iter().fold(1469598103934665603u64, |h, &x| (h ^ u64::from(x)).wrapping_mul(1099511628211))
+}
 
 fn read_png(path: &Path) -> Option<Vec<u8>> {
     let mut reader = png::Decoder::new(std::fs::File::open(path).ok()?).read_info().ok()?;
@@ -119,6 +125,99 @@ fn main() -> ExitCode {
 
     let assets = Assets::new(&disc);
     let mut scene = assets.scene(&log, tick);
+    // the engine mode (HF_ENGINE=1, with --card CARD for a save's lot): the lot's model draws from
+    // the engine's own state in place of the log's rigid and display-list draws
+    let engine_mode = std::env::var_os("HF_ENGINE").is_some();
+    if engine_mode {
+        let card = args.iter().position(|a| a == "--card").and_then(|i| args.get(i + 1)).map(PathBuf::from);
+        let view = scene.frame.camera.view;
+        let house = std::env::var("HF_HOUSE").ok().and_then(|v| v.parse().ok()).unwrap_or(1);
+        let plan = engine_scene::plan(&disc, card.as_deref(), &log, tick, &view, house).expect("the engine's lot");
+        let shaders = housefire::shader::index(&disc);
+        if let Ok(name) = std::env::var("HF_DRAWS") {
+            for d in &plan.draws {
+                let part = plan.models.parts.parts_of(d.part.0).find(|p| p.index == d.part).unwrap();
+                if part.record.name.starts_with(&name) {
+                    println!("  planned {} {:?} sub {} at {:?} (object {:x?}), {} vertices, shader {:08x}", part.record.name, d.kind, d.part.2, d.origin, (d.object, plan.guids.get(&d.object)), part.batch.count, part.batch.hash);
+                }
+            }
+        }
+        // (HF_ORACLE=1, a study aid: the light sets are the log's, of the log draw at the same
+        // world matrix, to tell the lights' error from the materials')
+        let oracle: Vec<([f32; 12], Lighting, frame::Material, usize)> = if std::env::var_os("HF_ORACLE").is_some() || std::env::var_os("HF_MATDIFF").is_some() {
+            scene.frame.draws.iter().filter(|d| matches!(scene.drawn[d.id as usize - 1].class, Class::RigidStrip | Class::DisplayList)).map(|d| (d.world, d.lighting.clone(), d.material, scene.meshes[d.mesh.0 as usize].vertices.len())).collect()
+        } else {
+            Vec::new()
+        };
+        let lighting = |d: &housefire::drawlist::Draw| {
+            if std::env::var_os("HF_ORACLE").is_none() {
+                return Lighting::Lit { ambient: [0.5; 3], directionals: Vec::new(), points: Vec::new() };
+            }
+            let near = |a: &[f32; 12]| (0..12).all(|i| (a[i] - d.world[i]).abs() <= 1e-4 * if i % 4 == 3 { 1.0 } else { a[0].abs().max(a[5].abs()).max(a[10].abs()).max(1e-9) });
+            match oracle.iter().find(|o| near(&o.0)) {
+                Some(o) => o.1.clone(),
+                None => Lighting::Lit { ambient: [0.5; 3], directionals: Vec::new(), points: Vec::new() },
+            }
+        };
+        let made = assets.engine_draws(&mut scene, &engine_scene::Inputs { draws: &plan.draws, models: &plan.models, shaders: &shaders, lighting: &lighting, view });
+        let planned = made.len();
+        if std::env::var_os("HF_MATDIFF").is_some() {
+            // the materials against the log's, by world matrix and vertex count: what differs, by model
+            let near = |a: &[f32; 12], b: &[f32; 12]| (0..12).all(|i| (a[i] - b[i]).abs() <= 1e-4 * if i % 4 == 3 { 1.0 } else { a[0].abs().max(a[5]).max(a[10]).max(1e-9) });
+            let tex = |scene: &housefire_render::scene::Scene, m: &frame::Material, k: usize| m.layers[k].map(|l| (scene.textures.get(l.texture.0 as usize).map(|t| (t[0].0, t[0].1, t.len(), fnv(&t[0].2))), l.wrap, l.linear, l.mipmaps));
+            let mut by: BTreeMap<String, (usize, String)> = BTreeMap::new();
+            for m in &made {
+                let n = scene.meshes[m.draw.mesh.0 as usize].vertices.len();
+                let Some(o) = oracle.iter().find(|o| o.3 == n && near(&o.0, &m.draw.world)) else {
+                    let s = housefire::scene::Camera::on_screen(&view, &scene.frame.camera.projection, [m.draw.world[3], m.draw.world[7], m.draw.world[11]]);
+                    if s.is_some_and(|s| (0.0..=1.04).contains(&s[0]) && (-0.19..=0.63).contains(&s[1])) {
+                        by.entry(format!("no log draw, on screen, {}", m.info.model)).or_insert((0, format!("{:?}", s))).0 += 1;
+                    }
+                    by.entry("no log draw".into()).or_insert((0, m.info.model.clone())).0 += 1;
+                    continue;
+                };
+                let (e, l) = (&m.draw.material, &o.2);
+                let mut diffs = Vec::new();
+                if std::mem::discriminant(&e.combine) != std::mem::discriminant(&l.combine) || e.combine != l.combine && !matches!(e.combine, frame::Combine::Crossfade { .. }) {
+                    diffs.push(format!("combine {:?} vs {:?}", e.combine, l.combine));
+                }
+                if e.blend != l.blend {
+                    diffs.push(format!("blend {:?} vs {:?}", e.blend, l.blend));
+                }
+                if e.alpha_test != l.alpha_test {
+                    diffs.push(format!("alpha {:?} vs {:?}", e.alpha_test.map(|a| a.refs[0]), l.alpha_test.map(|a| a.refs[0])));
+                }
+                if e.depth_write != l.depth_write || e.depth_test != l.depth_test {
+                    diffs.push("depth".into());
+                }
+                if e.dst_alpha != l.dst_alpha || e.write_alpha != l.write_alpha || e.write_colour != l.write_colour {
+                    diffs.push(format!("dstalpha {:?}/{} vs {:?}/{}", e.dst_alpha, e.write_alpha, l.dst_alpha, l.write_alpha));
+                }
+                for k in 0..2 {
+                    let (te, tl) = (tex(&scene, e, k), tex(&scene, l, k));
+                    if te.as_ref().map(|t| &t.0) != tl.as_ref().map(|t| &t.0) {
+                        diffs.push(format!("layer {k} texture {:?} vs {:?}", te.as_ref().map(|t| (t.0.map(|x| (x.0, x.1, x.2)), &m.info.textures[k])), tl.as_ref().map(|t| t.0.map(|x| (x.0, x.1, x.2)))));
+                    } else if te != tl {
+                        diffs.push(format!("layer {k} sampler {:?} vs {:?}", te.map(|t| (t.1, t.2, t.3)), tl.map(|t| (t.1, t.2, t.3))));
+                    }
+                }
+                // the log's state by what the engine knows of the draw: its kind, blend, the layer 0
+                // texture's alpha (none, some pixels clear, all clear)
+                let alpha = m.draw.material.layers[0].and_then(|l| scene.textures.get(l.texture.0 as usize)).map_or("no texture", |t| {
+                    let n = t[0].2.iter().filter(|&&p| p >> 24 != 255).count();
+                    if n == 0 { "opaque" } else if n == t[0].2.len() { "all clear" } else { "cutout" }
+                });
+                let key = format!("STATE {:?} {:?} layers {} texture {alpha}: log alpha {:?} dst {:?}/{} depth {:?}/{}", m.info.class, e.blend, e.layers.iter().flatten().count(), l.alpha_test.map(|a| (a.refs[0], a.comp[0].0, a.op)), l.dst_alpha, l.write_alpha, l.depth_test.map(|c| c.0), l.depth_write);
+                by.entry(key).or_insert((0, m.info.model.clone())).0 += 1;
+                by.entry(if diffs.is_empty() { "same".into() } else { diffs.join("; ") }).or_insert((0, m.info.model.clone())).0 += 1;
+            }
+            for (k, (n, ex)) in by {
+                println!("MAT {n:>4} e.g. {ex}: {k}");
+            }
+        }
+        let removed = engine_scene::splice(&mut scene, made);
+        println!("engine mode: {} draws planned, {planned} made; the log's {removed} rigid and display-list draws left out", plan.draws.len());
+    }
 
     let gpu = Gpu::new(std::env::var_os("HF_VALIDATE").is_some()).expect("Vulkan");
     let mut renderer = Renderer::new(&gpu, WIDTH, HEIGHT);
@@ -160,6 +259,17 @@ fn main() -> ExitCode {
     let missing_pixels = picture.ids.iter().filter(|&&id| id != 0 && scene.drawn[id as usize - 1].missing_texture).count();
     println!("drawn with a texture not found (white): {missing} draws, {missing_pixels} pixels; materials not drawn right: {unsupported:?}");
 
+    if std::env::var_os("HF_LIGHTS").is_some() {
+        let mut by: BTreeMap<String, usize> = BTreeMap::new();
+        for d in &scene.frame.draws {
+            if matches!(scene.drawn[d.id as usize - 1].class, Class::RigidStrip | Class::DisplayList) {
+                *by.entry(format!("{:?}", d.lighting)).or_default() += 1;
+            }
+        }
+        for (k, v) in by {
+            println!("LIGHT {v}: {k}");
+        }
+    }
     let class_at = |id: u32| scene.drawn[id as usize - 1].class;
     let rigid = |p: usize| picture.ids[p] != 0 && matches!(class_at(picture.ids[p]), Class::RigidStrip | Class::DisplayList);
     compare("rigid draws' pixels", &picture.rgba, &reference, rigid);
@@ -255,11 +365,11 @@ fn main() -> ExitCode {
         let id = picture.ids[p];
         println!("probe {probe}: ours {:?} reference {:?}", &picture.rgba[p * 4..p * 4 + 4], &reference[p * 4..p * 4 + 4]);
         if id != 0 {
-            let (info, d) = (&scene.drawn[id as usize - 1], &scene.frame.draws[id as usize - 1]);
+            let (info, d) = (&scene.drawn[id as usize - 1], scene.frame.draws.iter().find(|d| d.id == id).unwrap());
             println!("   {info:?}\n   {:?}\n   {:?}", d.material, d.lighting);
         }
         if picture.late_ids[p] != 0 {
-            let (info, d) = (&scene.drawn[picture.late_ids[p] as usize - 1], &scene.frame.draws[picture.late_ids[p] as usize - 1]);
+            let (info, d) = (&scene.drawn[picture.late_ids[p] as usize - 1], scene.frame.draws.iter().find(|d| d.id == picture.late_ids[p]).unwrap());
             println!("   late: {info:?}\n   {:?}", d.material);
         }
     }
@@ -271,7 +381,7 @@ fn main() -> ExitCode {
     }
     compare("whole frame", &picture.rgba, &reference, |_| true);
 
-    let out = frames_dir.join("r1");
+    let out = frames_dir.join(std::env::var("HF_OUT").unwrap_or_else(|_| "r1".into()));
     std::fs::create_dir_all(&out).unwrap();
     write_png(&out.join(format!("ours_{frame}.png")), &picture.rgba.as_chunks::<4>().0.iter().flat_map(|c| [c[0], c[1], c[2], 255]).collect::<Vec<_>>());
     let diff: Vec<u8> = (0..(WIDTH * HEIGHT) as usize)

@@ -6,3 +6,4 @@ pub mod frame;
 pub mod gpu;
 pub mod renderer;
 pub mod scene;
+pub mod engine_scene;

@@ -28,6 +28,7 @@ pub mod routing;
 pub mod interp;
 pub mod lamps;
 pub mod light;
+pub mod lotpick;
 pub mod mathf;
 pub mod save;
 pub mod simulator;
