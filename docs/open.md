@@ -59,4 +59,9 @@
   indoor objects' (from their light sets) not made (75 draws unsheared), the diagonal walls'
   extends forms. The camera from the log's 'c' parameters (no input on a loaded lot). The front
   wall's foot shows the floor where the reference is dark (the `_garbage` pieces not drawn).
+- **The window's Sims and the device run** (stage 5d): `view` draws no Sims or portrait (the
+  replay runs with no animation catalogue, `cat: None`, so no poses); its shot at tick 1039 is
+  98.89% of render-check's engine mode (3,028 of 3,175 differing pixels the portrait box). The
+  RK3566 run of `view` (aarch64 build, `--ticks 1200 --frame-times`) needs the user's SSH; by
+  the PC's figures the CPU's frame build (~18 ms there) is the risk (docs/assets.md "The budget").
 
