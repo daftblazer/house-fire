@@ -29,6 +29,7 @@ use housefire::tree_log::read_log;
 use housefire_render::gpu::Gpu;
 use housefire_render::renderer::Renderer;
 use housefire_render::engine_scene;
+use housefire_render::sims;
 use housefire_render::frame::{self, Lighting};
 use housefire_render::scene::{Assets, Class};
 use std::collections::BTreeMap;
@@ -374,9 +375,49 @@ fn main() -> ExitCode {
             }
             by_room[room].push(m);
         }
+        // the Sims from the engine's own run (HF_NO_SIMS=1 keeps the log's): the replay to the tick
+        // before this one for the world, the animation frames through this one for the poses
+        let sims = if std::env::var_os("HF_NO_SIMS").is_some() {
+            None
+        } else {
+            let lib = housefire::library::Library::bustin_out(&disc);
+            let start = housefire::replay::Start::read(&disc, card.as_deref().and_then(|p| p.to_str()), -1).expect("the lot");
+            let catalog = housefire::anim::Catalog::read(&disc, house as u32);
+            let mut replay = housefire::replay::Replay::new(&log, &lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, None, housefire::replay::RunWith { card_lot: start.card_lot, cat: Some(catalog.clone()) }).expect("the run");
+            while replay.tick() + 1 < tick && replay.step() {}
+            let ngh = engine_scene::save_file(&disc, card.as_deref()).expect("the save");
+            let rigs = housefire::figure::Rigs::read(&disc).expect("the skeletons");
+            let cast = housefire::figure::Cast::read(&disc, &ngh).expect("the part tables");
+            let skins = sims::SimSkins::from_scene(&scene);
+            let wardrobe = sims::Wardrobe { rigs: &rigs, cast: &cast, catalog: &catalog, skins: &skins, models: &plan.models, shaders: &shaders };
+            let plays = replay.sim_plays(tick);
+            let mut figures = sims::figures_of(replay.world(), &cast, &plays, &Default::default());
+            let headings = sims::headings_from_log(&log, tick, &wardrobe, &figures);
+            figures = sims::figures_of(replay.world(), &cast, &plays, &headings);
+            let portrait = sims::portrait_sim(&scene, &wardrobe, &figures);
+            for f in &figures {
+                println!("Sim {} at {:?} heading {} (facing {}) play {:?}{}", f.id, f.place, f.heading, replay.world().find_object(f.id).map_or(0, |o| o.facing()), f.play, if portrait == Some(f.id) { ", the portrait's" } else { "" });
+            }
+            let mut sim_cache = sims::SimCaches::default();
+            Some(assets.engine_sims(&mut scene, &mut caches, &mut sim_cache, &wardrobe, &figures, &plan.lights, sun, view, portrait))
+        };
+        if std::env::var_os("HF_SIMLIST").is_some() {
+            // study aid: the Sims' draws as the log has them and as the engine makes them (model,
+            // vertices, skinned)
+            let describe = |d: &frame::Draw, info: &housefire_render::scene::DrawInfo, meshes: &[frame::MeshData]| format!("{:?} {} v{} skin {}", info.class, info.model, meshes.get(d.mesh.0 as usize).map_or(0, |m| m.vertices.len()), d.bones.is_some());
+            for d in &scene.frame.draws {
+                let info = &scene.drawn[d.id as usize - 1];
+                if matches!(info.class, Class::Overlay) || (matches!(info.class, Class::Skinned) && d.projection.is_none()) && housefire::drawlist::is_sims(&info.model) {
+                    println!("LOG    {}", describe(d, info, &scene.meshes));
+                }
+            }
+            for m in sims.iter().flat_map(|s| s.house.iter().chain(&s.portrait).chain(&s.leak)) {
+                println!("ENGINE {}", describe(&m.draw, &m.info, &scene.meshes));
+            }
+        }
         let (lot, objects): (Vec<engine_scene::Made>, Vec<engine_scene::Made>) = made.into_iter().partition(|m| plan.draws[m.from].kind == housefire::drawlist::Kind::LotList && m.draw.material.blend == frame::Blend::Opaque);
         println!("engine floors: {} strips in rooms {:?}; shadows {} planned, per room {:?}", floors.len(), floors.iter().map(|f| f.0).collect::<std::collections::BTreeSet<_>>(), plan.shadows.len(), by_room.iter().map(Vec::len).collect::<Vec<_>>());
-        let removed = engine_scene::assemble(&mut scene, engine_scene::Engine { floors, lot, shadows: by_room, objects });
+        let removed = engine_scene::assemble(&mut scene, engine_scene::Engine { floors, lot, shadows: by_room, objects, sims });
         println!("engine mode: {} draws planned, {planned} made; the log's {removed} floor, shadow, rigid and display-list draws left out", plan.draws.len());
     }
 

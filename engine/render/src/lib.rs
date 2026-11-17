@@ -7,3 +7,4 @@ pub mod gpu;
 pub mod renderer;
 pub mod scene;
 pub mod engine_scene;
+pub mod sims;

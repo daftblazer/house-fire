@@ -22,6 +22,7 @@ use housefire_render::frame::{Frame, TRANSIENT_MESH};
 use housefire_render::gpu::Gpu;
 use housefire_render::renderer::{Present, Renderer};
 use housefire_render::scene::Assets;
+use housefire_render::sims::{self, SimSkins, Wardrobe};
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -279,7 +280,9 @@ fn run(args: Args) -> Result<(), String> {
     let disc = Disc::open(&args.iso).map_err(|_| "cannot read the disc image")?;
     let lib = Library::bustin_out(&disc);
     let start = Start::read(&disc, args.card.as_deref(), args.lot)?;
-    let mut replay = Replay::new(&log, &lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, None, RunWith { card_lot: start.card_lot, cat: None }).ok_or("the log does not start with the lot loaded")?;
+    let house = std::env::var("HF_HOUSE").ok().and_then(|v| v.parse().ok()).unwrap_or(HOME_HOUSE);
+    let catalog = housefire::anim::Catalog::read(&disc, house as u32);
+    let mut replay = Replay::new(&log, &lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, None, RunWith { card_lot: start.card_lot, cat: Some(catalog.clone()) }).ok_or("the log does not start with the lot loaded")?;
 
     // the world as it loads, for the shot's account of what the run changed
     let loaded = Snapshot::of(replay.world());
@@ -307,8 +310,21 @@ fn run(args: Args) -> Result<(), String> {
     let mut renderer = Renderer::new(&gpu, WIDTH, HEIGHT);
 
     let assets = Assets::new(&disc);
-    let lot = Lot::new(&disc, std::env::var("HF_HOUSE").ok().and_then(|v| v.parse().ok()).unwrap_or(HOME_HOUSE)).ok_or("the lot's art")?;
+    let lot = Lot::new(&disc, house).ok_or("the lot's art")?;
     let mut builder = Builder::new(&assets, &lot);
+    // the Sims: the skeletons and the part tables from the disc and the save, their run-time
+    // textures from the log's one drawn frame, and whose portrait it shows from that frame
+    let ngh = engine_scene::save_file(&disc, args.card.as_deref().map(std::path::Path::new)).ok_or("the save")?;
+    let rigs = housefire::figure::Rigs::read(&disc).ok_or("the skeletons")?;
+    let cast = housefire::figure::Cast::read(&disc, &ngh).ok_or("the part tables")?;
+    let drawn_ticks: std::collections::BTreeSet<u32> = log.strips.iter().map(|s| s.tick).collect();
+    let log_scene = drawn_ticks.first().map(|&t| assets.scene(&log, t));
+    let skins = log_scene.as_ref().map_or_else(SimSkins::default, SimSkins::from_scene);
+    let wardrobe = Wardrobe { rigs: &rigs, cast: &cast, catalog: &catalog, skins: &skins, models: &lot.models, shaders: &lot.shaders };
+    let portrait = log_scene.as_ref().and_then(|sc| sims::portrait_sim(sc, &wardrobe, &sims::figures_of(replay.world(), &cast, &[], &Default::default())));
+    // (the engine keeps no heading for a Sim apart from its facing: where the log shows a frame,
+    // the heading that puts the bones where the log's are is taken, and kept)
+    let mut headings = std::collections::HashMap::new();
     let (mut mesh_ids, mut texture_ids) = (Vec::new(), Vec::new());
     let mut times = args.frame_times.as_ref().map(|p| std::io::BufWriter::new(std::fs::File::create(p).expect("the frame-times file")));
     let frame_length = Duration::from_secs_f64(1.0 / TICKS_PER_SECOND);
@@ -334,7 +350,13 @@ fn run(args: Args) -> Result<(), String> {
         // the frame of this tick shows the world as it is when the tick begins (the clock as its
         // passes before it left it), then the tick runs
         let tick = replay.tick() + 1;
-        let counts = builder.build(replay.world(), tick, camera_at(tick));
+        let plays = replay.sim_plays(tick);
+        let mut figures = sims::figures_of(replay.world(), &cast, &plays, &headings);
+        if drawn_ticks.contains(&tick) {
+            headings.extend(sims::headings_from_log(&log, tick, &wardrobe, &figures));
+            figures = sims::figures_of(replay.world(), &cast, &plays, &headings);
+        }
+        let counts = builder.build_with(replay.world(), tick, camera_at(tick), Some((&wardrobe, &figures, portrait)));
         let built = Instant::now();
         let scene = &mut builder.scene;
         if scene.meshes.len() > mesh_ids.len() {
@@ -346,7 +368,7 @@ fn run(args: Args) -> Result<(), String> {
         }
         // (the transient meshes' ids are the renderer's own already)
         renderer.set_transient_meshes(&scene.transient);
-        let mut frame = Frame { camera: scene.frame.camera, draws: std::mem::take(&mut scene.frame.draws), backdrop: None };
+        let mut frame = Frame { camera: scene.frame.camera, draws: std::mem::take(&mut scene.frame.draws), backdrop: scene.frame.backdrop };
         for d in &mut frame.draws {
             if d.mesh.0 & TRANSIENT_MESH == 0 {
                 d.mesh = mesh_ids[d.mesh.0 as usize];
@@ -359,10 +381,10 @@ fn run(args: Args) -> Result<(), String> {
             let picture = renderer.render(&frame);
             let (_, path) = args.shot.as_ref().unwrap();
             write_png(path, &picture.rgba);
-            let sims = replay.world().objects().filter(|o| o.person && o.on_lot()).count();
+            let sims = figures.len();
             println!("world at tick {tick} against the loaded save: {}", loaded.account(&Snapshot::of(replay.world())));
             println!("budget at tick {tick}: {:?}", renderer.stats(&frame));
-            println!("shot of tick {tick}: {} draws ({} planned, {} floor strips, {} shadows); the Sims ({sims} on the lot) are not drawn", counts.draws, counts.planned, counts.floors, counts.shadows);
+            println!("shot of tick {tick}: {} draws ({} planned, {} floor strips, {} shadows); the {sims} Sims on the lot from the engine's state", counts.draws, counts.planned, counts.floors, counts.shadows);
         }
         let (image, _) = unsafe { swapchain.loader.acquire_next_image(swapchain.chain, u64::MAX, swapchain.acquire, vk::Fence::null()) }.map_err(|e| format!("acquire: {e}"))?;
         let release = swapchain.release[image as usize];

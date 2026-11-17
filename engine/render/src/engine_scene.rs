@@ -25,7 +25,7 @@ pub struct Made {
 /// "Shaders").
 pub const RUNTIME_FACTOR: (u8, u8) = (0xFF, 0x80);
 
-fn material_record(shader: &Shader) -> MaterialRec {
+pub(crate) fn material_record(shader: &Shader) -> MaterialRec {
     let mut layer = [[0u8; 0x18]; 2];
     for (l, s) in layer.iter_mut().zip(&shader.layers) {
         l[4..8].copy_from_slice(&s.flags.to_be_bytes());
@@ -69,8 +69,8 @@ pub type TextureCache = HashMap<u32, Option<(TextureRef, bool)>>;
 #[derive(Default)]
 pub struct Caches {
     /// A model's batch (its address in the `Models`) as a mesh, as a display list or as strips.
-    meshes: HashMap<(usize, bool), Option<MeshId>>,
-    textures: TextureCache,
+    pub(crate) meshes: HashMap<(usize, bool), Option<MeshId>>,
+    pub(crate) textures: TextureCache,
     /// A floor strip's mesh by a hash of its corners.
     floors: HashMap<u64, MeshId>,
     /// Whether the floors' meshes are the frame's own (`Scene::transient`, ids `TRANSIENT_MESH`
@@ -301,7 +301,7 @@ pub const DST_ALPHA_GROUND: u8 = 0x7F;
 /// Z less-or-equal with writes, no culling; a one-layer opaque material whose texture has clear
 /// pixels tests alpha at least 127, the blended ones at least 5, with source alpha over the
 /// picture).
-fn state_of(m: &mut Material, kind: Kind, cutout: bool, reference: Option<f32>) {
+pub(crate) fn state_of(m: &mut Material, kind: Kind, cutout: bool, reference: Option<f32>) {
     // the alpha test's reference is the shader's first layer's float (0.5 and 0.4: 127 and 102 of
     // 255, the logged ones; 0.02: 5), else the constants
     let at = |fallback: u8| reference.filter(|v| (0.0..=1.0).contains(v)).map_or(fallback, |v| (v * 255.0) as u8);
@@ -412,19 +412,25 @@ impl Lot {
     }
 }
 
+/// The save's neighbourhood file the lot is read from: the memory card's `G4ME69` file, or the
+/// disc's default one.
+pub fn save_file(disc: &housefire::disc::Disc, card: Option<&std::path::Path>) -> Option<Vec<u8>> {
+    match card {
+        Some(p) => {
+            let mut bytes = std::fs::read(p).ok()?;
+            bytes.truncate(1 << 22);
+            housefire::save::memory_card_file(&bytes, "G4ME69").ok()
+        }
+        None => disc.read("Runtime/default.ngh"),
+    }
+}
+
 /// The engine's lot (the disc's, or the card's save: `card` the memory card image; the lot the
 /// log ran on, `housefire::lotpick`) and its draws for `tick`, seen from the eye of `view`. The
 /// loaded lot is the world as the game starts the lot; the animation clock is the tick's.
 pub fn plan(disc: &housefire::disc::Disc, card: Option<&std::path::Path>, log: &housefire::tree_log::Log, tick: u32, view: &Mat3x4, house: usize) -> Option<Plan> {
     use housefire::{library::Library, save, world::World};
-    let ngh = match card {
-        Some(p) => {
-            let mut bytes = std::fs::read(p).ok()?;
-            bytes.truncate(1 << 22);
-            save::memory_card_file(&bytes, "G4ME69").ok()?
-        }
-        None => disc.read("Runtime/default.ngh")?,
-    };
+    let ngh = save_file(disc, card)?;
     let lib = Library::bustin_out(disc);
     let (lots, _, _, best, _) = housefire::lotpick::pick_lot(&lib, &ngh, log);
     let mut world = World::new(&lib);
@@ -457,6 +463,8 @@ pub struct Engine {
     /// The model draws (objects, walls, the lot's blended ones): after all batches, the opaque
     /// ones first.
     pub objects: Vec<Made>,
+    /// The Sims' draws from the engine's world (`sims`); with none, the log's stay.
+    pub sims: Option<crate::sims::SimDraws>,
 }
 
 /// The room whose batch the log's Sims' shadows go in until the engine makes them (the home
@@ -476,11 +484,21 @@ pub fn assemble(scene: &mut Scene, engine: Engine) -> usize {
             info.class = Class::Skinned;
         }
     }
+    // with the Sims from the engine the log's Sims, shadows and portrait go; what they hold stays
+    let engine_sims = engine.sims.is_some();
     let (mut kept, mut sims_shadows, mut removed) = (Vec::new(), Vec::new(), 0);
     for d in std::mem::take(&mut scene.frame.draws) {
         let info = &scene.drawn[d.id as usize - 1];
         match info.class {
-            Class::Shadow if housefire::drawlist::is_sims(&info.model) => sims_shadows.push(d),
+            Class::Shadow if housefire::drawlist::is_sims(&info.model) => {
+                if engine_sims {
+                    removed += 1;
+                } else {
+                    sims_shadows.push(d)
+                }
+            }
+            Class::Skinned if engine_sims && !housefire::drawlist::is_held(&info.model) => removed += 1,
+            Class::Overlay if engine_sims => removed += 1,
             Class::RigidStrip | Class::DisplayList | Class::Floor | Class::FloorMask | Class::Shadow => removed += 1,
             _ => kept.push(d),
         }
@@ -492,7 +510,9 @@ pub fn assemble(scene: &mut Scene, engine: Engine) -> usize {
         m.draw.id = scene.drawn.len() as u32;
         out.push(m.draw);
     };
-    let rooms = engine.floors.iter().map(|f| f.0).chain(0..engine.shadows.len()).max().map_or(0, |m| m + 1);
+    let sim_draws = engine.sims.unwrap_or_default();
+    let mut sim_shadows = sim_draws.shadows;
+    let rooms = engine.floors.iter().map(|f| f.0).chain(0..engine.shadows.len()).chain(sim_shadows.iter().map(|s| s.0 + 1)).max().map_or(0, |m| m + 1);
     let mut floors: Vec<Vec<FloorDraws>> = (0..rooms).map(|_| Vec::new()).collect();
     for (room, f) in engine.floors {
         floors[room].push(f);
@@ -517,6 +537,14 @@ pub fn assemble(scene: &mut Scene, engine: Engine) -> usize {
         if room == SIMS_SHADOW_ROOM {
             out.extend(sims.take().into_iter().flatten());
         }
+        // the engine's Sims' shadows of this room, after its other shadows
+        for (r, m) in std::mem::take(&mut sim_shadows) {
+            if r == room {
+                put(scene, &mut out, m);
+            } else {
+                sim_shadows.push((r, m));
+            }
+        }
         for m in masks {
             put(scene, &mut out, m);
         }
@@ -530,10 +558,16 @@ pub fn assemble(scene: &mut Scene, engine: Engine) -> usize {
         put(scene, &mut out, m);
     }
     out.extend(sims);
+    for m in sim_draws.house {
+        put(scene, &mut out, m);
+    }
     for m in blended {
         put(scene, &mut out, m);
     }
     out.extend(overlay);
+    for m in sim_draws.portrait.into_iter().chain(sim_draws.leak) {
+        put(scene, &mut out, m);
+    }
     scene.frame.draws = out;
     removed
 }
@@ -546,6 +580,7 @@ pub struct Builder<'a> {
     assets: &'a Assets,
     lot: &'a Lot,
     caches: Caches,
+    sim_cache: crate::sims::SimCaches,
     pub scene: Scene,
 }
 
@@ -563,12 +598,18 @@ pub struct Counts {
 impl<'a> Builder<'a> {
     pub fn new(assets: &'a Assets, lot: &'a Lot) -> Builder<'a> {
         let frame = Frame { camera: Camera { view: IDENTITY, projection: [0.0; 6] }, draws: Vec::new(), backdrop: None };
-        Builder { assets, lot, caches: Caches { transient_floors: true, ..Caches::default() }, scene: Scene { frame, drawn: Vec::new(), all: Vec::new(), meshes: Vec::new(), transient: Vec::new(), textures: Vec::new() } }
+        Builder { assets, lot, caches: Caches { transient_floors: true, ..Caches::default() }, sim_cache: Default::default(), scene: Scene { frame, drawn: Vec::new(), all: Vec::new(), meshes: Vec::new(), transient: Vec::new(), textures: Vec::new() } }
     }
 
     /// The frame of `world` on `tick` seen through `camera` (a view and a projection): in
     /// `scene.frame`, with the meshes and textures it needs appended to the scene's.
     pub fn build(&mut self, world: &housefire::world::World, tick: u32, camera: (Mat3x4, [f32; 6])) -> Counts {
+        self.build_with(world, tick, camera, None)
+    }
+
+    /// `build`, with the Sims of `sims` (the wardrobe, the figures and the Sim whose portrait is
+    /// shown) drawn from the engine's state.
+    pub fn build_with(&mut self, world: &housefire::world::World, tick: u32, camera: (Mat3x4, [f32; 6]), sims: Option<(&crate::sims::Wardrobe, &[crate::sims::Figure], Option<i16>)>) -> Counts {
         let (view, projection) = camera;
         let scene = &mut self.scene;
         scene.frame.draws.clear();
@@ -576,6 +617,7 @@ impl<'a> Builder<'a> {
         scene.all.clear();
         scene.transient.clear();
         scene.frame.camera = Camera { view, projection };
+        scene.frame.backdrop = None;
         let plan = self.lot.plan(world, tick, &view);
         let lighting = |d: &Planned| lighting_for(&plan.lights.of(d), &view);
         let made = self.assets.engine_draws(scene, &mut self.caches, &Inputs { draws: &plan.draws, models: &plan.models, shaders: &self.lot.shaders, lighting: &lighting, view });
@@ -602,7 +644,8 @@ impl<'a> Builder<'a> {
         }
         let (lot, objects): (Vec<Made>, Vec<Made>) = made.into_iter().partition(|m| plan.draws[m.from].kind == Kind::LotList && m.draw.material.blend == Blend::Opaque);
         let counts = Counts { planned: plan.draws.len(), shadows: plan.shadows.len(), floors: floors.len(), draws: 0 };
-        assemble(scene, Engine { floors, lot, shadows: by_room, objects });
+        let sims = sims.map(|(w, figures, portrait)| self.assets.engine_sims(scene, &mut self.caches, &mut self.sim_cache, w, figures, &plan.lights, sun, view, portrait));
+        assemble(scene, Engine { floors, lot, shadows: by_room, objects, sims });
         Counts { draws: scene.frame.draws.len(), ..counts }
     }
 }

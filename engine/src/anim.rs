@@ -289,6 +289,16 @@ impl Play {
         Play { last, place: 0.0, still_first: backward, notes, next: 0, wanted, counted: 0, backward, turned: false, done: false }
     }
 
+    /// How far along the animation the play is, in frames.
+    pub fn place(&self) -> f32 {
+        self.place
+    }
+
+    /// Whether it plays backward (its place moves toward the first frame).
+    pub fn backward(&self) -> bool {
+        self.backward
+    }
+
     /// A frame: the place moves by `step` (the frame step × the rate × the speed).
     pub fn frame(&mut self, step: f32) {
         if self.still_first {
@@ -1256,6 +1266,11 @@ impl Animator {
     /// `sim`'s play: its animation's id and the play.
     pub fn play(&self, sim: u32) -> Option<(u32, &Play)> {
         self.plays.get(&sim).map(|p| (p.0, &p.1))
+    }
+
+    /// Every Sim's play: the Sim (the key `animate` was given), its animation's id and the play.
+    pub fn plays(&self) -> impl Iterator<Item = (u32, u32, &Play)> + '_ {
+        self.plays.iter().map(|(sim, p)| (*sim, p.0, &p.1))
     }
 
     /// A frame: every play steps by 0.033 s × its rate × its Sim's `speed` this frame.
