@@ -36,6 +36,28 @@ pub fn random(n: &Node, vars: &mut ScriptVariables) -> PrimResult {
     if vars.set(n.operand[2], field(n, 0), v) { PrimResult::True } else { PrimResult::Stop }
 }
 
+/// CompleteGoal (opcode 56), its old form (operand byte 6 bit 0, every use in the logs): whether
+/// the player has met a goal of a house. The operand: bytes 0-1 the house's datum and byte 4 its
+/// scope, bytes 2-3 the goal's datum and byte 5 its scope. True if the goal's mark is met
+/// (`goals::Goals`), false if not; no such house or goal is the original's script error (70, 71:
+/// `Stop`). Read from the original's 80211338. Not modelled (`None`): the new form, which asks
+/// the goal manager and can wait for the player; and the original's game modes 1 and 2 (its
+/// +0x468 of 8037BFA8, 0 in every session logged), in which every goal answers true.
+pub fn complete_goal(n: &Node, vars: &mut ScriptVariables) -> Option<PrimResult> {
+    if n.operand[6] & 1 == 0 {
+        return None;
+    }
+    let house = vars.get(n.operand[4], field(n, 0));
+    let goal = vars.get(n.operand[5], field(n, 2));
+    let (Some(house), Some(goal)) = (house, goal) else { return Some(PrimResult::Stop) };
+    let goals = &vars.world.goals;
+    Some(match goals.mark(house.value, goal.value) {
+        Some(m) if goals.is_met(m) => PrimResult::True,
+        Some(_) => PrimResult::False,
+        None => PrimResult::Stop,
+    })
+}
+
 /// Dialog (opcode 36): opens a dialog for the player (a presentation event, the world's
 /// dialog_object) and waits for the answer (`World::dialog_answer`): each step until then yields
 /// and asks the pass to stop (`World::stop_pass`); the answer given, the node goes to its true

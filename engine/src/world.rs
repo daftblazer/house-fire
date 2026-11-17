@@ -222,6 +222,8 @@ pub struct World<'lib> {
     pub neighbours: Vec<Neighbour>,
     /// Scope 12: one shared value per datum (only 15 is used).
     pub ad_range: Vec<i16>,
+    /// The houses' goals and the player's progress (CompleteGoal).
+    pub goals: crate::goals::Goals,
 }
 
 impl<'lib> World<'lib> {
@@ -245,6 +247,7 @@ impl<'lib> World<'lib> {
             neighbourhood: Vec::new(),
             neighbours: Vec::new(),
             ad_range: Vec::new(),
+            goals: Default::default(),
         }
     }
 

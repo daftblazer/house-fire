@@ -8,7 +8,8 @@ use housefire::bhav::Node;
 use housefire::iff::Order;
 use housefire::interp::{Frame, PrimResult, Sleep};
 use housefire::library::Library;
-use housefire::primitives::{dialog, idle, present, random, set_to_next, test_object_type};
+use housefire::goals::Goals;
+use housefire::primitives::{complete_goal, dialog, idle, present, random, set_to_next, test_object_type};
 use housefire::expression::Variables;
 use housefire::world::{DATA_OBJECT_ID, Object, ObjectKey, ScriptVariables, World};
 
@@ -196,4 +197,28 @@ fn the_primitives_rules() {
     assert!(idle(&mut s, &mut g, &sleep) == PrimResult::True && g.params[0] == 0);
     g.params = vec![0];
     assert_eq!(idle(&mut s, &mut g, &sleep), PrimResult::True);
+}
+
+#[test]
+fn complete_goal_reads_the_goals_mark() {
+    let lib = Library::default();
+    let mut w = World::new(&lib);
+    let mut o = Object::new();
+    o.data.resize(72, 0);
+    let me = w.add(o, false);
+    // house 1's goals as the disc's (marks 0x21, 0x72, 0x70), the save's progress: mark 0x21
+    w.goals = Goals { houses: vec![vec![0x87], vec![0x21, 0x72, 0x70]], met: vec![0, 0, 2] };
+    let mut f = Frame::default();
+    // old form (byte 6 bit 0), house and goal as literals (scope 7)
+    let ask = |house: u8, goal: u8, flags: u8, w: &mut World, f: &mut Frame| {
+        complete_goal(&node(56, [house, 0, goal, 0, 7, 7, flags, 0]), &mut ScriptVariables::new(w, me, f))
+    };
+    assert_eq!(ask(1, 0, 1, &mut w, &mut f), Some(PrimResult::True));
+    assert_eq!(ask(1, 1, 1, &mut w, &mut f), Some(PrimResult::False));
+    assert_eq!(ask(0, 0, 1, &mut w, &mut f), Some(PrimResult::False));
+    // no such goal or house: the original's script error
+    assert_eq!(ask(1, 3, 1, &mut w, &mut f), Some(PrimResult::Stop));
+    assert_eq!(ask(2, 0, 1, &mut w, &mut f), Some(PrimResult::Stop));
+    // the new form is not modelled
+    assert_eq!(ask(1, 0, 0, &mut w, &mut f), None);
 }

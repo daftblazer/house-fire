@@ -13,6 +13,7 @@ pub mod drawlist;
 pub mod expression;
 pub mod figure;
 pub mod floors;
+pub mod goals;
 pub mod iff;
 pub mod library;
 pub mod model;

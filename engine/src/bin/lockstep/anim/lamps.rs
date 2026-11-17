@@ -47,7 +47,7 @@ pub fn engine_lamps(world: &World, res: &BTreeMap<u32, housefire::quickdata::Obj
 pub fn engine_lamps_at(log: &housefire::tree_log::Log, lib: &housefire::library::Library, card: Option<&str>, lot: i64, res: &BTreeMap<u32, housefire::quickdata::ObjResources>, disc: &Disc, tick: u32) -> Vec<Lamp> {
     use housefire::replay::{Replay, RunWith, Start};
     let Ok(start) = Start::read(disc, card, lot) else { return Vec::new() };
-    let Some(mut replay) = Replay::new(log, lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, None, RunWith { card_lot: start.card_lot, cat: None }) else { return Vec::new() };
+    let Some(mut replay) = Replay::new(log, lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, None, RunWith { card_lot: start.card_lot, goals: start.goals.clone(), cat: None }) else { return Vec::new() };
     while replay.tick() < tick && replay.step() {}
     engine_lamps(replay.world(), res, disc)
 }

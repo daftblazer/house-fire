@@ -7,7 +7,7 @@ use crate::expression::{ExpressionOperand, Variables, expression};
 use crate::interp::{Error, Host, Interpreter, Mode, PrimResult, Trees};
 use crate::library::Library;
 use crate::primitives::{
-    call_named_tree, create_object, drop_onto, grab, place_made, remove_object, snap, dialog, idle, idle_for_input, present, push_action, random, run_functional_tree, set_motive_delta, set_to_next, test_object_type,
+    call_named_tree, complete_goal, create_object, drop_onto, grab, place_made, remove_object, snap, dialog, idle, idle_for_input, present, push_action, random, run_functional_tree, set_motive_delta, set_to_next, test_object_type,
 };
 use crate::routing::slot_places;
 use crate::simulator::SimHost;
@@ -614,6 +614,24 @@ impl Host for ReplayHost<'_> {
             }
             self.counts.note("primitives: SetMotiveDelta: an influence, the log's taken");
         }
+        if n.opcode == 56 {
+            // CompleteGoal: the goal's mark in the save's progress
+            self.sync(interp, s);
+            let got = complete_goal(n, &mut ScriptVariables::new(&mut self.world, me, interp.top()));
+            if let Some(got) = got {
+                let want = self.logged(s, n);
+                if got == want {
+                    note!(self.counts, "primitives: CompleteGoal: the same natively, {}", if got == PrimResult::True { "true" } else { "false" });
+                    return got;
+                }
+                self.counts.note("primitives: CompleteGoal: DIFFERENT (the log's taken)");
+                if has("REPLAY_SHOW_DIFF") && self.shown.next("goal", 8) {
+                    println!("CompleteGoal at {}:{} operand {:02x?}: native {}, log {}", s.tree, s.node, n.operand, got as i32, want as i32);
+                }
+                return want;
+            }
+            self.counts.note("primitives: CompleteGoal: the new form, the log's taken");
+        }
         if n.opcode == 36 {
             // Dialog: the replay plays the player, answering when the original's did
             // (result 1: a wait the pass goes on after, the scenario controller 194's at the
@@ -962,6 +980,7 @@ impl Host for ReplayHost<'_> {
             return got;
         }
         self.counts.note("primitives: from the log");
+        note!(self.counts, "primitives by opcode: answered from the log, {}", n.opcode);
         if s.params != s.params_after || s.locals != s.locals_after || s.stack_object != s.stack_object_after {
             note!(self.counts, "primitives: from the log, opcode {}: changes its frame", n.opcode);
         }

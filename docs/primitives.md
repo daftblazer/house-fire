@@ -133,13 +133,46 @@ a session with the household at home, motives running, is the one to log for it.
 
 ## CompleteGoal (opcode 56): the goal system's
 
-Asks about a goal's state. Castaway's `CompleteGoalParam` names the operand: a 16-bit
-operation, a 16-bit goal datum and its owner (the scope), and a flags byte (status into
-temp 0; true if the goal is locked, open, satisfied or completed; the low two bits an old
-form), then a type. In the session all 2,377 uses (the party controller and the dance floor's
-tiles, every few ticks) are false, all of the old form, the goal named by constants. Native,
-it needs the goals' state (the player's progress, in the save): the goal system's, to come
-with it. Until then the replay takes the log's answer.
+Asks whether the player has met a story goal. Read from the original's handler, fn_80211338
+(the case of opcode 56 in the primitive switch fn_8021242C, 80213424). Castaway's
+`CompleteGoalParam` (its ELF's symbols) names the fields, but the layout is Bustin' Out's own:
+- bytes 0-1: the house's datum, byte 4 its scope;
+- bytes 2-3: the goal's datum, byte 5 its scope;
+- byte 6: flags. Bit 0 is the old form.
+
+Every use in the logs is the old form, the house and goal constants. The old form:
+1. In the original's game modes 1 and 2 (+0x468 of the object at 8037BFA8) it answers true at
+   once. The mode is 0 in every session logged (probed).
+2. It reads the house and the goal (fn_80214110, InterpValue).
+3. It takes `SimsUI`'s `HouseData` table from quick data (resource 0xA173A1EE).
+   - The house's row: word 8 points at its goals, 12-byte records with their count in the word
+     before.
+   - A record's third word points at the goal's definition. The 16-bit value at +6 of the
+     definition is its mark: bit (mark & 15) of progress word (mark >> 4).
+   - No such house is script error 70; no such goal, 71.
+4. The answer is that bit of the goal manager's progress words (the singleton at 8037D948,
+   fn_801D9F54; vtable 802C7CB0 +0xB8, fn_801E0FB8; the words at its +0x2E8; a second set at
+   +0x336 is the new form's).
+
+The new form (bit 0 clear) asks the goal manager more, can open a dialog and wait. It has never
+been seen in a log, and the replay takes the log's answer for it.
+
+Where the progress comes from: the goal manager's stream, fn_801DB408. It is the
+neighbourhood's NGBH chunk, little-endian as the disc's formats, after the chunk's header (0, a
+version, "HBGN"). It holds:
+- first a 16-bit array at +0x168 (16, 64, 128 or 192 words by the version);
+- then the marks at +0x2E8 (none before version 0x4B, 34 words at it, 39 after; the save's
+  version is 0x50).
+
+The user's save of Mom's house (house 1) has one mark met, page 2 bit 1: house 1's goal 0. A
+probe of the running game (`BUSTIN_TREE_PROBE='8037D948>2E8:64;...'`) shows the same words at
+tick 0 on both sessions; the disc's save has none.
+
+The engine has it as `goals::Goals` (`quickdata::house_goals`, `save::read_goal_marks`) and
+`complete_goal()` (`engine/src/primitives.rs`). Measured with `replay`, every use the log's:
+- home: 20,153 (5,756 true);
+- club: 2,772;
+- tree: 2,377; tree3: 541.
 
 ## Random (opcode 8)
 

@@ -73,7 +73,7 @@ impl<'l> Replay<'l> {
     /// Loads the lot and gets the run ready to step (`step`); `None` when the log does not start
     /// with the lot loaded.
     pub fn new(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l LotChunks>), globals: &[i16], neighbours: &[Neighbour], bench: Option<Bench>, with: RunWith) -> Option<Replay<'l>> {
-        let RunWith { card_lot, cat } = with;
+        let RunWith { card_lot, goals, cat } = with;
         let (club, house) = lot;
         let mut world = World::new(lib);
         world.load_lot(club).expect("the lot");
@@ -322,6 +322,7 @@ impl<'l> Replay<'l> {
         // The disc's club: its motives do not move by themselves (measured; World::motives_run).
         world.motives_run = card_lot || has("REPLAY_MOTIVES_RUN");
         world.neighbours = neighbours.to_vec();
+        world.goals = goals;
         if log.lists.first().is_none_or(|l| l.ids.len() != world.len()) {
             println!(
                 "the log does not start with the lot loaded ({} objects in its first list, {} in the lot)",

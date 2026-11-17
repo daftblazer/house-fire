@@ -13,7 +13,7 @@ pub fn directions(log: &housefire::tree_log::Log, d: &Disc, lib: &Library, card:
     let Ok(start) = Start::read(d, card, lot_index) else { return };
     let house = std::env::var("REPLAY_HOUSE").ok().and_then(|v| v.parse().ok()).unwrap_or(1);
     let catalog = housefire::anim::Catalog::read(d, house);
-    let Some(mut replay) = Replay::new(log, lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, None, RunWith { card_lot: start.card_lot, cat: Some(catalog) }) else { return };
+    let Some(mut replay) = Replay::new(log, lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, None, RunWith { card_lot: start.card_lot, goals: start.goals.clone(), cat: Some(catalog) }) else { return };
     let show: usize = std::env::var("LOCKSTEP_DIRECTIONS_SHOW").ok().and_then(|v| v.parse().ok()).unwrap_or(8);
     let trace: Option<i16> = std::env::var("LOCKSTEP_DIRECTIONS_TRACE").ok().and_then(|v| v.parse().ok());
     let mut logged: BTreeMap<i16, i16> = BTreeMap::new();

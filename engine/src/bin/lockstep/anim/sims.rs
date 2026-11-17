@@ -59,7 +59,7 @@ pub fn sims(log: &housefire::tree_log::Log, d: &Disc, lib: &Library, ngh: &[u8],
     let mut previous: Vec<(i16, usize, [f32; 12])> = Vec::new();
     for tick in ticks {
         let logged = logged(log, tick);
-        let Some(mut replay) = Replay::new(log, lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, None, RunWith { card_lot: start.card_lot, cat: Some(catalog.clone()) }) else { return };
+        let Some(mut replay) = Replay::new(log, lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, None, RunWith { card_lot: start.card_lot, goals: start.goals.clone(), cat: Some(catalog.clone()) }) else { return };
         while replay.tick() + 1 < tick && replay.step() {}
         let plays = replay.sim_plays(tick);
         // the logged matrices no Sim's bones equal, kept with the bones of every Sim

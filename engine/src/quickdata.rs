@@ -209,6 +209,25 @@ pub fn houses(img: &Image) -> Vec<House> {
     img.rows("HouseData").filter_map(|r| Some(House { outer_lot: img.u32(r + 36)?, terrain: img.u32(r + 40)? })).collect()
 }
 
+/// Each house's goals (by house number, as `houses`), each goal's mark (`goals::Goals`): row
+/// word 8 points at the house's list of 12-byte goal records (its count in the word before it),
+/// a record's word 2 at the goal's definition, whose 16-bit value at +6 is the mark (the
+/// original's CompleteGoal, 80211338, reads it as bit (mark & 15) of word (mark >> 4)).
+pub fn house_goals(img: &Image) -> Vec<Vec<u16>> {
+    let Some(t) = img.tables.get("HouseData").copied() else { return Vec::new() };
+    if t.row_size < 44 {
+        return Vec::new();
+    }
+    let mark = |g: usize| Some((img.u32(img.ptr(g + 8)? + 4)? & 0xFFFF) as u16);
+    img.rows("HouseData")
+        .map(|r| {
+            let Some(list) = img.ptr(r + 32) else { return Vec::new() };
+            let n = list.checked_sub(4).and_then(|c| img.u32(c)).unwrap_or(0) as usize;
+            (0..n).map_while(|k| mark(list + 12 * k)).collect()
+        })
+        .collect()
+}
+
 /// The floor patterns, from `SimsTiles`: its one `FloorSet` row points at a list of `FloorTile`
 /// rows (24 bytes: a value, a name, a value, the shader's archive id at +12, the kind at +16, a
 /// last word), a tile's floor (the lot's first array) an index into it.

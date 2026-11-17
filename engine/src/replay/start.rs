@@ -1,6 +1,7 @@
 
 use crate::disc::Disc;
-use crate::save::{LotChunks, Neighbour, memory_card_file, read_lot_globals, read_lots, read_neighbours};
+use crate::goals::Goals;
+use crate::save::{LotChunks, Neighbour, memory_card_file, read_goal_marks, read_lot_globals, read_lots, read_neighbours};
 use super::study::has;
 
 /// The save a run starts from: its lots, their globals and the neighbours, and which lot the
@@ -16,6 +17,8 @@ pub struct Start {
     pub card_lot: bool,
     /// The disc's copy of the lot (its house: walls and floors a card's save may not keep).
     pub house: Option<LotChunks>,
+    /// The houses' goals (the disc's `SimsUI`) and those the save has met.
+    pub goals: Goals,
 }
 
 impl Start {
@@ -47,7 +50,16 @@ impl Start {
         let card_lot = card.is_some();
         let disc_lots = if card_lot && !has("REPLAY_NO_DISC_HOUSE") { read_lots(&disc.read("Runtime/default.ngh").unwrap_or_default()).unwrap_or_default() } else { Vec::new() };
         let house = usize::try_from(lot_index).ok().and_then(|i| disc_lots.get(i).cloned());
-        Ok(Start { lots, lot_globals, neighbours, index, card_lot, house })
+        let met = read_goal_marks(&ngh).map_err(|e| format!("the goals: {e:?}"))?;
+        let quick = disc.read("quickdat.arc").unwrap_or_default();
+        let houses = crate::arc::entries(&quick)
+            .unwrap_or_default()
+            .into_iter()
+            .find(|e| e.name == "SimsUI")
+            .and_then(|e| crate::quickdata::Image::read(crate::arc::bytes(&quick, &e)))
+            .map(|img| crate::quickdata::house_goals(&img))
+            .unwrap_or_default();
+        Ok(Start { lots, lot_globals, neighbours, index, card_lot, house, goals: Goals { houses, met } })
     }
 
     pub fn lot(&self) -> &LotChunks {
@@ -66,5 +78,6 @@ impl Start {
 /// memory card's, and the disc's animations (for a log with the frames).
 pub struct RunWith {
     pub card_lot: bool,
+    pub goals: Goals,
     pub cat: Option<crate::anim::Catalog>,
 }
