@@ -62,6 +62,10 @@ pub enum Wake {
 /// A person's turns so far (person data 27), counted by the engine at each turn's end.
 pub const PERSON_TICKS: usize = 27;
 
+/// The object data field a check tree sets to hide its interaction ("hide menu", Global 265):
+/// the engine clears it on the checking Sim before each check it runs. Measured: all 119 reads
+/// of it in the full logs' checks are 0 before the tree sets it.
+pub const DATA_HIDE_INTERACTION: usize = 50;
 pub const DATA_OBJECT_ID: usize = 11;
 /// The object data field of its lockout: while set, its Idle does not sleep, it counts down a
 /// tick at each turn its stack runs, and an expression that touches it wakes the object

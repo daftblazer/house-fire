@@ -24,6 +24,17 @@ Out, `HUDCreate` in The Urbz. The Sims 2 adds goals (56), the HUD (58-60), parti
 social mode (62), memories (63), idle animation (64), passive influence (65), wants and
 fears (66, 67); Pets 68-71, not named yet.
 
+## Two things the engine does around the scripts (2026-11-17)
+
+- **A check starts with the hide flag clear.** Before each check tree the engine runs for a
+  Sim (the pie menu's and autonomy's guards, "hide menu", Global 265), the Sim's object data
+  field 50 is 0: all 119 reads of it in the full logs' checks are 0, though the tree before
+  set it to 1 (`world::DATA_HIDE_INTERACTION`, cleared in `run_check`). Measured, not read.
+- **A lookup only to write has no value in the log.** The observer's `V` record takes the value
+  from the lookup's value pointer; a primitive that asks only for the variable's place (Random's
+  and DirectionTo's destinations) leaves it 0. The replay neither compares nor sets those
+  (`sync_variables`' `written`): they were 135 false differences on home-full.
+
 ## What the scripts use (`tools/bhav_text.py`)
 
 Every script on the four discs checked: node targets are nodes of their tree or a return
@@ -289,6 +300,13 @@ not modelled (nothing logged reads it). Measured with `replay`, every use the lo
 - club: 286 waits a tick more, 514 true, 13 deliveries;
 - home: 45 true, 4 deliveries;
 - tree: 230, 442, 11; tree3: 50, 86, 8.
+
+The flag is read after all: +0x36 is object data field 8 (the flags), and "Wait For Notify"
+tests and clears its flag 7 (0x40) at nodes 2 and 3 after each wait. The handler sets it when
+the +0x240 test says yes, and clears it when the test says no and the count is 0. So the test
+does say yes in the logs (about 25 reads on club-full and 4 on home-full have the flag set
+where the engine has not): the test itself (`ShouldInterrupt`: the action cancelled, a pending
+one of higher priority, a low motive, the queue) is the next thing to read for it.
 
 ## Random (opcode 8)
 

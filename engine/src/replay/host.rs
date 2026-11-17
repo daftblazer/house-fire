@@ -64,8 +64,13 @@ pub(super) struct ReplayHost<'l> {
 
 impl ReplayHost<'_> {
     pub(super) fn sync(&mut self, interp: &mut Interpreter, s: &StepRec) {
+        self.sync_but(interp, s, None);
+    }
+
+    /// The same, but for a variable the step only writes (`sync_variables`).
+    pub(super) fn sync_but(&mut self, interp: &mut Interpreter, s: &StepRec, written: Option<(u8, i16)>) {
         let t0 = Instant::now();
-        sync_variables(&mut self.world, &mut self.counts, &mut self.shown, self.me, interp.top(), s);
+        sync_variables(&mut self.world, &mut self.counts, &mut self.shown, self.me, interp.top(), s, written);
         if let Some(b) = &mut self.bench {
             b.sync_us += us(t0);
         }
@@ -125,6 +130,9 @@ impl Host for ReplayHost<'_> {
         let log_rc = Rc::clone(&self.log);
         let log: &Log = &log_rc;
         let lib = self.lib;
+        if let Some(v) = self.world.get_mut(self.me).data.get_mut(crate::world::DATA_HIDE_INTERACTION) {
+            *v = 0;
+        }
         let mut chk = Interpreter::new(Mode::Check, 10000);
         chk.set_defaults(defaults.to_vec());
         // a check tree starts with parameter 0 = 1 (every logged check reads it so: 103 reads of
@@ -500,7 +508,7 @@ impl Host for ReplayHost<'_> {
         }
         if n.opcode == 8 {
             // Random: the engine's own numbers; the result's range checked, the log's value taken
-            self.sync(interp, s);
+            self.sync_but(interp, s, Some((n.operand[2], i16::from_le_bytes([n.operand[0], n.operand[1]]))));
             let mut vars = ScriptVariables::new(&mut self.world, me, interp.top());
             let got = random(n, &mut vars);
             // The original's number, where the log shows it (a parameter or local destination):
@@ -642,7 +650,7 @@ impl Host for ReplayHost<'_> {
         }
         if n.opcode == 11 || n.opcode == 12 {
             // DistanceTo, DirectionTo: from the two places
-            self.sync(interp, s);
+            self.sync_but(interp, s, (n.opcode == 12).then(|| (n.operand[2], i16::from_le_bytes([n.operand[0], n.operand[1]]))));
             let name = if n.opcode == 11 { "DistanceTo" } else { "DirectionTo" };
             let got = {
                 let mut vars = ScriptVariables::new(&mut self.world, me, interp.top());

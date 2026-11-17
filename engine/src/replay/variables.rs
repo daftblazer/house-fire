@@ -8,11 +8,18 @@ use super::counts::{Counts, Shown};
 
 /// Brings the native world's variables to what the original's lookups found, counting those
 /// that were already the same.
-pub(super) fn sync_variables(world: &mut World, counts: &mut Counts, shown: &mut Shown, me: ObjectKey, f: &mut Frame, s: &StepRec) {
+/// `written`: a variable (scope, datum) the step's primitive only writes. The observer logs
+/// such a lookup (a pointer asked for, no value) with value 0, which is not the variable's:
+/// it is neither compared nor set.
+pub(super) fn sync_variables(world: &mut World, counts: &mut Counts, shown: &mut Shown, me: ObjectKey, f: &mut Frame, s: &StepRec, written: Option<(u8, i16)>) {
     let mut vars = ScriptVariables::new(world, me, f);
     for v in &s.lookups {
         if v.flags & 1 == 0 {
             continue; // the lookup found nothing
+        }
+        if written == Some((v.scope as u8, v.data)) && v.flags & 2 != 0 && v.value == 0 {
+            note!(counts, "variables: scope {}: a lookup to write only (no value in the log)", v.scope);
+            continue;
         }
         let Some(got) = vars.get(v.scope as u8, v.data) else {
             if env("REPLAY_SHOW_SCOPE").is_some_and(|e| atoi(&e) == v.scope as i64) && shown.next("scope", 40) {
