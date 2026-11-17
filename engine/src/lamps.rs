@@ -178,6 +178,12 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_graphic_picks_its_state_s_animation() {
+        let r = ObjResources { dataset: 0, model: 0, flags: 0, key: 7, idle: 10, states: vec![10, 11, 0] };
+        assert_eq!([0, 1, 2, 3, -1].map(|g| r.animation(g)), [10, 11, 10, 10, 10]);
+    }
+
+    #[test]
     fn an_object_matrix_turns_and_mirrors() {
         let m = object_matrix(17.5, 24.5, 90.0);
         assert_eq!([m[0], m[1], m[4], m[5]], [0.0, 1.0, 1.0, 0.0]);

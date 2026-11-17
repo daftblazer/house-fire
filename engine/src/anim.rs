@@ -1777,6 +1777,32 @@ mod tests {
         assert_eq!(key3(&[0x0000_0201], 0, 4, [0.5; 3], [1.0; 3]), [1.5, 1.0, 2.0]);
     }
 
+    /// A scalar stream of two keys (80 at frame 0, 44 at frame 1; values 12 bits, range 4095, no
+    /// bias) read as the laser light's radius was logged: a straight fall of 36 a frame.
+    #[test]
+    fn a_scalar_stream_runs_between_its_keys() {
+        let mut bits_out: Vec<bool> = Vec::new();
+        let mut put = |v: u64, width: u32| bits_out.extend((0..width).map(|i| v >> i & 1 != 0));
+        put(2, 20);
+        put(1, 5); // the gap's width
+        put(0, 5); // no bias
+        put(12, 5); // the value's width
+        put(u64::from(4095.0f32.to_bits()), 32);
+        put(u64::from(0.0f32.to_bits()), 32);
+        for value in [80, 44] {
+            put(0, 1);
+            put(value, 12);
+        }
+        let mut words = vec![0u32; bits_out.len().div_ceil(32)];
+        for (i, b) in bits_out.iter().enumerate() {
+            words[i / 32] |= u32::from(*b) << (i % 32);
+        }
+        let s = ScalarStream::decode(&words, 0);
+        assert_eq!(s.read(&words, 0.0), 80.0);
+        assert!((s.read(&words, 0.98) - 44.72).abs() < 1e-4);
+        assert!((s.read(&words, 0.5) - 62.0).abs() < 1e-4);
+    }
+
     #[test]
     fn a_channel_blends_or_curves_between_its_keys() {
         let keys = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 2.0, 4.0, 6.0];

@@ -1817,9 +1817,41 @@ channels 4, 5 and 6, posed from the object's idle animation (word 2 of its resou
 `ObjResources::idle`; home's lamps play static two-frame animations). From the engine alone, on
 home: all 389 placed lamp lights' places, colours and reaches; the 11 own lights in order; all
 1,364 grid cells; 3,916 window fills (nearest list, mix and colour); and 149,472 light grid sums,
-bit for bit. The club's lamps are in their "on" animations (o_lamp_wall_club_on,
-Torchosterone_Floor_Lamp_A_01, the dance floor's), which need the object's state to choose, and
-its laser light follows scalar streams.
+bit for bit. Home's identity holds with the run's lamps too (K1, below).
+Which animation a lamp poses (K1). The record the object's resources point at (`ObjResources::idle`
+is its first entry) is a list of 32-byte states, each with the record's key in its first word and
+that state's animation in its third (the wall lamp: off, on; the floor lamp: A_00, A_01; the dance
+floor: idle, on, inuse, strobe; the laser show: idle, comfort, energy, fun). The object's graphic
+number, its data field 0, which its scripts set, indexes it (`ObjResources::animation`,
+`lamps::object_graphic`); a graphic the list lacks takes the idle one. Nothing plays it by an
+Animate step: the club's lamp objects run no Animate primitive (checked on club.log, no Animate
+step on a non-Sim), they set the graphic by an expression and refresh with Update (7). The save has
+the wall and floor lamps at graphic 1 (lit); the run sets the dance floor to 1 at tick 21 and the
+laser show to 3 at tick 6.
+The scalar channels (K1, words 5 and 6, `anim::ScalarStream`, Anim_ScalarStream 801BD7BC). A vector
+stream with one value: the key count (20 bits), the widths of the gap, the bias and the value (5
+bits each, 0 is 32), the value's range and minimum as two floats, then records of gap, bias and
+value (the logged laser stream: record 13 bits, a gap of 1 and a value of 12, 2 keys, 80 at frame 0
+and 44 at frame 1, read 44.72 at place 0.98 as a straight fall). The window, tangents and curve are
+the vector streams' (`Keys3`, `channel3`); the engine reads a stream from its start at each place
+(a window whose blend flag was set by a jump is not told apart: the 9 logged reads, all
+curved). `pose::TrackStreams::local` returns a pose with them (no `Unsupported` any more).
+From the engine alone on the club (`LOCKSTEP_WINDOW_LIGHTS=work/logs/club-rooms.log` on club.log;
+the study replays club.log natively to the rebuild's and the grid build's ticks for the
+graphics, `engine_lamps_at`): own lights in order 14 of 15 places and reaches (was 14) and 15 of 15
+colours (was 1 with the idle poses; 11 with the states; the dance floor's three and the laser's
+with the scalar streams), the grid build's cells 1,386 of 1,386 (was 1,258; the laser's radius 80 at
+place 0 gives its reach 40), light grid sums 57,444 of 57,444 on the points with the lamps placed.
+Home is the same as before (own lights 11 of 11, 1,364 cells, 3,916 fills, 149,472 sums).
+Left: the laser's place after tick 6. It plays "fun" from its state change, two frames per game
+frame (60 a second by 0.033), and the logged places are 2, 3.95, 5.95, 7.9, ... (the light moves
+with the beam: its x 24.56 to 24.03, height 3.84 to 4.07 over ticks 6 to 22); a game tick holds one
+or two of the render's frames (22 frames for 17 ticks), which the simulation does not keep, so the
+engine poses the lamps at place 0 (one light of 15: its place, not its colour or reach, at the last
+rebuild at tick 28). `lamps::poses_at` and `bones_at` take a place; `on_lot` does not yet.
+Shared code changed in K1: `ObjResources` keeps its states (`states`, no longer `Copy`), `lamps::on_lot`
+takes the graphic of a leader, `pose::TrackStreams::local` returns a pose (the scalar channels are read;
+Sims' tracks have none, so their poses are unchanged: the replay and lockstep figures are the same).
 
 ## The engine's draw list
 
