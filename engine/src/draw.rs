@@ -90,6 +90,14 @@ impl PartIndex {
         &self.records[r]
     }
 
+    /// The part at `index` (`Part::index`), if there is one.
+    pub fn part(&self, index: (usize, usize, usize)) -> Option<Part<'_>> {
+        let record = self.records.get(index.0)?;
+        let node = record.nodes.get(index.1)?;
+        let batch = &node.subs.get(index.2)?.1;
+        Some(Part { record, node, batch, index })
+    }
+
     /// Every part of record `r`, node by node, each node's batches in order.
     pub fn parts_of(&self, r: usize) -> impl Iterator<Item = Part<'_>> + '_ {
         let record = &self.records[r];

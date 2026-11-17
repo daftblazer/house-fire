@@ -415,30 +415,31 @@ impl AnimReplay {
 
     /// The frames before log step `step`.
     fn frames_to(&mut self, step: usize) {
-        let mut m = std::mem::take(&mut self.m);
+        let mut plays = std::mem::take(self.m.plays_mut());
         let mut next = self.next;
-        self.run_frames(&mut m, &mut next, |f| f.1 <= step);
-        (self.m, self.next) = (m, next);
+        self.run_frames(&mut plays, &mut next, |f| f.1 <= step);
+        *self.m.plays_mut() = plays;
+        self.next = next;
     }
 
     /// The animator as the picture of `tick` shows it: the frames of the ticks before it and the
     /// first of its own applied (a tick has one or two; the pictures of frames 2400 and 2401 on
     /// home-a39.log, ticks 1,039 and 1,040, show the pose after the first, 2398 and 2399, of
     /// their 1 and 2). The steps apply the frames as they come; this runs them on a copy.
-    fn animator_for(&self, tick: u32) -> crate::anim::Animator {
-        let (mut m, mut next) = (self.m.clone(), self.next);
+    fn animator_for(&self, tick: u32) -> crate::anim::Plays {
+        let (mut m, mut next) = (self.m.plays_copy(), self.next);
         self.run_frames(&mut m, &mut next, |f| f.0 < tick);
         self.run_frames_up_to(&mut m, &mut next, 1, |f| f.0 == tick);
         m
     }
 
     /// Steps `m` by the frames from number `*next` that `due` says are due, each Sim at its speed.
-    fn run_frames(&self, m: &mut crate::anim::Animator, next: &mut usize, due: impl Fn(&(u32, usize)) -> bool) {
+    fn run_frames(&self, m: &mut crate::anim::Plays, next: &mut usize, due: impl Fn(&(u32, usize)) -> bool) {
         self.run_frames_up_to(m, next, usize::MAX, due);
     }
 
     /// `run_frames`, at most `most` of them.
-    fn run_frames_up_to(&self, m: &mut crate::anim::Animator, next: &mut usize, most: usize, due: impl Fn(&(u32, usize)) -> bool) {
+    fn run_frames_up_to(&self, m: &mut crate::anim::Plays, next: &mut usize, most: usize, due: impl Fn(&(u32, usize)) -> bool) {
         let mut done = 0;
         while done < most
             && let Some(&(tick, at)) = self.frames.get(*next).filter(|f| due(f))
@@ -3842,7 +3843,7 @@ impl<'l> Replay<'l> {
     pub fn sim_plays(&self, tick: u32) -> Vec<(i16, u32, f32, bool)> {
         let Some(ar) = &self.h.anim else { return Vec::new() };
         let m = ar.animator_for(tick);
-        m.plays().filter_map(|(sim, id, play)| Some((*self.ids.get(&sim)?, id, play.place(), play.backward()))).collect()
+        m.iter().filter_map(|(sim, id, play)| Some((*self.ids.get(&sim)?, id, play.place(), play.backward()))).collect()
     }
 
     /// Where each Sim on the lot faces, as the way it turned at its last walk's end: the step

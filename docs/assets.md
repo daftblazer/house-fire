@@ -2717,3 +2717,26 @@ objects that did not move once and keep them (only the Sims, animated objects an
 light change each tick), and the shadows in one draw per batch. The device run is the user's
 (SSH, as for the benchmark): an aarch64 build of `view` with `--ticks 1200 --frame-times`.
 
+
+The build after P1 (same run, the shot's bytes and the figures unchanged): the build column's mean
+2.89 ms to 1.24 ms (rows after the first 30; pacing still 100% within 33.3 +- 2 ms, 0 validation
+lines). Where the 2.89 went, by a timing of the stages (the build, then the other costs): the
+plan 1.36 ms (the draw list 0.53, the floors' strips 0.65: made again each frame because the time of
+day moves their colours; the cell lookups, which a rebuilt light set did again), the model draws
+0.77, the floors' draws 0.12, shadows 0.09, Sims 0.15, assembling 0.17, `sim_plays` 0.08. What
+brought it down, in order of gain: the floors keep the light grid's cells while the lights' places
+stand and the grid's source geometry is kept once (not collected for each lookup): 2.85 to 2.10;
+the objects' guid lists made once a frame (they walked the world for each placement), the mesh
+centres made at load (the part's mean position), the idle animations read without a copy of the
+animation each time (`lamps::poses_at`) and an object's idle pose kept while its matrix and frame
+stand, the floors' light summed once for each shared corner: 2.10 to 1.78; the Sims' plays copied
+alone for the look one frame ahead (`anim::Plays`, 0.09 to 0.002 ms), the part found by its index
+and not by a search, the record, texture and floor names shared (`Arc<str>`), the per-frame
+lookups on a plain integer hash (`fasthash`), a shader's textures and material kept: to 1.40;
+the cells of lights found for objects' places kept with the light set while the geometry stands:
+to 1.24. What is left: the object parts' loop (~0.25 ms, mostly the 43 animated objects' poses),
+the floors' strips and meshes made anew each frame (0.2 ms), assembling the list (0.13) and the
+Sims (0.13). On the A55 at 6.7x the PC that is about 8.3 ms of the frame, no longer the risk;
+unmeasured there. Not done: the models' arrays as plain vertex arrays (only the mean position is
+made at load: the meshes are made once per batch, not each frame, so they are not in the frame's
+cost), and one stepper for `Stream` and `RotStream`.

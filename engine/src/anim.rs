@@ -1239,7 +1239,28 @@ pub struct Animator {
     pub loads: Loads,
     /// The notes of every animation, by id (`notes`).
     pub notes: std::collections::BTreeMap<u32, Vec<Note>>,
-    plays: std::collections::BTreeMap<u32, (u32, Play, f32)>,
+    plays: Plays,
+}
+
+/// The Sims' plays alone: a Sim's play (its animation's id, the play and the animation's rate) by
+/// the Sim. What a frame steps, so that a look one frame ahead copies only these and not the
+/// animations' loads and notes.
+#[derive(Clone, Debug, Default)]
+pub struct Plays(std::collections::BTreeMap<u32, (u32, Play, f32)>);
+
+impl Plays {
+    /// Every Sim's play: the Sim (the key `Animator::animate` was given), its animation's id and
+    /// the play.
+    pub fn iter(&self) -> impl Iterator<Item = (u32, u32, &Play)> + '_ {
+        self.0.iter().map(|(sim, p)| (*sim, p.0, &p.1))
+    }
+
+    /// A frame: every play steps by 0.033 s x its rate x its Sim's `speed` this frame.
+    pub fn frame(&mut self, mut speed: impl FnMut(u32) -> f32) {
+        for (sim, p) in self.0.iter_mut() {
+            p.1.frame(crate::routing::WALK_FRAME * p.2 * speed(*sim));
+        }
+    }
 }
 
 impl Animator {
@@ -1250,34 +1271,42 @@ impl Animator {
     /// An Animate step of `sim` at `tick` for the animation `id` (`anim` its data), played
     /// `backward` and asking `wanted` counted events. Pending while it waits to be in memory.
     pub fn animate(&mut self, sim: u32, id: u32, anim: &Anim, backward: bool, wanted: i32, tick: u32) -> Poll {
-        if self.plays.get(&sim).is_some_and(|p| p.0 != id || p.1.finished()) {
-            self.plays.remove(&sim);
+        if self.plays.0.get(&sim).is_some_and(|p| p.0 != id || p.1.finished()) {
+            self.plays.0.remove(&sim);
         }
-        if !self.plays.contains_key(&sim) {
+        if !self.plays.0.contains_key(&sim) {
             if !self.loads.ask(id, tick) {
                 return Poll::Pending;
             }
             let play = Play::new(anim, self.notes.get(&id).map_or(&[][..], |v| v.as_slice()), backward, wanted);
-            self.plays.insert(sim, (id, play, anim.rate));
+            self.plays.0.insert(sim, (id, play, anim.rate));
         }
-        self.plays.get_mut(&sim).map_or(Poll::Pending, |p| p.1.poll())
+        self.plays.0.get_mut(&sim).map_or(Poll::Pending, |p| p.1.poll())
     }
 
     /// `sim`'s play: its animation's id and the play.
     pub fn play(&self, sim: u32) -> Option<(u32, &Play)> {
-        self.plays.get(&sim).map(|p| (p.0, &p.1))
+        self.plays.0.get(&sim).map(|p| (p.0, &p.1))
     }
 
     /// Every Sim's play: the Sim (the key `animate` was given), its animation's id and the play.
     pub fn plays(&self) -> impl Iterator<Item = (u32, u32, &Play)> + '_ {
-        self.plays.iter().map(|(sim, p)| (*sim, p.0, &p.1))
+        self.plays.iter()
+    }
+
+    /// The plays alone, copied.
+    pub fn plays_copy(&self) -> Plays {
+        self.plays.clone()
+    }
+
+    /// The plays, for the frames to step.
+    pub fn plays_mut(&mut self) -> &mut Plays {
+        &mut self.plays
     }
 
     /// A frame: every play steps by 0.033 s × its rate × its Sim's `speed` this frame.
-    pub fn frame(&mut self, mut speed: impl FnMut(u32) -> f32) {
-        for (sim, p) in self.plays.iter_mut() {
-            p.1.frame(crate::routing::WALK_FRAME * p.2 * speed(*sim));
-        }
+    pub fn frame(&mut self, speed: impl FnMut(u32) -> f32) {
+        self.plays.frame(speed);
     }
 }
 

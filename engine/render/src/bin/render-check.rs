@@ -391,7 +391,7 @@ fn main() -> ExitCode {
         let mut shown = 0;
         for (p, &id) in picture.ids.iter().enumerate().filter(|x| *x.1 != 0) {
             let off = (0..3).any(|c| (i32::from(picture.rgba[p * 4 + c]) - i32::from(reference[p * 4 + c])).abs() > 4);
-            if off && scene.drawn[id as usize - 1].model == name && p % 37 == 0 && shown < 25 {
+            if off && scene.drawn[id as usize - 1].model[..] == name && p % 37 == 0 && shown < 25 {
                 shown += 1;
                 println!("  {},{}: ours {:?} reference {:?} (strip {})", p % WIDTH as usize, p / WIDTH as usize, &picture.rgba[p * 4..p * 4 + 3], &reference[p * 4..p * 4 + 3], scene.drawn[id as usize - 1].strip);
             }

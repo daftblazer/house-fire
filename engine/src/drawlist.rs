@@ -189,18 +189,20 @@ pub struct IdlePoses {
 
 type PoseKey = (u32, u32, u32, [u32; 16], u32);
 
-/// The pose of the idle animation `anim` on `skeleton` at `place`, from `last` when made from the
-/// same inputs.
-fn pose_cached(last: &mut HashMap<(i16, usize), (PoseKey, Option<Posed>)>, at: (i16, usize), ids: (u32, u32), skeleton: &Skeleton, anim: &Anim, place: f32, root: &Mat4, scale: f32) -> Option<Posed> {
-    let key: PoseKey = (ids.0, ids.1, place.to_bits(), root.map(f32::to_bits), scale.to_bits());
-    if let Some((k, posed)) = last.get(&at)
-        && *k == key
-    {
-        return posed.clone();
+impl IdlePoses {
+    /// The pose of the idle animation `anim` on `skeleton` at `place`, from the last one of `at`
+    /// when it was made from the same inputs. `ids` name the skeleton and the animation.
+    fn pose(&mut self, at: (i16, usize), ids: (u32, u32), (skeleton, anim): (&Skeleton, &Anim), place: f32, (root, scale): (&Mat4, f32)) -> Option<Posed> {
+        let key: PoseKey = (ids.0, ids.1, place.to_bits(), root.map(f32::to_bits), scale.to_bits());
+        if let Some((k, posed)) = self.last.get(&at)
+            && *k == key
+        {
+            return posed.clone();
+        }
+        let posed = lamps::bones_at(skeleton, anim, place, root, scale).map(Rc::new);
+        self.last.insert(at, (key, posed.clone()));
+        posed
     }
-    let posed = lamps::bones_at(skeleton, anim, place, root, scale).map(Rc::new);
-    last.insert(at, (key, posed.clone()));
-    posed
 }
 
 /// `object_draws`, each with whether the part is drawn at its object's own matrix (no skeleton
@@ -220,7 +222,7 @@ fn object_parts(models: &Models, placements: &[Placement], guids_of: impl Fn(i16
             drawn.push(record);
             let rec = models.parts.record(record);
             let skeleton = models.sources.skeletons.get(&r.model).or_else(|| models.sources.skeletons.get(&id));
-            let posed = skeleton.zip(models.sources.anims.get(&r.idle)).and_then(|(s, a)| pose_cached(&mut poses.last, (p.leader, record), (r.model, r.idle), s, a, idle_place(a, tick), &root, rec.scale));
+            let posed = skeleton.zip(models.sources.anims.get(&r.idle)).and_then(|(s, a)| poses.pose((p.leader, record), (r.model, r.idle), (s, a), idle_place(a, tick), (&root, rec.scale)));
             let bones = posed.as_ref().map(|b| &b.0);
             let hidden = |bone: Option<usize>| posed.as_ref().zip(bone).is_some_and(|(p, b)| p.1.get(b).is_some_and(|pose| pose.flags & NODE_HIDDEN != 0));
             for part in models.parts.parts_of(record).filter(|p| !p.skinned() && !hidden(p.bone())) {
@@ -243,19 +245,19 @@ fn object_parts(models: &Models, placements: &[Placement], guids_of: impl Fn(i16
 /// The models an object's resources draw: the record its definition names (the model's hash, or
 /// the first word of its record, the model's id in the object's dataset), else the records of its
 /// dataset (each with its id and its place in the index).
-fn object_models<'a>(models: &'a Models, r: &ObjResources) -> impl Iterator<Item = (u32, usize)> + 'a {
+fn object_models<'a>(models: &'a Models, r: &'a ObjResources) -> impl Iterator<Item = (u32, usize)> + 'a {
     // an object with no model and no dataset has only the placeholder record (`tom_debug`) as its
     // resources' first word: the original draws nothing for it
     // an object whose resources name no dataset (ResData flag 0x80000000: the parked scooter's
     // vehicle row, a model of `models.arc` alone) is not drawn with the lot's objects
     let placeholder = r.dataset == 0;
-    let named = [r.model, r.key].into_iter().find(|&id| models.parts.record_by_id(id).is_some());
-    let ids: Vec<u32> = match named {
-        _ if placeholder => Vec::new(),
-        Some(id) => vec![id],
-        None => models.datasets.get(&r.dataset).cloned().unwrap_or_default(),
+    let named = [&r.model, &r.key].into_iter().find(|&&id| models.parts.record_by_id(id).is_some());
+    let ids: &[u32] = match named {
+        _ if placeholder => &[],
+        Some(id) => std::slice::from_ref(id),
+        None => models.datasets.get(&r.dataset).map_or(&[], Vec::as_slice),
     };
-    ids.into_iter().filter_map(|id| Some((id, models.parts.record_by_id(id)?)))
+    ids.iter().filter_map(|&id| Some((id, models.parts.record_by_id(id)?)))
 }
 
 /// The lot's own models: the house's outer lot model (`quickdata::House::outer_lot`), drawn at the
@@ -523,7 +525,7 @@ pub fn window_edges(models: &Models, placements: &[Placement], guids_of: impl Fn
             let guids = guids_of(p.leader);
             let r = guids.iter().filter_map(|g| resources.get(g)).find(|r| object_models(models, r).next().is_some())?;
             let (_, record) = object_models(models, r).next()?;
-            let name = &models.parts.record(record).name;
+            let name = &*models.parts.record(record).name;
             WINDOW_WALLS.iter().find(|w| w.0 == name).map(|w| ([p.x, p.y], w.1))
         })
         .collect()

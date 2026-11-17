@@ -76,9 +76,9 @@ pub fn read(e: &[u8]) -> Option<Shader> {
 /// Every shader of `shaders.arc` by the id the game asks for it by (its entry's, mostly the
 /// CRC-32 of its name: how a sub-model names its shader; a lot's wall patterns name it by the
 /// entry's id).
-pub fn index(disc: &crate::disc::Disc) -> std::collections::HashMap<u32, Shader> {
+pub fn index(disc: &crate::disc::Disc) -> crate::fasthash::FastMap<u32, Shader> {
     let data = disc.read("shaders.arc").unwrap_or_default();
-    let mut out = std::collections::HashMap::new();
+    let mut out = crate::fasthash::FastMap::default();
     for e in crate::arc::entries(&data).unwrap_or_default() {
         if let Some(s) = read(crate::arc::bytes(&data, &e)) {
             out.entry(e.id).or_insert_with(|| s.clone());

@@ -222,7 +222,7 @@ fn parts(log: &Log, d: &Disc, worlds: &[&MatrixRec], bones_at: &BTreeMap<u32, Ve
             println!("  DIFFERENT: strip {i} {} node bone {} slots {:?} weights {} matched {:?} ({} parts alike)", p.record.name, p.node.bone, p.batch.matrices, p.batch.weights, matches, hits.len());
         }
         if let Some(b) = p.bone() {
-            models.entry(p.record.name.as_str()).or_default().insert(b);
+            models.entry(&*p.record.name).or_default().insert(b);
         }
     }
     // line 3: every skinned strip (a part whose node names no bone but whose batch names matrix
@@ -251,7 +251,7 @@ fn parts(log: &Log, d: &Disc, worlds: &[&MatrixRec], bones_at: &BTreeMap<u32, Ve
         );
         *skinned.entry(key).or_default() += 1;
         if s.tick == 1000 {
-            sims.entry(p.skinned()).or_default().insert(p.record.name.as_str());
+            sims.entry(p.skinned()).or_default().insert(&*p.record.name);
         }
     }
     println!("bone-drawn strips to models: {found:?}");

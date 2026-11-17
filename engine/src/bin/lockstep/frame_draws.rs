@@ -166,11 +166,11 @@ pub fn frame_draws(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quic
         for (k, v) in &groups {
             let mut names: Option<Vec<&str>> = None;
             for l in v {
-                let n: Vec<&str> = l.candidates.iter().map(|c| c.record.name.as_str()).collect();
+                let n: Vec<&str> = l.candidates.iter().map(|c| &*c.record.name).collect();
                 names = Some(match names { None => n, Some(a) => a.into_iter().filter(|x| n.contains(x)).collect() });
             }
             let names = names.unwrap_or_default();
-            let subs: Vec<String> = v.iter().map(|l| format!("{}@{}", l.candidates[0].batch.count, l.candidates.iter().find(|c| names.first().is_some_and(|n| c.record.name == *n)).map_or(99, |c| c.index.2 + 10 * c.index.1))).collect();
+            let subs: Vec<String> = v.iter().map(|l| format!("{}@{}", l.candidates[0].batch.count, l.candidates.iter().find(|c| names.first().is_some_and(|n| &*c.record.name == *n)).map_or(99, |c| c.index.2 + 10 * c.index.1))).collect();
             let (px, py, pa) = (k.0 as f32 / 100.0, k.1 as f32 / 100.0, k.2 as f32 / 10.0);
             let piece = pieces.iter().find(|p| (p.x - px).abs() < 0.01 && (p.y - py).abs() < 0.01 && (p.angle - pa).abs() < 0.2 || (p.angle - pa + 360.0).rem_euclid(360.0) < 0.2 && (p.x - px).abs() < 0.01 && (p.y - py).abs() < 0.01);
             let (tx, ty) = (px.floor() as i32, py.floor() as i32);
@@ -182,7 +182,7 @@ pub fn frame_draws(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quic
     if std::env::var_os("LOCKSTEP_FRAME_DETAIL").is_some() {
         for p in &placements {
             let guids: Vec<u32> = world.find_object(p.leader).into_iter().chain(world.objects().filter(|o| o.leader == p.leader)).map(|o| o.guid).collect();
-            let rs: Vec<String> = guids.iter().map(|g| match res.get(g) { None => format!("{g:08x}: no resources"), Some(r) => format!("{g:08x}: dataset {:08x} model {:08x} {} key {:08x} {} idle {:08x}; dataset models {:?}", r.dataset, r.model, models.parts.record_by_id(r.model).map_or("-".to_string(), |i| models.parts.record(i).name.clone()), r.key, models.parts.record_by_id(r.key).map_or("-".to_string(), |i| models.parts.record(i).name.clone()), r.idle, models.datasets.get(&r.dataset).map(|v| v.iter().map(|&i| models.parts.record_by_id(i).map_or("?".to_string(), |i| models.parts.record(i).name.clone())).collect::<Vec<_>>())) }).collect();
+            let rs: Vec<String> = guids.iter().map(|g| match res.get(g) { None => format!("{g:08x}: no resources"), Some(r) => format!("{g:08x}: dataset {:08x} model {:08x} {} key {:08x} {} idle {:08x}; dataset models {:?}", r.dataset, r.model, models.parts.record_by_id(r.model).map_or("-".to_string(), |i| models.parts.record(i).name.to_string()), r.key, models.parts.record_by_id(r.key).map_or("-".to_string(), |i| models.parts.record(i).name.to_string()), r.idle, models.datasets.get(&r.dataset).map(|v| v.iter().map(|&i| models.parts.record_by_id(i).map_or("?".to_string(), |i| models.parts.record(i).name.to_string())).collect::<Vec<_>>())) }).collect();
             println!("  object {} at ({}, {}): {}", p.leader, p.x, p.y, rs.join("; "));
         }
     }
@@ -239,7 +239,7 @@ pub fn frame_draws(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quic
         match near {
             Some(i) => {
                 used[i] = true;
-                by_name.entry(l.candidates[0].record.name.clone()).or_default()[0] += 1;
+                by_name.entry(l.candidates[0].record.name.to_string()).or_default()[0] += 1;
                 stat.entry(l.kind).or_default()[3] += 1;
                 if shown < 12 && l.candidates[0].record.name.starts_with(&std::env::var("LOCKSTEP_FRAME_SHOW").unwrap_or_default()) {
                     shown += 1;
@@ -247,7 +247,7 @@ pub fn frame_draws(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quic
                 }
             }
             None => {
-                by_name.entry(l.candidates[0].record.name.clone()).or_default()[1] += 1;
+                by_name.entry(l.candidates[0].record.name.to_string()).or_default()[1] += 1;
                 stat.entry(l.kind).or_default()[4] += 1;
                 if shown < 400 && l.kind.name().starts_with(&std::env::var("LOCKSTEP_FRAME_SHOW").unwrap_or_default()) {
                     shown += 1;
@@ -259,7 +259,7 @@ pub fn frame_draws(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quic
     for (i, d) in mine.iter().enumerate() {
         stat.entry(d.kind).or_default()[1] += 1;
         if !used[i] {
-            by_name.entry(mine_parts[i].record.name.clone()).or_default()[2] += 1;
+            by_name.entry(mine_parts[i].record.name.to_string()).or_default()[2] += 1;
             stat.entry(d.kind).or_default()[5] += 1;
             // whether the logged view's screen holds the part
             let seen = on_screen(&view, projection, &d.world);
@@ -276,10 +276,10 @@ pub fn frame_draws(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quic
     if std::env::var_os("LOCKSTEP_FRAME_DETAIL").is_some() {
         let mut totals: BTreeMap<String, [usize; 2]> = BTreeMap::new();
         for l in &theirs {
-            totals.entry(l.candidates[0].record.name.clone()).or_default()[0] += 1;
+            totals.entry(l.candidates[0].record.name.to_string()).or_default()[0] += 1;
         }
         for p in &mine_parts {
-            totals.entry(p.record.name.clone()).or_default()[1] += 1;
+            totals.entry(p.record.name.to_string()).or_default()[1] += 1;
         }
         for (n, c) in totals.iter().filter(|(n, c)| c[0] != c[1] && !n.starts_with("wall_")) {
             println!("  totals {n}: log {}, engine {}", c[0], c[1]);

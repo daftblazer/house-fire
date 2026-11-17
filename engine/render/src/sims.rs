@@ -127,7 +127,7 @@ impl SimSkins {
             let info = &scene.drawn[d.id as usize - 1];
             let Some(t) = d.material.layers[0] else { continue };
             if housefire::drawlist::is_sims(&info.model) && !info.model.starts_with("shadow_") && info.textures[0].is_none() {
-                by_part.entry(info.model.clone()).or_insert_with(|| (scene.textures[t.texture.0 as usize].clone(), t));
+                by_part.entry(info.model.to_string()).or_insert_with(|| (scene.textures[t.texture.0 as usize].clone(), t));
             }
         }
         SimSkins { by_part, rle: None }
@@ -174,7 +174,7 @@ pub struct Wardrobe<'a> {
     pub catalog: &'a Catalog,
     pub skins: &'a SimSkins,
     pub models: &'a Models,
-    pub shaders: &'a HashMap<u32, Shader>,
+    pub shaders: &'a housefire::fasthash::FastMap<u32, Shader>,
 }
 
 /// Per-run caches of the Sims' meshes and textures.
@@ -300,9 +300,9 @@ impl Assets {
             Some(TextureRef { texture: scene.add_texture(levels), wrap: (wrap_u, wrap_v), linear, mipmaps })
         });
         engine_skin.or_else(|| {
-            let name = HOUSE_ORDER.iter().filter_map(|s| records.iter().find(|r| r.0 == *s)).map(|r| &w.models.parts.record(r.1).name).find(|n| w.skins.by_part.contains_key(*n))?;
+            let name = HOUSE_ORDER.iter().filter_map(|s| records.iter().find(|r| r.0 == *s)).map(|r| &*w.models.parts.record(r.1).name).find(|n| w.skins.by_part.contains_key(*n))?;
             let (levels, tex) = &w.skins.by_part[name];
-            Some(*cache.skins.entry(name.clone()).or_insert_with(|| TextureRef { texture: scene.add_texture(levels.clone()), ..*tex }))
+            Some(*cache.skins.entry(name.to_string()).or_insert_with(|| TextureRef { texture: scene.add_texture(levels.clone()), ..*tex }))
         })
     }
 
@@ -407,12 +407,12 @@ pub fn figures_of(world: &housefire::world::World, cast: &Cast, plays: &[(i16, u
 /// The Sim whose portrait a log-mode frame shows: the one whose outfit holds the most of the
 /// overlay draws' parts (the engine has no player: the caller names the Sim shown).
 pub fn portrait_sim(scene: &Scene, w: &Wardrobe, figures: &[Figure]) -> Option<i16> {
-    let shown: Vec<&str> = scene.frame.draws.iter().map(|d| &scene.drawn[d.id as usize - 1]).filter(|i| i.class == Class::Overlay).map(|i| i.model.as_str()).collect();
+    let shown: Vec<&str> = scene.frame.draws.iter().map(|d| &scene.drawn[d.id as usize - 1]).filter(|i| i.class == Class::Overlay).map(|i| &*i.model).collect();
     figures
         .iter()
         .max_by_key(|f| {
             let outfit = w.cast.tables.dress(&f.description);
-            let names: Vec<&str> = Slot::ALL.iter().filter_map(|&s| w.models.parts.record_by_id(outfit.part(s))).map(|r| w.models.parts.record(r).name.as_str()).collect();
+            let names: Vec<&str> = Slot::ALL.iter().filter_map(|&s| w.models.parts.record_by_id(outfit.part(s))).map(|r| &*w.models.parts.record(r).name).collect();
             shown.iter().filter(|m| names.contains(m)).count()
         })
         .filter(|_| !shown.is_empty())

@@ -9,8 +9,14 @@
 use crate::lamps::Lamp;
 use crate::light::{self, LightKind};
 use crate::quickdata::ObjResources;
+use crate::fasthash::FastMap;
 use crate::world::World;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::collections::BTreeMap;
+
+/// The light grid's cells found for places, by room and the place's coordinates (as bits).
+type CellCache = FastMap<(usize, u32, u32), Option<[u16; 4]>>;
 
 /// A light: its place (x, y, height), reach and colour (colour times factor, before the draw's
 /// tint).
@@ -49,6 +55,9 @@ pub struct LotLights {
     /// Each room's ambient colour.
     ambients: Vec<[f32; 3]>,
     sun: Sun,
+    /// The cells found so far for points that are not grid points (`cell`), by room and place;
+    /// shared with the lights of the same geometry that follow (`share_cells`).
+    cells: Rc<RefCell<CellCache>>,
     /// The original's room of each tile (the engine's less one; outside 0), `width` across.
     room_of: Vec<u8>,
     width: usize,
@@ -141,7 +150,7 @@ impl LotLights {
             .collect();
         let room_of = (0..height as i32).flat_map(|y| (0..width as i32).map(move |x| (x, y))).map(|(x, y)| room_at(x, y) as u8).collect();
         let geometry = geometry(&sources);
-        LotLights { sources, geometry, ranges, ambients, sun: Sun { colour: sun_colour, direction }, room_of, width }
+        LotLights { cells: Rc::default(), sources, geometry, ranges, ambients, sun: Sun { colour: sun_colour, direction }, room_of, width }
     }
 
     /// The original's room of a tile (0 outside).
@@ -206,7 +215,15 @@ impl LotLights {
     /// `point` for `room`.
     fn cell(&self, room: usize, point: [f32; 2]) -> Option<[u16; 4]> {
         let r = self.ranges.get(room)?;
-        light::cell_lights([point[0], point[1], light::GRID_Z], (r[2], r[3]), (r[0], r[1]), &self.geometry)
+        *self.cells.borrow_mut().entry((room, point[0].to_bits(), point[1].to_bits())).or_insert_with(|| light::cell_lights([point[0], point[1], light::GRID_Z], (r[2], r[3]), (r[0], r[1]), &self.geometry))
+    }
+
+    /// Makes these lights use the cells `other` found, when they light the same ones
+    /// (`same_geometry`): a lot's objects stand still, so their cells are the same frame after frame.
+    pub fn share_cells(&mut self, other: &LotLights) {
+        if self.same_geometry(other) {
+            self.cells = Rc::clone(&other.cells);
+        }
     }
 
     /// What lights a fence at (x, y) whose edge starts at `start`: the four lights of the light
@@ -300,6 +317,7 @@ mod tests {
         room_of[3 * 4 + 1] = 1;
         LotLights {
             sources: vec![Source { at: [0.0; 3], reach: 0.0, colour: [0.0; 3] }; 512],
+            cells: Rc::default(),
             geometry: vec![([0.0; 3], 0.0); 512],
             ranges: vec![[0, 0, 256, 256], [0, 0, 256, 256]],
             ambients: vec![[0.1; 3], [0.2; 3]],

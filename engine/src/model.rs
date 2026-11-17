@@ -2,6 +2,8 @@
 //! far for the first sub-model of a record, of the two kinds known. The rest of a record (its
 //! tail: strip indices, bounds, further sub-models) is kept as bytes until it is read.
 
+use std::sync::Arc;
+
 use crate::arc::{be16, be32};
 
 /// The arrays a sub-model has, each as the record keeps it.
@@ -53,7 +55,7 @@ pub struct Node {
 /// (the 72 bytes at the end).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Record {
-    pub name: String,
+    pub name: Arc<str>,
     pub scale: f32,
     pub nodes: Vec<Node>,
     pub bounds: Vec<u8>,
@@ -193,7 +195,7 @@ pub fn read_record_prefix(b: &[u8]) -> Option<(Record, usize)> {
         nodes.push(Node { bone, subs });
     }
     let bounds = b.get(p..p + 72)?.to_vec();
-    Some((Record { name, scale, nodes, bounds }, p + 72))
+    Some((Record { name: name.into(), scale, nodes, bounds }, p + 72))
 }
 
 /// A record's head and first sub-model.

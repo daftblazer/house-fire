@@ -5,7 +5,7 @@ use housefire::shader::Shader;
 use housefire_render::engine_scene;
 use housefire_render::frame::{self, Lighting};
 use housefire_render::scene::{Class, Scene};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 /// An FNV-1a hash of a texture's texels, to tell two images apart in a line.
 fn fnv(v: &[u32]) -> u64 {
@@ -50,7 +50,7 @@ pub fn sphere_engine(made: &[engine_scene::Made]) {
     }
 }
 
-pub fn light_study(made: &[engine_scene::Made], oracle: &[([f32; 12], Lighting, frame::Material, usize)], plan: &engine_scene::Plan, shaders: &HashMap<u32, Shader>, scene: &Scene, view: frame::Mat3x4) {
+pub fn light_study(made: &[engine_scene::Made], oracle: &[([f32; 12], Lighting, frame::Material, usize)], plan: &engine_scene::Plan, shaders: &housefire::fasthash::FastMap<u32, Shader>, scene: &Scene, view: frame::Mat3x4) {
     // the log's light sets in world space, once for each object place; the engine's lamps
     let v = view;
     let to_world = |p: [f32; 3]| -> [f32; 3] { let q = [p[0] - v[3], p[1] - v[7], p[2] - v[11]]; [0, 1, 2].map(|c| (0..3).map(|r| v[4 * r + c] * q[r]).sum::<f32>()) };
@@ -152,11 +152,11 @@ pub fn material_diff(made: &[engine_scene::Made], oracle: &[([f32; 12], Lighting
             if s.is_some_and(|s| (0.0..=1.04).contains(&s[0]) && (-0.19..=0.63).contains(&s[1])) {
                 by.entry(format!("no log draw, on screen, {}", m.info.model)).or_insert((0, format!("{:?}", s))).0 += 1;
             }
-            by.entry("no log draw".into()).or_insert((0, m.info.model.clone())).0 += 1;
+            by.entry("no log draw".into()).or_insert((0, m.info.model.to_string())).0 += 1;
             continue;
         };
         let ulps = (0..12).map(|i| (m.draw.world[i].to_bits() as i64 - o.0[i].to_bits() as i64).abs()).max().unwrap_or(0);
-        by.entry(format!("WORLD {} ulps", if ulps == 0 { "0".to_string() } else if ulps < 16 { "1..15".into() } else if ulps < 4096 { "16..4095".into() } else { "more".to_string() })).or_insert((0, m.info.model.clone())).0 += 1;
+        by.entry(format!("WORLD {} ulps", if ulps == 0 { "0".to_string() } else if ulps < 16 { "1..15".into() } else if ulps < 4096 { "16..4095".into() } else { "more".to_string() })).or_insert((0, m.info.model.to_string())).0 += 1;
         let (e, l) = (&m.draw.material, &o.2);
         let mut diffs = Vec::new();
         if std::mem::discriminant(&e.combine) != std::mem::discriminant(&l.combine) || e.combine != l.combine && !matches!(e.combine, frame::Combine::Crossfade { .. }) {
@@ -189,8 +189,8 @@ pub fn material_diff(made: &[engine_scene::Made], oracle: &[([f32; 12], Lighting
             if n == 0 { "opaque" } else if n == t[0].2.len() { "all clear" } else { "cutout" }
         });
         let key = format!("STATE {:?} {:?} layers {} texture {alpha}: log alpha {:?} dst {:?}/{} depth {:?}/{}", m.info.class, e.blend, e.layers.iter().flatten().count(), l.alpha_test.map(|a| (a.refs[0], a.comp[0].0, a.op)), l.dst_alpha, l.write_alpha, l.depth_test.map(|c| c.0), l.depth_write);
-        by.entry(key).or_insert((0, m.info.model.clone())).0 += 1;
-        by.entry(if diffs.is_empty() { "same".into() } else { diffs.join("; ") }).or_insert((0, m.info.model.clone())).0 += 1;
+        by.entry(key).or_insert((0, m.info.model.to_string())).0 += 1;
+        by.entry(if diffs.is_empty() { "same".into() } else { diffs.join("; ") }).or_insert((0, m.info.model.to_string())).0 += 1;
     }
     for (k, (n, ex)) in by {
         println!("MAT {n:>4} e.g. {ex}: {k}");
@@ -301,7 +301,7 @@ pub fn draw_order(scene: &Scene) {
 
 pub fn list_model(scene: &Scene, name: &str) {
     // (study aid: the draws of a model in draw order: its mesh's vertices, textures, flags, state)
-    for (i, d) in scene.frame.draws.iter().enumerate().filter(|(_, d)| scene.drawn[d.id as usize - 1].model == name) {
+    for (i, d) in scene.frame.draws.iter().enumerate().filter(|(_, d)| scene.drawn[d.id as usize - 1].model[..] == *name) {
         let info = &scene.drawn[d.id as usize - 1];
         println!("  draw {i}: {} vertices at ({:.2}, {:.2}, {:.2}) {:?} flags {:?} {:?} blend {:?} alpha {:?}", scene.meshes[d.mesh.0 as usize].vertices.len(), d.world[3], d.world[7], d.world[11], info.textures, info.flags, d.material.combine, d.material.blend, d.material.alpha_test.map(|a| a.refs[0]));
     }

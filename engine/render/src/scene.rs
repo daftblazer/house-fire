@@ -11,6 +11,7 @@ use housefire::model::SubModel;
 use housefire::texture::{self, Kind};
 use housefire::tree_log::{LightsRec, Log, MaterialRec, SkinVerticesRec, StateRec, StripRec, StripVertex, TexLoadRec, TlutLoadRec};
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 /// The alpha (of 255) below which a textured opaque pixel is not drawn, for a log without the
 /// state records (';'): R1's stand-in, 0.5. The records give 127 for most such draws.
@@ -89,11 +90,11 @@ impl Class {
 pub struct DrawInfo {
     pub class: Class,
     pub strip: usize,
-    pub model: String,
+    pub model: Arc<str>,
     /// Whether its texture was not found among the game's textures (drawn white).
     pub missing_texture: bool,
     /// The names of the textures bound to its layers.
-    pub textures: [Option<String>; 2],
+    pub textures: [Option<Arc<str>>; 2],
     /// The layers' flag words (bytes 4 to 8 of each).
     pub flags: [u32; 2],
     /// Whether the material is of a kind not drawn yet (a sphere map, the added-by-table blend).
@@ -104,14 +105,14 @@ pub struct DrawInfo {
 
 impl DrawInfo {
     /// A draw of `class` in strip `strip` whose model is `model`, with nothing found lacking yet.
-    pub fn new(class: Class, strip: usize, model: String) -> DrawInfo {
+    pub fn new(class: Class, strip: usize, model: Arc<str>) -> DrawInfo {
         DrawInfo { class, strip, model, missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None, skin: None }
     }
 }
 
 /// A texture of `textures.arc` or `datasets.arc`: where its bytes are.
 pub(crate) struct TextureSource {
-    pub(crate) name: String,
+    pub(crate) name: Arc<str>,
     /// The LFXT header's flags word.
     pub(crate) flags: u16,
     in_datasets: bool,
@@ -125,10 +126,10 @@ pub struct Assets {
     textures_arc: Vec<u8>,
     datasets_arc: Vec<u8>,
     /// FNV-1a of a texture's first level, as the observer hashes the images it sees.
-    pub(crate) by_hash: HashMap<u64, TextureSource>,
+    pub(crate) by_hash: housefire::fasthash::FastMap<u64, TextureSource>,
     /// A texture's first level's FNV-1a by the CRC-32 of its name in capitals (how a shader's
     /// layer names it); `textures.arc`'s first, then the datasets'.
-    pub(crate) by_name: HashMap<u32, u64>,
+    pub(crate) by_name: housefire::fasthash::FastMap<u32, u64>,
 }
 
 fn fnv1a(b: &[u8]) -> u64 {
@@ -140,8 +141,8 @@ impl Assets {
         let parts = PartIndex::new(&disc.read("models.arc").unwrap_or_default());
         let textures_arc = disc.read("textures.arc").unwrap_or_default();
         let datasets_arc = disc.read("datasets.arc").unwrap_or_default();
-        let mut by_hash = HashMap::new();
-        let mut by_name = HashMap::new();
+        let mut by_hash = housefire::fasthash::FastMap::default();
+        let mut by_name = housefire::fasthash::FastMap::default();
         for e in arc::entries(&textures_arc).unwrap_or_default() {
             let b = arc::bytes(&textures_arc, &e);
             if let Some(t) = texture::read(b) {
@@ -149,7 +150,7 @@ impl Assets {
                 let hash = fnv1a(&b[t.texels.0..t.texels.0 + first]);
                 by_name.entry(e.id).or_insert(hash);
                 by_name.entry(housefire::shader::name_hash(&t.name)).or_insert(hash);
-                by_hash.entry(hash).or_insert(TextureSource { name: t.name.clone(), flags: t.flags, in_datasets: false, at: e.offset as usize });
+                by_hash.entry(hash).or_insert(TextureSource { name: t.name.as_str().into(), flags: t.flags, in_datasets: false, at: e.offset as usize });
             }
         }
         // those kept inside datasets.arc's entries (the lots' and objects' own)
@@ -162,7 +163,7 @@ impl Assets {
                     let first = (t.width as usize * t.height as usize * t.kind.bits() as usize) / 8;
                     let hash = fnv1a(&b[at + t.texels.0..at + t.texels.0 + first]);
                     by_name.entry(housefire::shader::name_hash(&t.name)).or_insert(hash);
-                    by_hash.entry(hash).or_insert(TextureSource { name: format!("{}/{}", e.name, t.name), flags: t.flags, in_datasets: true, at: e.offset as usize + at });
+                    by_hash.entry(hash).or_insert(TextureSource { name: format!("{}/{}", e.name, t.name).into(), flags: t.flags, in_datasets: true, at: e.offset as usize + at });
                     p = at + end;
                 } else {
                     p = at + 4;
@@ -733,14 +734,14 @@ impl Assets {
                     let (g, _, ld) = &log.other_draws[j];
                     load_until(&log.tex_loads, &mut next_load, *ld, &mut texture_state);
                     let Some(vertices) = vertices_of.get(&j).filter(|_| g.words[0] >> 24 == 0x2A) else {
-                        let info = DrawInfo::new(Class::Other, k, format!("g{j}"));
+                        let info = DrawInfo::new(Class::Other, k, format!("g{j}").into());
                         all.push(info);
                         continue;
                     };
                     // its own state: the first applied after its record (both counts place it)
                     let st = states.get(&k).and_then(|v| v.iter().find(|s| s.tick == tick && s.others_before == j + 1));
                     let masks = st.is_some_and(|s| s.pe[0] & 0xFF_FFFF != 0 && s.pe[0] & 8 == 0);
-                    let mut info = DrawInfo::new(if masks { Class::FloorMask } else { Class::Floor }, k, format!("g{j}"));
+                    let mut info = DrawInfo::new(if masks { Class::FloorMask } else { Class::Floor }, k, format!("g{j}").into());
                     let own = gap_materials.get(i).filter(|_| gap_materials.len() >= gap_floors.len());
                     let bound = self.bind_textures(log, (tick, k + 1), &texture_state, own.map_or(1, |m| m.layers as usize), &mut cache, &mut info);
                     let mut material = match own {

@@ -8,6 +8,7 @@ pub mod bhav;
 pub mod cfmt;
 pub mod disc;
 pub mod draw;
+pub mod fasthash;
 pub mod drawlist;
 pub mod expression;
 pub mod figure;

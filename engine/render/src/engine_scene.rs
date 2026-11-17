@@ -10,6 +10,7 @@ use housefire::drawlist::{Draw as Planned, Kind, Models};
 use housefire::shader::Shader;
 use housefire::tree_log::MaterialRec;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// A planned draw as the renderer takes it, with its account.
 pub struct Made {
@@ -52,7 +53,7 @@ fn sampler_of(flags: u16, levels: u32) -> ((Wrap, Wrap), bool, Mipmaps) {
 pub struct Inputs<'a> {
     pub draws: &'a [Planned],
     pub models: &'a Models,
-    pub shaders: &'a HashMap<u32, Shader>,
+    pub shaders: &'a housefire::fasthash::FastMap<u32, Shader>,
     /// The light set of a draw.
     pub lighting: &'a dyn Fn(&Planned, MaterialFactors) -> Lighting,
     /// The view the draws are seen through (the camera's).
@@ -65,7 +66,7 @@ pub struct Inputs<'a> {
 pub const PLACEHOLDER_TEXTURE: &str = "_garbage";
 
 /// The textures bound so far, by the layer's name hash: the texture and whether it has clear pixels.
-pub type TextureCache = HashMap<u32, Option<(TextureRef, bool)>>;
+pub type TextureCache = housefire::fasthash::FastMap<u32, Option<(TextureRef, bool)>>;
 
 /// What the draws made so far added to a scene, to be found again instead of added again: a
 /// window that draws every tick keeps one for all its frames, so that the meshes and textures go
@@ -73,7 +74,7 @@ pub type TextureCache = HashMap<u32, Option<(TextureRef, bool)>>;
 #[derive(Default)]
 pub struct Caches {
     /// A model's batch (its address in the `Models`) as a mesh, as a display list or as strips.
-    meshes: HashMap<(usize, bool), Option<MeshId>>,
+    meshes: housefire::fasthash::FastMap<(usize, bool), Option<MeshId>>,
     pub(crate) textures: TextureCache,
     /// A floor strip's mesh by a hash of its corners.
     floors: HashMap<u64, MeshId>,
@@ -81,9 +82,33 @@ pub struct Caches {
     /// and the place) instead of added to the scene's for good: for a window, where the light
     /// moves their colours every tick.
     pub transient_floors: bool,
+    /// The floor strips' names (`run0`, `run1`, ...), made as they are first needed.
+    floor_names: Vec<Arc<str>>,
+    /// What binding a shader's textures gave, by the shader's id.
+    binds: housefire::fasthash::FastMap<u32, Bound>,
+    /// A shader's material by its id, whether it is lit and whether it is the lot's ground (what
+    /// the GX state of a draw depends on, besides the shader).
+    materials: housefire::fasthash::FastMap<(u32, bool, bool), (Material, Option<&'static str>)>,
+}
+
+/// A shader's textures as bound: the layers' textures, whether the first has clear pixels, their
+/// names and whether one was not found.
+#[derive(Clone)]
+struct Bound {
+    layers: [Option<TextureRef>; 2],
+    cutout: bool,
+    names: [Option<Arc<str>>; 2],
+    missing: bool,
 }
 
 impl Caches {
+    fn floor_name(&mut self, k: usize) -> Arc<str> {
+        while self.floor_names.len() <= k {
+            self.floor_names.push(format!("run{}", self.floor_names.len()).into());
+        }
+        self.floor_names[k].clone()
+    }
+
     /// The mesh of a model's batch, as a display list or as strips, added to `scene` the first time.
     pub(crate) fn mesh(&mut self, scene: &mut Scene, batch: &housefire::model::SubModel, list: bool) -> Option<MeshId> {
         *self.meshes.entry((batch as *const _ as usize, list)).or_insert_with(|| mesh_of(batch, list).map(|m| scene.add_mesh(m)))
@@ -139,18 +164,43 @@ impl Assets {
     pub fn engine_draws(&self, scene: &mut Scene, caches: &mut Caches, input: &Inputs<'_>) -> Vec<Made> {
         let mut out = Vec::new();
         for (from, d) in input.draws.iter().enumerate() {
-            let Some(part) = input.models.parts.parts_of(d.part.0).find(|p| p.index == d.part) else { continue };
+            let Some(part) = input.models.parts.part(d.part) else { continue };
             let list = part.batch.list.is_some();
             let Some(mesh) = caches.mesh(scene, part.batch, list) else { continue };
-            let shader = input.shaders.get(&d.shader.unwrap_or(part.batch.hash));
+            let id = d.shader.unwrap_or(part.batch.hash);
+            let shader = input.shaders.get(&id);
             let mut info = DrawInfo::new(if list { Class::DisplayList } else { Class::RigidStrip }, 0, part.record.name.clone());
-            let (bound, cutout) = self.bind_shader(scene, &mut caches.textures, shader, &mut info);
+            let bound = match shader {
+                Some(_) if caches.binds.contains_key(&id) => caches.binds[&id].clone(),
+                _ => {
+                    let mut own = DrawInfo::new(Class::Other, 0, Arc::from(""));
+                    let (layers, cutout) = self.bind_shader(scene, &mut caches.textures, shader, &mut own);
+                    let bound = Bound { layers, cutout, names: own.textures, missing: own.missing_texture };
+                    if shader.is_some() {
+                        caches.binds.insert(id, bound.clone());
+                    }
+                    bound
+                }
+            };
+            info.textures = bound.names.clone();
+            info.missing_texture |= bound.missing;
             if info.textures[0].as_deref() == Some(PLACEHOLDER_TEXTURE) {
                 continue;
             }
             let lighting = (input.lighting)(d, shader.and_then(|sh| sh.material()));
             let lit = matches!(lighting, Lighting::Lit { .. } | Lighting::VertexColours);
-            let material = shader_material(shader, lit, bound, cutout, d.kind, &mut info);
+            let material = match shader {
+                Some(_) => {
+                    let (material, unsupported) = *caches.materials.entry((id, lit, d.kind == Kind::LotList)).or_insert_with(|| {
+                        let mut own = DrawInfo::new(Class::Other, 0, Arc::from(""));
+                        let material = shader_material(shader, lit, bound.layers, bound.cutout, d.kind, &mut own);
+                        (material, own.unsupported)
+                    });
+                    info.unsupported = unsupported;
+                    material
+                }
+                None => shader_material(shader, lit, bound.layers, bound.cutout, d.kind, &mut info),
+            };
             out.push(Made {
                 draw: Draw { mesh, world: d.world, bones: None, projection: None, viewport: None, view: Some(input.view), material, lighting, id: 0 },
                 from,
@@ -209,7 +259,7 @@ impl Assets {
     pub fn engine_shadows(&self, scene: &mut Scene, caches: &mut Caches, models: &Models, shadows: &[Planned], view_of: &dyn Fn(&Planned) -> Mat3x4) -> Vec<(usize, Made)> {
         let mut out = Vec::new();
         for (k, d) in shadows.iter().enumerate() {
-            let Some(part) = models.parts.parts_of(d.part.0).find(|p| p.index == d.part) else { continue };
+            let Some(part) = models.parts.part(d.part) else { continue };
             let Some(mesh) = caches.mesh(scene, part.batch, false) else { continue };
             let info = DrawInfo::new(Class::Shadow, 0, part.record.name.clone());
             out.push((k, Made { from: k, draw: Draw { mesh, world: d.world, bones: None, projection: None, viewport: None, view: Some(view_of(d)), material: shadow_material(), lighting: Lighting::Black, id: 0 }, info }));
@@ -284,11 +334,11 @@ pub struct FloorDraws {
 }
 
 impl Assets {
-    pub fn engine_floors(&self, scene: &mut Scene, caches: &mut Caches, strips: &[housefire::floors::Strip], shaders: &HashMap<u32, Shader>, view: Mat3x4) -> Vec<FloorDraws> {
+    pub fn engine_floors(&self, scene: &mut Scene, caches: &mut Caches, strips: &[housefire::floors::Strip], shaders: &housefire::fasthash::FastMap<u32, Shader>, view: Mat3x4) -> Vec<FloorDraws> {
         let mut out = Vec::new();
         for (k, st) in strips.iter().enumerate() {
             let shader = shaders.get(&st.shader);
-            let mut info = DrawInfo::new(Class::Floor, 0, format!("run{k}"));
+            let mut info = DrawInfo::new(Class::Floor, 0, caches.floor_name(k));
             let (bound, _) = self.bind_shader(scene, &mut caches.textures, shader, &mut info);
             let record = match shader {
                 Some(sh) => material_record(sh),
@@ -432,9 +482,10 @@ pub struct Lot {
     pub resources: std::rc::Rc<std::collections::BTreeMap<u32, housefire::quickdata::ObjResources>>,
     patterns: Vec<housefire::quickdata::FloorPattern>,
     terrain: u32,
-    pub shaders: HashMap<u32, Shader>,
+    pub shaders: housefire::fasthash::FastMap<u32, Shader>,
     /// The floor strips of the last plan with what they were made from: while the walls and the
     /// lights' places are the same, only the colours (the time of day) need making again.
+    poses: std::cell::RefCell<housefire::drawlist::IdlePoses>,
     floor_cache: std::cell::RefCell<Option<(housefire::routing::Walls, housefire::lighting::LotLights, Vec<housefire::floors::Strip>)>>,
 }
 
@@ -446,7 +497,7 @@ impl Lot {
         let resources = housefire::arc::entries(&quick)?.into_iter().find(|e| e.name == "SimsObjects").and_then(|e| housefire::quickdata::Image::read(housefire::arc::bytes(&quick, &e))).map(|img| housefire::quickdata::object_resources(&img))?;
         let patterns = image("SimsTiles").map(|img| housefire::quickdata::floor_patterns(&img)).unwrap_or_default();
         let terrain = image("SimsUI").map(|img| housefire::quickdata::houses(&img)).and_then(|h| h.get(house).map(|h| h.terrain)).unwrap_or(0);
-        Some(Lot { art: housefire::drawlist::LotArt::read(disc, house), models: std::rc::Rc::new(Models::read(disc)), resources: std::rc::Rc::new(resources), patterns, terrain, shaders: housefire::shader::index(disc), floor_cache: Default::default() })
+        Some(Lot { art: housefire::drawlist::LotArt::read(disc, house), models: std::rc::Rc::new(Models::read(disc)), resources: std::rc::Rc::new(resources), patterns, terrain, shaders: housefire::shader::index(disc), floor_cache: Default::default(), poses: Default::default() })
     }
 
     /// The draws of the lot as `world` has it at `tick`, seen from the eye of `view`. The clock the
@@ -454,17 +505,16 @@ impl Lot {
     pub fn plan(&self, world: &housefire::world::World, tick: u32, view: &Mat3x4) -> Plan {
         // the eye: -R^T t of the view
         let eye = [0, 1].map(|i| -(0..3).map(|r| view[4 * r + i] * view[4 * r + 3]).sum::<f32>());
-        let lot = housefire::drawlist::lot_draws_with(world, &self.resources, &self.models, &self.art, tick, Some(eye));
-        let guids_of = |id: i16| world.find_object(id).into_iter().chain(world.objects().filter(|o| o.leader == id)).map(|o| o.guid).collect::<Vec<u32>>();
-        let guids = lot.placements.iter().map(|p| (p.leader, guids_of(p.leader))).collect();
-        let lamps = housefire::lamps::on_lot(&lot.placements, guids_of, &self.resources, &self.models.sources);
+        let lot = housefire::drawlist::lot_draws_with(world, &self.resources, &self.models, &self.art, tick, Some(eye), &mut self.poses.borrow_mut());
+        let lamps = housefire::lamps::on_lot(&lot.placements, |id| lot.guids.get(&id).cloned().unwrap_or_default(), &self.resources, &self.models.sources);
         let g = |i: usize| world.globals.get(i).copied().map_or(0, i32::from);
         let clock = (g(0), g(5), g(6));
-        let lights = housefire::lighting::LotLights::build(world, &self.resources, &lamps, clock);
+        let mut lights = housefire::lighting::LotLights::build(world, &self.resources, &lamps, clock);
         let material = |id| self.shaders.get(&id).and_then(|s| s.material());
         let mut cache = self.floor_cache.borrow_mut();
         let floors = match cache.take() {
             Some((walls, made_with, strips)) if walls == world.walls && made_with.same_geometry(&lights) => {
+                lights.share_cells(&made_with);
                 let floors = housefire::floors::relight(&strips, &lights, material);
                 *cache = Some((walls, made_with, strips));
                 floors
@@ -476,7 +526,7 @@ impl Lot {
             }
         };
         drop(cache);
-        Plan { models: self.models.clone(), draws: lot.draws, placements: lot.placements, guids, resources: self.resources.clone(), pieces: lot.pieces, shadows: lot.shadows, floors, lamps, lights, clock }
+        Plan { models: self.models.clone(), draws: lot.draws, placements: lot.placements, guids: lot.guids, resources: self.resources.clone(), pieces: lot.pieces, shadows: lot.shadows, floors, lamps, lights, clock }
     }
 }
 
