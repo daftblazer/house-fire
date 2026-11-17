@@ -144,6 +144,15 @@ fn main() -> ExitCode {
     let mut scene = assets.scene(&log, tick);
     // the engine mode (HF_ENGINE=1, with --card CARD for a save's lot): the lot's model draws from
     // the engine's own state in place of the log's rigid and display-list draws
+    if std::env::var_os("HF_SPHERE").is_some() {
+        let mut seen = std::collections::BTreeSet::new();
+        for d in &scene.frame.draws {
+            if let Some(w) = d.material.sphere {
+                let i = &scene.drawn[d.id as usize - 1];
+                if seen.insert(format!("{} {:?}", i.model, w)) { println!("SPHERE log {} {:?} flags {:?} combine {:?}", i.model, w, i.flags, d.material.combine); }
+            }
+        }
+    }
     if std::env::var_os("HF_SHEARS").is_some() {
         // study aid: each logged shadow draw's shear (a, b) of the camera's x and y columns into
         // its view's third column, the model, and its world matrix's translation
@@ -203,6 +212,14 @@ fn main() -> ExitCode {
         };
         let mut caches = engine_scene::Caches::default();
         let made = assets.engine_draws(&mut scene, &mut caches, &engine_scene::Inputs { draws: &plan.draws, models: &plan.models, shaders: &shaders, lighting: &lighting, view });
+        if std::env::var_os("HF_SPHERE").is_some() {
+            let mut seen = std::collections::BTreeSet::new();
+            for m in &made {
+                if let Some(w) = m.draw.material.sphere {
+                    if seen.insert(format!("{} {:?}", m.info.model, w)) { println!("SPHERE eng {} {:?} flags {:?}", m.info.model, w, m.info.flags); }
+                }
+            }
+        }
         // (HF_SKIP=prefix and HF_SKIPTEX=name, study aids: leave out the engine's draws of the
         // models with that name, or of the materials whose first layer has that texture)
         let mut made = made;
@@ -385,7 +402,7 @@ fn main() -> ExitCode {
                 if !seen.insert(d.object) { continue }
                 let twin = scene.frame.draws.iter().any(|l| (0..12).all(|i| (l.world[i] - d.world[i]).abs() < 1e-3));
                 let sc = housefire::scene::Camera::on_screen(&view, &proj, [d.origin[0], d.origin[1], 0.0]);
-                println!("PLACE object {} origin ({:.2},{:.2}) screen {:.3?} twin {}", d.object, d.origin[0], d.origin[1], sc, twin);
+                println!("PLACE object {} origin ({:.2},{:.2}) screen {:.5?} twin {}", d.object, d.origin[0], d.origin[1], sc, twin);
             }
         }
         if std::env::var_os("HF_SHEARS").is_some() {

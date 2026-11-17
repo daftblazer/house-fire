@@ -22,15 +22,19 @@ pub struct Made {
 /// What a sub-model's shader says the device's material is: its layers as the device's
 /// `MaterialRec` holds them (the flag word at +4, the seven bytes at +0x10), the factor byte
 /// 0xFF a shader keeps as 0x80 when the game sets the material up (`docs/assets.md`,
-/// "Shaders").
+/// "Shaders"), except in a sphere-mapped layer (texgen 2: the reflecting doors, windows, mirrors),
+/// where the log's draws keep the full 1.0.
 pub const RUNTIME_FACTOR: (u8, u8) = (0xFF, 0x80);
+
+/// The layer's texgen byte (+0x16) of a sphere map.
+const SPHERE_TEXGEN: u8 = 2;
 
 pub(crate) fn material_record(shader: &Shader) -> MaterialRec {
     let mut layer = [[0u8; 0x18]; 2];
     for (l, s) in layer.iter_mut().zip(&shader.layers) {
         l[4..8].copy_from_slice(&s.flags.to_be_bytes());
         l[0x10..0x17].copy_from_slice(&s.bytes);
-        if l[0x14] == RUNTIME_FACTOR.0 {
+        if l[0x14] == RUNTIME_FACTOR.0 && l[0x16] != SPHERE_TEXGEN {
             l[0x14] = RUNTIME_FACTOR.1;
         }
     }
