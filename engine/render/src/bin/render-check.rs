@@ -215,8 +215,10 @@ fn main() -> ExitCode {
         if std::env::var_os("HF_SPHERE").is_some() {
             let mut seen = std::collections::BTreeSet::new();
             for m in &made {
-                if let Some(w) = m.draw.material.sphere {
-                    if seen.insert(format!("{} {:?}", m.info.model, w)) { println!("SPHERE eng {} {:?} flags {:?}", m.info.model, w, m.info.flags); }
+                if let Some(w) = m.draw.material.sphere
+                    && seen.insert(format!("{} {:?}", m.info.model, w))
+                {
+                    println!("SPHERE eng {} {:?} flags {:?}", m.info.model, w, m.info.flags);
                 }
             }
         }

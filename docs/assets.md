@@ -2504,6 +2504,55 @@ of 8 and cargo test and clippy hold (`runchecks` 10 of 10); lockstep's frame dra
 (570 the same, 3 different, 26 missing); the log mode is unchanged (rigid 97.63%, whole 88.89%).
 
 
+### E1: the gap between the engine mode and the log mode
+
+Frame 2400 (2401 within 0.02), engine mode before and after, with log mode (97.99 / 97.33 / 97.84 /
+97.47%, unchanged): rigid 94.09 -> 97.02%, floors 96.22 -> 97.35%, shadows 91.76 -> 95.90%,
+whole 95.60 -> 97.21% (8,012 pixels beyond; 12,621 before). Three causes, each found by the
+pixels wrong only in the engine mode (HF_PROBE in each mode, HF_SPHERE, HF_COLOURS):
+
+- The wall's foot (the 6-vertex part, the log's 7-vertex draw: its shader names `_garbage`) is
+  drawn with the wall's pattern, as the log's draws have it (the same texture as the face's), not left out
+  (`drawlist::WALL_FACE_VERTICES` 18 to 6, the 5-vertex piece keeps its own shader): the floor
+  no longer shows at the walls' feet (a band along the front of the house, and the diagonals').
+  Whole 95.60 -> 96.44%, floors 96.22 -> 97.35%, shadows 91.76 -> 93.82% (the shadows' pixels
+  there were the floor's).
+- A sphere-mapped layer (texgen 2: the reflecting doors, the lattice door, the range, the mirrors,
+  the bathtub) keeps its factor byte 0xFF (1.0 in the log's draws); only the crossfades' 0xFF is
+  0x80 (`engine_scene::RUNTIME_FACTOR`, `SPHERE_TEXGEN`). The walnut door 946 px off to 0, the
+  lattice door 571 to 108. Whole 96.44 -> 96.94%.
+- The lights' tint takes the shader's material factors: a light's colour byte is
+  trunc(0.5 x diffuse x colour + 0.5), the ambient's 0.5 x the material's ambient (the head's words
+  7-9 and 4-6, `Shader::material`; 1.0 for nearly all). The window glass (10 vertices) has a
+  diffuse of 0.2, the bathtub 0.5: the log's point colours of those draws are 0.195 and 0.5 of
+  the engine's (the 4 lights of 8 glass meshes, all checked by `HF_COLOURS`). Windows 899 px off to
+  226. `lighting_for` takes the factors (the Sims' pass gives None). Whole 96.94 -> 97.21%.
+
+Left (engine mode, frame 2400; px of the models off): the money trunk 678 and the gnome 78
+(and their shadows 436 + 68; the trunk at screen x 0.0617 against the leftmost drawn object's
+0.0618: no screen box tells them apart, so no rule), the outer lot 619, the window glass 226, the
+counter 158, the wall caps 127, the lattice door 108, the aquarium 105, the birch 123 (log mode 1,091). Shadows: the
+indoor objects' shears are not found. What the logged shears are (`HF_SHEARS=1`, per shadow draw
+and its twin's light set): the 341 outdoor objects' and the 228 walls' and fences' are the sun's
+x and y over 1.144 and 0.9286 (frame 2400's sun: 0.8223, -0.2109, -0.5285; 0.9286 - 0.5285 is
+0.4001, but 1.144 - 0.5285 is 0.6155: no constant); each indoor draw has its own small vector, the same for every draw on
+one light set (the clocks and the end table on one grid point: -0.173, -0.123), so it is a function of the draw's four lights.
+Not it (fitted against the 34 indoor places with the log's own four lights): the nearest or the
+strongest light's direction to the object's place over any one height, a sum of the four
+directions weighted by rank, by reach^2/distance^2, by colour, or by 1/distance (angle errors 0.2 to 0.8
+rad), a per-slot linear mix of the four (residual half the vectors' size). The 75 indoor
+objects keep no shear. Other clocks have no frame dumps (the other logs have no draw
+records, a33's frame 1 is tick 1,001, the same clock), so the divisors are fitted at this one.
+
+The studies added to `render-check`: `HF_SHEARS` (the logged shadow shears; in the engine mode
+with each planned shadow's twin, its place and light set), `HF_PLACES` (the objects' screen
+places and whether the log has them), `HF_SPHERE` (the sphere-mapped draws and their factors in
+both modes), `HF_COLOURS` (with `HF_LIGHTSTUDY` and `HF_ORACLE`: the log's light colours over the
+engine's, with the shader's material). Shared code: `drawlist::WALL_FACE_VERTICES` (the lot's
+wall pieces' shader), `engine_scene::lighting_for` (a third argument), `Inputs::lighting`
+(takes the material factors): the log mode, lockstep's frame draws (583 the same, the output
+identical to before) and `runchecks` (10 of 10) are unchanged.
+
 ## The window
 
 `view LOG ISO --card CARD [--lot N] [--ticks N] [--frame-times FILE] [--shot TICK FILE]`
