@@ -64,4 +64,9 @@
   98.89% of render-check's engine mode (3,028 of 3,175 differing pixels the portrait box). The
   RK3566 run of `view` (aarch64 build, `--ticks 1200 --frame-times`) needs the user's SSH; by
   the PC's figures the CPU's frame build (~18 ms there) is the risk (docs/assets.md "The budget").
+- **15 object meshes' light sets** (engine mode, L3): the trash can 2, a deckchair 1, the lattice
+  door 1, two cacti 3 each, two rose bushes 2 each: the grid point (a tie at x.5: (19.5, 6.5)
+  takes x 20, (19.5, 10.5) x 19). The original's lookup (0x80169ABC) rounds a position the caller
+  passes (not the place, not a mesh middle) and searches the cell's four room bytes for the
+  object's room (a default entry if absent); the engine's `cell` ignores that list.
 
