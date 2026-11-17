@@ -562,8 +562,11 @@ pub fn assemble(scene: &mut Scene, engine: Engine) -> usize {
         out.push(m.draw);
     };
     let sim_draws = engine.sims.unwrap_or_default();
-    let mut sim_shadows = sim_draws.shadows;
-    let rooms = engine.floors.iter().map(|f| f.0).chain(0..engine.shadows.len()).chain(sim_shadows.iter().map(|s| s.0 + 1)).max().map_or(0, |m| m + 1);
+    let rooms = engine.floors.iter().map(|f| f.0).chain(0..engine.shadows.len()).chain(sim_draws.shadows.iter().map(|s| s.0 + 1)).max().map_or(0, |m| m + 1);
+    let mut sim_shadows: Vec<Vec<Made>> = (0..rooms).map(|_| Vec::new()).collect();
+    for (room, m) in sim_draws.shadows {
+        sim_shadows[room].push(m);
+    }
     let mut floors: Vec<Vec<FloorDraws>> = (0..rooms).map(|_| Vec::new()).collect();
     for (room, f) in engine.floors {
         floors[room].push(f);
@@ -589,12 +592,8 @@ pub fn assemble(scene: &mut Scene, engine: Engine) -> usize {
             out.extend(sims.take().into_iter().flatten());
         }
         // the engine's Sims' shadows of this room, after its other shadows
-        for (r, m) in std::mem::take(&mut sim_shadows) {
-            if r == room {
-                put(scene, &mut out, m);
-            } else {
-                sim_shadows.push((r, m));
-            }
+        for m in std::mem::take(&mut sim_shadows[room]) {
+            put(scene, &mut out, m);
         }
         for m in masks {
             put(scene, &mut out, m);
