@@ -582,14 +582,17 @@ impl<'l> Replay<'l> {
                 // if it is that tree (its frame's file the one the call took it from). In logs of
                 // today's observer only (its plans' 'r' records): the older logs' tree records miss
                 // trees for another reason (its per-depth lookup they lack), native's not the log's.
-                if tf.is_none() && s.t.is_none() && new_observer {
+                // The same where the record at the step's address is another tree's (the game reuses
+                // an unloaded tree's memory, and the log records an address once).
+                let others = s.t.is_some() && log.tree_of(s).is_none_or(|r| r.tree != s.tree);
+                if tf.is_none() && (s.t.is_none() || others) && new_observer {
                     let i = sim.stack_of(&h.world, ok);
                     if let Some(f) = i.stack().last().filter(|f| f.tree.is_some_and(|t| lib.tree_at(t).id as u16 == s.tree))
                         && let (Some(t), Some(file)) = (f.tree, f.file)
                     {
                         tf = Some((t, file));
                         frame_tree.insert(key, (t, file));
-                        h.counts.note("steps: no tree record, the tree native's stack has");
+                        h.counts.note(if others { "steps: another tree's record at its address, the tree native's stack has" } else { "steps: no tree record, the tree native's stack has" });
                     }
                 }
                 let Some((tree, file)) = tf else {
