@@ -511,6 +511,18 @@ const TERRAIN_COLOUR_TILES_Y: f32 = -147.0;
 const TERRAIN_COLOUR_U0: f32 = 0.34;
 const TERRAIN_COLOUR_V0: f32 = 0.47;
 
+/// The second layer's uv from the draw's logged matrices: the position through GX_TEXMTX0, then
+/// GX_PTTEXMTX0 (3x4 by rows each; only the x and y rows of the second matter for a 2D uv).
+/// The floor's mesh units are 64ths of the position.
+fn logged_position_uv(m: &[[f32; 12]; 2]) -> PositionUv {
+    let (t, p) = (&m[0], &m[1]);
+    let row = |r: usize| {
+        let c = |j: usize| (0..3).map(|k| p[r * 4 + k] * t[k * 4 + j]).sum::<f32>() + if j == 3 { p[r * 4 + 3] } else { 0.0 };
+        [c(0) / FLOOR_POSITION_UNIT, c(1) / FLOOR_POSITION_UNIT, c(3)]
+    };
+    PositionUv { u: row(0), v: row(1) }
+}
+
 pub(crate) fn terrain_colour_uv() -> PositionUv {
     // positions are in 64ths of a tile
     PositionUv {
@@ -725,7 +737,7 @@ impl Assets {
                         None => Material { combine: Combine::Modulate { unlit: false }, layers: [bound[0], None], blend: Blend::Opaque, cull: Cull::None, depth_test: Some(Compare::LEQUAL), depth_write: true, alpha_test: None, write_colour: true, write_alpha: true, dst_alpha: None, layer1_from_position: None, sphere: None },
                     };
                     if material.layers[1].is_some() {
-                        material.layer1_from_position = Some(terrain_colour_uv());
+                        material.layer1_from_position = Some(st.map_or_else(terrain_colour_uv, |st| logged_position_uv(&st.tex_mtx)));
                     }
                     if let Some(st) = st {
                         material = with_state(material, st);
