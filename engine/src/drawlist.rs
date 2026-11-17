@@ -17,6 +17,11 @@ use crate::routing::Opening;
 use crate::scene::{Form, Placement, WallPiece};
 use crate::skeleton::{Mat4, IDENTITY};
 
+/// The bit of a pose's flag word that hides its node: a model's part on a node whose idle pose has
+/// it is not drawn (a plant's spare leaf sets, a lamp's lit shade). Found by the parts the
+/// original's draws leave out (`docs/assets.md`, "The engine's draw list").
+const NODE_HIDDEN: u32 = 8;
+
 /// What a draw is part of.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Kind {
@@ -108,19 +113,27 @@ fn kind_of(part: &Part<'_>) -> Kind {
 }
 
 /// The draws of the lot's objects: for each placement (one a multi-tile object's leader), the
-/// parts of the model its definition names, on the bones of its idle pose. A part with several
+/// parts of the models its parts' definitions name, on the bones of its idle pose. A part with several
 /// matrices (a Sim's skin) is not an object's.
 pub fn object_draws(models: &Models, placements: &[Placement], guids_of: impl Fn(i16) -> Vec<u32>, resources: &BTreeMap<u32, ObjResources>) -> Vec<Draw> {
     let mut out = Vec::new();
     for p in placements {
         let guids = guids_of(p.leader);
-        let Some(r) = guids.iter().filter_map(|g| resources.get(g)).find(|r| object_models(models, r).next().is_some()) else { continue };
         let root = lamps::object_matrix(p.x, p.y, p.angle);
-        for (id, record) in object_models(models, r) {
+        // each model the object's parts name, once (the bed's two halves have a model each)
+        let mut drawn: Vec<usize> = Vec::new();
+        let named: Vec<(&ObjResources, u32, usize)> = guids.iter().filter_map(|g| resources.get(g)).flat_map(|r| object_models(models, r).map(move |(id, record)| (r, id, record))).collect();
+        for (r, id, record) in named {
+            if drawn.contains(&record) {
+                continue;
+            }
+            drawn.push(record);
             let rec = models.parts.record(record);
             let skeleton = models.sources.skeletons.get(&r.model).or_else(|| models.sources.skeletons.get(&id));
-            let bones = skeleton.zip(models.sources.anims.get(&r.idle)).and_then(|(s, a)| lamps::idle_bones(s, a, &root, rec.scale)).map(|b| b.0);
-            for part in models.parts.parts_of(record).filter(|p| !p.skinned()) {
+            let posed = skeleton.zip(models.sources.anims.get(&r.idle)).and_then(|(s, a)| lamps::idle_bones(s, a, &root, rec.scale));
+            let bones = posed.as_ref().map(|b| &b.0);
+            let hidden = |bone: Option<usize>| posed.as_ref().zip(bone).is_some_and(|(p, b)| p.1.get(b).is_some_and(|pose| pose.flags & NODE_HIDDEN != 0));
+            for part in models.parts.parts_of(record).filter(|p| !p.skinned() && !hidden(p.bone())) {
                 let m = match (part.bone(), &bones) {
                     (Some(b), Some(bones)) => bones.get(b).copied().unwrap_or(IDENTITY),
                     (None, Some(bones)) => bones.first().copied().unwrap_or(IDENTITY),
@@ -136,11 +149,15 @@ pub fn object_draws(models: &Models, placements: &[Placement], guids_of: impl Fn
     out
 }
 
-/// The models an object's resources draw: the record its definition names, else the records of
-/// its dataset (each with its id and its place in the index).
+/// The models an object's resources draw: the record its definition names (the model's hash, or
+/// the first word of its record, the model's id in the object's dataset), else the records of its
+/// dataset (each with its id and its place in the index).
 fn object_models<'a>(models: &'a Models, r: &ObjResources) -> impl Iterator<Item = (u32, usize)> + 'a {
-    let named = models.parts.record_by_id(r.model);
-    let ids: Vec<u32> = if named.is_some() { vec![r.model] } else { models.datasets.get(&r.dataset).cloned().unwrap_or_default() };
+    let named = [r.model, r.key].into_iter().find(|&id| models.parts.record_by_id(id).is_some());
+    let ids: Vec<u32> = match named {
+        Some(id) => vec![id],
+        None => models.datasets.get(&r.dataset).cloned().unwrap_or_default(),
+    };
     ids.into_iter().filter_map(|id| Some((id, models.parts.record_by_id(id)?)))
 }
 
@@ -155,8 +172,6 @@ pub fn lot_draws(models: &Models, outer_lot: u32) -> Vec<Draw> {
 /// The wall models' sub-model that is not drawn in the lot's view (its hash, one of the two
 /// 5-vertex pieces of each wall record: `docs/assets.md`, "The engine's draw list").
 const UNDRAWN_WALL_SUB: u32 = 0x0906_522f;
-/// The wall models' 6-vertex cap sub-model (its hash): drawn for a part on an outdoor tile.
-const WALL_CAP_SUB: u32 = 0xc26d_593a;
 
 /// The models of the fence styles the lots use (the style the lot's wall array keeps, as
 /// `SimsTiles`' `FenceData` rows number them): the home lot's picket fence (style 2). The other
@@ -185,8 +200,8 @@ fn wall_matrix(x: f32, y: f32, angle: f32) -> Mat4 {
 /// The draws of the lot's walls and fences: each piece (`scene::wall_pieces`) draws its family's
 /// model, by its opening (`window_of` gives the wall model's window name for the edge at a
 /// point, `WINDOW_WALLS`) and its form, at its place. A wall part's sub-models but the undrawn
-/// one are drawn when the part faces the eye (`WallPiece::faces`; the cap, the 6-vertex one, when
-/// the part is on an outdoor tile and faces it too); a fence's only is drawn always.
+/// one are drawn when the part faces the eye (`WallPiece::faces`), the 6-vertex one whether the part
+/// is indoors or not; a fence's only sub-model is drawn always.
 pub fn wall_draws(models: &Models, pieces: &[WallPiece], eye: [f32; 2], window_of: impl Fn([f32; 2]) -> Option<&'static str>) -> Vec<Draw> {
     let mut out = Vec::new();
     for p in pieces {
@@ -197,9 +212,6 @@ pub fn wall_draws(models: &Models, pieces: &[WallPiece], eye: [f32; 2], window_o
             for part in models.parts.parts_of(record) {
                 out.push(Draw { kind: Kind::WallPiece, part: part.index, world: world_of(&lamps::object_matrix(p.x, p.y, p.angle), rec.scale) });
             }
-            continue;
-        }
-        if !p.faces(eye) {
             continue;
         }
         let opening = match p.opening {
@@ -218,8 +230,12 @@ pub fn wall_draws(models: &Models, pieces: &[WallPiece], eye: [f32; 2], window_o
         };
         let Some(record) = models.parts.record_by_id(crate::shader::name_hash(&format!("wall_straight{opening}{form}"))) else { continue };
         let rec = models.parts.record(record);
-        for part in models.parts.parts_of(record).filter(|q| q.batch.hash != UNDRAWN_WALL_SUB && (q.batch.hash != WALL_CAP_SUB || p.cap)) {
-            out.push(Draw { kind: Kind::WallPiece, part: part.index, world: world_of(&wall_matrix(p.x, p.y, p.angle), rec.scale) });
+        let world = world_of(&wall_matrix(p.x, p.y, p.angle), rec.scale);
+        if !p.faces(eye) {
+            continue;
+        }
+        for part in models.parts.parts_of(record).filter(|q| q.batch.hash != UNDRAWN_WALL_SUB) {
+            out.push(Draw { kind: Kind::WallPiece, part: part.index, world });
         }
     }
     out

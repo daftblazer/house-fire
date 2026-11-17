@@ -23,6 +23,14 @@ use housefire::tree_log::{Log, StripRec};
 /// the 3 x 3 relative to its own scale).
 const TOLERANCE: f32 = 1e-4;
 
+/// The part of the screen (0 to 1 across and down) a draw's place may be in for the original to draw
+/// its model, as (left, right, top, bottom): a model reaches past its place (a tree's crown, a
+/// wall's height). Fitted at tick 1,039 of home-a39.log (printed as "the log's draws' places on
+/// the screen": x -0.007 to 1.058, y -0.224 to 0.553) with a little room: the smallest box that
+/// holds every draw the log made. Not the original's own test (a bounding volume against the
+/// frustum); the renderer clips what is left.
+const VISIBLE: [f32; 4] = [-0.01, 1.06, -0.23, 0.56];
+
 /// A draw of the log's tick the engine's list answers for.
 struct LogDraw<'a> {
     strip: usize,
@@ -183,7 +191,7 @@ pub fn frame_draws(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quic
     if std::env::var_os("LOCKSTEP_FRAME_DETAIL").is_some() {
         for p in &placements {
             let guids: Vec<u32> = world.find_object(p.leader).into_iter().chain(world.objects().filter(|o| o.leader == p.leader)).map(|o| o.guid).collect();
-            let rs: Vec<String> = guids.iter().map(|g| match res.get(g) { None => format!("{g:08x}: no resources"), Some(r) => format!("{g:08x}: dataset {:08x} model {:08x} {}", r.dataset, r.model, models.parts.record_by_id(r.model).map_or("not in models.arc".to_string(), |i| models.parts.record(i).name.clone())) }).collect();
+            let rs: Vec<String> = guids.iter().map(|g| match res.get(g) { None => format!("{g:08x}: no resources"), Some(r) => format!("{g:08x}: dataset {:08x} model {:08x} {} key {:08x} {} idle {:08x}; dataset models {:?}", r.dataset, r.model, models.parts.record_by_id(r.model).map_or("-".to_string(), |i| models.parts.record(i).name.clone()), r.key, models.parts.record_by_id(r.key).map_or("-".to_string(), |i| models.parts.record(i).name.clone()), r.idle, models.datasets.get(&r.dataset).map(|v| v.iter().map(|&i| models.parts.record_by_id(i).map_or("?".to_string(), |i| models.parts.record(i).name.clone())).collect::<Vec<_>>())) }).collect();
             println!("  object {} at ({}, {}): {}", p.leader, p.x, p.y, rs.join("; "));
         }
     }
@@ -230,6 +238,7 @@ pub fn frame_draws(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quic
     let mut mine: Vec<Draw> = drawlist::object_draws(&models, &placements, |id| world.find_object(id).into_iter().chain(world.objects().filter(|o| o.leader == id)).map(|o| o.guid).collect(), res);
     // the eye: the log's view of the tick (the camera is not the engine's own yet), eye = -R^T t
     let view = log.matrices.iter().find(|m| !m.projection && m.id == 0xF0 && m.tick == tick).map(|m| m.values.clone()).unwrap_or_default();
+    let projection: Option<[f32; 6]> = log.matrices.iter().find(|m| m.projection && m.id == 0 && m.tick == tick).and_then(|m| m.values.get(..6)?.try_into().ok());
     if view.len() >= 12 {
         let eye = [0, 1, 2].map(|i| -(0..3).map(|r| view[4 * r + i] * view[4 * r + 3]).sum::<f32>());
         let guids_of = |id: i16| world.find_object(id).into_iter().chain(world.objects().filter(|o| o.leader == id)).map(|o| o.guid).collect::<Vec<u32>>();
@@ -242,8 +251,20 @@ pub fn frame_draws(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quic
     // matching: per log draw, the engine draws of its part; the same when a world agrees
     let part_of = |d: &Draw| -> Part<'_> { models.parts.parts_of(d.part.0).find(|p| p.index == d.part).unwrap() };
     let mine_parts: Vec<Part<'_>> = mine.iter().map(part_of).collect();
+    if let Ok(name) = std::env::var("LOCKSTEP_FRAME_MINE") {
+        for (d, p) in mine.iter().zip(&mine_parts) {
+            if p.record.name.starts_with(&name) {
+                println!("  mine: {} node {} sub {} bone {:?} {} vertices: {:?}", p.record.name, p.index.1, p.index.2, p.bone(), p.batch.count, d.world.map(|v| format!("{v:.5e}")));
+            }
+        }
+        for l in &theirs {
+            if l.candidates[0].record.name.starts_with(&name) {
+                println!("  log: {} {} vertices: {:?}", l.candidates[0].record.name, l.candidates[0].batch.count, l.world.map(|v| format!("{v:.5e}")));
+            }
+        }
+    }
     let mut used = vec![false; mine.len()];
-    let mut stat: BTreeMap<Kind, [usize; 6]> = BTreeMap::new(); // log, engine, same, different, missing, extra
+    let mut stat: BTreeMap<Kind, [usize; 7]> = BTreeMap::new(); // log, engine, same, different, missing, extra, extra off screen
     let mut shown = 0;
     // (LOCKSTEP_FRAME_DETAIL: the record names of the draws that are not the same, with counts)
     let mut by_name: BTreeMap<String, [usize; 3]> = BTreeMap::new();
@@ -274,9 +295,9 @@ pub fn frame_draws(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quic
             None => {
                 by_name.entry(l.candidates[0].record.name.clone()).or_default()[1] += 1;
                 stat.entry(l.kind).or_default()[4] += 1;
-                if shown < 12 && l.candidates[0].record.name.starts_with(&std::env::var("LOCKSTEP_FRAME_SHOW").unwrap_or_default()) {
+                if shown < 400 && l.kind.name().starts_with(&std::env::var("LOCKSTEP_FRAME_SHOW").unwrap_or_default()) {
                     shown += 1;
-                    println!("  missing: strip {} {} node {} world {:?}", l.strip, l.candidates[0].record.name, l.candidates[0].index.1, l.world);
+                    println!("  missing: strip {} {} {} vertices at ({}, {}, {}) angle {}", l.strip, l.kind.name(), l.candidates[0].batch.count, l.world[3], l.world[7], l.world[11], (l.world[1].atan2(l.world[0]).to_degrees() * 10.0).round() / 10.0);
                 }
             }
         }
@@ -286,12 +307,47 @@ pub fn frame_draws(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quic
         if !used[i] {
             by_name.entry(mine_parts[i].record.name.clone()).or_default()[2] += 1;
             stat.entry(d.kind).or_default()[5] += 1;
+            // the draw's place against the logged view's screen (`VISIBLE`)
+            let seen = projection.is_some_and(|pr| {
+                view.len() >= 12 && housefire::scene::Camera::on_screen(&view[..12].try_into().unwrap(), &pr, [d.world[3], d.world[7], d.world[11] + 1.0]).is_some_and(|s| (VISIBLE[0]..=VISIBLE[1]).contains(&s[0]) && (VISIBLE[2]..=VISIBLE[3]).contains(&s[1]))
+            });
+            if !seen {
+                stat.entry(d.kind).or_default()[6] += 1;
+                by_name.entry(format!("{} (off screen)", mine_parts[i].record.name)).or_default()[2] += 1;
+            }
+            if seen && std::env::var_os("LOCKSTEP_FRAME_EXTRA").is_some() {
+                println!("  extra in view: {} {} vertices at ({}, {}, {})", mine_parts[i].record.name, mine_parts[i].batch.count, d.world[3], d.world[7], d.world[11]);
+            }
         }
     }
     if std::env::var_os("LOCKSTEP_FRAME_DETAIL").is_some() {
+        let mut totals: BTreeMap<String, [usize; 2]> = BTreeMap::new();
+        for l in &theirs {
+            totals.entry(l.candidates[0].record.name.clone()).or_default()[0] += 1;
+        }
+        for p in &mine_parts {
+            totals.entry(p.record.name.clone()).or_default()[1] += 1;
+        }
+        for (n, c) in totals.iter().filter(|(n, c)| c[0] != c[1] && !n.starts_with("wall_")) {
+            println!("  totals {n}: log {}, engine {}", c[0], c[1]);
+        }
         for (n, c) in &by_name {
             println!("  {n}: matrix off {}, missing {}, extra {}", c[0], c[1], c[2]);
         }
+    }
+    if let (Some(pr), true) = (projection, view.len() >= 12) {
+        // the log's own draws' places on the screen: the margin they need
+        let mut lo = [f32::MAX; 2];
+        let mut hi = [f32::MIN; 2];
+        for l in theirs.iter().filter(|l| l.kind != Kind::LotList) {
+            if let Some(s) = housefire::scene::Camera::on_screen(&view[..12].try_into().unwrap(), &pr, [l.world[3], l.world[7], l.world[11] + 1.0]) {
+                for k in 0..2 {
+                    lo[k] = lo[k].min(s[k]);
+                    hi[k] = hi[k].max(s[k]);
+                }
+            }
+        }
+        println!("frame draws: the log's draws' places on the screen: x {:.3} to {:.3}, y {:.3} to {:.3}", lo[0], hi[0], lo[1], hi[1]);
     }
     println!("frame draws, tick {tick}: set aside (out of scope): {counts:?}");
     let total = |j: usize| stat.values().map(|s| s[j]).sum::<usize>();
@@ -304,4 +360,5 @@ pub fn frame_draws(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quic
     line("DIFFERENT (matched, matrix off)", 3);
     line("missing (log's, not in the engine's)", 4);
     line("extra (engine's, not drawn by the log)", 5);
+    line("  of them off screen (camera culling)", 6);
 }
