@@ -167,11 +167,26 @@ fn main() -> ExitCode {
     // the Sims' own pixels: where the last draw is a skinned part or the portrait's; and the
     // portrait's whole square, backdrop included
     compare("Sims' own pixels (skinned parts and the portrait's draws)", &picture.rgba, &reference, |p| picture.ids[p] != 0 && matches!(class_at(picture.ids[p]), Class::Skinned | Class::Overlay));
-    let portrait = housefire_render::scene::PORTRAIT_VIEWPORT;
-    compare("portrait square (the viewport)", &picture.rgba, &reference, |p| {
-        let (x, y) = ((p % WIDTH as usize) as u32, (p / WIDTH as usize) as u32);
-        (portrait.x..portrait.x + portrait.width).contains(&x) && (portrait.y..portrait.y + portrait.height).contains(&y)
-    });
+    if std::env::var_os("HF_SIMS").is_some() {
+        let mut by: BTreeMap<String, (u64, u64)> = BTreeMap::new();
+        for (p, &id) in picture.ids.iter().enumerate().filter(|x| *x.1 != 0 && matches!(class_at(*x.1), Class::Skinned | Class::Overlay)) {
+            let off = (0..3).any(|c| (i32::from(picture.rgba[p * 4 + c]) - i32::from(reference[p * 4 + c])).abs() > 4);
+            let e = by.entry(format!("{} strip {}", scene.drawn[id as usize - 1].model, scene.drawn[id as usize - 1].strip)).or_default();
+            e.0 += 1;
+            e.1 += u64::from(off);
+        }
+        for (k, v) in by {
+            println!("  SIM {k}: {} px, {} off", v.0, v.1);
+        }
+    }
+    // the portrait's viewport as the log has it, in whole pixels
+    if let Some(v) = scene.frame.draws.iter().find_map(|d| d.viewport) {
+        let (px, py, pw, ph) = v.pixels();
+        compare("portrait square (the logged viewport)", &picture.rgba, &reference, |p| {
+            let (x, y) = ((p % WIDTH as usize) as i32, (p / WIDTH as usize) as i32);
+            (px..px + pw as i32).contains(&x) && (py..py + ph as i32).contains(&y)
+        });
+    }
     compare("shadows' own pixels", &picture.rgba, &reference, |p| picture.late_ids[p] != 0 && class_at(picture.late_ids[p]) == Class::Shadow);
     // where the error is: the models whose pixels are furthest off
     let mut by_model: BTreeMap<String, (u64, u64, [i64; 3])> = BTreeMap::new();

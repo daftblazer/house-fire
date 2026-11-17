@@ -1819,12 +1819,12 @@ cover last, against the reference; frame 2400, 2401 the same to a pixel or two):
 
 | class (pixels it covers last) | pixels | within 4 | PSNR |
 |---|---|---|---|
-| rigid draws (strips and display lists) | 79,400 | 97.61% (1,900 beyond) | 30.79 dB |
+| rigid draws (strips and display lists) | 79,447 | 97.62% (1,890 beyond) | 30.87 dB |
 | floors' own pixels | 205,803 | 82.57% | 25.87 dB |
-| Sims' own pixels (skinned parts, the portrait's draws) | 1,517 | 0.13% (no texture) | 12.37 dB |
-| the portrait's square (viewport) | 3,136 | 51.88% | 14.22 dB |
-| shadows' own pixels (the last Z-off draw), the Sims' included | 32,189 | 67.71% | 27.30 dB |
-| the whole frame | 286,720 | 86.30% | 26.21 dB |
+| Sims' own pixels (skinned parts, the portrait's draws) | 1,470 | 88.50% (169 beyond) | 21.62 dB |
+| the portrait's square (the logged viewport) | 3,080 | 93.99% | 22.28 dB |
+| shadows' own pixels (the last Z-off draw), the Sims' included | 32,189 | 67.73% | 27.31 dB |
+| the whole frame | 286,720 | 86.77% | 26.74 dB |
 
 (Before the floors and shadows: rigid 92.93%, the whole frame 28.21%. Before the Sims (R2b): rigid
 93.96% with the portrait's square the road's, floors 82.54%, shadows 67.61%, whole 85.76%.)
@@ -1977,25 +1977,38 @@ vertices) have no model found: their first position bytes are not a model's (the
 vertices, probably), so they are not drawn, and two of them have a '+' record that is not compared.
 
 The portrait. The 57 overlay draws are the Sim's portrait in the corner (the head, hair, glasses
-and jacket: skinned parts, drawn through their own camera, `use_view`, and a projection of
-(8.144, 0, 8.144, 0, -0.001, -0.5005): 1:1, a square viewport), after the lot's draws, over the
-road. The viewport and the backdrop are not in the log: GXSetViewport's six floats are in the
-render context at +0x6D4 (`ERC_ApplyState`'s applied copy), which the ';' records do not hold, and
-no '}' record shows a GXCopyTex or a scissor. Fitted from the reference frames
-(`PORTRAIT_VIEWPORT` 49, 347, 56 x 56; the backdrop's rectangle `PORTRAIT_BACKDROP` 50, 347, 54 x
-56, colour (218, 238, 254), a fill before the portrait's draws: the 'g' records G196 and G197 at
-the same place are display-list calls, not decoded, and may be it). A record needed to take them
-from the log: the ';' record gaining the context's +0x6D4 (six floats) and the 2D layer's
-quad (the two display lists' bytes). The renderer takes a per-draw projection and viewport
-(`Draw::projection`, `Draw::viewport`; a draw with a viewport clears the depth there first, and the
-frame's backdrop is filled once) and the projection is now in the per-draw record, not a push
-constant. The portrait's silhouette matches the reference's (95% of the pixels not the backdrop's
-agree), the rigid figure goes 93.96 to 97.61%.
+and jacket: skinned and rigid parts, drawn through their own camera, `use_view`, and a projection of
+(8.144, 0, 8.144, 0, -0.001, -0.5005): 1:1), after the lot's draws, over the road. Its viewport is
+the state record's (`StateRec::viewport`, the context's +0x6D4: left, top, width, height, near,
+far): (49.92, 346.30, 54.08, 55.55, 0, 1) on the portrait's draws, the lot's (0, 0, 640, 448)
+elsewhere; a draw takes its own state's, as a float viewport with the scissor its whole pixels
+(`Viewport::pixels`). The fitted 49, 347, 56 x 56 square it replaces was a pixel and a half off,
+and that was most of what looked wrong: with the logged viewport the glasses, the hair's edge and
+the face parts line up (Sims' pixels 38.5% with the square, 88.5% with the viewport). The backdrop
+is still fitted: `PORTRAIT_BACKDROP` 50, 347, 54 x 56, colour (218, 238, 254), a fill before the
+portrait's draws. The 2D layer draws it (the 'g' records G196 and G197 at the same place are
+display-list calls whose bytes the log does not hold; their states have viewports shifted by half a
+pixel, 50.42, 346.80). To take it from the log: the bytes of the two display lists (at the
+addresses in the records' words 1 and 5) and their texture. The renderer takes a per-draw
+projection and viewport (`Draw::projection`, `Draw::viewport`; a draw with a viewport clears the
+depth there first, and the frame's backdrop is filled once) and the projection is in the per-draw
+record, not a push constant.
 
-What is left. The Sims' own pixels (1,517: 1,457 the portrait, 60 in the house, the rest hidden by
-the walls) are 0.13% within 4: their texture is made at run time, a 128 x 128 C8 image with two
-palettes in `x` records (hash only: the image, its palettes and how the original composes the face,
-hair and clothes from `rletextu.arc` are not in the log), so the skinned and overlay draws
-are drawn white and lit (the frame's "texture not found" draws go from 56 to 194, 138 of them the Sims'). Composing the Sim's texture
-is the next step (R2c); until then the figure cannot reach 85%. The Sims' shadows are in the
-shadows' class now (67.61 to 67.71%).
+The Sims' textures (R2b2). A Sim's skin, face, hair and clothes are one 128 x 128 C8 image made at
+run time, in no archive; `Log::texels` ('`') holds its first level (hash, bytes) and `Log::tlut_loads`
+('{', GXLoadTlut) the palette in each hardware slot. A texture object's TLUT name (the word at
++0x18 of the 'l' record's object) is the slot, and the palette is the latest load of that slot
+before the draw (`tlut_loads`' tick and strips_before: slot 11 at strip 700, 12 at 779, 15 at 1440
+in frame 2400); the same image is loaded through different slots by different draws (names 12 and
+15 for the male Sim's) with equal entries. The palette is RGB5A3 (the GXTlutObj's format word,
+bits 10-11 = 2: `TlutLoadRec::format` checked: the entries start 0x8000, 0x8c42, ...: opaque
+colours), one palette, not the archive's textures' two IA8 palettes (no second map is bound and
+no 'l' of the Sims' draws names a second palette): the plain decode, `runtime_levels` in scene.rs
+(decoded once for each hash and palette). With it the skinned and overlay draws have all their
+textures (0 draws "not found", from 194).
+
+What is left. The Sims' own pixels (1,470: 1,410 the portrait, 60 in the house) are 88.50% (frame
+2401: 89.05%). The 169 beyond are not broken down by part yet (the before-viewport breakdown had the hair and the face parts as the
+largest; unverified now); the portrait square is 93.99%. Three skinned strips have no part
+found (above), and the backdrop is fitted. The Sims' shadows are in the shadows' class (67.61 to
+67.73%).

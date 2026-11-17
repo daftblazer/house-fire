@@ -274,12 +274,20 @@ pub enum Lighting {
 }
 
 /// A rectangle of the picture, in pixels from the top left (GXSetViewport's).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Viewport {
-    pub x: u32,
-    pub y: u32,
-    pub width: u32,
-    pub height: u32,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+impl Viewport {
+    /// The whole pixels the viewport touches (the scissor): left, top, width, height.
+    pub fn pixels(&self) -> (i32, i32, u32, u32) {
+        let (x0, y0) = (self.x.floor(), self.y.floor());
+        (x0 as i32, y0 as i32, ((self.x + self.width).ceil() - x0) as u32, ((self.y + self.height).ceil() - y0) as u32)
+    }
 }
 
 #[derive(Clone, Debug)]

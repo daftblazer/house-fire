@@ -618,15 +618,17 @@ impl<'g> Renderer<'g> {
             for (i, draw) in frame.draws.iter().enumerate() {
                 if draw.viewport != last_viewport {
                     // an inner viewport (the interface's portrait) draws on a cleared depth buffer
-                    let v = draw.viewport.unwrap_or(Viewport { x: 0, y: 0, width: w, height: h });
-                    let rect = vk::Rect2D { offset: vk::Offset2D { x: v.x as i32, y: v.y as i32 }, extent: vk::Extent2D { width: v.width, height: v.height } };
-                    d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: v.x as f32, y: v.y as f32, width: v.width as f32, height: v.height as f32, min_depth: 0.0, max_depth: 1.0 }]);
+                    let v = draw.viewport.unwrap_or(Viewport { x: 0.0, y: 0.0, width: w as f32, height: h as f32 });
+                    let (px, py, pw, ph) = v.pixels();
+                    let rect = vk::Rect2D { offset: vk::Offset2D { x: px, y: py }, extent: vk::Extent2D { width: pw, height: ph } };
+                    d.cmd_set_viewport(cb, 0, &[vk::Viewport { x: v.x, y: v.y, width: v.width, height: v.height, min_depth: 0.0, max_depth: 1.0 }]);
                     d.cmd_set_scissor(cb, 0, &[rect]);
                     if draw.viewport.is_some() {
                         let clear = [vk::ClearAttachment::default().aspect_mask(vk::ImageAspectFlags::DEPTH).clear_value(vk::ClearValue { depth_stencil: vk::ClearDepthStencilValue { depth: 1.0, stencil: 0 } })];
                         d.cmd_clear_attachments(cb, &clear, &[vk::ClearRect { rect, base_array_layer: 0, layer_count: 1 }]);
                         if let Some((b, rgb)) = frame.backdrop {
-                            let rect = vk::Rect2D { offset: vk::Offset2D { x: b.x as i32, y: b.y as i32 }, extent: vk::Extent2D { width: b.width, height: b.height } };
+                            let (bx, by, bw, bh) = b.pixels();
+                            let rect = vk::Rect2D { offset: vk::Offset2D { x: bx, y: by }, extent: vk::Extent2D { width: bw, height: bh } };
                             let colour = [vk::ClearAttachment::default().aspect_mask(vk::ImageAspectFlags::COLOR).color_attachment(0).clear_value(vk::ClearValue { color: vk::ClearColorValue { float32: [f32::from(rgb[0]) / 255.0, f32::from(rgb[1]) / 255.0, f32::from(rgb[2]) / 255.0, 1.0] } })];
                             d.cmd_clear_attachments(cb, &colour, &[vk::ClearRect { rect, base_array_layer: 0, layer_count: 1 }]);
                         }

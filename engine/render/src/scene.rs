@@ -9,7 +9,7 @@ use housefire::disc::Disc;
 use housefire::draw::{Part, PartIndex};
 use housefire::model::SubModel;
 use housefire::texture::{self, Kind};
-use housefire::tree_log::{LightsRec, Log, MaterialRec, SkinVerticesRec, StateRec, StripRec, StripVertex, TexLoadRec};
+use housefire::tree_log::{LightsRec, Log, MaterialRec, SkinVerticesRec, StateRec, StripRec, StripVertex, TexLoadRec, TlutLoadRec};
 use std::collections::{BTreeMap, HashMap};
 
 /// The alpha (of 255) below which a textured opaque pixel is not drawn, for a log without the
@@ -22,19 +22,19 @@ pub const ALPHA_REF: u8 = 128;
 /// those draws cover (`docs/assets.md`, "The renderer"); the blend state itself is not logged.
 pub const LAYER_BLENDED: u8 = 0x40;
 
-/// The interface's portrait viewport of the home lot's frames (pixels from the top left): a
-/// square 56 pixels wide, read off the reference frames (the portrait's pixels in
-/// `world_02400.png`: 49..104 by 347..402). Not in the log: GXSetViewport's six floats are in the
-/// render context at +0x6D4 (`ERC_ApplyState`'s applied copy), which the ';' records do not
-/// carry (`docs/assets.md`, "The renderer"). Fitted for these frames.
-pub const PORTRAIT_VIEWPORT: Viewport = Viewport { x: 49, y: 347, width: 56, height: 56 };
+/// Whether a state's viewport (`StateRec::viewport`: left, top, width, height, near, far) is
+/// an inner one: the lot's is the whole 640 by 448 picture.
+fn inner_viewport(v: &[f32; 6]) -> Option<Viewport> {
+    (v[2] < 640.0 || v[3] < 448.0).then_some(Viewport { x: v[0], y: v[1], width: v[2], height: v[3] })
+}
 
-/// The portrait's backdrop: the rectangle behind the head, filled before its draws. Its pixels
-/// are one colour in the reference (`PORTRAIT_BACKDROP_COLOUR`, 54 pixels wide from x 50 and 56
+/// The portrait's backdrop: the rectangle behind the head, filled before its draws (the 2D layer's
+/// quads at the same place use viewports shifted half a pixel, `StateRec::viewport`; the quads'
+/// vertices are in two display lists the log does not hold). Its pixels are one colour in the reference (`PORTRAIT_BACKDROP_COLOUR`, 54 pixels wide from x 50 and 56
 /// tall from y 347, read off `world_02400.png`: the dark shoulders cover its bottom rows). It is
 /// not one of the strips the log records (the two display-list calls ahead of the portrait's
 /// draws, 'g' records G196 and G197, are the 2D layer's and not decoded); fitted for these frames.
-pub const PORTRAIT_BACKDROP: Viewport = Viewport { x: 50, y: 347, width: 54, height: 56 };
+pub const PORTRAIT_BACKDROP: Viewport = Viewport { x: 50.0, y: 347.0, width: 54.0, height: 56.0 };
 /// The backdrop's colour in 8-bit RGB, the reference's own (218, 238, 254).
 pub const PORTRAIT_BACKDROP_COLOUR: [u8; 3] = [218, 238, 254];
 
@@ -531,6 +531,27 @@ fn floor_mesh(vertices: &[StripVertex]) -> MeshData {
     mesh
 }
 
+/// A run-time texture's one level from its logged texels (`Log::texels`), through the palette
+/// loaded in its TLUT slot for the paletted formats (GX C4 8, C8 9; the palette's own format from
+/// the GXTlutObj).
+fn runtime_levels(log: &Log, hash: u64, palette: Option<&TlutLoadRec>) -> Option<Vec<(u32, u32, Vec<u32>)>> {
+    let t = log.texels.iter().find(|t| t.hash == hash)?;
+    let (w, h) = (u32::from(t.width), u32::from(t.height));
+    let texels = match t.format {
+        8 | 9 => {
+            let p = palette?;
+            let kind = if t.format == 8 { Kind::Palette4 } else { Kind::Palette8 };
+            let bytes: Vec<u8> = p.entries.iter().flat_map(|e| e.to_be_bytes()).collect();
+            texture::decode_indexed(kind, w, h, &t.bytes, &bytes, p.format())?
+        }
+        5 => texture::decode_level(Kind::Bits16, w, h, &t.bytes)?,
+        6 => texture::decode_level(Kind::Bits32, w, h, &t.bytes)?,
+        14 => texture::decode_level(Kind::Blocks, w, h, &t.bytes)?,
+        _ => return None,
+    };
+    Some(vec![(w, h, texels)])
+}
+
 /// Applies the texture loads before the `n`th to the device's two texture maps.
 fn load_until<'l>(loads: &'l [TexLoadRec], next: &mut usize, n: usize, state: &mut [Option<&'l TexLoadRec>; 2]) {
     while *next < n.min(loads.len()) {
@@ -544,20 +565,36 @@ fn load_until<'l>(loads: &'l [TexLoadRec], next: &mut usize, n: usize, state: &m
 #[derive(Default)]
 struct TextureCache {
     ids: HashMap<u64, Option<TextureId>>,
+    /// Run-time textures by their hash and their palette's.
+    runtime: HashMap<(u64, u64), Option<TextureId>>,
     list: Vec<Vec<(u32, u32, Vec<u32>)>>,
 }
 
 impl Assets {
     /// What the device had bound to its first `layers` texture maps, as the layers read it.
-    fn bind_textures(&self, log: &Log, tick: u32, state: &[Option<&TexLoadRec>; 2], layers: usize, cache: &mut TextureCache, info: &mut DrawInfo) -> [Option<TextureRef>; 2] {
+    fn bind_textures(&self, log: &Log, when: (u32, usize), state: &[Option<&TexLoadRec>; 2], layers: usize, cache: &mut TextureCache, info: &mut DrawInfo) -> [Option<TextureRef>; 2] {
+        let (tick, at) = when;
         let mut bound: [Option<TextureRef>; 2] = [None, None];
         for slot in 0..layers.min(2) {
             let Some(load) = state[slot] else { continue };
             let image = load.image();
             let x = log.textures.iter().rfind(|x| x.image == image && x.tick <= tick).or_else(|| log.textures.iter().find(|x| x.image == image));
             let id = x.and_then(|x| {
-                *cache.ids.entry(x.hash).or_insert_with(|| {
-                    self.decode(x.hash).map(|levels| {
+                if self.by_hash.contains_key(&x.hash) {
+                    return *cache.ids.entry(x.hash).or_insert_with(|| {
+                        self.decode(x.hash).map(|levels| {
+                            cache.list.push(levels);
+                            TextureId(cache.list.len() as u32 - 1)
+                        })
+                    });
+                }
+                // made at run time (a Sim's): its texels are in the log, with the palette its
+                // object's TLUT name had loaded by this draw
+                let name = u32::from_be_bytes(load.obj[24..28].try_into().unwrap());
+                let palette = log.tlut_loads.iter().rfind(|t| t.slot == name && (t.tick, t.strips_before) <= (tick, at));
+                let key = (x.hash, palette.map_or(0, |t| fnv1a(&t.entries.iter().flat_map(|e| e.to_be_bytes()).collect::<Vec<u8>>())));
+                *cache.runtime.entry(key).or_insert_with(|| {
+                    runtime_levels(log, x.hash, palette).map(|levels| {
                         cache.list.push(levels);
                         TextureId(cache.list.len() as u32 - 1)
                     })
@@ -671,7 +708,7 @@ impl Assets {
                     let masks = st.is_some_and(|s| s.pe[0] & 0xFF_FFFF != 0 && s.pe[0] & 8 == 0);
                     let mut info = DrawInfo { class: if masks { Class::FloorMask } else { Class::Floor }, strip: k, model: format!("g{j}"), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None, skin: None };
                     let own = gap_materials.get(i).filter(|_| gap_materials.len() >= gap_floors.len());
-                    let bound = self.bind_textures(log, tick, &texture_state, own.map_or(1, |m| m.layers as usize), &mut cache, &mut info);
+                    let bound = self.bind_textures(log, (tick, k + 1), &texture_state, own.map_or(1, |m| m.layers as usize), &mut cache, &mut info);
                     let mut material = match own {
                         Some(m) => material_of(m, true, bound).0,
                         None => Material { combine: Combine::Modulate { unlit: false }, layers: [bound[0], None], blend: Blend::Opaque, cull: Cull::None, depth_test: Some(Compare::LEQUAL), depth_write: true, alpha_test: None, write_colour: true, write_alpha: true, dst_alpha: None, layer1_from_position: None, sphere: None },
@@ -740,12 +777,14 @@ impl Assets {
                     all.push(info);
                     continue;
                 };
-                let bound = self.bind_textures(log, tick, &texture_state, m.layers as usize, &mut cache, &mut info);
+                let bound = self.bind_textures(log, (tick, k + 1), &texture_state, m.layers as usize, &mut cache, &mut info);
                 let lighting = lighting_of(lr);
                 let (mut material, unsupported) = material_of(m, matches!(lighting, Lighting::Lit { .. } | Lighting::VertexColours), bound);
                 // the draw's own state: the first applied after its record, before the next strip
+                let mut draw_viewport = None;
                 if let Some(st) = states.get(&(k + 1)).and_then(|v| v.iter().find(|s| s.tick == tick)) {
                     material = with_state(material, st);
+                    draw_viewport = inner_viewport(&st.viewport);
                     if class == Class::Shadow {
                         material = shadow_of(material);
                     }
@@ -759,7 +798,7 @@ impl Assets {
                     world,
                     bones: skin.map(|i| Box::new(log.skins[i].bones)),
                     projection: overlay.then_some(use_projection).flatten(),
-                    viewport: overlay.then_some(PORTRAIT_VIEWPORT),
+                    viewport: overlay.then_some(draw_viewport).flatten(),
                     view: Some(view),
                     material,
                     lighting,
@@ -826,7 +865,7 @@ mod tests {
     #[test]
     fn pixel_engine_registers_set_the_write_masks_and_constant_alpha() {
         let base = Material { combine: Combine::Vertex, layers: [None, None], blend: Blend::Opaque, cull: Cull::None, depth_test: None, depth_write: false, alpha_test: None, write_colour: true, write_alpha: true, dst_alpha: None, layer1_from_position: None, sphere: None };
-        let st = StateRec { tick: 0, context: 0, mtx_mode: 0, strips_before: 0, others_before: 0, z: (false, 3, false), alpha: (7, 0, 1, 7, 0), z_before_tex: false, blend: [1, 2, 0, 0], word574: 0, blend_flags: 0x148, cull: 0, pe: [0x4100_0215, 0x4200_0100, 0, 0] };
+        let st = StateRec { tick: 0, context: 0, mtx_mode: 0, strips_before: 0, others_before: 0, z: (false, 3, false), alpha: (7, 0, 1, 7, 0), z_before_tex: false, blend: [1, 2, 0, 0], word574: 0, blend_flags: 0x148, cull: 0, pe: [0x4100_0215, 0x4200_0100, 0, 0], tex_mtx: [[0.0; 12]; 2], viewport: [0.0; 6] };
         // the mask pass: alpha only, constant alpha 0
         let m = with_state(base, &st);
         assert_eq!((m.write_colour, m.write_alpha, m.dst_alpha), (false, true, None));
