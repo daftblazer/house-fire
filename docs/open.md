@@ -24,7 +24,7 @@ engineering of the original's code, not more fitting. The list below this sectio
    marks; 20,153 / 2,772 uses, all the log's): home.log 5,519, club.log 29,895 (Animate 44 the
    bulk of both), home-full 1,556, club-full 3,095. The largest kinds now: home-full the
    frames' parameters 469, Relationship2 26 107, places with no native walk 224, scope 8 152,
-   scope 18 116; club-full Animate 511 (470 with no archive animation, 41 different: the preload set by the lot's house number, 2026-11-17; 40 of them after the held frame), 22 189,
+   scope 18 116; club-full Animate 511 (470 with no archive animation, 1 different: the preload set by the lot's house number and the held frame's speed, 2026-11-17), 22 189,
    26 146, scope 18 252, routing slots 200. IdleForInput (17) native since as well (primitives.md):
    home-full 1,511, club-full 2,295. Relationship2 (26) native since: home.log 5,362, club.log
    28,937, home-full 1,399, club-full 2,137. `replay`'s "primitives by opcode"
@@ -36,9 +36,12 @@ engineering of the original's code, not more fitting. The list below this sectio
    The replay's animation frames are placed by it (home 8,598 of 8,598, club all but the 42
    beside menu steps; loop.md 5e h). Left, each now a matter of using it: the 20 walking places a frame early or late (plan.md "Next"); the club's laser
    place after tick 6; the male's head a tick behind; which bone set a skinned draw uses (296
-   of 4,712); which loads pause whose Animate (primitives.md 412-418). Unread: the held frame
-   (fn_80239280 says no tick and the clock is set to 0: club tick 3204, at the change into the
-   fast mode, one frame more than the native clock), and the frame function's own order of
+   of 4,712); which loads pause whose Animate (primitives.md 412-418). The held frame (club
+   tick 3204, 2026-11-17) is the player's input: a speed change made in a frame that runs no
+   tick (the clock at 3 ms, 36 after the frame) holds that frame (no tick, the clock afresh)
+   and plays it at the speed before; one made in a tick's frame (1010, 1236, 3459, 5726) does
+   not. Which frame the press came in is the input (the log's count); the held frame's speed is
+   native (`AnimReplay::held`): club Animate different 41 -> 1. Unread: the frame function's own order of
    tick, animation and draw (fn_8015F4B4 and its callers 800851A4, 80064794).
 3. **The planner and the walk, natively and whole.** The pieces agree where the log is between
    them; free, the walk parts at six frames and stays off (the door's fast mode, a ramp, two

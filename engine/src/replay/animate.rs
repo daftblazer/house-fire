@@ -4,6 +4,7 @@ use crate::library::Library;
 use crate::tree_log::{Log, StepRec};
 use crate::{FileId, TreeId};
 use super::study::{env, has};
+use super::atoi;
 
 /// The Animate primitive run natively through the engine's `anim::Animator`, its Sims' plays
 /// stepped a frame at a time: the frames placed among the steps by the native frame clock
@@ -30,6 +31,9 @@ pub(super) struct AnimReplay {
     pub(super) own: Option<BTreeMap<u32, Vec<(usize, f32)>>>,
     pub(super) owner_of: BTreeMap<u32, u32>,
     pub(super) tree_file: HashMap<TreeId, FileId>,
+    /// The held frames (a speed change in a frame that ran no tick), by number: their speed,
+    /// the one before the change.
+    pub(super) held: BTreeMap<usize, f32>,
 }
 
 impl AnimReplay {
@@ -38,6 +42,7 @@ impl AnimReplay {
             return None;
         }
         let mut frames: Vec<(u32, usize)> = Vec::new();
+        let mut held: BTreeMap<usize, f32> = BTreeMap::new();
         let mut last = None;
         for t in &log.tracks {
             if last != Some(t.frame) {
@@ -58,6 +63,14 @@ impl AnimReplay {
                 // (where the native clock differs, the log's count, so that the run goes on)
                 let n = if t.same() { t.frames } else { t.log_frames };
                 let at = log.tick_steps.get(t.tick as usize).copied().unwrap_or(log.steps.len());
+                // A speed change the player made in a frame that ran no tick (club 3204): that
+                // frame is held (no tick, the clock afresh) and played at the speed before;
+                // where the change came (the frame) is the player's input, the count the log's.
+                if t.speed != t.speed_before && n > t.frames {
+                    for k in 0..(n - t.frames) as usize {
+                        held.insert(frames.len() + k, crate::routing::speed_factor(i32::from(t.speed_before)));
+                    }
+                }
                 frames.extend(std::iter::repeat_n((t.tick, at), n as usize));
             }
             let in_play = frames.len() - before_play;
@@ -105,7 +118,7 @@ impl AnimReplay {
         }) {
             let sp: Vec<_> = log.speeds.iter().filter(|r| r.tick >= a && r.tick <= b && r.before != r.after).map(|r| (r.tick, format!("{:x}", r.owner), r.before, r.after)).collect();
             println!("  speed changes {sp:?}");
-            for t in log.tracks.iter().filter(|t| t.controller == c && t.tick >= a && t.tick <= b) {
+            for t in log.tracks.iter().filter(|t| (c == 0 || t.controller == c) && t.tick >= a && t.tick <= b) {
                 println!("  track t {} frame {} track {} anim {:x} speeds {:?} place {:?} ran {:?} done {:?}", t.tick, t.frame, t.track, t.anim, t.speeds, t.place, t.ran, t.done);
             }
         }
@@ -135,7 +148,7 @@ impl AnimReplay {
             }
         }
         let m = cat.animator();
-        Some(AnimReplay { cat, m, frames, next: 0, misses, animating: BTreeMap::new(), fast, paused, own, owner_of, tree_file })
+        Some(AnimReplay { cat, m, frames, next: 0, misses, animating: BTreeMap::new(), fast, paused, own, owner_of, tree_file, held })
     }
 
     /// The frames before log step `step`.
@@ -178,11 +191,17 @@ impl AnimReplay {
             }
             let stopped = self.misses.get(&tick);
             let animating = self.animating.get(&tick);
+            let held = self.held.get(&(*next - 1)).copied();
             let fast = self.fast.contains(&tick);
             let all_paused = self.paused.contains(&tick);
+            if env("REPLAY_SHOW_FRAME_SPEED").and_then(|v| v.split_once(',').map(|(a, b)| (atoi(a) as u32, atoi(b) as u32))).is_some_and(|(a, b)| (a..=b).contains(&tick)) {
+                println!("frame {} tick {tick} at {at}: fast {fast} paused {all_paused} stopped {:?}", *next - 1, stopped.map(|s| s.len()));
+            }
             m.frame(|sim| {
                 if all_paused || stopped.is_some_and(|st| st.contains(&sim) || animating.is_some_and(|a| a.contains(&sim))) {
                     0.0
+                } else if let Some(v) = held {
+                    v
                 } else if fast {
                     5.0
                 } else {
@@ -238,6 +257,9 @@ pub(super) fn native_clock(log: &Log) -> Vec<ClockTick> {
             }
             let frames = clock.frames_to_tick_at(crate::routing::speed_factor(i32::from(speed)));
             let t = ClockTick { tick, speed_before, speed, frames, log_frames: frame.wrapping_sub(frame_before), ms: clock.ms, log_ms };
+            if speed != speed_before && has("REPLAY_SHOW_SPEED_CHANGES") {
+                println!("speed change tick {tick}: {speed_before} -> {speed}, frames native {frames} log {}, ms native {} log {log_ms}, clock before {:?}", t.log_frames, clock.ms, w[0]);
+            }
             if !t.same() {
                 clock.ms = log_ms;
             }
