@@ -7,7 +7,7 @@
 //! game makes of a Sim's skin, face, hair and clothes: `SimSkins`) and, where the engine does
 //! not know it, a Sim's heading.
 
-use crate::engine_scene::{lighting_for, shader_material, shadow_material, shadow_view, Caches, Made, SHADOW_SHEAR_OBJECT};
+use crate::engine_scene::{lighting_for, shader_material, shadow_material, light_shear, shadow_view, sun_shear, Caches, Made};
 use crate::frame::*;
 use crate::scene::{mesh_of, Assets, Class, DrawInfo, Scene, PORTRAIT_BACKDROP, PORTRAIT_BACKDROP_COLOUR};
 use housefire::anim::Catalog;
@@ -276,7 +276,8 @@ impl Assets {
             // flat on the ground (indoors) or sheared along the sun (outdoors)
             let shadow_name = if f.description.adult { "shadow_adult" } else { "shadow_child" };
             if let Some(r) = w.models.parts.record_by_id(name_hash(shadow_name)) {
-                let sview = if room == 0 { shadow_view(&view, sun, SHADOW_SHEAR_OBJECT) } else { shadow_view(&view, [0.0; 3], 1.0) };
+                if std::env::var_os("HF_SIMSHEAR").is_some() { eprintln!("SIMSHEAR {:?} room {room} {:?} lights {}", f.place, light_shear(f.place, &lights.at(f.place[0], f.place[1]).points), lights.at(f.place[0], f.place[1]).points.len()); }
+                let sview = shadow_view(&view, if room == 0 { sun_shear(sun) } else { light_shear(f.place, &lights.at(f.place[0], f.place[1]).points) });
                 let mut parts = Vec::new();
                 self.sim_part_draws(scene, caches, cache, w, r, &bones, None, &Lighting::Black, sview, None, &mut parts);
                 for mut m in parts {

@@ -214,21 +214,61 @@ impl Assets {
 }
 
 /// How far a shadow falls: the shadow draws' view is the camera's with the lot's z sheared onto the
-/// ground, a point at height z moved by z times the sun's x and y over a divisor. The logged views
-/// of frame 2400 (sun (0.8223, -0.2109, -0.5285)) shear by (0.7188, -0.1843) the outdoor objects'
-/// draws (a divisor of 1.144) and by (0.8855, -0.2271) the wall pieces' and fences' (0.9286), none
-/// of them the sun's own vertical part. Fitted at this one clock. The indoor objects' shears
-/// (each a different small vector, from their light sets) are not found: they are not sheared.
-pub const SHADOW_SHEAR_OBJECT: f32 = 1.144;
-pub const SHADOW_SHEAR_WALL: f32 = 0.9286;
+/// ground, a point at height z moved by z times a vector (a, b), the logged views' third column.
+/// What the logged views show (the club and home, `HF_SHEARS`):
+/// - the wall pieces' and fences': the sun's x and y over its vertical part plus 0.4
+///   (`SHADOW_SHEAR_WALL_BASE`): home (sun (0.8223, -0.2109, -0.5285)) 0.9286, the club (sun
+///   (-0.4190, 0.8903, -0.2)) 0.6000, both within 1e-4;
+/// - the outdoor objects' and Sims': `SHADOW_SHEAR_SCALE` times the sun's x and y over its vertical
+///   part plus `SHADOW_SHEAR_BASE` (divisors 1.144 and 0.8239 on the same two suns, fitted to those
+///   two points);
+/// - an indoor draw's: the same form on the sum of the vectors from each light of its light set
+///   to the object's place over the distance to the power `SHADOW_SHEAR_REACH` (an inverse-power
+///   field of the lights, not their colours); 26 of the club's objects within 0.02 of the
+///   logged shear (their length is 0.2 to 0.9), the fitted power 1.7 and the scale and base those
+///   of the sun's.
+pub const SHADOW_SHEAR_WALL_BASE: f32 = 0.4;
+pub const SHADOW_SHEAR_SCALE: f32 = 1.0262;
+pub const SHADOW_SHEAR_BASE: f32 = 0.6455;
+pub const SHADOW_SHEAR_REACH: f32 = 1.7;
 
-/// The view the shadows are drawn through: the camera's `view` after the shear that puts a point
-/// of height z on the ground along the sun's direction `sun`, over `divisor`.
-pub fn shadow_view(view: &Mat3x4, sun: [f32; 3], divisor: f32) -> Mat3x4 {
-    let (a, b) = (sun[0] / divisor, sun[1] / divisor);
+/// The wall pieces' and fences' shear under this sun.
+pub fn wall_shear(sun: [f32; 3]) -> [f32; 2] {
+    let d = sun[2].abs() + SHADOW_SHEAR_WALL_BASE;
+    [sun[0] / d, sun[1] / d]
+}
+
+/// The shear of an object lit by a vector `v` (the sun's direction, or the lights' sum).
+fn object_shear(v: [f32; 3]) -> [f32; 2] {
+    let d = (v[2].abs() + SHADOW_SHEAR_BASE) / SHADOW_SHEAR_SCALE;
+    [v[0] / d, v[1] / d]
+}
+
+/// The outdoor objects' shear under this sun.
+pub fn sun_shear(sun: [f32; 3]) -> [f32; 2] {
+    object_shear(sun)
+}
+
+/// An indoor object's shear: from its floor place `at` and the point lights `points` of its light
+/// set (none: no shear).
+pub fn light_shear(at: [f32; 2], points: &[housefire::lighting::Source]) -> [f32; 2] {
+    let mut v = [0.0f32; 3];
+    for p in points {
+        let d = [at[0] - p.at[0], at[1] - p.at[1], -p.at[2]];
+        let w = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt().powf(-SHADOW_SHEAR_REACH);
+        for k in 0..3 {
+            v[k] += d[k] * w;
+        }
+    }
+    object_shear(v)
+}
+
+/// The view the shadows are drawn through: the camera's `view` after the shear `(a, b)` that puts
+/// a point of height z on the ground.
+pub fn shadow_view(view: &Mat3x4, shear: [f32; 2]) -> Mat3x4 {
     let mut v = *view;
     for r in 0..3 {
-        v[r * 4 + 2] = a * view[r * 4] + b * view[r * 4 + 1];
+        v[r * 4 + 2] = shear[0] * view[r * 4] + shear[1] * view[r * 4 + 1];
     }
     v
 }
@@ -283,9 +323,9 @@ impl Assets {
     /// the wall's divisor along the sun, an outdoor object's by the object's, an indoor one's not.
     pub fn engine_shadows_by_room(&self, scene: &mut Scene, caches: &mut Caches, plan: &Plan, view: &Mat3x4, projection: &[f32; 6], sun: [f32; 3]) -> Vec<Vec<Made>> {
         let view_of = |d: &Planned| match (d.kind, plan.shadow_room(d)) {
-            (Kind::WallPiece, _) => shadow_view(view, sun, SHADOW_SHEAR_WALL),
-            (_, 0) => shadow_view(view, sun, SHADOW_SHEAR_OBJECT),
-            _ => shadow_view(view, [0.0; 3], 1.0),
+            (Kind::WallPiece, _) => shadow_view(view, wall_shear(sun)),
+            (_, 0) => shadow_view(view, sun_shear(sun)),
+            _ => shadow_view(view, light_shear(d.origin, &plan.lights.at_in(d.centre, d.origin).points)),
         };
         let mut by_room: Vec<Vec<Made>> = Vec::new();
         for (k, m) in self.engine_shadows(scene, caches, &plan.models, &plan.shadows, &view_of) {
@@ -869,7 +909,7 @@ mod tests {
         // a view that is the identity: a point of height 1 (the z axis) lands at (a, b) on the
         // ground, the sun's x and y over the divisor
         let view: Mat3x4 = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
-        let v = shadow_view(&view, [0.8, -0.2, -0.5], 0.8);
+        let v = shadow_view(&view, [1.0, -0.25]);
         assert_eq!([v[2], v[6], v[10]], [1.0, -0.25, 0.0]);
         // the ground itself (x, y columns) and the translation are the camera's
         assert_eq!([v[0], v[5], v[3]], [1.0, 1.0, 0.0]);

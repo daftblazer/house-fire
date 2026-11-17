@@ -246,7 +246,8 @@ pub fn shears_engine(plan: &engine_scene::Plan, scene: &Scene) {
         let to_world = |p: [f32; 3]| -> [f32; 3] { let q = [p[0] - cam[3], p[1] - cam[7], p[2] - cam[11]]; [0, 1, 2].map(|c| (0..3).map(|r| cam[4 * r + c] * q[r]).sum::<f32>()) };
         let lit = scene.frame.draws.iter().find(|l| scene.drawn[l.id as usize - 1].class != Class::Shadow && (0..12).all(|i| i == 11 || (l.world[i] - d.world[i]).abs() < 1e-3) && matches!(l.lighting, Lighting::Lit { .. }));
         let logpts = match lit.map(|l| &l.lighting) { Some(Lighting::Lit { points, .. }) => points.iter().map(|p| format!("({:.2},{:.2},{:.2}) c{:?} k0 {} k1 {}", to_world(p.position)[0], to_world(p.position)[1], to_world(p.position)[2], p.colour, p.k0, p.k1)).collect::<Vec<_>>().join(" "), _ => "none".into() };
-        println!("SHEARL {:?} {:?} log lights {}", d.origin, (a, b), logpts);
+        let dirs = match lit.map(|l| &l.lighting) { Some(Lighting::Lit { directionals, .. }) => directionals.iter().map(|q| { let w = (0..3).map(|c| (0..3).map(|r| cam[4 * r + c] * q.to_light[r]).sum::<f32>()).collect::<Vec<_>>(); format!("DIR ({:.3},{:.3},{:.3}) c{:?}", w[0], w[1], w[2], q.colour) }).collect::<Vec<_>>().join(" "), _ => "none".into() };
+        println!("SHEARL {:?} {:?} log lights {} {}", d.origin, (a, b), logpts, dirs);
         println!("SHEARE {} {:?} kind {:?} origin ({:.2},{:.2}) shear ({:.4},{:.4}) room {} sun {} lights {}", scene.drawn[l.id as usize - 1].model, d.object, d.kind, d.origin[0], d.origin[1], a, b, plan.lights.room_of_place(d.origin[0], d.origin[1]), ls.sun.is_some(), pts.join(" "));
     }
 }
