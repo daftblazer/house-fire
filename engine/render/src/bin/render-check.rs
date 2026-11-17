@@ -251,6 +251,15 @@ fn engine_frame(scene: &mut Scene, assets: &Assets, disc: &Disc, log: &housefire
         for f in &figures {
             println!("Sim {} at {:?} heading {} (facing {}) play {:?}{}", f.id, f.place, f.heading, replay.world().find_object(f.id).map_or(0, |o| o.facing()), f.play, if portrait == Some(f.id) { ", the portrait's" } else { "" });
         }
+        // HF_SIMSTATE=1: each Sim's data fields, person data and sprite flags that are not zero (study aid)
+        if std::env::var_os("HF_SIMSTATE").is_some() {
+            for f in &figures {
+                if let Some(o) = replay.world().find_object(f.id) {
+                    let nz = |v: &[i16]| v.iter().enumerate().filter(|x| *x.1 != 0).map(|(i, x)| format!("{i}={x}")).collect::<Vec<_>>().join(" ");
+                    println!("simstate {} level {} x16 {} y16 {} data[{}] pdata[{}] sprite[{}] queue {}", f.id, o.level, o.x16, o.y16, nz(&o.data), nz(&o.person_data), nz(&o.sprite_flags), o.queue.len());
+                }
+            }
+        }
         if std::env::var_os("HF_HEADINGS").is_some() {
             for m in sims::bones_matched(log, tick, &wardrobe, &figures) {
                 println!("bones matched: Sim {} heading {} {} of {}", m.0, m.1, m.2, m.3);

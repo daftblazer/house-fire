@@ -2726,6 +2726,31 @@ the game does not draw her though she is on screen; she alone has data field 34 
 ones, unverified as the cause (about 3,000 px); (3) the pool table's felt: the log's draw is the same record with the
 club's texture `game_pooltable_club_x` (flags 8, 72) where the engine's shader gives `aristoscratch_pool_table`:
 a texture the lot's dataset overrides, not another model record.
+K4 (the club, 72.41% to 80.53% whole; rigid 69.37% to 80.87%, floors 85.80% to 87.81%, shadows 51.18% to 69.17%, Sims 37.26% to 38.06%):
+- an object draws the model its own dataset lists first (`drawlist::object_models`): the club's pool table's ResData
+  names the stock table's model (`AristoScratch_Pool_Table`, id 868669be) while its dataset `RD_game_pooltable_x_club`
+  lists the club's own (`bf4f0a81`, shader `game_pooltable_club_x`, the key word): the felt, 72.41% to 75.44%.
+- an opaque draw tests its texture's alpha (at least the shader's float) only when its first layer's word has bit 4
+  (0x1c: trees, fences, glass, headphones; 0x18 the club's black wood and the DJ booth's grille, which the log draws
+  untested; `engine_scene::LAYER_ALPHA_TEST`), not whenever the texture has clear pixels: the booth's front panel and
+  the door, 75.44% to 76.20%.
+- the logged frame is one display copy past the copy count at its tick (`DISPLAY_COPIES_AFTER_TICK`, 1; at 0.5 77.96%,
+  0.9 80.55%, 1 80.53%, 1.1 79.82%, 2 75.57%): the moving lamps' cones, pools and flares were at the first of the
+  frame's two passes' places (rotation 1-2% off the shown pass), now within 0.1%; 76.20% to 80.53%.
+- the log's frame holds the lot's draws twice (strips below and from 2,146 in this frame: two passes of floors, shadows,
+  objects) and the picture is the second: with the first pass's model draws left out log mode is 97.62% (not 93.79%)
+  and the dance floor 2,165 of 87,447 off (`HF_DROPSTRIP=0,2146`). Log mode itself is unchanged.
+- a layer with lighting `unlit` (the cones, pools, flares, a street light) has lighting off in 9 of the log's 10 such
+  draws; setting it changed no pixel (the combiner ignores the lights for it), so it is not applied.
+Studies (render-check): `HF_MODELMAP=name` (that model's pixels, off ones red, and by texture), `HF_MATS=name` (its draws'
+matrices in draw order), `HF_STATES=1` (draws counted by model, texture, blend, alpha test, lighting), `HF_SHADER=prefix`
+(a shader's layers), `HF_SIMSTATE=1` (each Sim's non-zero fields), `HF_DROPSTRIP=lo,hi`.
+Left (pixels beyond 4 of 286,720: 55,833): the dance floor's draws 23,424 of 86,392 (the cones and pools under the Sims,
+where the Sims' own pixels and the robe Sim are wrong: 6,360 cyan and 11,164 pink cone pixels), the DJ booth 9.2k (its
+moving parts differ in x by 0.03-0.05; the robe Sim and her pink cone over it), the robe Sim (176: drawn by the engine,
+not by the game; her state differs from the other Sims' in data field 34 = 1 and person data 10 = 1000, 15 = 200, 67 = 1;
+no rule found, field 34 is the motives gate's at the club, not a draw flag), the four Sims' headings, the bar 1.2k,
+the portrait square 3k.
 Home: log mode identical; engine mode 97.23% to 97.24% (31 pixels, rigid 2,391 to 2,360 beyond; the cause is not isolated: the objects now
 play their graphic's animation, and the room ambient's colour is the one constant of home's 7:36).
 Left, club engine mode (pixels beyond 4 in every channel of 81,954): the objects whose textures
