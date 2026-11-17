@@ -41,29 +41,23 @@
   TERRAIN_COLOUR_* is fitted; next step: add +0x674 and +0x6A4 to the ';' record), trilinear LOD;
   `shadow_of` (flat black, alpha 127) fitted; the porch near black in the reference;
   birch leaves 1,091 px darker in the reference with no shadow draw after them.
-- **The engine mode's frame at 86.64% within 4, not R1's 91.82%** (render-check HF_ENGINE=1
-  --card, frame 2400, stage 5c; log mode 97.63%; with the log's light sets 89.18%). Left, by
-  pixels beyond: windows 2,394 (the frame lines lose the depth to the wall where the original's
-  win; matrices, meshes and materials equal the log's, order ruled out); walls, window walls,
-  diagonals and fence ~4,700 (14 of 35 wall light sets differ by one light); the money trunk
-  678 and the cheat gnome 78 drawn but not by the original (flags, fields, selectors, ResData,
-  lists, level ruled out; the draw records' 72 bounds bytes undecoded); walnut door 1,009,
-  outer lot 723, lattice door 571, aquarium 207. Still from the log in that mode: the camera,
-  the lot choice, the clock passes. Draw list (LOCKSTEP_FRAME_DRAWS=1039): 570 same, 3
-  DIFFERENT, 26 missing (objects' script animations, sink counter variants, wall caps).
-- **The engine mode's Sims and shadows** (W1, stage 5d): the Sims' skinned parts, their 34
-  shadow draws and the portrait still come from the log (1,551 px, 0.54% of the frame): the
-  controller running the Sims' layers to a tick's pose from a loaded lot, and the run-time
-  skin/clothes texture, are not built. Shadows from the engine at 78.55% (log mode 86.59%):
-  shears fitted at one clock (SHADOW_SHEAR_OBJECT 1.144, _WALL 0.9286, source unknown), the
-  indoor objects' (from their light sets) not made (75 draws unsheared), the diagonal walls'
-  extends forms. The camera from the log's 'c' parameters (no input on a loaded lot). The front
-  wall's foot shows the floor where the reference is dark (the `_garbage` pieces not drawn).
-- **The window's Sims and the device run** (stage 5d): `view` draws no Sims or portrait (the
-  replay runs with no animation catalogue, `cat: None`, so no poses); its shot at tick 1039 is
-  98.89% of render-check's engine mode (3,028 of 3,175 differing pixels the portrait box). The
-  RK3566 run of `view` (aarch64 build, `--ticks 1200 --frame-times`) needs the user's SSH; by
-  the PC's figures the CPU's frame build (~18 ms there) is the risk (docs/assets.md "The budget").
+- **The engine mode's frame at 94.09% rigid, 87.19% whole** (render-check HF_ENGINE=1 --card,
+  frame 2400, after L1-L3 and S1; log mode 97.63 / 88.89%). Left: 15 object meshes' light sets
+  (below); the money trunk 678 and the cheat gnome 78 drawn but not by the original (flags,
+  fields, selectors, ResData, lists, level ruled out; the draw records' 72 bounds bytes
+  undecoded); 3 extra wall pieces at the screen's top edge (culling). Still from the log in
+  that mode: the camera ('c' parameters), the lot choice, the clock passes.
+- **The engine's Sims** (S1): drawn from the engine's poses (Sims' own pixels 88.08%, log mode
+  88.50%; `view`'s shot 99.99% of render-check's). Still from the log: the two 128x128 run-time
+  textures and palettes (`rletextu.arc` composition not read), the cook's heading (the
+  engine's `facing` is 0 where she stands at 6: `headings_from_log`), which Sim the portrait
+  shows, the 'k' frame places, five held objects. Not built: layered tracks (standing loop,
+  face, carry loops, node weights): the male's right arm 0.34 off, neck and head 0.01-0.02.
+  Shadows from the engine 80.54% (log mode 86.59%): shears fitted at one clock
+  (SHADOW_SHEAR_OBJECT 1.144, _WALL 0.9286, source unknown), indoor objects' unsheared.
+- **The device run**: the RK3566 run of `view` (aarch64 build, `--ticks 1200 --frame-times`)
+  needs the user's SSH; by the PC's figures the CPU's frame build (~18 ms there) is the risk
+  (docs/assets.md "The budget").
 - **15 object meshes' light sets** (engine mode, L3): the trash can 2, a deckchair 1, the lattice
   door 1, two cacti 3 each, two rose bushes 2 each: the grid point (a tie at x.5: (19.5, 6.5)
   takes x 20, (19.5, 10.5) x 19). The original's lookup (0x80169ABC) rounds a position the caller
