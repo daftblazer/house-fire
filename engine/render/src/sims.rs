@@ -199,7 +199,7 @@ impl Assets {
             // the tile's, which a position on a tile's half (24.5) tells apart)
             let grid = [f.place[0].floor(), f.place[1].floor()];
             let house_light = {
-                let Lighting::Lit { ambient, mut directionals, points } = lighting_for(&lights.at_in(f.place, grid), &view) else { unreachable!() };
+                let Lighting::Lit { ambient, mut directionals, points } = lighting_for(&lights.at_in(f.place, grid), &view, None) else { unreachable!() };
                 let to_light = std::array::from_fn(|r| view[r * 4] * SIM_FILL.1[0] + view[r * 4 + 1] * SIM_FILL.1[1] + view[r * 4 + 2] * SIM_FILL.1[2]);
                 directionals.push(Directional { colour: [SIM_FILL.0; 3], to_light });
                 Lighting::Lit { ambient, directionals, points }

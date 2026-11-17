@@ -200,9 +200,9 @@ fn main() -> ExitCode {
         } else {
             Vec::new()
         };
-        let lighting = |d: &housefire::drawlist::Draw| {
+        let lighting = |d: &housefire::drawlist::Draw, mat: engine_scene::MaterialFactors| {
             if std::env::var_os("HF_ORACLE").is_none() {
-                return engine_scene::lighting_for(&plan.lights.of(d), &view);
+                return engine_scene::lighting_for(&plan.lights.of(d), &view, mat);
             }
             let near = |a: &[f32; 12]| (0..12).all(|i| (a[i] - d.world[i]).abs() <= 1e-4 * if i % 4 == 3 { 1.0 } else { a[0].abs().max(a[5].abs()).max(a[10].abs()).max(1e-9) });
             match oracle.iter().find(|o| near(&o.0)) {
@@ -254,7 +254,20 @@ fn main() -> ExitCode {
                 let d = &plan.draws[m.from];
                 let Some(o) = oracle.iter().find(|o| o.3 == scene.meshes[m.draw.mesh.0 as usize].vertices.len() && (0..12).all(|i| (o.0[i] - m.draw.world[i]).abs() < 1e-4 * if i % 4 == 3 { 1.0 } else { 0.05 })) else { continue };
                 let Lighting::Lit { points: logged, .. } = &o.1 else { continue };
-                let Lighting::Lit { points: ours, .. } = engine_scene::lighting_for(&plan.lights.of(d), &view) else { continue };
+                let Lighting::Lit { points: ours, .. } = engine_scene::lighting_for(&plan.lights.of(d), &view, None) else { continue };
+                if std::env::var_os("HF_COLOURS").is_some() {
+                    let mut pairs: Vec<String> = Vec::new();
+                    for lp in logged {
+                        let lw = to_world(lp.position);
+                        if let Some(ep) = ours.iter().find(|ep| { let w = to_world(ep.position); (0..3).all(|k| (w[k] - lw[k]).abs() < 1e-2) }) {
+                            pairs.push(format!("{:.3}", lp.colour[0] / ep.colour[0].max(1e-6)));
+                        }
+                    }
+                    let part = plan.models.parts.parts_of(d.part.0).find(|p| p.index == d.part).unwrap();
+                    let mat = shaders.get(&d.shader.unwrap_or(part.batch.hash)).and_then(|sh| sh.material());
+                    pairs.push(format!("material {:?}", mat));
+                    println!("LC {} {} v{} at {:?} ratios {}", m.info.model, m.info.textures[0].clone().unwrap_or_default(), scene.meshes[m.draw.mesh.0 as usize].vertices.len(), d.origin, pairs.join(" "));
+                }
                 if !counted.insert((d.centre[0].to_bits(), d.centre[1].to_bits(), d.edge.map(|e| (e[1][0].to_bits(), e[1][1].to_bits())))) { continue; }
                 let places = |ps: &[frame::Point]| { let mut k: Vec<String> = ps.iter().map(|p| format!("{:.1?}", to_world(p.position))).collect(); k.sort(); k };
                 let (l, e) = (places(logged), places(&ours));
@@ -266,7 +279,7 @@ fn main() -> ExitCode {
                     t.1 += 1;
                     // which whole-tile grid points near the place give the log's set
                     let hits: Vec<(i32, i32)> = (-3..=3).flat_map(|dx| (-3..=3).map(move |dy| (dx, dy))).map(|(dx, dy)| (d.origin[0].round() as i32 + dx, d.origin[1].round() as i32 + dy)).filter(|&(x, y)| {
-                        let Lighting::Lit { points, .. } = engine_scene::lighting_for(&plan.lights.at_in(d.centre, [x as f32, y as f32]), &view) else { return false };
+                        let Lighting::Lit { points, .. } = engine_scene::lighting_for(&plan.lights.at_in(d.centre, [x as f32, y as f32]), &view, None) else { return false };
                         places(&points) == l
                     }).collect();
                     println!("LD grid points giving the log's set: {hits:?}");
@@ -295,7 +308,7 @@ fn main() -> ExitCode {
             let mut shown = std::collections::BTreeSet::new();
             for (d, m) in made.iter().map(|m| (&plan.draws[m.from], m)) {
                 if !shown.insert((d.origin[0].to_bits(), d.origin[1].to_bits())) { continue; }
-                let Lighting::Lit { ambient, directionals, points } = engine_scene::lighting_for(&plan.lights.of(d), &view) else { continue };
+                let Lighting::Lit { ambient, directionals, points } = engine_scene::lighting_for(&plan.lights.of(d), &view, None) else { continue };
                 let dirs: Vec<String> = directionals.iter().map(|d| format!("dir {:.3?} to {:.3?}", d.colour, turn_world(d.to_light))).collect();
                 let pts: Vec<String> = points.iter().map(|p| format!("pt {:.2?} col {:.3?} k1 {}", to_world(p.position), p.colour, p.k1)).collect();
                 println!("LE {} at {:?} amb {:.3?} {} {}", m.info.model, d.origin, ambient, dirs.join(" "), pts.join(" "));

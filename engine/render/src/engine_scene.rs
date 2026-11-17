@@ -54,7 +54,7 @@ pub struct Inputs<'a> {
     pub models: &'a Models,
     pub shaders: &'a HashMap<u32, Shader>,
     /// The light set of a draw.
-    pub lighting: &'a dyn Fn(&Planned) -> Lighting,
+    pub lighting: &'a dyn Fn(&Planned, MaterialFactors) -> Lighting,
     /// The view the draws are seen through (the camera's).
     pub view: Mat3x4,
 }
@@ -131,7 +131,7 @@ impl Assets {
             if info.textures[0].as_deref() == Some(PLACEHOLDER_TEXTURE) {
                 continue;
             }
-            let lighting = (input.lighting)(d);
+            let lighting = (input.lighting)(d, shader.and_then(|sh| sh.material()));
             let lit = matches!(lighting, Lighting::Lit { .. } | Lighting::VertexColours);
             let (mut material, unsupported) = match shader {
                 Some(sh) => material_of(&material_record(sh), lit, bound),
@@ -328,19 +328,26 @@ pub const AMBIENT_TINT: f32 = 0.5;
 pub const POINT_K0: f32 = 1.0;
 pub const POINT_RANGE_SCALE: f32 = 0.1;
 
-/// A light colour as the game makes it a byte, back as 0..1 (`scene::lighting_of`).
-fn tinted(colour: [f32; 3], tint: f32) -> [f32; 3] {
-    colour.map(|c| crate::scene::byte(tint * c))
+/// A light colour as the game makes it a byte, back as 0..1 (`scene::lighting_of`): its tint times
+/// the material's own factor for the channel.
+fn tinted(colour: [f32; 3], tint: f32, material: [f32; 3]) -> [f32; 3] {
+    std::array::from_fn(|i| crate::scene::byte(tint * material[i] * colour[i]))
 }
+
+/// A material's (diffuse, ambient) factors as the lights' tints take them (`Shader::material`; a
+/// shader without them lights as 1: the window glass's diffuse is 0.2, the bathtub's 0.5, and the
+/// log's light colours of those draws are the 0.5 tint times it).
+pub type MaterialFactors = Option<([f32; 3], [f32; 3])>;
 
 /// The device's light set for what the engine says lights an object, in the view the draw is
 /// seen through: the ambient and sun (the direction the sun shines in, negated to point at it
 /// and turned by the view) and each light's colour and place in view space.
-pub fn lighting_for(l: &housefire::lighting::Lights, view: &Mat3x4) -> Lighting {
+pub fn lighting_for(l: &housefire::lighting::Lights, view: &Mat3x4, material: MaterialFactors) -> Lighting {
+    let (diffuse, ambient_k) = material.unwrap_or(([1.0; 3], [1.0; 3]));
     let turn = |d: [f32; 3]| -> [f32; 3] { std::array::from_fn(|r| view[r * 4] * d[0] + view[r * 4 + 1] * d[1] + view[r * 4 + 2] * d[2]) };
-    let directionals = l.sun.iter().map(|s| Directional { colour: tinted(s.colour, LIGHT_TINT), to_light: turn(s.direction.map(|v| -v)) }).collect();
-    let points = l.points.iter().map(|p| Point { colour: tinted(p.colour, LIGHT_TINT), position: crate::scene::apply(view, p.at), k0: POINT_K0, k1: p.reach * POINT_RANGE_SCALE }).collect();
-    Lighting::Lit { ambient: tinted(l.ambient, AMBIENT_TINT), directionals, points }
+    let directionals = l.sun.iter().map(|s| Directional { colour: tinted(s.colour, LIGHT_TINT, diffuse), to_light: turn(s.direction.map(|v| -v)) }).collect();
+    let points = l.points.iter().map(|p| Point { colour: tinted(p.colour, LIGHT_TINT, diffuse), position: crate::scene::apply(view, p.at), k0: POINT_K0, k1: p.reach * POINT_RANGE_SCALE }).collect();
+    Lighting::Lit { ambient: tinted(l.ambient, AMBIENT_TINT, ambient_k), directionals, points }
 }
 
 /// What the engine's own state gives for a frame: the lot's model draws.
@@ -623,7 +630,7 @@ impl<'a> Builder<'a> {
         scene.frame.camera = Camera { view, projection };
         scene.frame.backdrop = None;
         let plan = self.lot.plan(world, tick, &view);
-        let lighting = |d: &Planned| lighting_for(&plan.lights.of(d), &view);
+        let lighting = |d: &Planned, mat: MaterialFactors| lighting_for(&plan.lights.of(d), &view, mat);
         let made = self.assets.engine_draws(scene, &mut self.caches, &Inputs { draws: &plan.draws, models: &plan.models, shaders: &self.lot.shaders, lighting: &lighting, view });
         let floors: Vec<(usize, FloorDraws)> = plan.floors.iter().zip(self.assets.engine_floors(scene, &mut self.caches, &plan.floors, &self.lot.shaders, view)).map(|(st, f)| (st.room, f)).collect();
         let sun = plan.lights.at(1.0, 1.0).sun.map_or([0.0; 3], |s| s.direction);
@@ -679,7 +686,7 @@ mod tests {
             sun: Some(Sun { colour: [1.0; 3], direction: [-1.0, 0.0, 0.0] }),
             points: vec![Source { at: [1.0, 2.0, 3.0], reach: 2.0, colour: [0.6; 3] }],
         };
-        let Lighting::Lit { ambient, directionals, points } = lighting_for(&lights, &view) else { panic!("lit") };
+        let Lighting::Lit { ambient, directionals, points } = lighting_for(&lights, &view, None) else { panic!("lit") };
         assert!((ambient[0] - 0.2).abs() < 0.003);
         // to the sun is the direction negated: +x, which the view turns to -y
         assert_eq!(directionals.len(), 1);
