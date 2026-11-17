@@ -161,6 +161,12 @@ What the load does, measured further (`replay`, the 5,130-tick session):
 - **Each lot Sim is a neighbour** (`objects.md`, "The neighbours"): its type's GUID is one
   of NBRS's, the club's nine being neighbours 17, 34, 44, 46, 50, 51, 53, 58 and 59. The
   neighbour's saved person data is not what the load sets: it has 0 at 27 and 32 too.
+- **Person data 27 counts the person's turns** (2026-11-17): one more at the end of each turn
+  (a pass that reaches it), from the saved value; the scripts read and divide it (global 282,
+  "divide tick counts"). Native (`Simulator::end_turn`, `world::PERSON_TICKS`): the reads of it
+  that differ fell from 112 to 2 on home-full and from 232 to 6 on club-full (those six one
+  dancer's, 178, whose count runs behind: not found yet). So the "1 at tick 1" below is the
+  saved 0 after one turn, not a value the load sets.
 - **Person data 27 and 32 are 1 for every lot Sim at tick 1,** before any script writes
   them: set by the engine. In Castaway, `SetPersonData` is called with 32 from the Sim's
   routing states (`Routing_Initial`, `Routing_Succeeded`, ...) and with 27 from its

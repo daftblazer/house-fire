@@ -6,7 +6,7 @@ use crate::interp::{Host, Interpreter};
 use crate::library::Library;
 use crate::motives::{MotiveRates, update_motives};
 use crate::primitives::apply_motive_deltas;
-use crate::world::{DATA_LOCKOUT, Object, ObjectKey, Wake, World};
+use crate::world::{DATA_LOCKOUT, Object, ObjectKey, PERSON_TICKS, Wake, World};
 
 /// The host the objects' scripts run with: their primitives and the trees they name, and the
 /// world they run on (which the host holds, so that a primitive can reach it).
@@ -47,13 +47,16 @@ pub struct Simulator {
 /// whose gate is set). Measured: `docs/simulation.md`, "The motives". Whether the turn ends
 /// with the update.
 fn begin_turn(rates: &Option<MotiveRates>, o: &mut Object) -> bool {
-    if !o.person || o.definition.is_some() || rates.is_none() {
+    if !o.person {
+        return false;
+    }
+    o.turns = o.turns.wrapping_add(1);
+    if o.definition.is_some() || rates.is_none() {
         return false;
     }
     if o.motives.len() < 16 || o.motives_b.len() < 16 || o.person_data.len() < 7 {
         return false;
     }
-    o.turns = o.turns.wrapping_add(1);
     if !o.turns.is_multiple_of(60) {
         return false;
     }
@@ -64,14 +67,21 @@ fn begin_turn(rates: &Option<MotiveRates>, o: &mut Object) -> bool {
 /// (object data 25, which keeps its Idle from sleeping: `primitives::may_sleep`; Castaway's
 /// `cXObject::Simulate`). A person's running motive changes (SetMotiveDelta's) apply at the end
 /// of each of its turns, before the update (the log's first change is in the turn that set it),
-/// then the update if due.
+/// then the update if due. A person's turns are counted in its person data 27, which the
+/// scripts read and divide ("divide tick counts"): one more at the end of each.
 fn end_turn(rates: &Option<MotiveRates>, world: &mut World, k: ObjectKey, update_due: bool, ran: bool) {
     let (run, hour) = (world.motives_run, world.hour);
     let o = world.get_mut(k);
     if ran && let Some(v) = o.data.get_mut(DATA_LOCKOUT).filter(|v| **v != 0) {
         *v -= 1;
     }
-    if !o.person || !run {
+    if !o.person {
+        return;
+    }
+    if let Some(v) = o.person_data.get_mut(PERSON_TICKS) {
+        *v = v.wrapping_add(1);
+    }
+    if !run {
         return;
     }
     apply_motive_deltas(o);

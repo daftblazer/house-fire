@@ -59,6 +59,9 @@ pub enum Wake {
     Ended,
 }
 
+/// A person's turns so far (person data 27), counted by the engine at each turn's end.
+pub const PERSON_TICKS: usize = 27;
+
 pub const DATA_OBJECT_ID: usize = 11;
 /// The object data field of its lockout: while set, its Idle does not sleep, it counts down a
 /// tick at each turn its stack runs, and an expression that touches it wakes the object

@@ -59,7 +59,7 @@ pub(super) fn sync_variables(world: &mut World, counts: &mut Counts, shown: &mut
         }
         if env("REPLAY_SHOW_SCOPE").is_some_and(|e| atoi(&e) == v.scope as i64) && shown.next("scope", env("REPLAY_SHOW_N").map_or(10, |n| atoi(&n) as i32)) {
             println!(
-                "scope {} datum {}: native {}, log {}; the step's stack object {} -> {}, tree {}:{} (me {} {:?}, tick {})",
+                "scope {} datum {}: native {}, log {}; the step's stack object {} -> {}, tree {}:{} (me {} {:?}, tick {}; the original's offset {:#x}; my turns {})",
                 v.scope,
                 v.data,
                 got.value,
@@ -70,7 +70,9 @@ pub(super) fn sync_variables(world: &mut World, counts: &mut Counts, shown: &mut
                 s.node,
                 vars.world.get(me).id(),
                 vars.world.get(me).file.map(|f| vars.world.library().file(f).path.rsplit('/').next().unwrap_or("").to_string()),
-                s.tick
+                s.tick,
+                v.ptr.wrapping_sub(v.object) as i32,
+                vars.world.get(me).turns
             );
         }
         // a local this frame has not written: zero here, the original's left-over memory there
