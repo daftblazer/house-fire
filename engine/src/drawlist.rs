@@ -65,6 +65,8 @@ pub struct Draw {
     /// The shader (`shaders.arc` id) the part is drawn with in place of its sub-model's own: a
     /// wall face's is its pattern's.
     pub shader: Option<u32>,
+    /// The two ends (x, y) of a wall piece's or fence's edge: its lights are made at them.
+    pub edge: Option<[[f32; 2]; 2]>,
 }
 
 /// What the draws are made from on the disc: the model records, the skeletons and animations
@@ -170,7 +172,7 @@ pub fn object_draws(models: &Models, placements: &[Placement], guids_of: impl Fn
                 // the root's own 3 x 3 is a pure turn: the record's scale is applied with the
                 // bones' (`idle_bones`) or here
                 let scale = if bones.is_some() { 1.0 } else { rec.scale };
-                out.push(Draw { kind: kind_of(&part), part: part.index, world: world_of(&m, scale), origin: [p.x, p.y], object: p.leader, shader: None });
+                out.push(Draw { kind: kind_of(&part), part: part.index, world: world_of(&m, scale), origin: [p.x, p.y], object: p.leader, shader: None, edge: None });
             }
         }
     }
@@ -198,7 +200,7 @@ fn object_models<'a>(models: &'a Models, r: &ObjResources) -> impl Iterator<Item
 pub fn lot_draws(models: &Models, outer_lot: u32) -> Vec<Draw> {
     let Some(record) = models.parts.record_by_id(outer_lot) else { return Vec::new() };
     let scale = models.parts.record(record).scale;
-    models.parts.parts_of(record).map(|part| Draw { kind: Kind::LotList, part: part.index, world: world_of(&IDENTITY, scale), origin: [0.0; 2], object: 0, shader: None }).collect()
+    models.parts.parts_of(record).map(|part| Draw { kind: Kind::LotList, part: part.index, world: world_of(&IDENTITY, scale), origin: [0.0; 2], object: 0, shader: None, edge: None }).collect()
 }
 
 /// The wall models' sub-model that is not drawn in the lot's view (its hash, one of the two
@@ -218,6 +220,15 @@ pub const FENCE_MODELS: [(u8, &str); 1] = [(2, "Picket_Fence_straight")];
 /// hole (`wall_straight_standard_window`, `_privacy_window`). The other windows of the catalogue
 /// (plate glass, stain glass, heart) are not seen on the home lot.
 pub const WINDOW_WALLS: [(&str, &str); 2] = [("_NEW_Single_Hung_Window", "standard_window"), ("_NEW_Privacy_Window", "privacy_window")];
+
+/// The two ends of the edge a wall piece or fence is on: a part (at its tile's centre, turned a
+/// with its back to the wall) has the wall at (centre + 0.5 (sin a, -cos a)), a fence stands on
+/// the edge; both run along (cos a, sin a).
+fn edge_of(p: &WallPiece, fence: bool) -> [[f32; 2]; 2] {
+    let (s, c) = p.angle.to_radians().sin_cos();
+    let mid = if fence { [p.x, p.y] } else { [p.x + 0.5 * s, p.y - 0.5 * c] };
+    [[mid[0] - 0.5 * c, mid[1] - 0.5 * s], [mid[0] + 0.5 * c, mid[1] + 0.5 * s]]
+}
 
 /// A wall piece's matrix: the place and the turn about the vertical a degrees, a rotation (a
 /// fence's, an object's, is mirrored: `lamps::object_matrix`).
@@ -246,7 +257,7 @@ pub fn wall_draws(models: &Models, pieces: &[WallPiece], patterns: &[u32], eye: 
             let Some(record) = models.parts.record_by_id(crate::shader::name_hash(name)) else { continue };
             let rec = models.parts.record(record);
             for part in models.parts.parts_of(record) {
-                out.push(Draw { kind: Kind::WallPiece, part: part.index, world: world_of(&lamps::object_matrix(p.x, p.y, p.angle), rec.scale), origin: [p.x, p.y], object: 0, shader: None });
+                out.push(Draw { kind: Kind::WallPiece, part: part.index, world: world_of(&lamps::object_matrix(p.x, p.y, p.angle), rec.scale), origin: [p.x, p.y], object: 0, shader: None, edge: Some(edge_of(p, true)) });
             }
             continue;
         }
@@ -275,7 +286,63 @@ pub fn wall_draws(models: &Models, pieces: &[WallPiece], patterns: &[u32], eye: 
             // beside it (caps, 5 and 6 vertices) with their own
             let face = part.batch.list.is_some() && part.batch.count >= WALL_FACE_VERTICES;
             let shader = face.then(|| patterns.get(usize::from(p.pattern)).copied()).flatten();
-            out.push(Draw { kind: Kind::WallPiece, part: part.index, world, origin: [p.x, p.y], object: 0, shader });
+            out.push(Draw { kind: Kind::WallPiece, part: part.index, world, origin: [p.x, p.y], object: 0, shader, edge: Some(edge_of(p, false)) });
+        }
+    }
+    out
+}
+
+/// The draws of the lot's diagonal walls (a tile whose `Walls::diagonal_bits` is 0x10, a "/" from
+/// (x, y + 1) to (x + 1, y), or 0x20, a "\\" from (x, y) to (x + 1, y + 1)): the family
+/// `wall_diagonal` at the tile's centre, turned 0 or 180 for a "/" and 90 or -90 for a "\\", the
+/// face drawn that turns to the eye, with the pattern of the side it faces. The forms that reach past
+/// an end of the line (`_left_extends`, `_right_extends`, `_both_extends`) are not told apart:
+/// 3 of the 5 tiles of the home lot that show one draw them, and the plain model is drawn
+/// (`docs/assets.md`, "The engine's draw list").
+pub fn diagonal_draws(models: &Models, walls: &crate::routing::Walls, patterns: &[u32], eye: [f32; 2]) -> Vec<Draw> {
+    let mut out = Vec::new();
+    let (w, h) = walls.size();
+    for y in 0..h as i32 {
+        for x in 0..w as i32 {
+            let bits = walls.diagonal_bits(x, y);
+            if bits == 0 {
+                continue;
+            }
+            let (cx, cy) = (x as f32 + 0.5, y as f32 + 0.5);
+            // the line's ends: corners of the tile
+            let (end0, end1) = if bits & 0x10 != 0 { ((x, y + 1), (x + 1, y)) } else { ((x, y), (x + 1, y + 1)) };
+            let angles: [f32; 2] = if bits & 0x10 != 0 { [0.0, 180.0] } else { [90.0, -90.0] };
+            for angle in angles {
+                // the face's normal, a half tile's side (the model is turned 45 degrees in its own
+                // frame, so the piece's own turn does not tell): "/" at 0 faces (-1, -1), at 180 (1, 1);
+                // "\\" at 90 faces (1, -1), at -90 (-1, 1). Drawn when it turns to the eye (the 5
+                // tiles seen on the home lot agree)
+                let n: [i32; 2] = match (bits & 0x10 != 0, angle == 0.0 || angle == 90.0) {
+                    (true, true) => [-1, -1],
+                    (true, false) => [1, 1],
+                    (false, true) => [1, -1],
+                    (false, false) => [-1, 1],
+                };
+                if (n[0] as f32) * (eye[0] - cx) + (n[1] as f32) * (eye[1] - cy) <= 0.0 {
+                    continue;
+                }
+                // (the forms that reach past an end of the line are not told apart: the rule for which
+                // end reaches is not found, the plain model is drawn)
+                let Some(record) = models.parts.record_by_id(crate::shader::name_hash("wall_diagonal")) else { continue };
+                let rec = models.parts.record(record);
+                let world = world_of(&wall_matrix(cx, cy, angle), rec.scale);
+                // the half tile it is on is across x (`light::cell_room_adds`): its room lights it.
+                // Its face's pattern is the one the tile keeps on the sides opposite the face's
+                // normal (the exterior siding at the corners seen: matched against the log's textures)
+                let place = [cx + n[0] as f32, cy];
+                let chosen = [walls.pattern(x, y, -n[0], 0), walls.pattern(x, y, 0, -n[1])].into_iter().find(|&p| p != 0).unwrap_or(0);
+                let pattern = patterns.get(usize::from(chosen)).copied();
+                for part in models.parts.parts_of(record).filter(|q| q.batch.hash != UNDRAWN_WALL_SUB) {
+                    let face = part.batch.list.is_some() && part.batch.count >= WALL_FACE_VERTICES;
+                    let ends = [[end0.0 as f32, end0.1 as f32], [end1.0 as f32, end1.1 as f32]];
+                    out.push(Draw { kind: Kind::WallPiece, part: part.index, world, origin: place, object: 0, shader: face.then_some(pattern).flatten(), edge: Some(ends) });
+                }
+            }
         }
     }
     out
@@ -340,6 +407,7 @@ pub fn lot_draws_of(world: &crate::world::World, res: &BTreeMap<u32, ObjResource
     let window_of = |at: [f32; 2]| windows.iter().find(|w| (w.0[0] - at[0]).abs() < 0.1 && (w.0[1] - at[1]).abs() < 0.1).map(|w| w.1);
     if let Some(eye) = eye {
         draws.extend(wall_draws(models, &pieces, &patterns, eye, window_of));
+        draws.extend(diagonal_draws(models, &world.walls, &patterns, eye));
     }
     draws.extend(outer_lot.map(|id| lot_draws(models, id)).unwrap_or_default());
     LotDraws { draws, placements, pieces }

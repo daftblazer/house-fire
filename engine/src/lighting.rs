@@ -145,6 +145,30 @@ impl LotLights {
         usize::try_from(x).ok().zip(usize::try_from(y).ok()).and_then(|(x, y)| (x < self.width).then(|| self.room_of.get(y * self.width + x).copied()).flatten()).map_or(0, usize::from)
     }
 
+    /// What lights a draw of the lot's list: a wall piece or fence along its edge, anything else
+    /// at its place.
+    pub fn of(&self, d: &crate::drawlist::Draw) -> Lights {
+        match d.edge {
+            Some(ends) => self.along(d.origin[0], d.origin[1], ends),
+            None => self.at(d.origin[0], d.origin[1]),
+        }
+    }
+
+    /// What lights a wall piece or a fence on the edge from `ends[0]` to `ends[1]`, in the room of
+    /// the tile (x, y): the two strongest lights at each end (the original lights a wall from the
+    /// light grid's points at its ends: the log's sets are a pair of lights from each end,
+    /// the same light twice where the ends share it).
+    pub fn along(&self, x: f32, y: f32, ends: [[f32; 2]; 2]) -> Lights {
+        let room = self.room(x.floor() as i32, y.floor() as i32);
+        let geometry: Vec<([f32; 3], f32)> = self.sources.iter().map(|s| (s.at, s.reach)).collect();
+        let mut points = Vec::new();
+        for e in ends {
+            let ids = self.ranges.get(room).and_then(|r| light::cell_lights([e[0], e[1], light::GRID_Z], (r[2], r[3]), (r[0], r[1]), &geometry));
+            points.extend(ids.into_iter().flatten().take(2).filter(|&i| i != 0xFFFF).map(|i| self.sources[usize::from(i)]));
+        }
+        Lights { ambient: self.ambients.get(room).copied().unwrap_or([0.0; 3]), sun: (room == 0).then_some(self.sun), points }
+    }
+
     /// What lights an object at (x, y) on the lot: its room's ambient, the sun if the room is
     /// outside, and its four lights (`light::cell_lights`: the room's own lights first, then
     /// its windows', the strongest first).

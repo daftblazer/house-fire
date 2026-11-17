@@ -199,7 +199,7 @@ pub fn plan(disc: &housefire::disc::Disc, card: Option<&std::path::Path>, log: &
     if std::env::var_os("HF_OBJECTS").is_some() {
         let list = log.lists.iter().rfind(|l| l.tick <= tick);
         for o in world.objects().filter(|o| o.on_lot() && !o.person) {
-            println!("  object {} guid {:08x} at ({}, {}) level {} leader {} flags {:?} in the log's list {:?}", o.id(), o.guid, o.x16, o.y16, o.level, o.leader, o.data.get(housefire::world::DATA_FLAGS), list.map(|l| l.ids.contains(&o.id())));
+            println!("  object {} guid {:08x} at ({}, {}) level {} leader {} flags {:?} in the log's list {:?} fields {:?}", o.id(), o.guid, o.x16, o.y16, o.level, o.leader, o.data.get(housefire::world::DATA_FLAGS), list.map(|l| l.ids.contains(&o.id())), world.definition(o).map(|d| d.fields.clone()));
         }
     }
     let guids = lot.placements.iter().map(|p| (p.leader, world.find_object(p.leader).into_iter().chain(world.objects().filter(|o| o.leader == p.leader)).map(|o| o.guid).collect())).collect();

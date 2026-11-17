@@ -151,7 +151,7 @@ fn main() -> ExitCode {
         };
         let lighting = |d: &housefire::drawlist::Draw| {
             if std::env::var_os("HF_ORACLE").is_none() {
-                return engine_scene::lighting_for(&plan.lights.at(d.origin[0], d.origin[1]), &view);
+                return engine_scene::lighting_for(&plan.lights.of(d), &view);
             }
             let near = |a: &[f32; 12]| (0..12).all(|i| (a[i] - d.world[i]).abs() <= 1e-4 * if i % 4 == 3 { 1.0 } else { a[0].abs().max(a[5].abs()).max(a[10].abs()).max(1e-9) });
             match oracle.iter().find(|o| near(&o.0)) {
@@ -181,7 +181,7 @@ fn main() -> ExitCode {
             let mut shown = std::collections::BTreeSet::new();
             for (d, m) in plan.draws.iter().zip(&made) {
                 if !shown.insert((d.origin[0].to_bits(), d.origin[1].to_bits())) { continue; }
-                let Lighting::Lit { ambient, directionals, points } = engine_scene::lighting_for(&plan.lights.at(d.origin[0], d.origin[1]), &view) else { continue };
+                let Lighting::Lit { ambient, directionals, points } = engine_scene::lighting_for(&plan.lights.of(d), &view) else { continue };
                 let dirs: Vec<String> = directionals.iter().map(|d| format!("dir {:.3?} to {:.3?}", d.colour, turn_world(d.to_light))).collect();
                 let pts: Vec<String> = points.iter().map(|p| format!("pt {:.2?} col {:.3?} k1 {}", to_world(p.position), p.colour, p.k1)).collect();
                 println!("LE {} at {:?} amb {:.3?} {} {}", m.info.model, d.origin, ambient, dirs.join(" "), pts.join(" "));
