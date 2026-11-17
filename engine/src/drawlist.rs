@@ -113,13 +113,18 @@ pub fn world_of(m: &Mat4, scale: f32) -> [f32; 12] {
 const TICKS_PER_SECOND: f32 = 30.0;
 
 /// The frame an object's idle animation is at on `tick`: it has played from tick 0 at its rate
-/// (frames a second), looping (`Anim::end_mode` 0) or held at its last frame. The trees' sway
-/// (201 frames at 60 a second) is at frame 69 on tick 1,039: 2 x 1,039 + 1 less 10 x 201; the
-/// one frame past is the first tick's own.
+/// (frames a second), looping (`Anim::end_mode` 0) or held at its last frame (`clock`).
 pub fn idle_place(anim: &Anim, tick: u32) -> f32 {
-    let frames = anim.frames as f32;
-    let at = (tick as f32 * anim.rate / TICKS_PER_SECOND + 1.0).max(0.0);
-    if anim.end_mode() == 0 { at.rem_euclid(frames) } else { at.min(frames - 1.0) }
+    clock(anim.frames, anim.rate, anim.end_mode() == 0, tick)
+}
+
+/// The frame of an animation of `frames` frames at `rate` frames a second on `tick`: the ticks'
+/// share of the rate and one frame more (the first tick's own), wrapped when it loops. The home
+/// lot's trees (201 frames at 60 a second, looping) are at frame 69 on tick 1,039 and match the
+/// original's draws on tick 1,040 too (`docs/assets.md`, "The engine's draw list").
+fn clock(frames: u32, rate: f32, loops: bool, tick: u32) -> f32 {
+    let at = tick as f32 * rate / TICKS_PER_SECOND + 1.0;
+    if loops { at.rem_euclid(frames as f32) } else { at.min(frames.saturating_sub(1) as f32) }
 }
 
 fn kind_of(part: &Part<'_>) -> Kind {
@@ -269,4 +274,47 @@ pub fn window_edges(models: &Models, placements: &[Placement], guids_of: impl Fn
             WINDOW_WALLS.iter().find(|w| w.0 == name).map(|w| ([p.x, p.y], w.1))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_dataset_lists_its_models_by_the_sections_sizes() {
+        // "Models", a zero, 2 models: id, size 3, four zero bytes and 3 bytes of record each
+        let mut b = b"RD_x\0\x04Textures\0\0\0\0\0Models\0".to_vec();
+        b.extend_from_slice(&[0, 0, 0, 2]);
+        for id in [0x11u32, 0x22] {
+            b.extend_from_slice(&id.to_be_bytes());
+            b.extend_from_slice(&[0, 0, 0, 3, 0, 0, 0, 0, 7, 7, 7]);
+        }
+        assert_eq!(dataset_models(&b), vec![0x11, 0x22]);
+        assert!(dataset_models(b"no models here").is_empty());
+    }
+
+    #[test]
+    fn a_world_matrix_is_the_rotation_transposed_and_scaled_with_the_translation_last() {
+        let m = world_of(&lamps::object_matrix(14.5, 12.0, 0.0), 0.5);
+        // turn 0 (facing 2): row 0 (0.5, ~0, 0), row 1 (~0, -0.5, 0), z up
+        assert_eq!((m[0], m[5], m[10]), (0.5, -0.5, 0.5));
+        assert_eq!((m[3], m[7], m[11]), (14.5, 12.0, 0.0));
+    }
+
+    #[test]
+    fn a_wall_piece_turns_by_its_angle() {
+        // the wall on a tile's +x side (90 degrees): row 0 is (0, -1), row 1 (1, 0)
+        let m = world_of(&wall_matrix(13.5, 15.5, 90.0), 1.0);
+        assert!(m[0].abs() < 1e-6 && (m[1] + 1.0).abs() < 1e-6 && (m[4] - 1.0).abs() < 1e-6 && m[5].abs() < 1e-6, "{m:?}");
+        assert_eq!((m[3], m[7]), (13.5, 15.5));
+    }
+
+    #[test]
+    fn an_animation_clock_loops_from_the_first_tick() {
+        // the trees' sway on tick 1,039 (home): 2 x 1,039 + 1 less 10 x 201
+        assert_eq!(clock(201, 60.0, true, 1039), 69.0);
+        assert_eq!(clock(201, 60.0, true, 0), 1.0);
+        // one that stops holds its last frame
+        assert_eq!(clock(10, 30.0, false, 100), 9.0);
+    }
 }

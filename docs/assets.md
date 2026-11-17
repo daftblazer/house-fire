@@ -1753,6 +1753,117 @@ bit for bit. The club's lamps are in their "on" animations (o_lamp_wall_club_on,
 Torchosterone_Floor_Lamp_A_01, the dance floor's), which need the object's state to choose, and
 its laser light follows scalar streams.
 
+## The engine's draw list
+
+Stage 5c makes the frame from the engine's own state. Its first step is the draw list: which
+model parts the original draws for the lot's objects, walls, fences and its own models, each
+with its world matrix, made by `drawlist` (engine library, GPU-free, deterministic) from the
+world's objects, the lot's walls and the disc's data, never from the log's draw records. The
+renderer will use it next.
+
+A draw is a part of a model record (`draw::PartIndex`: record, node, batch) and a world matrix:
+3 x 4 rows, the translation last, the 3 x 3 the rotation times the record's scale (the 16-bit
+positions' unit: 1/32768 to 1/256, `Record::scale`). Four kinds: a rigid object part (opcode 56),
+an object's display list (66), a wall piece, a lot display list.
+
+The study: `LOCKSTEP_FRAME_DRAWS=TICK lockstep LOG ISO --card CARD` (`lockstep/frame_draws.rs`;
+the log needs the draw records of the tick: `home-a39.log` has ticks 1,039 and 1,040) lists the
+log's draws of the tick (each 'w' strip found in `models.arc` by its first bytes, its world matrix
+the first 0xF1 in the gap after it, as the renderer pairs them) and matches each to the engine's
+list by part (a batch of the same positions: many wall records share bytes) and then by matrix
+(translation within 1e-4 tiles, the 3 x 3 within 1e-4 of its own scale). Set aside and counted
+apart: the Sims (skinned parts, their outfits' rigid parts, their lighting-off shadows: 831 draws,
+which include the lighting-off pass the trees, walls and objects get as shadow receivers), the
+portrait (57), draws whose model is not in `models.arc` (4), objects a Sim holds (`Carry_`,
+`Prop_`, the diamond: 7). The floors are 'g' records and `scene::floor_runs`. Switches for the
+rest: LOCKSTEP_FRAME_DETAIL (the objects' resources and the records that differ),
+_FRAME_SHOW=KIND (list the missing and off ones), _FRAME_EXTRA, _FRAME_WALLS, _FRAME_RECORDS=PREFIX,
+_FRAME_MINE=NAME, _FRAME_HOUSE (the lot's house number, default 1).
+
+Tick 1,039 (home, the engine's lot as `lockstep` loads it; tick 1,040 gives the same figures):
+log 599 in scope, engine 785. Before any of it (the first run, the objects' first model by
+definition alone) the study had 90 the same, 160 different, 354 missing; now:
+
+| | log | same | DIFFERENT | missing | extra (off screen) |
+|---|---|---|---|---|---|
+| rigid object part | 272 | 262 | 3 | 7 | 181 (142) |
+| object display list | 101 | 95 | 0 | 6 | 32 (5) |
+| wall piece | 216 | 197 | 0 | 19 | 5 (0) |
+| lot display list | 10 | 10 | 0 | 0 | 0 |
+| all | 599 | 564 | 3 | 32 | 218 (147) |
+
+What each kind needed.
+
+Objects. The model is not always the definition's own: `ObjResources::model` names a record in
+`models.arc` for some (the trees, the beds); for others it names the skeleton (lamps, the
+characters' ids) or is 0, and the record is the first word of the resources' record
+(`ObjResources::key`: the TV's `0898 31b6`, the counters', the windows') or, failing that, one of
+the models its dataset lists. A dataset (`datasets.arc`'s `RD_` entry) keeps a `Models` section:
+the name, a zero, a count, then for each model its id (the CRC of its name), its size, four zero
+bytes and the record (`drawlist::dataset_models`). Every distinct model the parts of an
+object's group name is drawn once at the object's matrix (the bed's two halves). The world
+matrix is the object's root (`lamps::object_matrix`) times the bone of the part's node
+(`Part::bone`) from the object's idle animation (`lamps::bones_at`, the same path as the lamps'
+lights), scaled by the record; a part without a bone is drawn with the root. A node whose pose
+has the flag bit 8 is hidden (a plant's spare leaves, a lamp's lit shade; `NODE_HIDDEN`).
+
+The animation clock. An object plays its idle animation from the start of the run, looping,
+`frames = rate x tick / 30 + 1`: the trees' sway (201 frames at 60 a second) is at frame 69 on
+tick 1,039, and with that clock the 144 draws of the mulberries and the 18 of the birch that the log
+makes in scope (150 of the first run's 160 matrices off) are the same, on ticks 1,039 and 1,040
+(`drawlist::idle_place`; the +1 is the first tick's own).
+
+Walls. Each piece of `scene::wall_pieces` draws its family's model (`wall_straight`, `_door`,
+`_standard_window`/`_privacy_window` by the window object on the edge: `WINDOW_WALLS`, with
+`_left_extends`/`_right_extends` by `WallPiece::form`) at the piece's place turned by its angle:
+the 3 x 3 is [cos a, -sin a; sin a, cos a], not the objects' mirrored turn. Of a record's four or
+five sub-models all are drawn but the one whose hash is `0906522f` (`UNDRAWN_WALL_SUB`: a
+5-vertex piece), when the part faces the eye (`WallPiece::faces`); the 6-vertex piece, with the
+part's face and its 5-vertex end, is in that group whether the part is indoors or not (the cap of
+"## Wall patterns", drawn apart from the face and outdoors only, is not seen on tick 1,039: no
+draw of a part that does not face the eye). The eye is the logged view's, as the camera at the
+tick is not the engine's own yet. A fence is one display list at its place turned as an object
+(`FENCE_MODELS`: home's style 2, `Picket_Fence_straight`; the other styles' models are not seen).
+
+Lot models. The house's outer lot model (`HouseData` row, `quickdata::House::outer_lot`; home is
+house 1, the lot's global 10, which the loaded lot does not keep: the study takes it from
+LOCKSTEP_FRAME_HOUSE) is drawn at the origin with its record's scale: 10 of 10.
+
+Culling. The renderer clips, so the list carries every object (the original draws what its own
+test keeps). The study counts an extra as off screen when the part's place projects outside a box
+fitted to the log's draws at this tick (`VISIBLE`: x 0 to 1.04, y -0.19 to 0.63 of the screen;
+the log's own draws span x 0.006 to 1.034, y -0.179 to 0.620; none of them is outside it). The
+original's test is a bounding volume of the record (its 72 bytes of `bounds`, not decoded); a
+sphere about the part's mesh radius, the first try, culled 5 to 7 of the log's own draws (the
+trees' top leaves), so it was dropped.
+
+Left, with counts (tick 1,039).
+
+- 3 DIFFERENT: the grandfather clock's pendulum, the smoke detector and the burglar alarm. Their
+  idle animation is not what they play; a script's animation (a swing, a blink) is. Needs the
+  objects' running animation, which the engine does not keep (only the Sims').
+- 7 missing rigid: the aquarium's fish (22 vertices each), hidden in its idle pose and swimming
+  under their own animation: the same cause.
+- 6 missing object lists: the counters' variants with a sink's hole
+  (`Tiled_Counter_Sink_Hole(Straight)`, `(Epikouros)`) at the two tiles beside the sink (22.5,
+  23.5 and 23.5, 23.5): the engine draws the plain counter there (and 6 extras of it). Which
+  variant a counter takes from the sink on it is not known.
+- 19 missing wall draws and 5 extra: the diagonal walls (a tile with a diagonal, `Walls::diagonal_bits`:
+  `wall_diagonal` and its `_left_extends`, `_right_extends`, `_both_extends` forms at the tile's
+  centre, turned 0 or 180 for a "/" (16) and 90 or -90 for a "\" (32); 15 draws at the 5 seen
+  tiles, which `scene::wall_pieces` does not make) and the `_left_cap`/`_right_cap` forms at the
+  two ends of a gap in a wall (20.5, 16.5 and 20.5, 20.5: 4 draws; the engine draws the straight
+  model there, the 5 extras). The rule for which end is extended or capped is not found.
+- 218 extra, 147 of them off screen by the fitted box. The other 71 in the box are objects the
+  original does not draw in the main pass: parts at the screen's top edge (the alarm clock, the
+  back wall's windows, lamps, the sconces: bases within 0.05 of the edge), the 3 birch's crowns
+  and the scooter, parked at (23, 3.5), which the original does not draw (the same one the
+  first survey found undrawn).
+
+Shared code changed: `lamps::idle_bones` split into `bones_at`/`poses_at` (the lamps' lights the
+same; `LOCKSTEP_ANIM_LAMPS` unchanged), `draw::PartIndex` keeps each record's archive id and
+gives `record_by_id`, `parts_of`, and `Part::index`.
+
 ## The renderer
 
 `engine/render` (package `housefire-render`, its own target directory and lock file: the

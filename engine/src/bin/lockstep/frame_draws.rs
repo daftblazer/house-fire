@@ -48,9 +48,15 @@ struct LogDraw<'a> {
 
 /// Whether a record is a Sim's: an outfit's parts are named by two lowercase letters and an
 /// underscore (am_ub_..., af_...), and the shadows `shadow_...`.
-fn out_of_scope(name: &str) -> bool {
+fn is_sims(name: &str) -> bool {
     let b = name.as_bytes();
     b.len() > 3 && b[0].is_ascii_lowercase() && b[1].is_ascii_lowercase() && b[2] == b'_' || name.starts_with("shadow_")
+}
+
+/// Whether a record is an object a Sim carries (`Carry_...`, `Prop_...`) or the Sim's diamond: drawn
+/// on the Sim's own bones, not the lot's.
+fn is_held(name: &str) -> bool {
+    name.starts_with("Carry_") || name.starts_with("Prop_") || name == "Diamond"
 }
 
 fn kind_of(part: &Part<'_>, outer_lot: Option<usize>) -> Kind {
@@ -129,7 +135,9 @@ fn log_draws<'a>(log: &Log, models: &'a Models, tick: u32, outer_lot: Option<usi
         };
         if use_projection != main_projection {
             *counts.entry("other projection (the portrait)").or_default() += 1;
-        } else if part.skinned() || lit_off || out_of_scope(&part.record.name) {
+        } else if is_held(&part.record.name) {
+            *counts.entry("held by a Sim (its hand's bone)").or_default() += 1;
+        } else if part.skinned() || lit_off || is_sims(&part.record.name) {
             *counts.entry("the Sims (skinned, outfits, shadows)").or_default() += 1;
             if std::env::var_os("LOCKSTEP_FRAME_SIMS").is_some() {
                 println!("  sims: {} skinned {} lit-off {}", part.record.name, part.skinned(), lit_off);
@@ -159,13 +167,6 @@ pub fn frame_draws(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quic
     let theirs = log_draws(log, &models, tick, outer_record, &mut counts);
 
     let pieces = housefire::scene::wall_pieces(&world.walls, 64, &housefire::quickdata::fence_styles(&housefire::quickdata::Image::read(housefire::arc::bytes(&quick, &housefire::arc::entries(&quick).unwrap_or_default().into_iter().find(|e| e.name == "SimsTiles").unwrap())).unwrap()));
-    if std::env::var_os("LOCKSTEP_FRAME_FENCES").is_some() {
-        let img = housefire::quickdata::Image::read(housefire::arc::bytes(&quick, &housefire::arc::entries(&quick).unwrap_or_default().into_iter().find(|e| e.name == "SimsTiles").unwrap())).unwrap();
-        for r in img.rows("FenceData") {
-            let name = img.ptr(r + 8).map(|p| img.data[p..].iter().take_while(|&&b| b != 0).map(|&b| b as char).collect::<String>());
-            println!("fence row: hash {:08x?} price {:?} name {:?} style {:?}; record by hash {:?}", img.u32(r), img.u32(r + 4), name, img.u32(r + 12), img.u32(r).and_then(|h| models.parts.record_by_id(h)).map(|i| models.parts.record(i).name.clone()));
-        }
-    }
     if std::env::var_os("LOCKSTEP_FRAME_WALLS").is_some() {
         // the log's wall draws by their place: the records every draw there could be, and each
         // draw's vertices and place in the first of them
@@ -214,32 +215,6 @@ pub fn frame_draws(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quic
                 let all: Vec<&housefire::model::SubModel> = rec.nodes.iter().flat_map(|n| n.subs.iter().map(|s| &s.1)).collect();
                 for (i, a) in all.iter().enumerate() {
                     println!("   sub {i}: count {} hash {:08x} first positions {:02x?} slots {:?}", a.count, a.hash, &a.positions[..8.min(a.positions.len())], a.slot_bytes);
-                }
-            }
-        }
-    }
-    if let Ok(h) = std::env::var("LOCKSTEP_FRAME_HASH") {
-        let h = u32::from_str_radix(&h, 16).unwrap();
-        let ds = d.read("datasets.arc").unwrap_or_default();
-        for e in housefire::arc::entries(&ds).unwrap_or_default().iter().filter(|e| e.id == h) {
-            println!("dataset {} models {:08x?}", e.name, models.datasets.get(&e.id));
-        }
-        let mm = d.read("models.arc").unwrap_or_default();
-        for e in housefire::arc::entries(&mm).unwrap_or_default().iter().filter(|e| e.id == h || housefire::shader::name_hash(&e.name) == h) {
-            println!("models.arc entry {} id {:08x}", e.name, e.id);
-        }
-        println!("by_id {:?}", models.parts.record_by_id(h));
-    }
-    if let Ok(g) = std::env::var("LOCKSTEP_FRAME_DUMP_DATASET") {
-        let g = u32::from_str_radix(&g, 16).unwrap();
-        let ds = d.read("datasets.arc").unwrap_or_default();
-        let r = res[&g];
-        for e in housefire::arc::entries(&ds).unwrap_or_default().iter().filter(|e| e.id == r.dataset) {
-            let b = housefire::arc::bytes(&ds, e);
-            println!("dataset {} {:08x} {} bytes; resources {r:?}", e.name, e.id, b.len());
-            for name in ["Textures", "Shaders", "ParticleTypes", "Animations", "Models", "Characters"] {
-                for at in (0..b.len().saturating_sub(name.len())).filter(|&i| &b[i..i + name.len()] == name.as_bytes() && b[i + name.len()] == 0) {
-                    println!("{name} at {at:#x}: before {:02x?} after {:02x?}", &b[at.saturating_sub(6)..at], &b[at + name.len()..(at + name.len() + 48).min(b.len())]);
                 }
             }
         }
