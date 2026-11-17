@@ -9,10 +9,10 @@
 //! engine's state", counts what that leaves (home, tick 1,039: 23 and 26 of the 59 logged
 //! bone matrices equal to 1e-4 for the two Sims, the neck and head 0.01 to 0.02 tile off).
 
-use crate::anim::Anim;
+use crate::anim::{Anim, Catalog};
 use crate::disc::Disc;
 use crate::outfit::{Description, PartTables};
-use crate::pose::{Pose, TrackStreams};
+use crate::pose::{self, Fold, Pose, TrackStreams};
 use crate::skeleton::{self, CharNode, Mat4, NodeState, PoseMode};
 use std::collections::HashMap;
 
@@ -85,16 +85,106 @@ pub fn root(x: f32, y: f32, heading: u8) -> Mat4 {
     m
 }
 
-/// The node states of an animation at a place (in frames from its first), each node at weight 1.
-/// A node whose channels are not all decoded keeps the default pose.
-pub fn node_states(anim: &Anim, place: f32) -> Vec<NodeState> {
-    let mut streams = TrackStreams::new(anim);
-    (0..anim.nodes.len())
-        .map(|i| {
-            let p: Pose = streams.local(anim, i, place, 0).unwrap_or_default();
-            NodeState { flags: p.flags, rotation: p.rotation, translation: p.translation, scale: p.scale }
-        })
-        .collect()
+/// One of a Sim's animation tracks as the pose takes it: an animation at a place, folded into
+/// the node states by a weight (`pose::Fold`), layered over them or blended in, and by node
+/// weights that mask it to some of the nodes.
+#[derive(Clone, Copy, Debug)]
+pub struct Track<'a> {
+    pub anim: &'a Anim,
+    /// In frames from the animation's first.
+    pub place: f32,
+    /// The track's own weight (its +76).
+    pub weight: f32,
+    /// The track's layer flag (+8 bit 8): the pose goes on top of the states, not into them.
+    pub layer: bool,
+    /// The weight of each node (+152); none: every node's is 1.
+    pub nodes: Option<&'a [f32]>,
+}
+
+/// The node states the tracks leave, posed in order from the default pose: a node's weight is its
+/// track's times its own (`pose::base_weight` for the first track that is not a layer, which is
+/// the base). A track of another node count than `count`, or a node whose channels are not all
+/// decoded, leaves that part as it was.
+pub fn node_states(count: usize, tracks: &[Track]) -> Vec<NodeState> {
+    let mut states = vec![Pose::default(); count];
+    let mut based = false;
+    for t in tracks.iter().filter(|t| t.anim.nodes.len() == count) {
+        let weight = pose::base_weight(t.weight, t.layer, &mut based);
+        let mut streams = TrackStreams::new(t.anim);
+        for (i, state) in states.iter_mut().enumerate() {
+            let w = weight * t.nodes.map_or(1.0, |n| n[i]);
+            if w == 0.0 {
+                continue;
+            }
+            if let Ok(local) = streams.local(t.anim, i, t.place, state.flags) {
+                *state = pose::fold(state, &local, Fold::of(w, t.layer));
+            }
+        }
+    }
+    states.iter().map(|p| NodeState { flags: p.flags, rotation: p.rotation, translation: p.translation, scale: p.scale }).collect()
+}
+
+/// The nodes the carrying loop's weights are 1 on (the right arm: the node above its clavicle to
+/// its hand; 0 on the rest): the node weights of that track in the logged '=' records of
+/// home-a39.log.
+pub const CARRY_NODES: std::ops::RangeInclusive<usize> = 47..=51;
+/// The one node the face track's weights are 1 on (the neck; 0 on the rest), from the same
+/// records.
+pub const FACE_NODE: usize = 16;
+/// The animation a Sim's face track plays, held at its first frame (the face's speed is 0).
+pub const FACE_ANIMATION: &str = "happyFace";
+
+/// What a Sim does, as far as its pose goes.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Stance {
+    /// Its Animate play: the animation, how far along (frames) and whether it runs backward.
+    pub action: Option<(u32, f32, bool)>,
+    /// Whether it holds something in its hand (the carrying loop plays on its right arm).
+    pub carrying: bool,
+    /// Its mood motive (`FACE_MOTIVE`, 0 to 100): the face track's weight is it over 100 (the
+    /// logged weights of the face track equal the motive's value over 100 on every tick of
+    /// home-a39.log's first 643).
+    pub mood: f32,
+    pub adult: bool,
+}
+
+/// The index of the motive the face's weight follows.
+pub const FACE_MOTIVE: usize = 3;
+
+/// The node weights of the tracks that mask: the carrying loop's and the face's, for a skeleton
+/// of `count` nodes.
+pub struct Masks {
+    carry: Vec<f32>,
+    face: Vec<f32>,
+}
+
+impl Masks {
+    pub fn new(count: usize) -> Masks {
+        let weights = |on: &dyn Fn(usize) -> bool| (0..count).map(|i| f32::from(u8::from(on(i)))).collect();
+        Masks { carry: weights(&|i| CARRY_NODES.contains(&i)), face: weights(&|i| i == FACE_NODE) }
+    }
+}
+
+/// The tracks a Sim's animator runs, in the order it poses them: its action as the base, the
+/// arm's carrying loop (held at its last frame: its end mode stops it) over the arm's nodes when
+/// it carries, and the face's layer by its mood.
+pub fn tracks<'a>(catalog: &'a Catalog, stance: &Stance, masks: &'a Masks) -> Vec<Track<'a>> {
+    let mut out = Vec::new();
+    if let Some((id, at, backward)) = stance.action
+        && let Some(anim) = catalog.by_id.get(&id)
+    {
+        out.push(Track { anim, place: pose_place(anim.frames, at, backward), weight: 1.0, layer: false, nodes: None });
+    }
+    let carry = if stance.adult { "a2o-rarm-carry-loop" } else { "c2o-rarm-carry-loop" };
+    if stance.carrying
+        && let Some(anim) = catalog.by_name(carry)
+    {
+        out.push(Track { anim, place: anim.frames.saturating_sub(1) as f32, weight: 1.0, layer: false, nodes: Some(&masks.carry) });
+    }
+    if let Some(anim) = catalog.by_name(FACE_ANIMATION) {
+        out.push(Track { anim, place: 0.0, weight: (stance.mood / 100.0).clamp(0.0, 1.0), layer: true, nodes: Some(&masks.face) });
+    }
+    out
 }
 
 /// The place along an animation's frames of a play `at` frames in: a backward play runs from the
@@ -102,6 +192,17 @@ pub fn node_states(anim: &Anim, place: f32) -> Vec<NodeState> {
 pub fn pose_place(frames: u32, at: f32, backward: bool) -> f32 {
     let last = frames.saturating_sub(1) as f32;
     if backward { (last - at).max(0.0) } else { at.min(last) }
+}
+
+/// The heading (eighths of a turn, `root`'s) that faces along the step (`dx`, `dy`): a Sim's
+/// forward is its local +y, which a turn of h eighths carries to (-sin, cos) of h x 45 degrees.
+/// `None` for no step; a step between two eighths takes the nearer.
+pub fn heading_along(dx: i32, dy: i32) -> Option<u8> {
+    if dx == 0 && dy == 0 {
+        return None;
+    }
+    let turn = (-(dx as f32)).atan2(dy as f32) / std::f32::consts::FRAC_PI_4;
+    Some(turn.round().rem_euclid(8.0) as u8 % 8)
 }
 
 /// A bone matrix as the renderer takes it: the three rows of x, y, z, each its three columns and
@@ -113,13 +214,10 @@ pub fn rows(m: &Mat4) -> [f32; 12] {
     })
 }
 
-/// The bone matrices of a Sim on `nodes` posed by `pose` (an animation and the place it is at,
-/// else the skeleton's rest) under `root`, with the models' unit (`BONE_SCALE`) in them.
-pub fn bones(nodes: &[CharNode], pose: Option<(&Anim, f32)>, root: &Mat4) -> Vec<Mat4> {
-    let states = match pose {
-        Some((anim, place)) if anim.nodes.len() == nodes.len() => node_states(anim, place),
-        _ => vec![NodeState { flags: 0, rotation: [0.0, 0.0, 0.0, 1.0], translation: [0.0; 3], scale: [1.0; 3] }; nodes.len()],
-    };
+/// The bone matrices of a Sim on `nodes` posed by `tracks` (none: the skeleton's rest) under
+/// `root`, with the models' unit (`BONE_SCALE`) in them.
+pub fn bones(nodes: &[CharNode], tracks: &[Track], root: &Mat4) -> Vec<Mat4> {
+    let states = node_states(nodes.len(), tracks);
     skeleton::bone_matrices(nodes, &states, root, PoseMode { through_rest: false, scale: BONE_SCALE })
 }
 
@@ -133,6 +231,16 @@ mod tests {
         // a quarter turn: x goes to y
         assert!((m[0]).abs() < 1e-6 && (m[1] - 1.0).abs() < 1e-6);
         assert_eq!((m[12], m[13], m[10], m[15]), (3.0, 4.0, 1.0, 1.0));
+    }
+
+    #[test]
+    fn a_heading_faces_along_its_step() {
+        // forward of heading 6 is +x, of 4 is -y, of 0 is +y, of 2 is -x
+        assert_eq!(heading_along(16, 0), Some(6));
+        assert_eq!(heading_along(0, -24), Some(4));
+        assert_eq!(heading_along(0, 5), Some(0));
+        assert_eq!(heading_along(-3, 0), Some(2));
+        assert_eq!(heading_along(0, 0), None);
     }
 
     #[test]

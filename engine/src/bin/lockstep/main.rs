@@ -669,6 +669,8 @@ fn main() -> ExitCode {
     // skeletons found on the disc)
     if std::env::var_os("LOCKSTEP_ANIM_BONES").is_some() {
         anim::bones(&log, &d);
+        // the Sims' bones from the engine's own state (the run's --card, if any)
+        anim::sims(&log, &d, &lib, &ngh, args.iter().position(|a| a == "--card").and_then(|i| args.get(i + 1)).map(String::as_str));
     }
     // (LOCKSTEP_ANIM_DRAWS: the drawn world matrices against the bone matrices of their tick)
     if std::env::var_os("LOCKSTEP_ANIM_DRAWS").is_some() {

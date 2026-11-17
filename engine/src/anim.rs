@@ -1326,6 +1326,11 @@ impl Catalog {
         Catalog { by_id, exact, lower, notes, sets }
     }
 
+    /// The animation of a name as written.
+    pub fn by_name(&self, name: &str) -> Option<&Anim> {
+        self.by_id.get(self.exact.get(name)?)
+    }
+
     /// The loads at the house's start: its preload sets in memory.
     pub fn loads(&self) -> Loads {
         let refs: Vec<&[u8]> = self.sets.iter().map(|v| v.as_slice()).collect();
