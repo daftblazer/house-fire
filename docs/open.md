@@ -49,14 +49,15 @@
   out). Also left: the outer lot 619, window glass 226, counter 158, wall caps 127, lattice door
   108, aquarium 105, birch 123; 15 object meshes' light sets (below). Still from the log: the
   camera ('c' parameters), the lot choice, the clock passes.
-- **The engine's Sims** (S1): drawn from the engine's poses (Sims' own pixels 88.08%, log mode
-  88.50%; `view`'s shot 99.99% of render-check's). Still from the log: the two 128x128 run-time
-  textures and palettes (`rletextu.arc` composition not read), the cook's heading (the
-  engine's `facing` is 0 where she stands at 6: `headings_from_log`), which Sim the portrait
-  shows, the 'k' frame places, five held objects. Not built: layered tracks (standing loop,
-  face, carry loops, node weights): the male's right arm 0.34 off, neck and head 0.01-0.02.
-  Shadows from the engine 80.54% (log mode 86.59%): shears fitted at one clock
-  (SHADOW_SHEAR_OBJECT 1.144, _WALL 0.9286, source unknown), indoor objects' unsheared.
+- **The engine's Sims** (S1, T1, A1): drawn from the engine's poses, textures and headings
+  (Sims' own pixels 92.50%, portrait 96.10%; log mode 88.50%; `view`'s shot 99.99%). Bones
+  within 1e-4 of the log's: the male 53 of 58, the cook 47 (the rest not drawn: roots, thumbs,
+  hair nodes). Left: the male's head (its parts' world matrix) is the engine's of the tick
+  before, 0.027 tile off, the cook's is not; tracks other than action, carry and face (walk,
+  turn, idle) not made; the face layer's node weights from '=' records that stop at tick 643;
+  the carry loop checked at one tick. Still from the log: which Sim the portrait shows, the
+  'k' frame places, five held objects (Prop_Spoon, Carry_*: a few pixels). Shadows' shears:
+  above.
 - **The device run**: the RK3566 run of `view` (aarch64 build, `--ticks 1200 --frame-times`)
   needs the user's SSH; by the PC's figures the CPU's frame build (~18 ms there) is the risk
   (docs/assets.md "The budget").
