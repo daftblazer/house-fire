@@ -9,6 +9,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::anim::Anim;
 use crate::disc::Disc;
 use crate::draw::{Part, PartIndex};
 use crate::lamps::{self, Sources};
@@ -108,14 +109,28 @@ pub fn world_of(m: &Mat4, scale: f32) -> [f32; 12] {
     out
 }
 
+/// The game's ticks a second (the animations' rates are frames a second).
+const TICKS_PER_SECOND: f32 = 30.0;
+
+/// The frame an object's idle animation is at on `tick`: it has played from tick 0 at its rate
+/// (frames a second), looping (`Anim::end_mode` 0) or held at its last frame. The trees' sway
+/// (201 frames at 60 a second) is at frame 69 on tick 1,039: 2 x 1,039 + 1 less 10 x 201; the
+/// one frame past is the first tick's own.
+pub fn idle_place(anim: &Anim, tick: u32) -> f32 {
+    let frames = anim.frames as f32;
+    let at = (tick as f32 * anim.rate / TICKS_PER_SECOND + 1.0).max(0.0);
+    if anim.end_mode() == 0 { at.rem_euclid(frames) } else { at.min(frames - 1.0) }
+}
+
 fn kind_of(part: &Part<'_>) -> Kind {
     if part.batch.list.is_some() { Kind::ObjectList } else { Kind::ObjectPart }
 }
 
 /// The draws of the lot's objects: for each placement (one a multi-tile object's leader), the
 /// parts of the models its parts' definitions name, on the bones of its idle pose. A part with several
-/// matrices (a Sim's skin) is not an object's.
-pub fn object_draws(models: &Models, placements: &[Placement], guids_of: impl Fn(i16) -> Vec<u32>, resources: &BTreeMap<u32, ObjResources>) -> Vec<Draw> {
+/// matrices (a Sim's skin) is not an object's. An object plays its idle animation from the start
+/// of the run (`idle_place` at `tick`).
+pub fn object_draws(models: &Models, placements: &[Placement], guids_of: impl Fn(i16) -> Vec<u32>, resources: &BTreeMap<u32, ObjResources>, tick: u32) -> Vec<Draw> {
     let mut out = Vec::new();
     for p in placements {
         let guids = guids_of(p.leader);
@@ -130,7 +145,7 @@ pub fn object_draws(models: &Models, placements: &[Placement], guids_of: impl Fn
             drawn.push(record);
             let rec = models.parts.record(record);
             let skeleton = models.sources.skeletons.get(&r.model).or_else(|| models.sources.skeletons.get(&id));
-            let posed = skeleton.zip(models.sources.anims.get(&r.idle)).and_then(|(s, a)| lamps::idle_bones(s, a, &root, rec.scale));
+            let posed = skeleton.zip(models.sources.anims.get(&r.idle)).and_then(|(s, a)| lamps::bones_at(s, a, idle_place(a, tick), &root, rec.scale));
             let bones = posed.as_ref().map(|b| &b.0);
             let hidden = |bone: Option<usize>| posed.as_ref().zip(bone).is_some_and(|(p, b)| p.1.get(b).is_some_and(|pose| pose.flags & NODE_HIDDEN != 0));
             for part in models.parts.parts_of(record).filter(|p| !p.skinned() && !hidden(p.bone())) {

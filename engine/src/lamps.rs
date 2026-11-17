@@ -71,13 +71,18 @@ fn is_animated(node: &Node) -> bool {
 /// The poses of every node of `anim` at its idle place. The scalar streams (words 5 and 6; not
 /// decoded) are left out of a node's pose, which then keeps their defaults.
 pub fn idle_poses(anim: &Anim) -> Vec<Pose> {
+    poses_at(anim, IDLE_PLACE)
+}
+
+/// The poses of every node of `anim` at `place` (a frame, as the animation's tracks are read).
+pub fn poses_at(anim: &Anim, place: f32) -> Vec<Pose> {
     let mut plain = anim.clone();
     for node in plain.nodes.iter_mut().filter(|n| is_animated(n)) {
         node[5] = 0;
         node[6] = 0;
     }
     let mut streams = TrackStreams::new(&plain);
-    (0..plain.nodes.len()).map(|i| streams.local(&plain, i, IDLE_PLACE, 0).unwrap_or_default()).collect()
+    (0..plain.nodes.len()).map(|i| streams.local(&plain, i, place, 0).unwrap_or_default()).collect()
 }
 
 /// The poses of an object idle in `anim` on `skeleton`: the bone matrices (rows, the
@@ -85,10 +90,15 @@ pub fn idle_poses(anim: &Anim) -> Vec<Pose> {
 /// nodes do not fit the skeleton's bones. `scale` is the controller's (1: the matrices' 3 x 3 stay
 /// unscaled).
 pub fn idle_bones(skeleton: &Skeleton, anim: &Anim, root: &Mat4, scale: f32) -> Option<(Vec<Mat4>, Vec<Pose>)> {
+    bones_at(skeleton, anim, IDLE_PLACE, root, scale)
+}
+
+/// `idle_bones` at `place` of the animation.
+pub fn bones_at(skeleton: &Skeleton, anim: &Anim, place: f32, root: &Mat4, scale: f32) -> Option<(Vec<Mat4>, Vec<Pose>)> {
     if anim.nodes.len() != skeleton.bones.len() {
         return None;
     }
-    let poses = idle_poses(anim);
+    let poses = poses_at(anim, place);
     let nodes: Vec<CharNode> = skeleton.bones.iter().map(CharNode::from_bone).collect();
     let states: Vec<NodeState> = poses.iter().map(|p| NodeState { flags: p.flags, rotation: p.rotation, translation: p.translation, scale: p.scale }).collect();
     // the controller's mode word is not 0 for these objects (the logged bones')

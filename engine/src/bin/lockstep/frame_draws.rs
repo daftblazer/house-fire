@@ -23,13 +23,20 @@ use housefire::tree_log::{Log, StripRec};
 /// the 3 x 3 relative to its own scale).
 const TOLERANCE: f32 = 1e-4;
 
-/// The part of the screen (0 to 1 across and down) a draw's place may be in for the original to draw
-/// its model, as (left, right, top, bottom): a model reaches past its place (a tree's crown, a
-/// wall's height). Fitted at tick 1,039 of home-a39.log (printed as "the log's draws' places on
-/// the screen": x -0.007 to 1.058, y -0.224 to 0.553) with a little room: the smallest box that
-/// holds every draw the log made. Not the original's own test (a bounding volume against the
-/// frustum); the renderer clips what is left.
-const VISIBLE: [f32; 4] = [-0.01, 1.06, -0.23, 0.56];
+/// The part of the screen (0 to 1 across and down) a part's place may be in for the original to
+/// draw it, as (left, right, top, bottom): a model reaches past its place (a tree's crown, a
+/// wall's height). Fitted at tick 1,039 of home-a39.log (the log's draws' places span x 0.006 to
+/// 1.034, y -0.179 to 0.620) with a little room: the smallest box that holds every draw the log
+/// made. Not the original's own test (a bounding volume of the record against the frustum, not
+/// decoded): the renderer clips what is left.
+const VISIBLE: [f32; 4] = [0.0, 1.04, -0.19, 0.63];
+
+/// Whether a part's place (`world`'s translation) is in `VISIBLE` of the logged view's screen.
+fn on_screen(view: &[f32], projection: Option<[f32; 6]>, world: &[f32; 12]) -> bool {
+    let Some(pr) = projection else { return true };
+    let Ok(view): Result<[f32; 12], _> = view.get(..12).unwrap_or_default().try_into() else { return true };
+    housefire::scene::Camera::on_screen(&view, &pr, [world[3], world[7], world[11]]).is_some_and(|s| (VISIBLE[0]..=VISIBLE[1]).contains(&s[0]) && (VISIBLE[2]..=VISIBLE[3]).contains(&s[1]))
+}
 
 /// A draw of the log's tick the engine's list answers for.
 struct LogDraw<'a> {
@@ -138,6 +145,8 @@ fn log_draws<'a>(log: &Log, models: &'a Models, tick: u32, outer_lot: Option<usi
 
 pub fn frame_draws(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quickdata::ObjResources>, d: &Disc, tick: u32) {
     let models = Models::read(d);
+    let strip_ticks: BTreeSet<u32> = log.strips.iter().map(|s| s.tick).collect();
+    println!("frame draws: the log's strips are at ticks {:?}", strip_ticks.iter().take(12).collect::<Vec<_>>());
     // the lot's own model: its house number's (the lot's global 10, which the game sets as it
     // enters the lot; the loaded lot keeps none yet: LOCKSTEP_FRAME_HOUSE, home 1) HouseData row
     let house = std::env::var("LOCKSTEP_FRAME_HOUSE").ok().and_then(|v| v.parse::<usize>().ok()).unwrap_or(1);
@@ -235,7 +244,7 @@ pub fn frame_draws(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quic
             }
         }
     }
-    let mut mine: Vec<Draw> = drawlist::object_draws(&models, &placements, |id| world.find_object(id).into_iter().chain(world.objects().filter(|o| o.leader == id)).map(|o| o.guid).collect(), res);
+    let mut mine: Vec<Draw> = drawlist::object_draws(&models, &placements, |id| world.find_object(id).into_iter().chain(world.objects().filter(|o| o.leader == id)).map(|o| o.guid).collect(), res, tick);
     // the eye: the log's view of the tick (the camera is not the engine's own yet), eye = -R^T t
     let view = log.matrices.iter().find(|m| !m.projection && m.id == 0xF0 && m.tick == tick).map(|m| m.values.clone()).unwrap_or_default();
     let projection: Option<[f32; 6]> = log.matrices.iter().find(|m| m.projection && m.id == 0 && m.tick == tick).and_then(|m| m.values.get(..6)?.try_into().ok());
@@ -307,16 +316,15 @@ pub fn frame_draws(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quic
         if !used[i] {
             by_name.entry(mine_parts[i].record.name.clone()).or_default()[2] += 1;
             stat.entry(d.kind).or_default()[5] += 1;
-            // the draw's place against the logged view's screen (`VISIBLE`)
-            let seen = projection.is_some_and(|pr| {
-                view.len() >= 12 && housefire::scene::Camera::on_screen(&view[..12].try_into().unwrap(), &pr, [d.world[3], d.world[7], d.world[11] + 1.0]).is_some_and(|s| (VISIBLE[0]..=VISIBLE[1]).contains(&s[0]) && (VISIBLE[2]..=VISIBLE[3]).contains(&s[1]))
-            });
+            // whether the logged view's screen holds the part
+            let seen = on_screen(&view, projection, &d.world);
             if !seen {
                 stat.entry(d.kind).or_default()[6] += 1;
                 by_name.entry(format!("{} (off screen)", mine_parts[i].record.name)).or_default()[2] += 1;
             }
             if seen && std::env::var_os("LOCKSTEP_FRAME_EXTRA").is_some() {
-                println!("  extra in view: {} {} vertices at ({}, {}, {})", mine_parts[i].record.name, mine_parts[i].batch.count, d.world[3], d.world[7], d.world[11]);
+                let sc = housefire::scene::Camera::on_screen(&view[..12].try_into().unwrap(), &projection.unwrap(), [d.world[3], d.world[7], d.world[11]]);
+                println!("  extra in view: {} {} vertices at ({}, {}, {}) screen {:?}", mine_parts[i].record.name, mine_parts[i].batch.count, d.world[3], d.world[7], d.world[11], sc);
             }
         }
     }
@@ -335,20 +343,12 @@ pub fn frame_draws(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quic
             println!("  {n}: matrix off {}, missing {}, extra {}", c[0], c[1], c[2]);
         }
     }
-    if let (Some(pr), true) = (projection, view.len() >= 12) {
-        // the log's own draws' places on the screen: the margin they need
-        let mut lo = [f32::MAX; 2];
-        let mut hi = [f32::MIN; 2];
-        for l in theirs.iter().filter(|l| l.kind != Kind::LotList) {
-            if let Some(s) = housefire::scene::Camera::on_screen(&view[..12].try_into().unwrap(), &pr, [l.world[3], l.world[7], l.world[11] + 1.0]) {
-                for k in 0..2 {
-                    lo[k] = lo[k].min(s[k]);
-                    hi[k] = hi[k].max(s[k]);
-                }
-            }
-        }
-        println!("frame draws: the log's draws' places on the screen: x {:.3} to {:.3}, y {:.3} to {:.3}", lo[0], hi[0], lo[1], hi[1]);
+    // the test on the log's own draws: any it would cull is a draw it cannot explain away
+    let culled = theirs.iter().filter(|l| l.kind != Kind::LotList && !on_screen(&view, projection, &l.world)).count();
+    for l in theirs.iter().filter(|l| l.kind != Kind::LotList && !on_screen(&view, projection, &l.world)) {
+        println!("  the screen test culls: {} {} vertices at ({}, {}, {})", l.candidates[0].record.name, l.candidates[0].batch.count, l.world[3], l.world[7], l.world[11]);
     }
+    println!("frame draws: the screen test would cull {culled} of the log's {} draws (none is the aim)", theirs.len());
     println!("frame draws, tick {tick}: set aside (out of scope): {counts:?}");
     let total = |j: usize| stat.values().map(|s| s[j]).sum::<usize>();
     let line = |label: &str, j: usize| {
