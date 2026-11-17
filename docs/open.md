@@ -27,8 +27,8 @@ engineering of the original's code, not more fitting. The list below this sectio
    "Frames and ticks"; `routing::FrameClock`): a clock in milliseconds, 33 a frame times the
    speed's factor, a tick for every 42.0 (802CEBFC), held to 840, afresh after the speed's
    change; native to the bit on every tick of the home session and all but one of the club's.
-   Left, each now a matter of using it: the replay's animation frames still placed by the log
-   (animate.rs); the 20 walking places a frame early or late (plan.md "Next"); the club's laser
+   The replay's animation frames are placed by it (home 8,598 of 8,598, club all but the 42
+   beside menu steps; loop.md 5e h). Left, each now a matter of using it: the 20 walking places a frame early or late (plan.md "Next"); the club's laser
    place after tick 6; the male's head a tick behind; which bone set a skinned draw uses (296
    of 4,712); which loads pause whose Animate (primitives.md 412-418). Unread: the held frame
    (fn_80239280 says no tick and the clock is set to 0: club tick 3204, at the change into the

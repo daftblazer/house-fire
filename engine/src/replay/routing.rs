@@ -1350,29 +1350,25 @@ pub(super) fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, c
     let mut clock_frames: BTreeMap<u32, u32> = BTreeMap::new();
     // The frame clock against the original's own (',' records): from the first tick's clock,
     // each tick's frames and the clock after it natively, the speed setting an input.
-    if log.clock.len() > 1 {
-        let mut clock = FrameClock { ms: log.clock[0].2 };
-        let (mut same, mut different) = (0, 0);
-        clock_frames.insert(log.clock[0].0, 0);
-        for w in log.clock.windows(2) {
-            let ((_, speed_before, _, frame_before), (_, speed, ms, frame)) = (w[0], w[1]);
-            if speed != speed_before {
-                clock.restart();
-            }
-            let frames = clock.frames_to_tick_at(crate::routing::speed_factor(i32::from(speed)));
-            clock_frames.insert(w[1].0, frames);
-            if frames == frame.wrapping_sub(frame_before) && clock.ms.to_bits() == ms.to_bits() {
-                same += 1;
-            } else {
+    {
+        let ticks = super::animate::native_clock(log);
+        if let Some(first) = log.clock.first().filter(|_| !ticks.is_empty()) {
+            clock_frames.insert(first.0, 0);
+        }
+        let mut different = 0;
+        for t in &ticks {
+            clock_frames.insert(t.tick, t.frames);
+            if !t.same() {
                 different += 1;
                 if different <= 5 {
-                    println!("clock different at tick {}: speed {speed_before} -> {speed}, frames native {frames} log {}, clock native {} log {ms}", w[1].0, frame.wrapping_sub(frame_before), clock.ms);
+                    println!("clock different at tick {}: speed {} -> {}, frames native {} log {}, clock native {} log {}", t.tick, t.speed_before, t.speed, t.frames, t.log_frames, t.ms, t.log_ms);
                 }
-                clock.ms = ms;
             }
         }
-        counts.add("clock: a tick's frames and the clock after it natively the original's, to the bit", same);
-        counts.add("clock: a tick's frames or clock DIFFERENT", different);
+        if !ticks.is_empty() {
+            counts.add("clock: a tick's frames and the clock after it natively the original's, to the bit", ticks.len() - different);
+            counts.add("clock: a tick's frames or clock DIFFERENT", different);
+        }
     }
     let mut native_frame_ticks: Vec<u32> = Vec::new();
     // Frames and ticks (`FrameClock`): the frames each tick holds natively against a walker's

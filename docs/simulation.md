@@ -1574,6 +1574,13 @@ with the fitted clock) and all 14 covered routing runs return on the original's 
 not). A real-time run and an unpaced one give the same log byte for byte: the frame's time is
 0.033 either way, so the pattern depends on nothing but the speed.
 
+**A frame's order** (2026-11-17, from the track records' places among the steps): the ticks the
+clock gives the frame, then the engine's own steps (the pie menu's checks, when the player
+asks), then the animations' update. So every animation frame before a tick sits on the boundary
+before it, and a tick that follows two frames has both there. The replay places its frames so
+(`replay::animate::native_clock`): home-full 8,598 of 8,598 in play at the log's place, club-full
+8,034, and 42 more that the log has before menu steps run in a later frame with no tick.
+
 **A routing primitive's return.** GotoRoutingSlot and GotoRelativePosition yield (result 1) every
 tick from their plan until they return. Their walker done (state 4), the follower runs one frame
 more (4 again, or 5 at a door) and is let go; the primitive returns on the tick after that frame's

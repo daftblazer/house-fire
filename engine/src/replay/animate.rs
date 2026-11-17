@@ -6,7 +6,8 @@ use crate::{FileId, TreeId};
 use super::study::{env, has};
 
 /// The Animate primitive run natively through the engine's `anim::Animator`, its Sims' plays
-/// stepped by the log's frames ('k' records) where they fall among the steps. The speed of a
+/// stepped a frame at a time: the frames placed among the steps by the native frame clock
+/// (`native_clock`; by the log's track records where the log has no clock). The speed of a
 /// frame: 0 for the Sims a load miss of its tick stops (the asker of a miss the original asked,
 /// replayed through `anim::Loads`, and every Sim with an Animate step that tick), 5 on the
 /// fast-forward's frames (the log's), else 1.
@@ -32,7 +33,7 @@ pub(super) struct AnimReplay {
 }
 
 impl AnimReplay {
-    pub(super) fn new(log: &Log, lib: &Library, cat: crate::anim::Catalog) -> Option<AnimReplay> {
+    pub(super) fn new(log: &Log, lib: &Library, cat: crate::anim::Catalog, counts: &mut super::counts::Counts) -> Option<AnimReplay> {
         if log.tracks.is_empty() {
             return None;
         }
@@ -43,6 +44,46 @@ impl AnimReplay {
                 last = Some(t.frame);
                 frames.push((t.tick, t.after_steps));
             }
+        }
+        // With the original's clock logged, the frames in play are placed natively: a frame
+        // runs its ticks and then the animations, so the frames before a tick (the native
+        // clock's) all fall on the boundary before it. The frames before the first tick and
+        // after the last are the log's (the lot's start is not the clock's).
+        let clock = native_clock(log);
+        if let (Some(first), Some(last)) = (clock.first(), clock.last()) {
+            let logged = std::mem::take(&mut frames);
+            frames.extend(logged.iter().copied().filter(|f| f.0 < first.tick));
+            let before_play = frames.len();
+            for t in &clock {
+                // (where the native clock differs, the log's count, so that the run goes on)
+                let n = if t.same() { t.frames } else { t.log_frames };
+                let at = log.tick_steps.get(t.tick as usize).copied().unwrap_or(log.steps.len());
+                frames.extend(std::iter::repeat_n((t.tick, at), n as usize));
+            }
+            let in_play = frames.len() - before_play;
+            frames.extend(logged.iter().copied().filter(|f| f.0 > last.tick));
+            // A frame runs its ticks, then the engine's own steps (the menu's checks, when the
+            // player asks: not the simulation's, not run here), then the animations. So a
+            // logged frame sits before such steps when they came in a later frame with no tick:
+            // the same place for the simulation.
+            let apart = |a: &(u32, usize), b: &(u32, usize)| a.0 == b.0 && b.1 < a.1 && log.steps[b.1..a.1].iter().all(|s| !s.in_pass);
+            let own = frames.iter().zip(&logged).filter(|(a, b)| apart(a, b)).count();
+            for (a, b) in frames.iter_mut().zip(&logged) {
+                if apart(a, b) {
+                    *a = *b;
+                }
+            }
+            counts.add("animation: frames in play before the engine's own steps of a later frame (the log's place)", own);
+            let same = frames.iter().zip(&logged).filter(|(a, b)| a == b).count() - own;
+            if has("REPLAY_SHOW_FRAME_PLACES") {
+                println!("frames native {} logged {}", frames.len(), logged.len());
+                for (i, (a, b)) in frames.iter().zip(&logged).enumerate().filter(|(_, (a, b))| a != b).take(12) {
+                    println!("  frame {i}: native {a:?} logged {b:?} (the boundary before tick {} is {:?})", b.0, log.tick_steps.get(b.0 as usize));
+                }
+            }
+            counts.add("animation: frames before play and after the last tick (the log's)", frames.len() - in_play);
+            counts.add("animation: frames in play placed by the native clock, as the log's", same.saturating_sub(frames.len() - in_play));
+            counts.add("animation: frames in play placed by the native clock, DIFFERENT", frames.len().max(logged.len()) - same - own);
         }
         let mut moving: BTreeMap<u32, bool> = BTreeMap::new();
         for r in &log.speeds {
@@ -161,4 +202,46 @@ pub(super) fn animate_differs(native: &Option<crate::anim::Poll>, s: &StepRec, l
         Some(Poll::Event(_)) => s.result != 1 && !logged_true,
         None => true,
     }
+}
+
+/// A tick of the native frame clock against the original's (',' records).
+pub(super) struct ClockTick {
+    /// The tick about to start.
+    pub(super) tick: u32,
+    pub(super) speed_before: i16,
+    pub(super) speed: i16,
+    /// The frames since the tick before, natively and as logged.
+    pub(super) frames: u32,
+    pub(super) log_frames: u32,
+    /// The clock after this tick's share was taken.
+    pub(super) ms: f32,
+    pub(super) log_ms: f32,
+}
+
+impl ClockTick {
+    pub(super) fn same(&self) -> bool {
+        self.frames == self.log_frames && self.ms.to_bits() == self.log_ms.to_bits()
+    }
+}
+
+/// The frame clock run natively from the log's first value, the speed setting an input: each
+/// tick after the first. Where it differs the clock goes on from the log's.
+pub(super) fn native_clock(log: &Log) -> Vec<ClockTick> {
+    let Some(first) = log.clock.first() else { return Vec::new() };
+    let mut clock = crate::routing::FrameClock { ms: first.2 };
+    log.clock
+        .windows(2)
+        .map(|w| {
+            let ((_, speed_before, _, frame_before), (tick, speed, log_ms, frame)) = (w[0], w[1]);
+            if speed != speed_before {
+                clock.restart();
+            }
+            let frames = clock.frames_to_tick_at(crate::routing::speed_factor(i32::from(speed)));
+            let t = ClockTick { tick, speed_before, speed, frames, log_frames: frame.wrapping_sub(frame_before), ms: clock.ms, log_ms };
+            if !t.same() {
+                clock.ms = log_ms;
+            }
+            t
+        })
+        .collect()
 }

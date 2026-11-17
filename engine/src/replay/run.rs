@@ -353,8 +353,9 @@ impl<'l> Replay<'l> {
             now: 0,
             routing_returns: BTreeMap::new(),
             pre_made: BTreeSet::new(),
-            anim: cat.and_then(|c| AnimReplay::new(log, lib, c)),
+            anim: None,
         };
+        h.anim = cat.and_then(|c| AnimReplay::new(log, lib, c, &mut h.counts));
         for i in 0..native_plans.0 {
             h.counts.note(if i < native_plans.1 {
                 "planner: a plan's points natively, in the log's place, the same as the log's"
