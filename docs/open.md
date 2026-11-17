@@ -19,6 +19,8 @@ engineering of the original's code, not more fitting. The list below this sectio
    steps with nothing set: home 50,938. First: a free mode (the log only as the player's
    commands, dialog answers and random seed) that reports the first tick and step where the
    native stack leaves the log's; then that tick driven to the log's end, on home then club.
+   The measure meanwhile (2026-11-17): `tools/log_debt.py` on a replay's summary, home 46,278,
+   club 45,158, the fast log 30,512, to drive to zero (zero = the log only compared with).
    Everything after stage 4 (saves, menus, story, multiplayer) stands on this.
 2. **The original's loop of frames and ticks** (one cause under at least six items): how many
    simulation ticks and animation frames a display frame holds, and their order. Not modelled,
