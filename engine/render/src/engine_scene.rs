@@ -133,6 +133,30 @@ fn state_of(m: &mut Material, kind: Kind, cutout: bool) {
     m.dst_alpha = Some(if kind == Kind::LotList { DST_ALPHA_GROUND } else { DST_ALPHA_OBJECT });
 }
 
+/// The tint every light's colour is scaled by in the device's light set, and the ambient's (the
+/// log's `tints`: 0.5 and 0.5 on every draw of the frames), the constant term of a point light's
+/// falloff, and the factor from a light's reach to its linear term (the logged `globals`: 1.0
+/// and 0.1; a lamp's reach 2 is a k1 of 0.2).
+pub const LIGHT_TINT: f32 = 0.5;
+pub const AMBIENT_TINT: f32 = 0.5;
+pub const POINT_K0: f32 = 1.0;
+pub const POINT_RANGE_SCALE: f32 = 0.1;
+
+/// A light colour as the game makes it a byte, back as 0..1 (`scene::lighting_of`).
+fn tinted(colour: [f32; 3], tint: f32) -> [f32; 3] {
+    colour.map(|c| crate::scene::byte(tint * c))
+}
+
+/// The device's light set for what the engine says lights an object, in the view the draw is
+/// seen through: the ambient and sun (the direction the sun shines in, negated to point at it
+/// and turned by the view) and each light's colour and place in view space.
+pub fn lighting_for(l: &housefire::lighting::Lights, view: &Mat3x4) -> Lighting {
+    let turn = |d: [f32; 3]| -> [f32; 3] { std::array::from_fn(|r| view[r * 4] * d[0] + view[r * 4 + 1] * d[1] + view[r * 4 + 2] * d[2]) };
+    let directionals = l.sun.iter().map(|s| Directional { colour: tinted(s.colour, LIGHT_TINT), to_light: turn(s.direction.map(|v| -v)) }).collect();
+    let points = l.points.iter().map(|p| Point { colour: tinted(p.colour, LIGHT_TINT), position: crate::scene::apply(view, p.at), k0: POINT_K0, k1: p.reach * POINT_RANGE_SCALE }).collect();
+    Lighting::Lit { ambient: tinted(l.ambient, AMBIENT_TINT), directionals, points }
+}
+
 /// What the engine's own state gives for a frame: the lot's model draws.
 pub struct Plan {
     pub models: Models,
@@ -140,6 +164,11 @@ pub struct Plan {
     pub placements: Vec<housefire::scene::Placement>,
     /// The GUIDs of each placement's parts, by leader.
     pub guids: std::collections::BTreeMap<i16, Vec<u32>>,
+    /// The lamps among the placements and their lights (`housefire::lamps`).
+    pub lamps: Vec<housefire::lamps::Lamp>,
+    pub lights: housefire::lighting::LotLights,
+    /// The clock the light is made at (hour, minute, second).
+    pub clock: (i32, i32, i32),
 }
 
 /// The engine's lot (the disc's, or the card's save: `card` the memory card image; the lot the
@@ -159,6 +188,8 @@ pub fn plan(disc: &housefire::disc::Disc, card: Option<&std::path::Path>, log: &
     let (lots, _, _, best, _) = housefire::lotpick::pick_lot(&lib, &ngh, log);
     let mut world = World::new(&lib);
     world.load_lot(&lots[best]).ok()?;
+    // the lot's globals as saved (its SIMI chunk): the clock among them
+    world.globals = save::read_lot_globals(&ngh).ok().and_then(|g| g.get(best).cloned()).unwrap_or_default();
     let quick = disc.read("quickdat.arc")?;
     let res = housefire::arc::entries(&quick)?.into_iter().find(|e| e.name == "SimsObjects").and_then(|e| housefire::quickdata::Image::read(housefire::arc::bytes(&quick, &e))).map(|img| housefire::quickdata::object_resources(&img))?;
     let models = Models::read(disc);
@@ -172,7 +203,18 @@ pub fn plan(disc: &housefire::disc::Disc, card: Option<&std::path::Path>, log: &
         }
     }
     let guids = lot.placements.iter().map(|p| (p.leader, world.find_object(p.leader).into_iter().chain(world.objects().filter(|o| o.leader == p.leader)).map(|o| o.guid).collect())).collect();
-    Some(Plan { models, draws: lot.draws, placements: lot.placements, guids })
+    let guids_of = |id: i16| world.find_object(id).into_iter().chain(world.objects().filter(|o| o.leader == id)).map(|o| o.guid).collect::<Vec<u32>>();
+    let lamps = housefire::lamps::on_lot(&lot.placements, guids_of, &res, &models.sources);
+    // the clock: the lot's own (the original's globals 0, 5 and 6) as loaded, then one pass for
+    // each tick before this one, as `replay` counts them: a pass the player's dialog stopped (the
+    // log's `stopped_at`) does not count
+    for t in 1..tick {
+        world.clock_pass(log.passes.get(&t).is_some_and(|p| p.stopped_at != 0));
+    }
+    let g = |i: usize| world.globals.get(i).copied().map_or(0, i32::from);
+    let clock = (g(0), g(5), g(6));
+    let lights = housefire::lighting::LotLights::build(&world, &res, &lamps, clock);
+    Some(Plan { models, draws: lot.draws, placements: lot.placements, guids, lamps, lights, clock })
 }
 
 /// Puts the engine's draws where the log's first rigid or display-list draw was and takes the log's

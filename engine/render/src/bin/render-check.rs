@@ -151,7 +151,7 @@ fn main() -> ExitCode {
         };
         let lighting = |d: &housefire::drawlist::Draw| {
             if std::env::var_os("HF_ORACLE").is_none() {
-                return Lighting::Lit { ambient: [0.5; 3], directionals: Vec::new(), points: Vec::new() };
+                return engine_scene::lighting_for(&plan.lights.at(d.origin[0], d.origin[1]), &view);
             }
             let near = |a: &[f32; 12]| (0..12).all(|i| (a[i] - d.world[i]).abs() <= 1e-4 * if i % 4 == 3 { 1.0 } else { a[0].abs().max(a[5].abs()).max(a[10].abs()).max(1e-9) });
             match oracle.iter().find(|o| near(&o.0)) {
@@ -161,6 +161,37 @@ fn main() -> ExitCode {
         };
         let made = assets.engine_draws(&mut scene, &engine_scene::Inputs { draws: &plan.draws, models: &plan.models, shaders: &shaders, lighting: &lighting, view });
         let planned = made.len();
+        if std::env::var_os("HF_LIGHTSTUDY").is_some() {
+            // the log's light sets in world space, once for each object place; the engine's lamps
+            let v = view;
+            let to_world = |p: [f32; 3]| -> [f32; 3] { let q = [p[0] - v[3], p[1] - v[7], p[2] - v[11]]; [0, 1, 2].map(|c| (0..3).map(|r| v[4 * r + c] * q[r]).sum::<f32>()) };
+            let turn_world = |p: [f32; 3]| -> [f32; 3] { [0, 1, 2].map(|c| (0..3).map(|r| v[4 * r + c] * p[r]).sum::<f32>()) };
+            let mut seen = std::collections::BTreeSet::new();
+            for m in &made {
+                let Some(o) = oracle.iter().find(|o| (0..12).all(|i| (o.0[i] - m.draw.world[i]).abs() < 1e-4 * if i % 4 == 3 { 1.0 } else { 0.05 })) else { continue };
+                let key = format!("{:?}", o.1);
+                if !seen.insert(key) { continue; }
+                let Lighting::Lit { ambient, directionals, points } = &o.1 else { println!("LS {} vertex colours", m.info.model); continue };
+                let org = plan.draws.iter().zip(&made).find(|(_, mm)| std::ptr::eq(*mm, m)).map(|(d, _)| (d.origin, d.object));
+                let dirs: Vec<String> = directionals.iter().map(|d| format!("dir {:.3?} to {:.3?}", d.colour, turn_world(d.to_light))).collect();
+                let pts: Vec<String> = points.iter().map(|p| format!("pt {:.2?} col {:.3?} k1 {}", to_world(p.position), p.colour, p.k1)).collect();
+                println!("LS {} at {:?} amb {:.3?} {} {}", m.info.model, org, ambient, dirs.join(" "), pts.join(" "));
+            }
+            println!("LS clock {:?}; the engine's sun {:?}", plan.clock, plan.lights.at(1.0, 1.0).sun);
+            let mut shown = std::collections::BTreeSet::new();
+            for (d, m) in plan.draws.iter().zip(&made) {
+                if !shown.insert((d.origin[0].to_bits(), d.origin[1].to_bits())) { continue; }
+                let Lighting::Lit { ambient, directionals, points } = engine_scene::lighting_for(&plan.lights.at(d.origin[0], d.origin[1]), &view) else { continue };
+                let dirs: Vec<String> = directionals.iter().map(|d| format!("dir {:.3?} to {:.3?}", d.colour, turn_world(d.to_light))).collect();
+                let pts: Vec<String> = points.iter().map(|p| format!("pt {:.2?} col {:.3?} k1 {}", to_world(p.position), p.colour, p.k1)).collect();
+                println!("LE {} at {:?} amb {:.3?} {} {}", m.info.model, d.origin, ambient, dirs.join(" "), pts.join(" "));
+            }
+            for l in &plan.lamps {
+                for x in &l.lights {
+                    println!("LAMP leader {} at ({}, {}) light node {} at {:.2?} colour {:.3?} reach {}", l.leader, l.place.x, l.place.y, x.node, x.at, x.colour, x.reach);
+                }
+            }
+        }
         if std::env::var_os("HF_MATDIFF").is_some() {
             // the materials against the log's, by world matrix and vertex count: what differs, by model
             let near = |a: &[f32; 12], b: &[f32; 12]| (0..12).all(|i| (a[i] - b[i]).abs() <= 1e-4 * if i % 4 == 3 { 1.0 } else { a[0].abs().max(a[5]).max(a[10]).max(1e-9) });
