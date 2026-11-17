@@ -76,13 +76,20 @@ pub fn idle_poses(anim: &Anim) -> Vec<Pose> {
 
 /// The poses of every node of `anim` at `place` (a frame, as the animation's tracks are read).
 pub fn poses_at(anim: &Anim, place: f32) -> Vec<Pose> {
-    let mut plain = anim.clone();
-    for node in plain.nodes.iter_mut().filter(|n| is_animated(n)) {
-        node[5] = 0;
-        node[6] = 0;
-    }
-    let mut streams = TrackStreams::new(&plain);
-    (0..plain.nodes.len()).map(|i| streams.local(&plain, i, place, 0).unwrap_or_default()).collect()
+    // (an animation with no scalar streams is read as it is, keeping its decoded keys)
+    let mut owned;
+    let plain = if anim.nodes.iter().any(is_animated) {
+        owned = anim.clone();
+        for node in owned.nodes.iter_mut().filter(|n| is_animated(n)) {
+            node[5] = 0;
+            node[6] = 0;
+        }
+        &owned
+    } else {
+        anim
+    };
+    let mut streams = TrackStreams::new(plain);
+    (0..plain.nodes.len()).map(|i| streams.local(plain, i, place, 0).unwrap_or_default()).collect()
 }
 
 /// The poses of an object idle in `anim` on `skeleton`: the bone matrices (rows, the

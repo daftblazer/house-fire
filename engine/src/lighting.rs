@@ -181,21 +181,19 @@ impl LotLights {
 
     /// The colours of floor corners `points` with their `cells` (`floor_cells`).
     pub fn floor_lit(&self, group: &([f32; 3], [f32; 3]), points: &[(i32, i32)], cells: &[Option<[u16; 4]>]) -> Vec<[u8; 4]> {
-        points
-            .iter()
-            .zip(cells)
-            .map(|(&(x, y), ids)| {
-                let mut lights = [None; 4];
-                let mut n = 0;
-                for &i in ids.iter().flatten().filter(|&&i| i != 0xFFFF) {
-                    let s = &self.sources[usize::from(i)];
-                    lights[n] = Some(light::Light { x: s.at[0], y: s.at[1], height: s.at[2], reach: s.reach, colour: s.colour });
-                    n += 1;
-                }
-                let lights: [light::Light; 4] = lights.map(|l| l.unwrap_or(light::Light { x: 0.0, y: 0.0, height: 0.0, reach: 0.0, colour: [0.0; 3] }));
-                light::vertex_colour(light::point_light(x as f32, y as f32, &lights[..n]), group.0, group.1)
-            })
-            .collect()
+        points.iter().zip(cells).map(|(&(x, y), ids)| light::vertex_colour(self.floor_light(x, y, ids), group.0, group.1)).collect()
+    }
+
+    /// The light falling on the floor corner (x, y) from the lights of its cell (`floor_cells`).
+    pub fn floor_light(&self, x: i32, y: i32, ids: &Option<[u16; 4]>) -> [f32; 3] {
+        let mut lights = [light::Light { x: 0.0, y: 0.0, height: 0.0, reach: 0.0, colour: [0.0; 3] }; 4];
+        let mut n = 0;
+        for &i in ids.iter().flatten().filter(|&&i| i != 0xFFFF) {
+            let s = &self.sources[usize::from(i)];
+            lights[n] = light::Light { x: s.at[0], y: s.at[1], height: s.at[2], reach: s.reach, colour: s.colour };
+            n += 1;
+        }
+        light::point_light(x as f32, y as f32, &lights[..n])
     }
 
     /// Whether `other` lights the same cells as these lights (the same places, reaches, ranges and

@@ -8,6 +8,7 @@
 //! scale (the positions' 16-bit units folded in).
 
 use std::collections::{BTreeMap, HashMap};
+use std::rc::Rc;
 
 use crate::anim::Anim;
 use crate::disc::Disc;
@@ -16,7 +17,8 @@ use crate::lamps::{self, Sources};
 use crate::quickdata::ObjResources;
 use crate::routing::Opening;
 use crate::scene::{Form, Placement, WallPiece};
-use crate::skeleton::{Mat4, IDENTITY};
+use crate::pose::Pose;
+use crate::skeleton::{Mat4, Skeleton, IDENTITY};
 
 /// The bit of a pose's flag word that hides its node: a model's part on a node whose idle pose has
 /// it is not drawn (a plant's spare leaf sets, a lamp's lit shade). Found by the parts the
@@ -125,17 +127,7 @@ pub fn world_of(m: &Mat4, scale: f32) -> [f32; 12] {
 /// The place (x, y) of the middle of a part's mesh (the mean of its vertices, in the record's
 /// units) at `world`; the world's own place for a mesh with no 16-bit positions (the cursors').
 pub fn mesh_centre(part: &Part<'_>, world: &[f32; 12]) -> [f32; 2] {
-    let (b, n) = (&part.batch.positions, part.batch.count);
-    if n == 0 || b.len() != 8 * n {
-        return [world[3], world[7]];
-    }
-    let mut sum = [0.0f32; 3];
-    for v in b.as_chunks::<8>().0 {
-        for (c, s) in sum.iter_mut().enumerate() {
-            *s += f32::from(i16::from_be_bytes([v[2 * c], v[2 * c + 1]]));
-        }
-    }
-    let m = sum.map(|s| s / n as f32);
+    let Some(m) = part.batch.centre else { return [world[3], world[7]] };
     [0, 1].map(|r| world[4 * r] * m[0] + world[4 * r + 1] * m[1] + world[4 * r + 2] * m[2] + world[4 * r + 3])
 }
 
@@ -180,12 +172,40 @@ fn kind_of(part: &Part<'_>) -> Kind {
 /// matrices (a Sim's skin) is not an object's. An object plays its idle animation from the start
 /// of the run (`idle_place` at `tick`).
 pub fn object_draws(models: &Models, placements: &[Placement], guids_of: impl Fn(i16) -> Vec<u32>, resources: &BTreeMap<u32, ObjResources>, tick: u32) -> Vec<Draw> {
-    object_parts(models, placements, guids_of, resources, tick).into_iter().map(|p| p.0).collect()
+    object_parts(models, placements, guids_of, resources, tick, &mut IdlePoses::default()).into_iter().map(|p| p.0).collect()
+}
+
+/// What an object's idle animation gives for a frame (the bones' matrices and the poses).
+type Posed = Rc<(Vec<Mat4>, Vec<Pose>)>;
+
+/// The idle poses of the lot's objects, kept from frame to frame: an object that has not moved
+/// and whose animation is at the same frame is posed the same, which is most of them.
+#[derive(Default)]
+pub struct IdlePoses {
+    /// By the placement's leader and the model record: what the pose was made from (the skeleton
+    /// and animation by their ids, the frame, the matrix and the scale, as bits) and the pose.
+    last: HashMap<(i16, usize), (PoseKey, Option<Posed>)>,
+}
+
+type PoseKey = (u32, u32, u32, [u32; 16], u32);
+
+/// The pose of the idle animation `anim` on `skeleton` at `place`, from `last` when made from the
+/// same inputs.
+fn pose_cached(last: &mut HashMap<(i16, usize), (PoseKey, Option<Posed>)>, at: (i16, usize), ids: (u32, u32), skeleton: &Skeleton, anim: &Anim, place: f32, root: &Mat4, scale: f32) -> Option<Posed> {
+    let key: PoseKey = (ids.0, ids.1, place.to_bits(), root.map(f32::to_bits), scale.to_bits());
+    if let Some((k, posed)) = last.get(&at)
+        && *k == key
+    {
+        return posed.clone();
+    }
+    let posed = lamps::bones_at(skeleton, anim, place, root, scale).map(Rc::new);
+    last.insert(at, (key, posed.clone()));
+    posed
 }
 
 /// `object_draws`, each with whether the part is drawn at its object's own matrix (no skeleton
 /// poses it).
-fn object_parts(models: &Models, placements: &[Placement], guids_of: impl Fn(i16) -> Vec<u32>, resources: &BTreeMap<u32, ObjResources>, tick: u32) -> Vec<(Draw, bool)> {
+fn object_parts(models: &Models, placements: &[Placement], guids_of: impl Fn(i16) -> Vec<u32>, resources: &BTreeMap<u32, ObjResources>, tick: u32, poses: &mut IdlePoses) -> Vec<(Draw, bool)> {
     let mut out = Vec::new();
     for p in placements {
         let guids = guids_of(p.leader);
@@ -200,7 +220,7 @@ fn object_parts(models: &Models, placements: &[Placement], guids_of: impl Fn(i16
             drawn.push(record);
             let rec = models.parts.record(record);
             let skeleton = models.sources.skeletons.get(&r.model).or_else(|| models.sources.skeletons.get(&id));
-            let posed = skeleton.zip(models.sources.anims.get(&r.idle)).and_then(|(s, a)| lamps::bones_at(s, a, idle_place(a, tick), &root, rec.scale));
+            let posed = skeleton.zip(models.sources.anims.get(&r.idle)).and_then(|(s, a)| pose_cached(&mut poses.last, (p.leader, record), (r.model, r.idle), s, a, idle_place(a, tick), &root, rec.scale));
             let bones = posed.as_ref().map(|b| &b.0);
             let hidden = |bone: Option<usize>| posed.as_ref().zip(bone).is_some_and(|(p, b)| p.1.get(b).is_some_and(|pose| pose.flags & NODE_HIDDEN != 0));
             for part in models.parts.parts_of(record).filter(|p| !p.skinned() && !hidden(p.bone())) {
@@ -532,6 +552,8 @@ pub struct LotDraws {
     /// The shadow pass's draws (`object_shadows`, `wall_shadows`), in the order the original makes
     /// them: the pieces', then the objects'.
     pub shadows: Vec<Draw>,
+    /// The GUIDs of each placement's parts, by leader.
+    pub guids: BTreeMap<i16, Vec<u32>>,
 }
 
 /// What the lot's draws need from the disc's `quickdat.arc` besides the object resources, read
@@ -559,11 +581,11 @@ impl LotArt {
 /// `res` is `quickdata::object_resources` of the disc's `SimsObjects`, `house` the lot's house
 /// number (its `HouseData` row: the loaded lot does not keep it).
 pub fn lot_draws_of(world: &crate::world::World, res: &BTreeMap<u32, ObjResources>, models: &Models, disc: &Disc, house: usize, tick: u32, eye: Option<[f32; 2]>) -> LotDraws {
-    lot_draws_with(world, res, models, &LotArt::read(disc, house), tick, eye)
+    lot_draws_with(world, res, models, &LotArt::read(disc, house), tick, eye, &mut IdlePoses::default())
 }
 
 /// `lot_draws_of` with the disc's art read already (a caller that draws every tick).
-pub fn lot_draws_with(world: &crate::world::World, res: &BTreeMap<u32, ObjResources>, models: &Models, art: &LotArt, tick: u32, eye: Option<[f32; 2]>) -> LotDraws {
+pub fn lot_draws_with(world: &crate::world::World, res: &BTreeMap<u32, ObjResources>, models: &Models, art: &LotArt, tick: u32, eye: Option<[f32; 2]>, poses: &mut IdlePoses) -> LotDraws {
     let (fences, patterns, outer_lot) = (&art.fences, &art.patterns, art.outer_lot);
     let parts: Vec<crate::scene::Part> = world
         .objects()
@@ -571,8 +593,14 @@ pub fn lot_draws_with(world: &crate::world::World, res: &BTreeMap<u32, ObjResour
         .map(|w| crate::scene::Part { id: w.id(), leader: if w.leader != 0 { w.leader } else { w.id() }, x16: w.x16, y16: w.y16, facing: i32::from(w.facing()), wall: res.get(&w.guid).is_some_and(|r| r.on_wall()) })
         .collect();
     let placements = crate::scene::placements(&parts);
-    let guids_of = |id: i16| world.find_object(id).into_iter().chain(world.objects().filter(|o| o.leader == id)).map(|o| o.guid).collect::<Vec<u32>>();
-    let parts = object_parts(models, &placements, guids_of, res, tick);
+    // each leader's parts' GUIDs: the leader itself, then the objects that name it, in the world's order
+    let mut named: HashMap<i16, Vec<u32>> = HashMap::new();
+    for o in world.objects() {
+        named.entry(o.leader).or_default().push(o.guid);
+    }
+    let guids_of = |id: i16| world.find_object(id).map(|o| o.guid).into_iter().chain(named.get(&id).into_iter().flatten().copied()).collect::<Vec<u32>>();
+    let guids: BTreeMap<i16, Vec<u32>> = placements.iter().map(|p| (p.leader, guids_of(p.leader))).collect();
+    let parts = object_parts(models, &placements, guids_of, res, tick, poses);
     let mut draws: Vec<Draw> = parts.iter().map(|p| p.0).collect();
     let pieces = crate::scene::wall_pieces(&world.walls, 64, fences);
     let windows = window_edges(models, &placements, guids_of, res);
@@ -585,7 +613,7 @@ pub fn lot_draws_with(world: &crate::world::World, res: &BTreeMap<u32, ObjResour
         draws.extend(diagonal_draws(models, &world.walls, fences, patterns, eye));
     }
     draws.extend(outer_lot.map(|id| lot_draws(models, id)).unwrap_or_default());
-    LotDraws { draws, placements, pieces, shadows }
+    LotDraws { draws, placements, pieces, shadows, guids }
 }
 
 #[cfg(test)]

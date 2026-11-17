@@ -5,7 +5,7 @@
 use crate::arc::{be16, be32};
 
 /// The arrays a sub-model has, each as the record keeps it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SubModel {
     /// The byte its header starts with: 1 when the batch names its matrices, 0 when it has none
     /// (an object's one-piece mesh).
@@ -14,6 +14,9 @@ pub struct SubModel {
     /// Positions: three s16 and two more bytes a vertex, in the record's scale (format bit 0x10),
     /// or three floats and a zero.
     pub positions: Vec<u8>,
+    /// The mean of the 16-bit positions (in the record's units), for a batch that has them: where
+    /// the lights find the part (`drawlist::mesh_centre`). Made once, at the read.
+    pub centre: Option<[f32; 3]>,
     /// Texture coordinates: two 16-bit values a vertex (4096ths), or two floats.
     pub texcoords: Vec<u8>,
     /// Colours (RGBA) for the kind that has them.
@@ -57,6 +60,21 @@ pub struct Record {
 }
 
 /// `size` bytes at `*p`, moving `*p` past them.
+/// The mean of 16-bit positions (8 bytes a vertex: three s16 and two more bytes), summed in order
+/// in single precision; `None` unless the array is that.
+fn mean_position(positions: &[u8], count: usize) -> Option<[f32; 3]> {
+    if count == 0 || positions.len() != 8 * count {
+        return None;
+    }
+    let mut sum = [0.0f32; 3];
+    for v in positions.as_chunks::<8>().0 {
+        for (c, s) in sum.iter_mut().enumerate() {
+            *s += f32::from(i16::from_be_bytes([v[2 * c], v[2 * c + 1]]));
+        }
+    }
+    Some(sum.map(|s| s / count as f32))
+}
+
 fn take(b: &[u8], p: &mut usize, size: usize) -> Option<Vec<u8>> {
     let v = b.get(*p..*p + size)?.to_vec();
     *p += size;
@@ -121,7 +139,7 @@ fn sub_model(b: &[u8], mut p: usize) -> Option<(Vec<(u32, SubModel)>, usize)> {
             None
         };
         let kind = u8::from(!matrices.is_empty());
-        out.push((format, SubModel { kind, count, positions, texcoords, colours, normals, values: None, list, weights, matrices, blend, hash, slot_bytes: slot_bytes.clone() }));
+        out.push((format, SubModel { kind, count, centre: mean_position(&positions, count), positions, texcoords, colours, normals, values: None, list, weights, matrices, blend, hash, slot_bytes: slot_bytes.clone() }));
         if format & 0x20 != 0 && *b.get(p)? != 6 {
             return None;
         }
@@ -222,5 +240,5 @@ pub fn read(b: &[u8]) -> Option<Model> {
     let colours = if format & 0x04 != 0 { Some(take(4 * count)?) } else { None };
     let normals = if format & 0x10 != 0 { take(3 * count)? } else { Vec::new() };
     let values = if format & 0x20 != 0 { Some(take(2 * count)?) } else { None };
-    Some(Model { name, scale, format, first: SubModel { kind, count, positions, texcoords, colours, normals, values, list: None, weights: 0, matrices: Vec::new(), blend: Vec::new(), hash: 0, slot_bytes: Vec::new() }, tail: p })
+    Some(Model { name, scale, format, first: SubModel { kind, count, centre: mean_position(&positions, count), positions, texcoords, colours, normals, values, list: None, weights: 0, matrices: Vec::new(), blend: Vec::new(), hash: 0, slot_bytes: Vec::new() }, tail: p })
 }
