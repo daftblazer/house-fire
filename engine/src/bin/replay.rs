@@ -107,7 +107,7 @@ fn main() -> ExitCode {
         }
     }
     if !bench {
-        let Some((counts, _)) = run(&log, &lib, (the_lot, house), the_globals, neighbours, None, RunWith { card_lot, goals: start.goals.clone(), cat: (!log.tracks.is_empty()).then(|| housefire::anim::Catalog::read(&d, house_number)) }) else { return ExitCode::from(1) };
+        let Some((counts, _)) = run(&log, &lib, (the_lot, house), the_globals, neighbours, None, RunWith { card_lot, goals: start.goals.clone(), neighbourhood: start.neighbourhood.clone(), cat: (!log.tracks.is_empty()).then(|| housefire::anim::Catalog::read(&d, house_number)) }) else { return ExitCode::from(1) };
         for (k, n) in &counts.map {
             println!("  {k:<66} {n}");
         }
@@ -122,7 +122,7 @@ fn main() -> ExitCode {
     // The benchmark: five runs, each figure the median of the runs (the PC is shared).
     let mut runs: Vec<Bench> = Vec::new();
     for _ in 0..5 {
-        let Some((_, Some(b))) = run(&log, &lib, (the_lot, house), the_globals, neighbours, Some(Bench::default()), RunWith { card_lot, goals: start.goals.clone(), cat: None }) else { return ExitCode::from(1) };
+        let Some((_, Some(b))) = run(&log, &lib, (the_lot, house), the_globals, neighbours, Some(Bench::default()), RunWith { card_lot, goals: start.goals.clone(), neighbourhood: start.neighbourhood.clone(), cat: None }) else { return ExitCode::from(1) };
         runs.push(b);
     }
     let median = |f: &dyn Fn(&Bench) -> f64| {

@@ -48,7 +48,7 @@ where the measurements agree.
 | 26 (more) | constant | a semi-global table (64-127) read in a semi-global tree's frame is the file's own (it is the semi-global file); an own table (0-63) not in the frame's file is the running object's, else the stack object's | `Library::constant`, `ScriptVariables::get` (the home log's 39 reads the lookup missed: 38 the same, 1 not; 7 differ in all, 6 of them already before, values the game sets at run time) |
 | 30 | my person data by temp | the person data field a temp names | |
 | 32 | the stack object's neighbour's person data | the person data (datum below 79) of the neighbour whose id the stack object holds; 0 if there is none (the original's InterpValue, 80214E64: the neighbourhood's record by that id, its 16-bit field at +100 + 2 datum) | `ScriptVariables::get` (all 459 reads of each club log, replay and lockstep) |
-| 34 | neighbourhood data | one table for everyone | `World::neighbourhood` |
+| 34 | neighbourhood data | one table for everyone, the save's: the NGBH chunk's first array (192 words at version 0x50; `save::read_neighbourhood_data`). All 40,710 reads on home-full the log's | `World::neighbourhood` |
 
 Not modelled yet:
 - 16, 20: slots.

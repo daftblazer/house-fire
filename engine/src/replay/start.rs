@@ -1,7 +1,7 @@
 
 use crate::disc::Disc;
 use crate::goals::Goals;
-use crate::save::{LotChunks, Neighbour, memory_card_file, read_goal_marks, read_lot_globals, read_lots, read_neighbours};
+use crate::save::{LotChunks, Neighbour, memory_card_file, read_goal_marks, read_lot_globals, read_neighbourhood_data, read_lots, read_neighbours};
 use super::study::has;
 
 /// The save a run starts from: its lots, their globals and the neighbours, and which lot the
@@ -19,6 +19,8 @@ pub struct Start {
     pub house: Option<LotChunks>,
     /// The houses' goals (the disc's `SimsUI`) and those the save has met.
     pub goals: Goals,
+    /// The neighbourhood's data (scope 34), as saved.
+    pub neighbourhood: Vec<i16>,
 }
 
 impl Start {
@@ -51,6 +53,7 @@ impl Start {
         let disc_lots = if card_lot && !has("REPLAY_NO_DISC_HOUSE") { read_lots(&disc.read("Runtime/default.ngh").unwrap_or_default()).unwrap_or_default() } else { Vec::new() };
         let house = usize::try_from(lot_index).ok().and_then(|i| disc_lots.get(i).cloned());
         let met = read_goal_marks(&ngh).map_err(|e| format!("the goals: {e:?}"))?;
+        let neighbourhood = read_neighbourhood_data(&ngh).map_err(|e| format!("the neighbourhood's data: {e:?}"))?;
         let quick = disc.read("quickdat.arc").unwrap_or_default();
         let houses = crate::arc::entries(&quick)
             .unwrap_or_default()
@@ -59,7 +62,7 @@ impl Start {
             .and_then(|e| crate::quickdata::Image::read(crate::arc::bytes(&quick, &e)))
             .map(|img| crate::quickdata::house_goals(&img))
             .unwrap_or_default();
-        Ok(Start { lots, lot_globals, neighbours, index, card_lot, house, goals: Goals { houses, met } })
+        Ok(Start { lots, lot_globals, neighbours, index, card_lot, house, goals: Goals { houses, met }, neighbourhood })
     }
 
     pub fn lot(&self) -> &LotChunks {
@@ -79,5 +82,7 @@ impl Start {
 pub struct RunWith {
     pub card_lot: bool,
     pub goals: Goals,
+    /// The neighbourhood's data (scope 34), as saved.
+    pub neighbourhood: Vec<i16>,
     pub cat: Option<crate::anim::Catalog>,
 }

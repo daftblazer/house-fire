@@ -243,6 +243,28 @@ pub fn read_lot_globals(file: &[u8]) -> Result<Vec<Vec<i16>>> {
     Ok(out)
 }
 
+/// The neighbourhood's data (the scripts' scope 34), from the neighbourhood's NGBH chunk: the
+/// array of 16-bit words after its header (16, 64, 128 or 192 by the version; the original's
+/// neighbourhood object keeps it at +0x168, the goal marks after it). Empty if there is no NGBH.
+pub fn read_neighbourhood_data(file: &[u8]) -> Result<Vec<i16>> {
+    for b in read_neighbourhood(file)?.iter().filter(|b| b.section == 1) {
+        let t = chunk_table(b)?;
+        let Some(c) = t.find("NGBH") else { continue };
+        if c.len() < 12 || &c[8..12] != b"HBGN" {
+            return err("not an NGBH");
+        }
+        let words = match le32(c, 4) {
+            ..=0x45 => 16,
+            0x46..=0x48 => 64,
+            0x49 => 128,
+            _ => 192,
+        };
+        let Some(d) = c.get(12..12 + 2 * words) else { return err("NGBH runs past its chunk") };
+        return Ok(d.as_chunks::<2>().0.iter().map(|w| i16::from_le_bytes(*w)).collect());
+    }
+    Ok(Vec::new())
+}
+
 /// The goals the player has met (`goals::Goals::met`), from the neighbourhood's NGBH chunk: its
 /// header (0, a version, "HBGN"), then little-endian 16-bit words as the original's goal manager
 /// streams them (fn_801DB408): a first array (16, 64, 128 or 192 words by the version), then the
