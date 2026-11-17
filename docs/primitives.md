@@ -376,6 +376,16 @@ length (0xA6A for 16 ticks, 0x514 for 17). Castaway's ELF has `EAnimManager` (re
   child, adult-to-child or child-to-adult table, by the Sim's age and the target's), 1 a global
   table (`GetGlobalAnimRef`), 2 the person's stock table (`GetPersonStockAnimRef`), 3 a misc one
   (`GetMiscAnimRef`).
+**The global table (source 1) is Global.iff's STR# 128** (2026-11-17), not its 129. The club's
+"Nag - Follow P1" (the dream sequence's 0x1017 node 6, `1e 00 00 00 01 20 00 00`, 470 steps on
+club-full) starts `a2o-enthralled2`, which is entry 30 of STR# 128 (40 names); the track the
+original starts then names that archive entry (`REPLAY_SHOW_TRACKS` prints a track's animation
+by name now). With it all 470 are the log's and none is left "not modelled" on club-full.
+Entry 0 of STR# 128 is empty: an Animate of it starts nothing and is true at once (home-full's
+four "break" calls). Iteration 138's reading of those four below (STR# 129's capital
+"A2O-flamingo-kick") had the wrong table; the rule it found, a name that is not an archive
+entry as written returns true at once, still stands.
+
 An object's anim tables are its STR# 129 (`a2o`) and 130 (`c2o`): strings of the original
 `.max` paths (`..\..\Characters\ANIMATIONS\ConvertedFromMaxis\a2o-fridge-open.max`; string
 0 a note). An entry's base name is an `animatio.arc` entry's name. Through the tree's file's

@@ -263,12 +263,12 @@ impl Host for ReplayHost<'_> {
             let stack_file = self.world.by_id().get(&interp.top().stack_object).and_then(|k| self.world.get(*k).file);
             let tree_file = interp.top().tree.and_then(|t| ar.tree_file.get(&t).copied());
             // the table (operand byte 4): 0 the tree's file's STR# 129 (the stack object's, for
-            // a semi-global's tree), 1 Global's, 2 the Sim's,
+            // a semi-global's tree), 1 Global's STR# 128, 2 the Sim's,
             // 3 Global's STR# 156 (the adult list; 157 the child's)
             let (file, table) = match n.operand[4] {
                 0 if tree_file.is_some_and(|f| lib.file(f).strings.get(&129).is_none_or(|t| t.iter().all(|x| x.is_empty()))) => (stack_file, 129),
                 0 => (tree_file, 129),
-                1 => (lib.global(), 129),
+                1 => (lib.global(), 128),
                 2 => (self.world.get(me).file, 129),
                 3 => (lib.global(), 156),
                 _ => (None, 129),
@@ -289,7 +289,19 @@ impl Host for ReplayHost<'_> {
             }
             if native.is_none() && has("REPLAY_SHOW_ANIMATE_UNKNOWN") {
                 let raw = file.and_then(|f| lib.file(f).strings.get(&table)).and_then(|t| t.get(n.operand16(0) as usize)).cloned();
-                note!(self.counts, "study animate unknown: source {} flags {:#04x} file {:?} name {:?} operand {:02x?}", n.operand[4], n.operand[5], file.map(|f| lib.file(f).path.rsplit('/').next().unwrap_or("").to_string()), raw, n.operand);
+                let len = file.and_then(|f| lib.file(f).strings.get(&table)).map(|t| t.len());
+                note!(self.counts, "study animate unknown: {}:{} by {me_id} source {} flags {:#04x} file {:?} (table {table}: {len:?} names) name {:?} operand {:02x?}", s.tree, s.node, n.operand[4], n.operand[5], file.map(|f| lib.file(f).path.rsplit('/').next().unwrap_or("").to_string()), raw, n.operand);
+                if has("REPLAY_SHOW_ANIMATE_TABLES") && self.shown.next(&format!("anim unknown {}:{}", s.tree, s.node), 1) {
+                    // study: every string table of the files around that has the index
+                    let index = n.operand16(0) as usize;
+                    let semi = self.world.get(me).file.and_then(|f| lib.file(f).semi);
+                    for (k, f) in [("global", lib.global()), ("me", self.world.get(me).file), ("my semi-global", semi), ("tree", tree_file), ("stack object", stack_file)] {
+                        if let Some(f) = f {
+                            let t: Vec<_> = lib.file(f).strings.iter().filter_map(|(id, v)| v.get(index).map(|x| (*id, v.len(), x.clone()))).collect();
+                            println!("  tables of {k} {} with index {index}: {t:?}", lib.file(f).path);
+                        }
+                    }
+                }
                 if n.operand[4] == 3 && shown_once(&mut self.shown, "anim tables") {
                     for (k, f) in [("global", lib.global()), ("me", self.world.get(me).file), ("stack", file)] {
                         if let Some(f) = f {

@@ -1436,6 +1436,10 @@ impl Catalog {
         let index = u16::from_le_bytes([operand[0], operand[1]]) as usize;
         let Some(path) = file.and_then(|f| lib.file(f).strings.get(&table)).and_then(|t| t.get(index)) else { return Lookup::Unknown };
         let base = path.rsplit(['\\', '/']).next().unwrap_or("").trim_end_matches(".max").trim_end_matches(".MAX");
+        if base.is_empty() {
+            // an empty name (Global's first: the scripts' "no animation"): none starts, true
+            return Lookup::NotFound;
+        }
         match self.exact.get(base) {
             Some(id) => Lookup::Found(*id),
             None if self.lower.contains(&base.to_ascii_lowercase()) => Lookup::NotFound,

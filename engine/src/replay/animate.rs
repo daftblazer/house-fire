@@ -119,7 +119,9 @@ impl AnimReplay {
             let sp: Vec<_> = log.speeds.iter().filter(|r| r.tick >= a && r.tick <= b && r.before != r.after).map(|r| (r.tick, format!("{:x}", r.owner), r.before, r.after)).collect();
             println!("  speed changes {sp:?}");
             for t in log.tracks.iter().filter(|t| (c == 0 || t.controller == c) && t.tick >= a && t.tick <= b) {
-                println!("  track t {} frame {} track {} anim {:x} speeds {:?} place {:?} ran {:?} done {:?}", t.tick, t.frame, t.track, t.anim, t.speeds, t.place, t.ran, t.done);
+                // (one of the animation's first words is its id in the archive)
+                let name = t.head.iter().find_map(|w| cat.by_id.get(w)).map_or_else(|| format!("{:08x?}", t.head), |a| a.name.clone());
+                println!("  track t {} frame {} track {} anim {:x} ({name}) speeds {:?} place {:?} ran {:?} done {:?}", t.tick, t.frame, t.track, t.anim, t.speeds, t.place, t.ran, t.done);
             }
         }
         let own = has("REPLAY_ANIMATE_OWN_SPEED").then_some(own);
