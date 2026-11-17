@@ -29,6 +29,36 @@ engineering of the original's code, not more fitting. The list below this sectio
    home-full 1,511, club-full 2,295. Relationship2 (26) native since: home.log 5,362, club.log
    28,937, home-full 1,399, club-full 2,137. `replay`'s "primitives by opcode"
    lines rank the primitives. The frames' uncleared locals are not owed (loop.md 5e e3).
+   **State 2026-11-17 (evening): home-full 528, club-full 778** (home.log 4,553, club.log
+   28,443). `replay --free | tools/log_debt.py` gives each kind's first tick: the run is free
+   until tick 1 on both logs, so the list is by what comes first, not by size. Native or
+   explained since the lines above: Relationship 24, DistanceTo 11, DirectionTo 12; ChangeSuit
+   6, SetBalloon 41, MakeActionString 50 (the presentation's); person data 27 (the person's
+   turns); the hide field (data 50) cleared before a check; Animate's global table (Global's
+   STR# 128) and its event's value in the frame; the neighbourhood's data (scope 34) from the
+   save; write-only lookups (the observer logs 0 for them); a step whose tree record is
+   another tree's. **Left over, by kind (home / club):**
+   - places with no native walk 224 / 196, routing slots from a stack variable 81 / 200, route
+     runs not modelled 1 / 26, LookTowards 22 51 / 189: all the routing work (item 3);
+   - frames' parameters 46 / 2: 9 are stacks saved at an Idle of 15000 or 20000 whose count is
+     0 at their first step (other saved Idles keep theirs: something ends those sleeps at the
+     load, as NotifyStackObject would; zeroing every saved Idle's count made 41 more differ);
+     the rest are calls with no parameters given whose temps differ (downstream of the others);
+   - the club's ad range (scope 12) 66: the dance floor's first tile reads datum 15 as 70 at
+     its 0x1019 node 7 in the rounds after a dancer starts dancing again, where the engine has
+     its own 50. Tried and dropped: not restoring the range after an evaluation's guard (no
+     change), the delivered interaction's advertisement made the range in IdleForInput (9 more
+     differ: the dancers' own reads at tick 2 are 50);
+   - IdleForInput's flag 0x40 (object data 8) 4 / 25: needs the +0x240 test (`ShouldInterrupt`);
+   - person data 22, 23, 32, 33 at the club 24 (the routing states' and the load's), 27 for
+     one dancer (178) 6;
+   - Budget 25 9 (the family's funds are not read from the save), TestInteractingWith 37 6
+     (the person's list at +0x49C), GenericSimCall 1 3 / 3, FindGoodLocation 16 1;
+   - the motives after tick 1 (the paper girl's hunger) 1 / 1, engine frames over an Idle 7,
+     TestObjectType 5, the expression 10 / 1, Animate 5 / 1 different.
+   **Not started: the engine's own tick as the driver** (loop.md 5e e2's second half): the
+   step loop still follows the log's steps; `--free` only reports where the log is first taken
+   from. With the debt this small the next step is that driver, on home first.
 2. **The original's loop of frames and ticks**: THE RULE FOUND 2026-11-17 (simulation.md
    "Frames and ticks"; `routing::FrameClock`): a clock in milliseconds, 33 a frame times the
    speed's factor, a tick for every 42.0 (802CEBFC), held to 840, afresh after the speed's
