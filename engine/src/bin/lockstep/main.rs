@@ -28,6 +28,7 @@
 //! objects' addresses: it shows their keys.
 
 mod anim;
+mod frame_draws;
 mod lot;
 mod set_to_next;
 mod variables;
@@ -773,6 +774,10 @@ fn main() -> ExitCode {
     // the engine's world, skeletons, animations and poses alone)
     if std::env::var_os("LOCKSTEP_ANIM_LAMPS").is_some() {
         anim::lamps(&log, &lot_world, &objects, &d);
+    }
+    // (LOCKSTEP_FRAME_DRAWS=TICK: the engine's draw list against the log's draws of the tick)
+    if let Some(t) = std::env::var("LOCKSTEP_FRAME_DRAWS").ok().and_then(|v| v.parse::<u32>().ok()) {
+        frame_draws::frame_draws(&log, &lot_world, &objects, &d, t);
     }
     // (the engine's lamps, for the window lights study LOCKSTEP_WINDOW_LIGHTS only: they read every skeleton and animation of the disc)
     let lamps = if std::env::var_os("LOCKSTEP_WINDOW_LIGHTS").is_some() { anim::engine_lamps(&lot_world, &objects, &d) } else { Vec::new() };

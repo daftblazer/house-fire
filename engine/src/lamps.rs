@@ -80,19 +80,31 @@ pub fn idle_poses(anim: &Anim) -> Vec<Pose> {
     (0..plain.nodes.len()).map(|i| streams.local(&plain, i, IDLE_PLACE, 0).unwrap_or_default()).collect()
 }
 
-/// The lights of an object idle in `anim` on `skeleton` (the bones' own count of nodes), with the
-/// object's matrix `root`: one for each node with the light channels. Empty for an object with
-/// none, or whose animation's nodes do not fit its skeleton.
-pub fn lights(skeleton: &Skeleton, anim: &Anim, root: &Mat4) -> Vec<LampLight> {
-    if anim.nodes.len() != skeleton.bones.len() || !anim.nodes.iter().any(is_light) {
-        return Vec::new();
+/// The poses of an object idle in `anim` on `skeleton`: the bone matrices (rows, the
+/// translation last) on the object's matrix `root`, and the poses. `None` when the animation's
+/// nodes do not fit the skeleton's bones. `scale` is the controller's (1: the matrices' 3 x 3 stay
+/// unscaled).
+pub fn idle_bones(skeleton: &Skeleton, anim: &Anim, root: &Mat4, scale: f32) -> Option<(Vec<Mat4>, Vec<Pose>)> {
+    if anim.nodes.len() != skeleton.bones.len() {
+        return None;
     }
     let poses = idle_poses(anim);
     let nodes: Vec<CharNode> = skeleton.bones.iter().map(CharNode::from_bone).collect();
     let states: Vec<NodeState> = poses.iter().map(|p| NodeState { flags: p.flags, rotation: p.rotation, translation: p.translation, scale: p.scale }).collect();
-    // the controller's mode word is not 0 for these objects (the logged bones'); its scale only
-    // scales the matrices' 3 x 3, not the translations the lights sit at
-    let bones = skeleton::bone_matrices(&nodes, &states, root, PoseMode { through_rest: true, scale: 1.0 });
+    // the controller's mode word is not 0 for these objects (the logged bones')
+    let bones = skeleton::bone_matrices(&nodes, &states, root, PoseMode { through_rest: true, scale });
+    Some((bones, poses))
+}
+
+/// The lights of an object idle in `anim` on `skeleton` (the bones' own count of nodes), with the
+/// object's matrix `root`: one for each node with the light channels. Empty for an object with
+/// none, or whose animation's nodes do not fit its skeleton.
+pub fn lights(skeleton: &Skeleton, anim: &Anim, root: &Mat4) -> Vec<LampLight> {
+    if !anim.nodes.iter().any(is_light) {
+        return Vec::new();
+    }
+    // a lamp's scale only scales the matrices' 3 x 3, not the translations the lights sit at
+    let Some((bones, poses)) = idle_bones(skeleton, anim, root, 1.0) else { return Vec::new() };
     anim.nodes
         .iter()
         .zip(&poses)

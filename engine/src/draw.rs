@@ -17,6 +17,9 @@ pub struct Part<'a> {
     pub record: &'a Record,
     pub node: &'a Node,
     pub batch: &'a SubModel,
+    /// Where it is in its index: the record, the node in it and the batch's place in the node
+    /// (a part's identity, for comparing draws).
+    pub index: (usize, usize, usize),
 }
 
 impl Part<'_> {
@@ -42,6 +45,8 @@ impl Part<'_> {
 /// The parts of `models.arc`'s records, found by their positions' first bytes.
 pub struct PartIndex {
     records: Vec<Record>,
+    /// A record's place by its archive entry's id (the CRC of its name: `ObjResources::model`).
+    by_id: HashMap<u32, usize>,
     /// The first 8 bytes of each batch's positions -> (record, node, batch's place in the node).
     by_head: HashMap<[u8; 8], Vec<(usize, usize, usize)>>,
 }
@@ -49,7 +54,14 @@ pub struct PartIndex {
 impl PartIndex {
     /// Reads every record of `models.arc` that reads whole.
     pub fn new(models_arc: &[u8]) -> PartIndex {
-        let records: Vec<Record> = arc::entries(models_arc).unwrap_or_default().iter().filter_map(|e| model::read_record(arc::bytes(models_arc, e))).collect();
+        let mut records = Vec::new();
+        let mut by_id = HashMap::new();
+        for e in arc::entries(models_arc).unwrap_or_default() {
+            if let Some(rec) = model::read_record(arc::bytes(models_arc, &e)) {
+                by_id.entry(e.id).or_insert(records.len());
+                records.push(rec);
+            }
+        }
         let mut by_head: HashMap<[u8; 8], Vec<(usize, usize, usize)>> = HashMap::new();
         for (r, rec) in records.iter().enumerate() {
             for (n, node) in rec.nodes.iter().enumerate() {
@@ -60,7 +72,28 @@ impl PartIndex {
                 }
             }
         }
-        PartIndex { records, by_head }
+        PartIndex { records, by_id, by_head }
+    }
+
+    /// The record with archive id `id` (a model's name hash), and its place.
+    pub fn record_by_id(&self, id: u32) -> Option<usize> {
+        self.by_id.get(&id).copied()
+    }
+
+    /// The record at a place, if there is one.
+    pub fn try_record(&self, r: usize) -> Option<&Record> {
+        self.records.get(r)
+    }
+
+    /// The record at a place.
+    pub fn record(&self, r: usize) -> &Record {
+        &self.records[r]
+    }
+
+    /// Every part of record `r`, node by node, each node's batches in order.
+    pub fn parts_of(&self, r: usize) -> impl Iterator<Item = Part<'_>> + '_ {
+        let record = &self.records[r];
+        record.nodes.iter().enumerate().flat_map(move |(n, node)| node.subs.iter().enumerate().map(move |(s, (_, sub))| Part { record, node, batch: sub, index: (r, n, s) }))
     }
 
     /// The parts whose positions start with a strip's first array bytes (the log's `KEPT` bytes,
@@ -74,7 +107,7 @@ impl PartIndex {
             .map(|&(r, n, s)| {
                 let record = &self.records[r];
                 let node = &record.nodes[n];
-                Part { record, node, batch: &node.subs[s].1 }
+                Part { record, node, batch: &node.subs[s].1, index: (r, n, s) }
             })
             .filter(|p| p.batch.count as u32 == count && starts_with(&p.batch.positions, positions))
             .map(|p| (p.arrays_in(strip), p))
