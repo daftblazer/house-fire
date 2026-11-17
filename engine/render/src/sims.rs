@@ -386,6 +386,24 @@ pub fn headings_from_log(log: &housefire::tree_log::Log, tick: u32, wardrobe: &W
     out
 }
 
+/// A study: for each figure, the heading whose bones (the figure's stance and place) equal the most of
+/// the logged matrices of `tick` (within 0.02 in every entry): (the id, the heading, the bones equal, the bones).
+pub fn bones_matched(log: &housefire::tree_log::Log, tick: u32, wardrobe: &Wardrobe, figures: &[Figure]) -> Vec<(i16, u8, usize, usize)> {
+    let logged: Vec<[f32; 12]> = log.skins.iter().filter(|k| k.tick == tick).flat_map(|k| k.bones).collect();
+    figures
+        .iter()
+        .map(|f| {
+            let count = |h: u8| {
+                let rows = f.bone_rows(wardrobe, h);
+                (rows.iter().filter(|r| logged.iter().any(|l| (0..12).all(|i| (r[i] - l[i]).abs() < 0.02))).count(), rows.len())
+            };
+            let best = (0..8u8).max_by_key(|&h| count(h).0).unwrap_or(0);
+            let (n, total) = count(best);
+            (f.id, best, n, total)
+        })
+        .collect()
+}
+
 /// The world's Sims on the lot as figures: their descriptions from the cast, their places, their
 /// plays (`Replay::sim_plays`) and headings (the way each turned at its last walk's end,
 /// `Replay::sim_faces`, else the facing the lot gave it).
@@ -396,7 +414,7 @@ pub fn figures_of(world: &housefire::world::World, cast: &Cast, plays: &[(i16, u
         .filter_map(|o| {
             let description = *cast.description(o.person_data.get(31).copied()?)?;
             let play = plays.iter().find(|p| p.0 == o.id()).map(|p| (p.1, p.2, p.3));
-            let heading = faces.iter().find(|f| f.0 == o.id()).and_then(|f| figure::heading_along(f.1.0, f.1.1)).unwrap_or(o.facing().rem_euclid(8) as u8);
+            let heading = faces.iter().find(|f| f.0 == o.id()).and_then(|f| figure::heading_along(f.1.0, f.1.1)).unwrap_or(figure::heading_of_facing(o.facing()));
             let carrying = world.objects().any(|h| h.data.get(housefire::world::DATA_CONTAINER) == Some(&o.id()));
             let mood = o.motives.get(figure::FACE_MOTIVE).copied().unwrap_or(0.0);
             Some(Figure { id: o.id(), description, place: [o.x16 as f32 / 16.0, o.y16 as f32 / 16.0], heading, play, carrying, mood })

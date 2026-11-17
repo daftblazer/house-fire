@@ -2713,6 +2713,19 @@ order, with the whole frame after each:
   `Cast::complete_from` gives a Sim the save does not describe the logged description no Sim has (with no
   card, all 9 in the order of the world: the records come in the Sims' creation order, the same as the
   card's for 8 of 9; the ninth is the story Sim of open.md's "Fran", whom no file describes).
+K3 (the club's Sims' headings, 71.42% to 72.41% whole, Sims' own 19.01% to 37.26%): a Sim with no walk
+to its place faced the facing field read as a heading; a heading is the other way round (`figure::heading_of_facing`:
+facing 0 -> 2, 4 -> 6, 6 -> 4; the bones of 4 of the 8 Sims the log draws equal ours at that heading).
+Study aids in render-check: `HF_HEADINGS=1` (per Sim, the heading whose bones equal the most of the logged
+'$' matrices: `sims::bones_matched`, 48 to 55 of 58 for the 8 Sims, so poses are right and only headings
+differ), `HF_SKIPSIM=id`, `HF_SKINDRAWS=1`. Found, not fixed: (1) the Sims 177, 174, 171 and 178 turned
+after their walk or their start (the logged headings 1, 4, 1, 1; ours 2 to 5) by what the engine does not
+keep (facing is the save's, a walk's end sets nothing in the world); (2) Sim 176 (a robe, at (18.5, 17.5), the
+one in front of the DJ booth in ours) has no skinned draw in the log at all (0 of 58 bones equal at any heading):
+the game does not draw her though she is on screen; she alone has data field 34 set among the visible
+ones, unverified as the cause (about 3,000 px); (3) the pool table's felt: the log's draw is the same record with the
+club's texture `game_pooltable_club_x` (flags 8, 72) where the engine's shader gives `aristoscratch_pool_table`:
+a texture the lot's dataset overrides, not another model record.
 Home: log mode identical; engine mode 97.23% to 97.24% (31 pixels, rigid 2,391 to 2,360 beyond; the cause is not isolated: the objects now
 play their graphic's animation, and the room ambient's colour is the one constant of home's 7:36).
 Left, club engine mode (pixels beyond 4 in every channel of 81,954): the objects whose textures

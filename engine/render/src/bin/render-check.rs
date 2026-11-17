@@ -230,10 +230,33 @@ fn engine_frame(scene: &mut Scene, assets: &Assets, disc: &Disc, log: &housefire
         let skins = sims::SimSkins::from_scene(scene).with_disc(disc);
         let wardrobe = sims::Wardrobe { rigs: &rigs, cast: &cast, catalog: &catalog, skins: &skins, models: &plan.models, shaders: &shaders };
         let plays = replay.sim_plays(tick);
-        let figures = sims::figures_of(replay.world(), &cast, &plays, &replay.sim_faces());
+        let mut figures = sims::figures_of(replay.world(), &cast, &plays, &replay.sim_faces());
+        if let Some(skip) = std::env::var("HF_SKIPSIM").ok().and_then(|v| v.parse::<i16>().ok()) {
+            figures.retain(|f| f.id != skip);
+        }
         let portrait = sims::portrait_sim(scene, &wardrobe, &figures);
         for f in &figures {
             println!("Sim {} at {:?} heading {} (facing {}) play {:?}{}", f.id, f.place, f.heading, replay.world().find_object(f.id).map_or(0, |o| o.facing()), f.play, if portrait == Some(f.id) { ", the portrait's" } else { "" });
+        }
+        if std::env::var_os("HF_HEADINGS").is_some() {
+            for m in sims::bones_matched(log, tick, &wardrobe, &figures) {
+                println!("bones matched: Sim {} heading {} {} of {}", m.0, m.1, m.2, m.3);
+            }
+            let hs = sims::headings_from_log(log, tick, &wardrobe, &figures);
+            let mut seen: Vec<[f32; 12]> = Vec::new();
+            for k in log.skins.iter().filter(|k| k.tick == tick) {
+                for m in k.bones {
+                    if !seen.contains(&m) {
+                        seen.push(m);
+                    }
+                }
+            }
+            for m in &seen {
+                println!("logged bone {:?}", [m[3], m[7], m[11]]);
+            }
+            for f in &figures {
+                println!("heading study: Sim {} ours {} the log's {:?} at {:?}", f.id, f.heading, hs.get(&f.id), f.place);
+            }
         }
         let mut sim_cache = sims::SimCaches::default();
         Some(assets.engine_sims(scene, &mut caches, &mut sim_cache, &wardrobe, &figures, &plan.lights, sun, view, portrait))
@@ -286,6 +309,15 @@ fn main() -> ExitCode {
         engine_frame(&mut scene, &assets, &disc, &log, tick, card.as_deref(), lot_index);
     }
 
+    if std::env::var_os("HF_SKINDRAWS").is_some() {
+        for d in &scene.frame.draws {
+            let info = &scene.drawn[d.id as usize - 1];
+            if let Some(k) = info.skin {
+                let b = log.skins[k].bones[0];
+                println!("skin draw {k}: bone0 at ({:.2}, {:.2}, {:.2}) {} blend {:?} depth {:?} colour {} cull {:?}", b[3], b[7], b[11], info.model, d.material.blend, d.material.depth_test, d.material.write_colour, d.material.cull);
+            }
+        }
+    }
     if std::env::var_os("HF_FLOORDUMP").is_some() {
         studies::floor_dump(&scene);
     }

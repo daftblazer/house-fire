@@ -211,6 +211,16 @@ pub fn pose_place(frames: u32, at: f32, backward: bool) -> f32 {
     if backward { (last - at).max(0.0) } else { at.min(last) }
 }
 
+/// The heading (`root`'s eighths) of a Sim by its facing, data field 1 as the save gives it
+/// (`Object::facing`: 0 towards -x, 2 towards +y, 4 towards +x, 6 towards -y, `routing::front`):
+/// a turn the other way, from heading 2 at facing 0. Checked on the club's frame 3001 against
+/// the logged bones: the Sims with a walk's end or the save's facing (facings 0 (twice), 4 and
+/// 6 are headings 2, 2, 6, 4: 4 of the 8 drawn Sims' bones match; the others turned later, by what
+/// the engine does not keep).
+pub fn heading_of_facing(facing: i16) -> u8 {
+    (2 - i32::from(facing)).rem_euclid(8) as u8
+}
+
 /// The heading (eighths of a turn, `root`'s) that faces along the step (`dx`, `dy`): a Sim's
 /// forward is its local +y, which a turn of h eighths carries to (-sin, cos) of h x 45 degrees.
 /// `None` for no step; a step between two eighths takes the nearer.
