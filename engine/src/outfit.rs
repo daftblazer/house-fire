@@ -85,7 +85,9 @@ impl Description {
 /// The arrays of one table row: each slot's part hashes by index.
 #[derive(Clone, Debug, Default)]
 struct PartSet {
-    parts: [Vec<u32>; 9],
+    /// Each entry's first four words (its name hash, then what the entry keeps after it: the
+    /// textures of a part's layers); words past the entry's size are 0.
+    parts: [Vec<[u32; 4]>; 9],
 }
 
 /// What a Sim wears: each slot's part (a name hash, 0 for none).
@@ -125,7 +127,10 @@ impl PartTables {
                 let (at, stride, _) = slot.table();
                 let start = img.ptr(row + at)?;
                 let end = starts.iter().copied().find(|&s| s > start).unwrap_or(img.data.len());
-                tables.sets[k].parts[slot as usize] = (start..end.saturating_sub(stride - 1)).step_by(stride).map(|e| img.u32(e).unwrap_or(0)).collect();
+                tables.sets[k].parts[slot as usize] = (start..end.saturating_sub(stride - 1))
+                    .step_by(stride)
+                    .map(|e| std::array::from_fn(|w| if w * 4 < stride { img.u32(e + w * 4).unwrap_or(0) } else { 0 }))
+                    .collect();
             }
         }
         Some(tables)
@@ -137,9 +142,17 @@ impl PartTables {
         let mut o = Outfit::default();
         for slot in Slot::ALL {
             let i = d.index(slot);
-            o.parts[slot as usize] = usize::try_from(i).ok().and_then(|i| set.parts[slot as usize].get(i)).copied().unwrap_or(0);
+            o.parts[slot as usize] = usize::try_from(i).ok().and_then(|i| set.parts[slot as usize].get(i)).map_or(0, |e| e[0]);
         }
         o
+    }
+
+    /// The table entry the description picks for a slot: the part's name hash, then the words
+    /// that follow it (the run-length textures of the part's layers, `sim_texture`); `None` for
+    /// an index the table has no entry for.
+    pub fn entry(&self, d: &Description, slot: Slot) -> Option<[u32; 4]> {
+        let set = &self.sets[d.adult as usize * 2 + d.male as usize];
+        usize::try_from(d.index(slot)).ok().and_then(|i| set.parts[slot as usize].get(i)).copied()
     }
 }
 

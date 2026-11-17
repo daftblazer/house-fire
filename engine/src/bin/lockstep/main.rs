@@ -31,6 +31,7 @@ mod anim;
 mod frame_draws;
 mod lot;
 mod set_to_next;
+mod sim_textures;
 mod variables;
 
 use lot::pick_lot;
@@ -774,6 +775,10 @@ fn main() -> ExitCode {
     // the engine's world, skeletons, animations and poses alone)
     if std::env::var_os("LOCKSTEP_ANIM_LAMPS").is_some() {
         anim::lamps(&log, &lot_world, &objects, &d);
+    }
+    // (LOCKSTEP_SIM_TEXTURES: the engine's Sim textures against the log's)
+    if std::env::var_os("LOCKSTEP_SIM_TEXTURES").is_some() {
+        sim_textures::study(&log, &d, &ngh);
     }
     // (LOCKSTEP_FRAME_DRAWS=TICK: the engine's draw list against the log's draws of the tick)
     if let Some(t) = std::env::var("LOCKSTEP_FRAME_DRAWS").ok().and_then(|v| v.parse::<u32>().ok()) {
