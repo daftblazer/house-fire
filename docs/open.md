@@ -20,6 +20,9 @@
   path (phase 5) they become plain vertex and index arrays built once at load (model, draw,
   scene and assets change together).
 - **`Stream` and `RotStream` duplicate the window stepping** (Q2): one generic stepper.
+- **Frame build left** (P1, 1.28 ms on the PC): the object-part loop ~0.25 ms (animated objects'
+  poses), floor strips and meshes rebuilt each frame ~0.2, assemble 0.13, the Sims 0.13;
+  `Lighting` cloned per draw; models still raw bytes (only the mesh middle made at load).
 - **Study samples from HashMaps** (the RUNS and PLACES studies' "followed tracks" and Sims
   lines) vary run to run: sort them so the outputs are stable.
 - **Fran's description** (club-a1.log, Sim 80f94f70, af_*_fran parts): not a lot object nor a
