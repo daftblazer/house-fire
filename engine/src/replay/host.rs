@@ -325,6 +325,23 @@ impl Host for ReplayHost<'_> {
                 Some(Poll::Event(_)) if s.result != 1 && !logged_true => "primitives: Animate: false (an event) natively as the log's",
                 _ => "primitives: Animate: DIFFERENT (the log's taken)",
             });
+            // An event's value goes to the frame: the local operand byte 2 names with flag 0x20,
+            // else parameter 0 (primitives.md, "counted events"); against the frame after the step.
+            if s.result != 1 && !logged_true {
+                let f = interp.top();
+                if let Some(Poll::Event(v)) = native {
+                    let to = if n.operand[5] & 0x20 != 0 { f.unset &= !(1u64 << (n.operand[2] & 63)); f.locals.get_mut(n.operand[2] as usize) } else { f.params.get_mut(0) };
+                    if let Some(to) = to {
+                        *to = v as i16;
+                    }
+                }
+                let same = f.locals == s.locals_after && f.params == s.params_after;
+                self.counts.note(if same { "primitives: Animate: the event's value in the frame as the log's" } else { "primitives: Animate: the event's value DIFFERENT (the log's taken)" });
+                if !same {
+                    f.locals = s.locals_after.clone();
+                    f.params = s.params_after.clone();
+                }
+            }
             if has("REPLAY_ANIMATE_BY_FLAGS") {
                 note!(self.counts, "study animate flags {:#04x}: log {} native {}", n.operand[5], if s.result == 1 { "yield" } else if logged_true { "true" } else { "false" }, match native { Some(Poll::Pending) => "yield", Some(Poll::Done) => "true", Some(Poll::Event(_)) => "false", None => "-" });
             }

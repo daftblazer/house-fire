@@ -58,8 +58,8 @@ pub(super) fn sync_variables(world: &mut World, counts: &mut Counts, shown: &mut
             continue;
         }
         if got.value == v.value {
-            if env("REPLAY_SHOW_SCOPE_SAME").is_some_and(|e| atoi(&e) == v.scope as i64) && shown.next("scope same", 20) {
-                println!("scope {} datum {}: the same, {}", v.scope, v.data, v.value);
+            if env("REPLAY_SHOW_SCOPE_SAME").is_some_and(|e| atoi(&e) == v.scope as i64) && shown.next("scope same", env("REPLAY_SHOW_N").map_or(20, |n| atoi(&n) as i32)) {
+                println!("scope {} datum {}: the same, {} (tick {} tree {}:{} me {})", v.scope, v.data, v.value, s.tick, s.tree, s.node, vars.world.get(me).id());
             }
             note!(counts, "variables: scope {}: the same natively", v.scope);
             continue;

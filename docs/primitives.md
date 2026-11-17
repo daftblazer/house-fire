@@ -376,6 +376,12 @@ length (0xA6A for 16 ticks, 0x514 for 17). Castaway's ELF has `EAnimManager` (re
   child, adult-to-child or child-to-adult table, by the Sim's age and the target's), 1 a global
   table (`GetGlobalAnimRef`), 2 the person's stock table (`GetPersonStockAnimRef`), 3 a misc one
   (`GetMiscAnimRef`).
+**The event's value in the frame** (2026-11-17): the replay now writes a native event's value
+where the original does (the local operand byte 2 names with flag 0x20, else parameter 0) and
+compares the frame after the step: 174 of 175 on home-full and 122 of 122 on club-full the
+log's. It took 45 parameter differences off home-full and all 72 local differences off
+club-full (they were these values, set from the log at the next step).
+
 **The global table (source 1) is Global.iff's STR# 128** (2026-11-17), not its 129. The club's
 "Nag - Follow P1" (the dream sequence's 0x1017 node 6, `1e 00 00 00 01 20 00 00`, 470 steps on
 club-full) starts `a2o-enthralled2`, which is entry 30 of STR# 128 (40 names); the track the
