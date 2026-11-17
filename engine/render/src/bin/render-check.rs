@@ -206,6 +206,28 @@ fn engine_frame(scene: &mut Scene, assets: &Assets, disc: &Disc, log: &housefire
         made.retain(|m| m.info.textures[0].as_deref() != Some(texture.as_str()));
     }
     let planned = made.len();
+    if std::env::var_os("HF_FLATSTUDY").is_some() {
+        // the opaque draws' world heights (study aid): how flat an object lies on the ground
+        for m in &made {
+            if m.draw.material.blend != frame::Blend::Opaque { continue; }
+            let w = m.draw.world;
+            let vs = &scene.meshes[m.draw.mesh.0 as usize].vertices;
+            let zs: Vec<f32> = vs.iter().map(|v| w[8] * f32::from(v.position[0]) + w[9] * f32::from(v.position[1]) + w[10] * f32::from(v.position[2]) + w[11]).collect();
+            let (lo, hi) = zs.iter().fold((f32::MAX, f32::MIN), |a, &z| (a.0.min(z), a.1.max(z)));
+            println!("FLAT {} v{} z {:.3}..{:.3}", m.info.model, vs.len(), lo, hi);
+        }
+    }
+    if std::env::var_os("HF_ROWFLAGS").is_some() {
+        // each kind of object's resource row flags (study aid)
+        let mut seen = std::collections::BTreeSet::new();
+        for m in &made {
+            let d = &plan.draws[m.from];
+            let flags = plan.guids.get(&d.object).into_iter().flatten().find_map(|g| plan.resources.get(g)).map(|r| r.flags);
+            if seen.insert((m.info.model.to_string(), flags)) {
+                println!("ROWFLAGS {} {:?} {:08x?}", m.info.model, d.kind, flags);
+            }
+        }
+    }
     if std::env::var_os("HF_LIGHTSTUDY").is_some() {
         studies::light_study(&made, &oracle, &plan, &shaders, scene, view);
     }
@@ -289,7 +311,9 @@ fn engine_frame(scene: &mut Scene, assets: &Assets, disc: &Disc, log: &housefire
         let mut sim_cache = sims::SimCaches::default();
         Some(assets.engine_sims(scene, &mut caches, &mut sim_cache, &wardrobe, &figures, &plan.lights, sun, view, portrait))
     };
-    let (lot, objects): (Vec<engine_scene::Made>, Vec<engine_scene::Made>) = made.into_iter().partition(|m| plan.draws[m.from].kind == housefire::drawlist::Kind::LotList && m.draw.material.blend == frame::Blend::Opaque);
+    let (lot, objects, coverings) = engine_scene::split_lot(scene, &plan, made);
+    let mut by_room = by_room;
+    engine_scene::without_coverings(&mut by_room, &plan, &coverings);
     println!("engine floors: {} strips in rooms {:?}; shadows {} planned, per room {:?}", floors.len(), floors.iter().map(|f| f.0).collect::<std::collections::BTreeSet<_>>(), plan.shadows.len(), by_room.iter().map(Vec::len).collect::<Vec<_>>());
     let removed = engine_scene::assemble(scene, engine_scene::Engine { floors, lot, shadows: by_room, objects, sims });
     println!("engine mode: {} draws planned, {planned} made; the log's {removed} floor, shadow, rigid and display-list draws left out", plan.draws.len());

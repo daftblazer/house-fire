@@ -273,6 +273,49 @@ pub fn shadow_view(view: &Mat3x4, shear: [f32; 2]) -> Mat3x4 {
     v
 }
 
+/// How high a surface may lie and still be a covering of the ground (tiles): the dance floor's
+/// plane is at 0.018 and the rug's at 0.010, every other opaque object's mesh reaches 0.05 or more
+/// (the sinks, the bar, the booth) on both lots.
+pub const COVERING_HEIGHT: f32 = 0.05;
+
+/// Whether a mesh lies flat on the ground: every vertex of it, through the draw's matrix `w`, is
+/// below `COVERING_HEIGHT`.
+pub fn lies_flat(vertices: &[crate::frame::Vertex], w: &Mat3x4) -> bool {
+    !vertices.is_empty() && vertices.iter().all(|v| w[8] * f32::from(v.position[0]) + w[9] * f32::from(v.position[1]) + w[10] * f32::from(v.position[2]) + w[11] < COVERING_HEIGHT)
+}
+
+/// Splits the engine's model draws: the lot's own opaque ones and the objects' opaque coverings of
+/// the ground (the rug, the dance floor) are drawn with the floors of their room, before its
+/// shadows, with the ground's destination alpha and no depth write (as the log shows them); the
+/// rest are the objects. Also returns the objects that have such a covering: they cast no shadow
+/// (the log has none of the dance floor's, whose other parts are lights; `without_coverings`).
+pub fn split_lot(scene: &Scene, plan: &Plan, made: Vec<Made>) -> (Vec<(usize, Made)>, Vec<Made>, std::collections::BTreeSet<i16>) {
+    let (mut lot, mut objects, mut coverings) = (Vec::new(), Vec::new(), std::collections::BTreeSet::new());
+    for mut m in made {
+        let d = &plan.draws[m.from];
+        if m.draw.material.blend != Blend::Opaque {
+            objects.push(m);
+        } else if d.kind == Kind::LotList {
+            lot.push((0, m));
+        } else if d.kind != Kind::WallPiece && lies_flat(&scene.meshes[m.draw.mesh.0 as usize].vertices, &m.draw.world) {
+            m.draw.material.depth_write = false;
+            m.draw.material.dst_alpha = Some(DST_ALPHA_GROUND);
+            coverings.insert(d.object);
+            lot.push((plan.lights.room_of_place(d.origin[0], d.origin[1]), m));
+        } else {
+            objects.push(m);
+        }
+    }
+    (lot, objects, coverings)
+}
+
+/// The shadow draws (by room) without those of the objects that are coverings of the ground.
+pub fn without_coverings(by_room: &mut [Vec<Made>], plan: &Plan, coverings: &std::collections::BTreeSet<i16>) {
+    for room in by_room {
+        room.retain(|m| !coverings.contains(&plan.shadows[m.from].object));
+    }
+}
+
 /// The material of a projected shadow's draw, as the log's 692 shadow draws of frame 2400 all
 /// have it: flat black (lighting off), blended by the picture's destination alpha (the floor's
 /// 0x7F, which a shadow leaves 0 so overlapping shadows do not stack), Z off, alpha test at least
@@ -725,8 +768,9 @@ pub fn run_to(replay: &mut housefire::replay::Replay<'_>, log: &housefire::tree_
 pub struct Engine {
     /// Each floor strip's draws and the room (batch) it is in.
     pub floors: Vec<(usize, FloorDraws)>,
-    /// The lot's own opaque draws (the ground the shadows fall on): after the first batch's floors.
-    pub lot: Vec<Made>,
+    /// The draws that lie on the ground (the lot's own opaque ones, the floor coverings) with the
+    /// room (batch) they are in: after that batch's floors, before its shadows.
+    pub lot: Vec<(usize, Made)>,
     /// The shadow draws by room.
     pub shadows: Vec<Vec<Made>>,
     /// The model draws (objects, walls, the lot's blended ones): after all batches, the opaque
@@ -794,7 +838,7 @@ pub fn assemble(scene: &mut Scene, engine: Engine) -> usize {
     for (room, f) in engine.floors {
         floors[room].push(f);
     }
-    let (mut lot, mut shadows) = (Some(engine.lot), engine.shadows.into_iter());
+    let (mut lot, mut shadows) = (engine.lot, engine.shadows.into_iter());
     let mut sims = Some(sims_shadows);
     for (room, batch) in floors.into_iter().enumerate() {
         let (mut masks, mut batch_floors) = (Vec::new(), Vec::new());
@@ -805,8 +849,12 @@ pub fn assemble(scene: &mut Scene, engine: Engine) -> usize {
         for m in batch_floors {
             put(scene, &mut out, m);
         }
-        for m in lot.take().into_iter().flatten() {
-            put(scene, &mut out, m);
+        for (r, m) in std::mem::take(&mut lot) {
+            if r == room {
+                put(scene, &mut out, m);
+            } else {
+                lot.push((r, m));
+            }
         }
         for m in shadows.next().unwrap_or_default() {
             put(scene, &mut out, m);
@@ -897,7 +945,9 @@ impl<'a> Builder<'a> {
         let floors: Vec<(usize, FloorDraws)> = plan.floors.iter().zip(self.assets.engine_floors(scene, &mut self.caches, &plan.floors, &self.lot.shaders, plan.terrain, view)).map(|(st, f)| (st.room, f)).collect();
         let sun = plan.lights.at(1.0, 1.0).sun.map_or([0.0; 3], |s| s.direction);
         let by_room = self.assets.engine_shadows_by_room(scene, &mut self.caches, &plan, &view, &projection, sun);
-        let (lot, objects): (Vec<Made>, Vec<Made>) = made.into_iter().partition(|m| plan.draws[m.from].kind == Kind::LotList && m.draw.material.blend == Blend::Opaque);
+        let (lot, objects, coverings) = split_lot(scene, &plan, made);
+        let mut by_room = by_room;
+        without_coverings(&mut by_room, &plan, &coverings);
         let counts = Counts { planned: plan.draws.len(), shadows: plan.shadows.len(), floors: floors.len(), draws: 0 };
         let sims = sims.map(|(w, figures, portrait)| self.assets.engine_sims(scene, &mut self.caches, &mut self.sim_cache, w, figures, &plan.lights, sun, view, portrait));
         assemble(scene, Engine { floors, lot, shadows: by_room, objects, sims });

@@ -329,6 +329,6 @@ pub fn list_model(scene: &Scene, name: &str) {
     // (study aid: the draws of a model in draw order: its mesh's vertices, textures, flags, state)
     for (i, d) in scene.frame.draws.iter().enumerate().filter(|(_, d)| scene.drawn[d.id as usize - 1].model[..] == *name) {
         let info = &scene.drawn[d.id as usize - 1];
-        println!("  draw {i}: {} vertices at ({:.2}, {:.2}, {:.2}) {:?} flags {:?} {:?} blend {:?} alpha {:?}", scene.meshes[d.mesh.0 as usize].vertices.len(), d.world[3], d.world[7], d.world[11], info.textures, info.flags, d.material.combine, d.material.blend, d.material.alpha_test.map(|a| a.refs[0]));
+        println!("  draw {i}: {} vertices at ({:.2}, {:.2}, {:.2}) {:?} flags {:?} {:?} blend {:?} alpha {:?} depth {:?}/{} dst {:?}", scene.meshes[d.mesh.0 as usize].vertices.len(), d.world[3], d.world[7], d.world[11], info.textures, info.flags, d.material.combine, d.material.blend, d.material.alpha_test.map(|a| a.refs[0]), d.material.depth_test.is_some(), d.material.depth_write, d.material.dst_alpha);
     }
 }
