@@ -29,6 +29,7 @@
 //! showed native addresses show object keys.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::rc::Rc;
 use std::time::Instant;
 
 use crate::autonomy::{
@@ -37,7 +38,6 @@ use crate::autonomy::{
 };
 use crate::bhav::{Node, Tree, TreeKind, tree_kind};
 use crate::cfmt::g;
-use crate::disc::Disc;
 use crate::expression::{ExpressionOperand, Variables, expression};
 use crate::interp::{Error, Frame, Host, Interpreter, Mode, PrimResult, Step, Trees};
 use crate::library::{Advert, Library};
@@ -48,9 +48,9 @@ use crate::primitives::{
 use crate::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, slot_pick, run_on_point, walk_frames, routing_return_tick, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
 use crate::planner::{choose_goal, coarse_way, point_after_goal, refine, Growth, MapRect};
 use crate::library::Slot;
-use crate::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lot_globals, read_lots, read_neighbours};
+use crate::save::{LotChunks, Neighbour, read_lot_arrays};
 use crate::simulator::{SimHost, Simulator};
-use crate::tree_log::{Log, PassRec, PlanRec, StepRec, read_log, same_shape};
+use crate::tree_log::{Log, PassRec, PlanRec, StepRec, same_shape};
 use crate::world::{DATA_OBJECT_ID, PORTAL_FUNCTION, SIT_FUNCTION, Object, ObjectKey, ScriptVariables, World};
 use crate::{FileId, TreeId};
 
@@ -217,10 +217,10 @@ impl Shown {
 
 /// The host the objects' scripts run with: the native primitives on the native world, the rest
 /// from the log step being replayed.
-struct ReplayHost<'a, 'l> {
+struct ReplayHost<'l> {
     lib: &'l Library,
     world: World<'l>,
-    log: &'a Log,
+    log: Rc<Log>,
     /// The object whose stack is being stepped.
     me: ObjectKey,
     /// The log's step being replayed.
@@ -478,7 +478,7 @@ fn animate_differs(native: &Option<crate::anim::Poll>, s: &StepRec, logged_true:
     }
 }
 
-impl ReplayHost<'_, '_> {
+impl ReplayHost<'_> {
     fn sync(&mut self, interp: &mut Interpreter, s: &StepRec) {
         let t0 = Instant::now();
         sync_variables(&mut self.world, &mut self.counts, &mut self.shown, self.me, interp.top(), s);
@@ -507,13 +507,13 @@ impl ReplayHost<'_, '_> {
     }
 }
 
-impl Trees for ReplayHost<'_, '_> {
+impl Trees for ReplayHost<'_> {
     fn tree_at(&self, t: TreeId) -> &Tree {
         self.lib.tree_at(t)
     }
 }
 
-impl<'l> SimHost<'l> for ReplayHost<'_, 'l> {
+impl<'l> SimHost<'l> for ReplayHost<'l> {
     fn world(&mut self) -> &mut World<'l> {
         &mut self.world
     }
@@ -522,7 +522,7 @@ impl<'l> SimHost<'l> for ReplayHost<'_, 'l> {
     }
 }
 
-impl Host for ReplayHost<'_, '_> {
+impl Host for ReplayHost<'_> {
     fn tree(&mut self, id: u16) -> Option<TreeId> {
         let f = self.file_of_top.or(self.world.get(self.me).file);
         self.lib.tree(f, id)
@@ -538,7 +538,8 @@ impl Host for ReplayHost<'_, '_> {
 
     /// A check tree the engine runs, stepped natively through the log's steps of it.
     fn run_check(&mut self, t: TreeId, file: Option<FileId>, stack_object: i16, defaults: &[i16]) -> Option<bool> {
-        let log = self.log;
+        let log_rc = Rc::clone(&self.log);
+        let log: &Log = &log_rc;
         let lib = self.lib;
         let mut chk = Interpreter::new(Mode::Check, 10000);
         chk.set_defaults(defaults.to_vec());
@@ -652,7 +653,8 @@ impl Host for ReplayHost<'_, '_> {
     }
 
     fn primitive(&mut self, interp: &mut Interpreter, n: &Node) -> PrimResult {
-        let log = self.log;
+        let log_rc = Rc::clone(&self.log);
+        let log: &Log = &log_rc;
         let lib = self.lib;
         let s = &log.steps[self.step];
         let me = self.me;
@@ -1425,7 +1427,7 @@ impl Host for ReplayHost<'_, '_> {
     }
 }
 
-impl ReplayHost<'_, '_> {
+impl ReplayHost<'_> {
     /// FindBestObjectForFunction (opcode 14), as the original's fn_8020CC8C (docs/primitives.md):
     /// the function's (rating datum, function-table entry); each object whose function table
     /// (OBJf) has an action for the entry and whose rating (its data, a: -1 for 50) is not 0,
@@ -1489,7 +1491,8 @@ impl ReplayHost<'_, '_> {
     /// The autonomy evaluation (opcode 3), natively: its checks against the log's, its scores,
     /// the list and the choice.
     fn evaluation(&mut self, interp: &mut Interpreter, s: &StepRec, n: &Node) -> PrimResult {
-        let log = self.log;
+        let log_rc = Rc::clone(&self.log);
+        let log: &Log = &log_rc;
         let lib = self.lib;
         let me = self.me;
         let me_id = self.me_id();
@@ -2073,659 +2076,900 @@ fn native_plan_points(pl: &PlanRec, world: &World) -> Option<Vec<(i32, i32)>> {
 }
 
 /// `lot`: the lot as loaded, and the disc's copy of it (its house) if a save is loaded.
-pub fn run(log: &Log, lib: &Library, lot: (&LotChunks, Option<&LotChunks>), globals: &[i16], neighbours: &[Neighbour], bench: Option<Bench>, with: RunWith) -> Option<(Counts, Option<Bench>)> {
-    let RunWith { card_lot, cat } = with;
-    let (club, house) = lot;
-    let mut world = World::new(lib);
-    world.load_lot(club).expect("the lot");
-    let took_house = house.is_some_and(|h| world.take_house_from(h).unwrap_or(false));
-    if has("REPLAY_SHOW_LOW_TREES") {
-        for f in lib.files().iter().filter(|f| f.path.to_ascii_lowercase().contains("global")) {
-            let t462 = f.trees.get(&462).map(|&t| lib.tree_at(t).nodes.first().map(|n| (n.opcode, n.operand)));
-            println!("file {}: {} trees, 462 node 0 {t462:?}", f.path, f.trees.len());
-        }
-        let files: BTreeSet<FileId> = world.objects().filter_map(|o| o.file).collect();
-        for f in files {
-            let low: Vec<u16> = lib.file(f).trees.keys().copied().filter(|&id| id < 0x1000).collect();
-            if !low.is_empty() {
-                println!("low trees in {}: {low:?}", lib.file(f).path);
+/// The run natively, one tick at a time (`step`): the simulator and the host (the world and what
+/// the replay keeps between steps), and the checks' state.
+pub struct Replay<'l> {
+    lib: &'l Library,
+    log: Rc<Log>,
+    /// The lot as it loads: the club's and the disc's copy of its house.
+    lot: (&'l LotChunks, Option<&'l LotChunks>),
+    h: ReplayHost<'l>,
+    consumed: BTreeSet<usize>,
+    sim: Simulator,
+    finder: TreeFinder<'l>,
+    unstarted: BTreeSet<ObjectKey>,
+    ids: BTreeMap<u32, i16>,
+    native_places: BTreeMap<(i16, u32), (i32, i32)>,
+    use_native_places: bool,
+    by_tick: Vec<Vec<usize>>,
+    frames: BTreeMap<u32, Vec<u32>>,
+    first_seen: BTreeMap<u32, u32>,
+    first_step: BTreeSet<u32>,
+    last_frame: HashMap<u32, (u32, TreeId)>,
+    unseen: BTreeSet<u32>,
+    delivered: BTreeSet<u32>,
+    frame_tree: HashMap<(u32, u32, u16), (TreeId, FileId)>,
+    new_observer: bool,
+    streak: usize,
+    best_streak: usize,
+    have_passes: bool,
+    engine_run: Vec<bool>,
+    place_at: usize,
+    motive_at: usize,
+    shown_motives: usize,
+    ev_env: Option<String>,
+    engine_list_at: usize,
+    time_at: usize,
+    t: u32,
+}
+
+/// The run as `Replay` makes it, to its end.
+pub fn run<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l LotChunks>), globals: &[i16], neighbours: &[Neighbour], bench: Option<Bench>, with: RunWith) -> Option<(Counts, Option<Bench>)> {
+    let mut run = Replay::new(log, lib, lot, globals, neighbours, bench, with)?;
+    while run.step() {}
+    Some(run.finish())
+}
+
+impl<'l> Replay<'l> {
+    /// Loads the lot and gets the run ready to step (`step`); `None` when the log does not start
+    /// with the lot loaded.
+    pub fn new(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l LotChunks>), globals: &[i16], neighbours: &[Neighbour], bench: Option<Bench>, with: RunWith) -> Option<Replay<'l>> {
+        let RunWith { card_lot, cat } = with;
+        let (club, house) = lot;
+        let mut world = World::new(lib);
+        world.load_lot(club).expect("the lot");
+        let took_house = house.is_some_and(|h| world.take_house_from(h).unwrap_or(false));
+        if has("REPLAY_SHOW_LOW_TREES") {
+            for f in lib.files().iter().filter(|f| f.path.to_ascii_lowercase().contains("global")) {
+                let t462 = f.trees.get(&462).map(|&t| lib.tree_at(t).nodes.first().map(|n| (n.opcode, n.operand)));
+                println!("file {}: {} trees, 462 node 0 {t462:?}", f.path, f.trees.len());
+            }
+            let files: BTreeSet<FileId> = world.objects().filter_map(|o| o.file).collect();
+            for f in files {
+                let low: Vec<u16> = lib.file(f).trees.keys().copied().filter(|&id| id < 0x1000).collect();
+                if !low.is_empty() {
+                    println!("low trees in {}: {low:?}", lib.file(f).path);
+                }
             }
         }
-    }
-    if has("REPLAY_SHOW_SLOTTED") {
-        for id in [197i16, 62] {
-            if let Some(o) = world.find_object(id) {
-                println!("loaded {id}: person {} container {} slot {} at ({},{},{}) guid {:08x}", o.person, o.data[2], o.data[3], o.x16 >> 4, o.y16 >> 4, o.level, o.guid);
+        if has("REPLAY_SHOW_SLOTTED") {
+            for id in [197i16, 62] {
+                if let Some(o) = world.find_object(id) {
+                    println!("loaded {id}: person {} container {} slot {} at ({},{},{}) guid {:08x}", o.person, o.data[2], o.data[3], o.x16 >> 4, o.y16 >> 4, o.level, o.guid);
+                }
+            }
+            for o in world.objects() {
+                if o.data.get(3).is_some_and(|&s| s >= 0) && o.data.get(2) == Some(&0) {
+                    let t = (o.x16 >> 4, o.y16 >> 4, o.level);
+                    let mates: Vec<String> = world.objects().filter(|x| x.id() != o.id() && (x.x16 >> 4, x.y16 >> 4, x.level) == t).map(|x| format!("{}{}", x.id(), if x.person { "P" } else { "" })).collect();
+                    println!("slotted, no container: {}{} slot {} at {t:?} x16 {} y16 {}; on its tile {mates:?}", o.id(), if o.person { "P" } else { "" }, o.data[3], o.x16, o.y16);
+                }
             }
         }
-        for o in world.objects() {
-            if o.data.get(3).is_some_and(|&s| s >= 0) && o.data.get(2) == Some(&0) {
-                let t = (o.x16 >> 4, o.y16 >> 4, o.level);
-                let mates: Vec<String> = world.objects().filter(|x| x.id() != o.id() && (x.x16 >> 4, x.y16 >> 4, x.level) == t).map(|x| format!("{}{}", x.id(), if x.person { "P" } else { "" })).collect();
-                println!("slotted, no container: {}{} slot {} at {t:?} x16 {} y16 {}; on its tile {mates:?}", o.id(), if o.person { "P" } else { "" }, o.data[3], o.x16, o.y16);
-            }
-        }
-    }
-    // the lot's globals as saved (its SIMI): the clock among them
-    world.globals = globals.to_vec();
-    if let Some(id) = env("REPLAY_SHOW_STACK").and_then(|v| v.parse::<i16>().ok())
-        && let Some(o) = world.find_object(id)
-    {
+        // the lot's globals as saved (its SIMI): the clock among them
+        world.globals = globals.to_vec();
+        if let Some(id) = env("REPLAY_SHOW_STACK").and_then(|v| v.parse::<i16>().ok())
+            && let Some(o) = world.find_object(id)
         {
-            println!("file {:?} semi {:?}", o.file.map(|f| file_name(lib, f)), o.file.and_then(|f| lib.file(f).semi).map(|s| file_name(lib, s)));
-            for f in &o.stack {
-                if let Some(t) = f.tree {
-                    let tr = lib.tree_at(t);
-                    println!("  frame {} node {}: node op {:?} stack object {}", tr.id, f.node, tr.nodes.get(f.node as usize).map(|n| (n.opcode, n.true_target, n.false_target)), f.stack_object);
+            {
+                println!("file {:?} semi {:?}", o.file.map(|f| file_name(lib, f)), o.file.and_then(|f| lib.file(f).semi).map(|s| file_name(lib, s)));
+                for f in &o.stack {
+                    if let Some(t) = f.tree {
+                        let tr = lib.tree_at(t);
+                        println!("  frame {} node {}: node op {:?} stack object {}", tr.id, f.node, tr.nodes.get(f.node as usize).map(|n| (n.opcode, n.true_target, n.false_target)), f.stack_object);
+                    }
+                }
+                println!("stack of {id}: {:?}", o.stack.iter().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.file.map(|x| file_name(lib, x)))).collect::<Vec<_>>());
+            }
+        }
+        if has("REPLAY_SHOW_REQUEUE") {
+            for o in world.objects().filter(|o| o.person) {
+                let diff: Vec<(usize, i16)> = o.person_data.iter().enumerate().filter(|(i, _)| *i < 80).map(|(i, &v)| (i, v)).collect();
+                println!("requeue data {}: {:?}", o.id(), diff);
+                println!("requeue entry {}: {:?}", o.id(), o.current);
+                println!("requeue: {} current tree {} on {:?} stack {:?} pd32 {:?} pd29 {:?} data4 {:?} saved queue {}", o.id(), o.current.tree, o.current.objects, o.stack.iter().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node)).collect::<Vec<_>>(), o.person_data.get(32), o.person_data.get(29), o.data.get(4), o.queue.len());
+            }
+        }
+        world.requeue_current_on_community_lot();
+        // The plans' points natively wherever the log carries the planner's inputs ('r', 'h'), so the
+        // walk checks run on the native planner's ways (study REPLAY_LOGGED_PLANS: the log's instead)
+        let mut native_plans = (0, 0);
+        // --bench: the native planner's cost, each plan's whole request (goal choice, search,
+        // refinement, the point after the goal) timed 21 times, the rounds interleaved over the plans
+        // (a busy PC), each plan's median
+        if bench.is_some() {
+            let plans: Vec<&PlanRec> = log.plans.iter().filter(|pl| native_plan_points(pl, &world).is_some()).collect();
+            let mut times: Vec<Vec<f64>> = vec![Vec::new(); plans.len()];
+            for _ in 0..21 {
+                for (k, pl) in plans.iter().enumerate() {
+                    let t0 = Instant::now();
+                    std::hint::black_box(native_plan_points(pl, &world));
+                    times[k].push(us(t0));
                 }
             }
-            println!("stack of {id}: {:?}", o.stack.iter().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.file.map(|x| file_name(lib, x)))).collect::<Vec<_>>());
-        }
-    }
-    if has("REPLAY_SHOW_REQUEUE") {
-        for o in world.objects().filter(|o| o.person) {
-            let diff: Vec<(usize, i16)> = o.person_data.iter().enumerate().filter(|(i, _)| *i < 80).map(|(i, &v)| (i, v)).collect();
-            println!("requeue data {}: {:?}", o.id(), diff);
-            println!("requeue entry {}: {:?}", o.id(), o.current);
-            println!("requeue: {} current tree {} on {:?} stack {:?} pd32 {:?} pd29 {:?} data4 {:?} saved queue {}", o.id(), o.current.tree, o.current.objects, o.stack.iter().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node)).collect::<Vec<_>>(), o.person_data.get(32), o.person_data.get(29), o.data.get(4), o.queue.len());
-        }
-    }
-    world.requeue_current_on_community_lot();
-    // The plans' points natively wherever the log carries the planner's inputs ('r', 'h'), so the
-    // walk checks run on the native planner's ways (study REPLAY_LOGGED_PLANS: the log's instead)
-    let patched;
-    let mut native_plans = (0, 0);
-    // --bench: the native planner's cost, each plan's whole request (goal choice, search,
-    // refinement, the point after the goal) timed 21 times, the rounds interleaved over the plans
-    // (a busy PC), each plan's median
-    if bench.is_some() {
-        let plans: Vec<&PlanRec> = log.plans.iter().filter(|pl| native_plan_points(pl, &world).is_some()).collect();
-        let mut times: Vec<Vec<f64>> = vec![Vec::new(); plans.len()];
-        for _ in 0..21 {
-            for (k, pl) in plans.iter().enumerate() {
-                let t0 = Instant::now();
-                std::hint::black_box(native_plan_points(pl, &world));
-                times[k].push(us(t0));
+            let mut medians: Vec<(f64, usize)> = times
+                .iter_mut()
+                .enumerate()
+                .map(|(k, t)| {
+                    t.sort_by(f64::total_cmp);
+                    (t[t.len() / 2], k)
+                })
+                .collect();
+            medians.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let total: f64 = medians.iter().map(|m| m.0).sum();
+            if let Some(&(worst, k)) = medians.last() {
+                let pl = plans[k];
+                println!(
+                    "bench: the planner on {} plans, us a plan (medians of 21): median {:.1}, worst {:.1} (tick {}, {} goals, {} points), all {:.1}",
+                    plans.len(),
+                    medians[medians.len() / 2].0,
+                    worst,
+                    pl.tick,
+                    pl.goals.len(),
+                    pl.points.len(),
+                    total
+                );
             }
         }
-        let mut medians: Vec<(f64, usize)> = times
-            .iter_mut()
-            .enumerate()
-            .map(|(k, t)| {
-                t.sort_by(f64::total_cmp);
-                (t[t.len() / 2], k)
-            })
-            .collect();
-        medians.sort_by(|a, b| a.0.total_cmp(&b.0));
-        let total: f64 = medians.iter().map(|m| m.0).sum();
-        if let Some(&(worst, k)) = medians.last() {
-            let pl = plans[k];
-            println!(
-                "bench: the planner on {} plans, us a plan (medians of 21): median {:.1}, worst {:.1} (tick {}, {} goals, {} points), all {:.1}",
-                plans.len(),
-                medians[medians.len() / 2].0,
-                worst,
-                pl.tick,
-                pl.goals.len(),
-                pl.points.len(),
-                total
-            );
-        }
-    }
-    let log = if has("REPLAY_LOGGED_PLANS") {
-        log
-    } else {
-        let mut l = log.clone();
-        for pl in &mut l.plans {
-            if let Some(p) = native_plan_points(pl, &world) {
-                native_plans.1 += usize::from(p == pl.points);
-                if p != pl.points && has("REPLAY_SHOW_PLAN_DIFFS") {
-                    let a = pl.approach;
-                    let facing = a.and_then(|a| world.find_object(a[5] as i16)).and_then(|o| o.data.get(1)).copied();
-                    let sim = a.and_then(|a| world.find_object(a[7] as i16)).map(|o| (o.person, o.facing(), o.data.get(1).copied()));
-                    let place = a.and_then(|a| log.places.iter().rfind(|q| q.id == a[7] as i16 && q.tick < pl.tick).map(|q| (q.x, q.y, q.level)));
-                    println!("plan tick {}: native {p:?}, the log's {:?}; approach {a:?} chosen {} facing {facing:?} sim {sim:?} place {place:?}", pl.tick, pl.points, pl.chosen);
-                }
-                native_plans.0 += 1;
-                pl.points = p;
-            }
-        }
-        patched = l;
-        &patched
-    };
-    if has("REPLAY_SHOW_SIMI") {
-        println!("lot globals: {:?}", &globals[..globals.len().min(40)]);
-    }
-    if has("REPLAY_SHOW_RELATIONSHIPS") {
-        for o in world.objects().filter(|o| !o.relationships.is_empty()) {
-            for r in &o.relationships {
-                println!("relationship of {} with {}: {:?}", o.id(), r.with, r.values);
-            }
-        }
-    }
-    if has("REPLAY_SHOW_SAVED_STACKS") {
-        for o in world.objects().filter(|o| o.person || !o.stack.is_empty() && env("REPLAY_SHOW_SAVED_STACKS").is_some_and(|v| v == "all")) {
-            let fr: Vec<_> = o.stack.iter().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.stack_object, f.engine, f.params.clone())).collect();
-            println!("saved stack {}: {fr:?}", o.id());
-        }
-    }
-    if has("REPLAY_SHOW_OBJECTS") {
-        for o in world.objects() {
-            let mut l = format!("object {}: guid {:08x}, {} at {},{} facing {}; data", o.id(), o.guid, o.file.map_or("-".to_string(), |f| lib.file(f).path.clone()), o.x16, o.y16, o.data[1]);
-            for v in &o.data {
-                l += &format!(" {v}");
-            }
-            println!("{l}");
-        }
-    }
-    if has("REPLAY_SHOW_PAVED") {
-        println!("paved regions natively: {:?}", world.walls.paved_regions());
-    }
-    if has("REPLAY_SHOW_WALL_BYTES") {
-        // the second array's bytes (each tile's element) round the front yard, for study
-        if let Ok(arrays) = read_lot_arrays(club) {
-            for (n, a) in arrays.iter().enumerate() {
-                let es = a.element_size as usize;
-                println!("array {n}: {}x{}, {es} bytes a tile", a.width, a.height);
-                for y in 5..16 {
-                    let row: Vec<String> = (15..25).map(|x| {
-                        let i = (y * a.width + x) as usize * es;
-                        a.bytes[i..i + es].iter().map(|b| format!("{b:02x}")).collect::<String>()
-                    }).collect();
-                    println!("  y {y:2}: {}", row.join(" "));
-                }
-            }
-        }
-    }
-    if let Some(id) = env("REPLAY_DUMP_TREE").and_then(|v| v.parse::<u16>().ok()) {
-        for f in lib.files() {
-            if let Some(&t) = f.trees.get(&id) {
-                println!("tree {id} in {}:", f.path);
-                for (n, node) in lib.tree_at(t).nodes.iter().enumerate() {
-                    println!("  {n}: op {} -> {}/{} operand {:?}", node.opcode, node.true_target, node.false_target, &node.operand[..8]);
-                }
-            }
-        }
-    }
-    if let Some(v) = env("REPLAY_SHOW_STACK_DUMPS") {
-        // study: the interpreters' first-step dumps ('k') of those whose first step is this tree
-        println!("log steps: {}; dumps {}; first sims {:x?}", log.steps.len(), log.stack_dumps.len(), log.stack_dumps.iter().take(3).map(|d| (d.tick, d.sim, d.frame)).collect::<Vec<_>>());
-        let want = atoi(&v) as u16;
-        // or the interpreter of the step whose frame's low half is `want`
-        let by_frame: Option<u32> = log.steps.iter().find(|x| x.frame & 0xFFFF == want as u32).map(|x| x.sim);
-        if let Some(sm) = by_frame {
-            println!("the step with frame ..{want:04x}: sim {sm:08x}; its dump {}", log.stack_dumps.iter().any(|d| d.sim == sm));
-        }
-        for d in &log.stack_dumps {
-            let (tick, sim, frame, words, below) = (&d.tick, &d.sim, &d.frame, &d.words, &d.below);
-            if by_frame.is_some_and(|sm| sm == *sim) {
-                println!("dump tick {tick} sim {sim:08x} frame {frame:08x}; words {words:08x?}");
-                for row in below.chunks(32).skip(8) {
-                    println!("  {:02x?}", row);
-                }
-            }
-            let first = log.steps.iter().find(|x| x.sim == *sim);
-            if has("REPLAY_SHOW_STACK_DUMP_FIRSTS") {
-                println!("dump sim {sim:08x} frame {frame:08x} first {:?}", first.map(|x| (x.tick, x.tree, x.node, x.frame)));
-            }
-            let Some(first) = first else { continue };
-            if first.tree != want && first.frame & 0xFFFF != want as u32 {
-                continue;
-            }
-            println!("dump tick {tick} sim {sim:08x} frame {frame:08x} first {}:{}; words {:08x?}", first.tree, first.node, words);
-            for row in below.chunks(32).skip(8) {
-                println!("  {:02x?}", row);
-            }
-        }
-    }
-    if let Some(pat) = env("REPLAY_SHOW_FILE") {
-        // study: a file's function table and tree labels
-        for f in lib.files().iter().filter(|f| f.path.contains(&pat)) {
-            println!("file {}: functions {:?}; semi {:?}", f.path, f.functions, f.semi.map(|s| &lib.file(s).path));
-            for (id, sl) in &f.slots {
-                println!("  slots {id}: {sl:?}");
-            }
-            for (id, t) in &f.tables {
-                println!("  table {id}: first {:?}; (action, guard, flags) {:?}", f.table_first.get(id), t.iter().map(|e| (e.action, e.guard, e.flags)).collect::<Vec<_>>());
-            }
-            for d in &f.definitions {
-                let hits: Vec<(usize, u16)> = (0..80).map(|i| (i, d.field(i))).filter(|(_, v)| f.functions.contains_key(v)).collect();
-                println!("  def {:08x}: fields naming a function table {hits:?}", d.guid());
-            }
-            let mut names: Vec<_> = f.tree_by_name.iter().map(|(n, id)| (*id, n.clone())).collect();
-            names.sort();
-            for (id, n) in names {
-                println!("  tree {id} {n:?}");
-            }
-        }
-    }
-    if let Some(pat) = env("REPLAY_TREE_NAMES") {
-        // study: the BHAV labels matching a pattern, by file
-        for f in lib.files() {
-            for (name, id) in &f.tree_by_name {
-                if name.to_lowercase().contains(&pat.to_lowercase()) {
-                    println!("tree name: {} {id} {name:?}", f.path);
-                }
-            }
-        }
-    }
-    if has("REPLAY_SHOW_PERSON_TABLE") {
-        for f in lib.files().iter().filter(|f| f.path.ends_with("person_sg.iff")) {
-            for (&id, t) in &f.tables {
-                println!("person table {id}: first {:?}; guards {:?}", f.table_first.get(&id), t.iter().map(|e| (e.guard, e.autonomy_threshold, e.flags)).collect::<Vec<_>>());
-            }
-        }
-    }
-    if let Some(dump) = env("REPLAY_DUMP_ARRAYS") {
-        // the lot's three arrays, raw, for study
-        let bytes: Vec<u8> = read_lot_arrays(club).unwrap_or_default().iter().flat_map(|a| a.bytes.iter().copied()).collect();
-        let _ = std::fs::write(dump, bytes);
-    }
-    // The disc's club: its motives do not move by themselves (measured; World::motives_run).
-    world.motives_run = card_lot || has("REPLAY_MOTIVES_RUN");
-    world.neighbours = neighbours.to_vec();
-    if log.lists.first().is_none_or(|l| l.ids.len() != world.len()) {
-        println!(
-            "the log does not start with the lot loaded ({} objects in its first list, {} in the lot)",
-            log.lists.first().map_or(0, |l| l.ids.len()),
-            world.len()
-        );
-        return None;
-    }
-    let quiet = bench.is_some();
-    let mut h = ReplayHost {
-        lib,
-        world,
-        log,
-        me: ObjectKey(0),
-        step: 0,
-        bench,
-        file_of_top: None,
-        nested: Vec::new(),
-        nested_pos: 0,
-        natively_delivered: BTreeSet::new(),
-        present: BTreeSet::new(),
-        deferred: BTreeSet::new(),
-        chosen: None,
-        score_at: 0,
-        on_check: None,
-        counts: Counts { quiet, ..Default::default() },
-        shown: Shown::default(),
-        now: 0,
-        routing_returns: BTreeMap::new(),
-        pre_made: BTreeSet::new(),
-        anim: cat.and_then(|c| AnimReplay::new(log, lib, c)),
-    };
-    for i in 0..native_plans.0 {
-        h.counts.note(if i < native_plans.1 {
-            "planner: a plan's points natively, in the log's place, the same as the log's"
+        let log_rc = if has("REPLAY_LOGGED_PLANS") {
+            Rc::new(log.clone())
         } else {
-            "planner: a plan's points natively, in the log's place, NOT the log's"
-        });
-    }
-    let mut consumed: BTreeSet<usize> = BTreeSet::new(); // log steps a native primitive's checks have stepped
-    let mut sim = Simulator::new(lib);
-    if took_house {
-        h.counts.note("load: the lot's house (walls, floors) from the disc's copy, the save keeping none");
-    }
-    let mut finder = TreeFinder { lib, cache: HashMap::new(), shown: 0 };
-    // stand-ins given a file before their first own step (the target of a player's command):
-    // their first step still starts them as a stand-in's does
-    let mut unstarted: BTreeSet<ObjectKey> = BTreeSet::new();
-    let mut ids = stack_ids(log);
-    place_quiet_stacks(log, &h.world, &mut ids, &mut h.counts, lib);
-    let mut native_places: BTreeMap<(i16, u32), (i32, i32)> = BTreeMap::new();
-    // a walking Sim's place from the native walk where there is one (study REPLAY_LOGGED_PLACES:
-    // every place the log's)
-    let use_native_places = !has("REPLAY_LOGGED_PLACES");
-    // the routing runs' native returns, for the routing primitives' steps (its own counts dropped:
-    // the full pass after the steps counts them)
-    if !quiet && !log.places.is_empty() {
-        let native = routing(log, lib, &h.world, &h.world, &mut Counts { quiet: true, ..Default::default() }, &ids);
-        h.routing_returns = native.returns;
-        native_places = native.places;
-    }
-
-    // The log's steps by tick, in order.
-    let mut by_tick: Vec<Vec<usize>> = vec![Vec::new(); log.ticks as usize + 1];
-    for (i, s) in log.steps.iter().enumerate() {
-        if s.tick >= 1 && s.tick <= log.ticks {
-            by_tick[s.tick as usize].push(i);
-        }
-    }
-    let mut frames: BTreeMap<u32, Vec<u32>> = BTreeMap::new(); // the log's stacks: frame addresses, bottom first
-    let mut first_seen: BTreeMap<u32, u32> = BTreeMap::new(); // stack -> tick of its first step
-    let mut first_step: BTreeSet<u32> = BTreeSet::new(); // stacks whose first step was seen
-    let mut last_frame: HashMap<u32, (u32, TreeId)> = HashMap::new();
-    let mut unseen: BTreeSet<u32> = BTreeSet::new(); // placeholder addresses of saved frames below a first step
-    let mut delivered: BTreeSet<u32> = BTreeSet::new(); // Sims whose first interaction was seen
-    if has("REPLAY_SHOW_OFFLIST") {
-        let want = [0x80ff7f78u32, 0x80ff8350, 0x80ff8728];
-        for st in log.steps.iter().filter(|st| want.contains(&st.sim) && st.tick == 260) {
-            println!("offlist {:x} tick {} {}:{} -> {} so {} reads {:?} params {:?}", st.sim, st.tick, st.tree, st.node, st.after, st.stack_object, st.lookups.iter().map(|v| (v.scope, v.data, v.value, v.object == st.sim)).collect::<Vec<_>>(), st.params);
-        }
-        println!("offlist ids: {:?}", want.iter().map(|p| (format!("{p:x}"), ids.get(p))).collect::<Vec<_>>());
-    }
-    let mut frame_tree: HashMap<(u32, u32, u16), (TreeId, FileId)> = HashMap::new();
-    // a log of today's observer: its plans carry the search's region lists ('r')
-    let new_observer = log.plans.iter().any(|p| !p.lookup_regions[0].is_empty());
-    let (mut streak, mut best_streak) = (0usize, 0usize);
-
-    // Which steps are turns: those in the tick's pass over the objects ('Q' records). The others
-    // are the engine's own (the pie menu's checks on a Sim's stack: docs/simulation.md). A log
-    // without them is taken as every step a turn.
-    let have_passes = !log.passes.is_empty();
-    let engine_run: Vec<bool> = log.steps.iter().map(|s| have_passes && !s.in_pass).collect();
-    if !have_passes {
-        h.counts.note("log: no pass records (an older log): every step taken as a turn, no tick as paused");
-    }
-
-    let mut place_at = 0; // the next 'P' record (places: the native walk's where it has one, else the log's)
-    let mut motive_at = 0; // the next 'N' record
-    let mut shown_motives = 0;
-    let ev_env = env("REPLAY_EVALUATION");
-    let mut engine_list_at = 1;
-    // The time of day's light ('3' records, a light log's) from the engine's own clock: the
-    // hour (global 0), the minute (global 5) and two seconds a pass counted (`clock_pass`), each
-    // tick's calls against the clock after the tick (tick 0's before the first).
-    let mut time_at = 0;
-    check_time_of_day(log, 0, &h.world, &mut time_at, &mut h.counts);
-    for t in 1..=log.ticks {
-        let mut tick_us = 0.0;
-        while place_at < log.places.len() && log.places[place_at].tick < t {
-            let p = log.places[place_at];
-            // a walking Sim's place from the native walk where the routing pass has one
-            let (x, y) = if use_native_places { native_places.get(&(p.id, p.tick)).copied().unwrap_or((p.x, p.y)) } else { (p.x, p.y) };
-            if use_native_places {
-                if !native_places.contains_key(&(p.id, p.tick)) {
-                    let person = h.world.find(p.id).is_some_and(|k| h.world.get(k).person);
-                    if p.tick == 0 {
-                        let loaded = h.world.find(p.id).map(|k| { let o = h.world.get(k); (o.x16, o.y16, o.level) });
-                        h.counts.note(if loaded == Some((p.x, p.y, p.level)) {
-                            "places: a tick-0 placement natively where the lot loads it"
-                        } else if loaded.is_some_and(|(x, y, l)| (((x >> 4) << 4) + 8, ((y >> 4) << 4) + 8, l) == (p.x, p.y, p.level)) {
-                            "places: a tick-0 placement natively the centre of the tile the lot loads it on"
-                        } else if loaded.is_some_and(|(x, y, _)| (x < 0 || y < 0) && (p.x, p.y) == (-16, -16)) {
-                            "places: a tick-0 placement natively (-16, -16), the place of an object off the lot"
-                        } else if loaded.is_none() {
-                            "places: a tick-0 placement of an object not in the native lot"
-                        } else {
-                            "places: a tick-0 placement NOT where the lot loads it"
-                        });
-                        if has("REPLAY_SHOW_PLACES") && !loaded.is_some_and(|(x, y, l)| (((x >> 4) << 4) + 8, ((y >> 4) << 4) + 8, l) == (p.x, p.y, p.level)) {
-                            println!("tick-0 place of {}: logged {:?}, loaded {loaded:?}", p.id, (p.x, p.y, p.level));
-                        }
+            let mut l = log.clone();
+            for pl in &mut l.plans {
+                if let Some(p) = native_plan_points(pl, &world) {
+                    native_plans.1 += usize::from(p == pl.points);
+                    if p != pl.points && has("REPLAY_SHOW_PLAN_DIFFS") {
+                        let a = pl.approach;
+                        let facing = a.and_then(|a| world.find_object(a[5] as i16)).and_then(|o| o.data.get(1)).copied();
+                        let sim = a.and_then(|a| world.find_object(a[7] as i16)).map(|o| (o.person, o.facing(), o.data.get(1).copied()));
+                        let place = a.and_then(|a| log.places.iter().rfind(|q| q.id == a[7] as i16 && q.tick < pl.tick).map(|q| (q.x, q.y, q.level)));
+                        println!("plan tick {}: native {p:?}, the log's {:?}; approach {a:?} chosen {} facing {facing:?} sim {sim:?} place {place:?}", pl.tick, pl.points, pl.chosen);
                     }
-                    h.counts.note(&if p.tick == 0 {
-                        "places: the log's, no native walk: a tick-0 placement".to_string()
-                    } else if !person {
-                        if has("REPLAY_SHOW_PLACES") {
-                            let file = h.world.find(p.id).and_then(|k| h.world.get(k).file).map_or("-".to_string(), |f| file_name(lib, f));
-                            println!("moved object {} {file} at tick {} to {:?}", p.id, p.tick, (p.x, p.y, p.level));
-                        }
-                        "places: the log's, no native walk: not a person".to_string()
-                    } else {
-                        if has("REPLAY_SHOW_PLACES") {
-                            println!("person place without a native walk: {} at tick {} {:?}", p.id, p.tick, (p.x, p.y));
-                        }
-                        format!("places: the log's, no native walk: person {}", p.id)
-                    });
+                    native_plans.0 += 1;
+                    pl.points = p;
                 }
-                h.counts.note(if !native_places.contains_key(&(p.id, p.tick)) {
-                    "places: the log's (no native walk there)"
-                } else if (x, y) == (p.x, p.y) {
-                    "places: the native walk's, the same as the log's"
-                } else {
-                    if has("REPLAY_SHOW_WALK_MISS") {
-                        let prev = log.places.iter().rfind(|q| q.id == p.id && q.tick < p.tick).map(|q| (q.tick, q.x, q.y));
-                        let nxt = log.places.iter().find(|q| q.id == p.id && q.tick > p.tick).map(|q| (q.tick, q.x, q.y));
-                        let nat_prev = native_places.get(&(p.id, p.tick.saturating_sub(1))).copied();
-                        let nat_next = native_places.get(&(p.id, p.tick + 1)).copied();
-                        println!("walk miss {} tick {}: native {:?}, log {:?}; log before {prev:?} after {nxt:?}; native at t-1 {nat_prev:?} t+1 {nat_next:?}", p.id, p.tick, (x, y), (p.x, p.y));
-                    }
-                    "places: the native walk's, NOT the log's"
-                });
             }
-            if let Some(k) = h.world.find(p.id) {
-                let o = h.world.get_mut(k);
-                o.x16 = x;
-                o.y16 = y;
-                o.level = p.level;
-            }
-            place_at += 1;
-        }
-        let sync_before = h.bench.as_ref().map_or(0.0, |b| b.sync_us);
-        // A tick without a pass is a paused one: the native clock does not move in it.
-        if have_passes && !log.passes.contains_key(&t) {
-            h.counts.note("ticks: paused (no pass)");
-            for _ in &by_tick[t as usize] {
-                h.counts.note("steps: outside the pass (the engine's own), not run");
-            }
-            continue;
-        }
-        h.counts.note("ticks: run");
-        h.now = sim.now();
-        // The turns: the native simulator's against the lot objects the log stepped.
-        let mut logged_turns: Vec<i16> = Vec::new();
-        let mut seen: BTreeSet<u32> = BTreeSet::new();
-        for &i in &by_tick[t as usize] {
-            if engine_run[i] {
-                continue;
-            }
-            let s = &log.steps[i];
-            let Some(&id) = ids.get(&s.sim) else { continue };
-            if h.world.find(id).is_none() || !seen.insert(s.sim) {
-                continue;
-            }
-            logged_turns.push(id);
-        }
-        // The native pass: from its cursor (against where the log's started), over the objects
-        // the log's reached (to where it stopped), sleepers passed over.
-        let pass: PassRec = if have_passes { log.passes[&t] } else { PassRec::default() };
-        if have_passes {
-            h.counts.note(if sim.cursor() == pass.from as i16 { "passes: the native cursor where the log's pass starts" } else { "passes: DIFFERENT start" });
-        }
-        let mut native_turns: Vec<i16> = Vec::new();
-        // The persons reached, in id order, and whether their turn ends with the motive update.
-        let mut motives_due: Vec<(ObjectKey, bool)> = Vec::new();
-        let mut motives_done = 0;
-        let p0 = Instant::now();
-        for (k, asleep) in sim.pass_order(&h.world) {
-            let id = h.world.get(k).id();
-            if pass.stopped_at != 0 && id > pass.stopped_at as i16 {
-                break;
-            }
-            if h.world.get(k).person {
-                let due = sim.begin_turn(&mut h.world, k);
-                motives_due.push((k, due));
-            }
-            if asleep {
-                sim.pass_over(&h.world, k);
-            } else {
-                native_turns.push(id);
-            }
-        }
-        if let Some(b) = &mut h.bench {
-            let d = us(p0);
-            b.pass_us += d;
-            tick_us += d;
-        }
-        // Their updates, at the end of their turns: before the first step of an object with a
-        // higher id (the pass goes up by id), or at the pass's end.
-        let motives_before = |id: i16, sim: &Simulator, world: &mut World, done: &mut usize| {
-            while *done < motives_due.len() {
-                // an object removed during its turn has no update to finish
-                let Some(o) = world.get_live(motives_due[*done].0) else {
-                    *done += 1;
-                    continue;
-                };
-                if o.id() >= id {
-                    break;
-                }
-                sim.end_turn(world, motives_due[*done].0, motives_due[*done].1);
-                *done += 1;
-            }
+            Rc::new(l)
         };
-        let (mut a, mut b) = (logged_turns.clone(), native_turns.clone());
-        a.sort();
-        b.sort();
-        if a == b {
-            h.counts.note("turns: the same objects");
-        } else {
-            let only_log: Vec<i16> = a.iter().copied().filter(|x| b.binary_search(x).is_err()).collect();
-            let only_native: Vec<i16> = b.iter().copied().filter(|x| a.binary_search(x).is_err()).collect();
-            h.counts.note("turns: different objects");
-            h.counts.add("turns: objects the log ran, not the native", only_log.len());
-            h.counts.add("turns: objects the native would run, not the log", only_native.len());
-            for &id in &only_native {
-                let k = h.world.find(id).unwrap();
-                let i = sim.stack_of(&h.world, k);
-                let op = top_node(lib, i).map_or("?".to_string(), |n| n.opcode.to_string());
-                let slept = if i.sleep().woke() { " (slept)" } else { "" };
-                if has("REPLAY_SHOW_ONLY_NATIVE") && h.shown.next("only native", 6) {
-                    println!("only native {id}: stack {:?} done {} error {:?}", i.stack().iter().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node)).collect::<Vec<_>>(), i.done(), i.error());
-                }
-                note!(h.counts, "turns: the native would run, at opcode {op}{slept}");
-            }
-            let show = has("REPLAY_SHOW_TURNS");
-            let shown = *h.shown.0.get("turns").unwrap_or(&0);
-            if show && shown < 10 {
-                for &id in &only_log {
-                    let k = h.world.find(id).unwrap();
-                    let i = sim.stack_of(&h.world, k);
-                    println!("  {id}: done {} asleep {} depth {} error {}", i.done() as i32, i.asleep() as i32, i.stack().len(), i.error() as u16);
+        let log: &Log = &log_rc;
+        if has("REPLAY_SHOW_SIMI") {
+            println!("lot globals: {:?}", &globals[..globals.len().min(40)]);
+        }
+        if has("REPLAY_SHOW_RELATIONSHIPS") {
+            for o in world.objects().filter(|o| !o.relationships.is_empty()) {
+                for r in &o.relationships {
+                    println!("relationship of {} with {}: {:?}", o.id(), r.with, r.values);
                 }
             }
-            if show && h.shown.next("turns", 10) {
-                let mut l = format!("tick {t} turns differ: only the log's");
-                for id in &only_log {
-                    l += &format!(" {id}");
-                }
-                l += "; only the native's";
-                for id in &only_native {
-                    l += &format!(" {id}");
+        }
+        if has("REPLAY_SHOW_SAVED_STACKS") {
+            for o in world.objects().filter(|o| o.person || !o.stack.is_empty() && env("REPLAY_SHOW_SAVED_STACKS").is_some_and(|v| v == "all")) {
+                let fr: Vec<_> = o.stack.iter().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.stack_object, f.engine, f.params.clone())).collect();
+                println!("saved stack {}: {fr:?}", o.id());
+            }
+        }
+        if has("REPLAY_SHOW_OBJECTS") {
+            for o in world.objects() {
+                let mut l = format!("object {}: guid {:08x}, {} at {},{} facing {}; data", o.id(), o.guid, o.file.map_or("-".to_string(), |f| lib.file(f).path.clone()), o.x16, o.y16, o.data[1]);
+                for v in &o.data {
+                    l += &format!(" {v}");
                 }
                 println!("{l}");
             }
         }
-
-        // objects the original's engine made that no step of theirs made first: from the list
-        // at the end of the tick before, placed by the log's places
-        if !has("REPLAY_LOGGED_OBJECTS") {
-            while engine_list_at < log.lists.len() && log.lists[engine_list_at].tick < t {
-                let l = &log.lists[engine_list_at];
-                engine_list_at += 1;
-                for &id in l.ids.iter().rev() {
-                    if h.world.find(id).is_none() {
-                        let mut o = Object::new();
-                        o.data = vec![0; 72];
-                        o.data[DATA_OBJECT_ID] = id;
-                        (o.x16, o.y16) = log.places.iter().rfind(|p| p.id == id && p.tick < t).map_or((-16, -16), |p| (p.x, p.y));
-                        h.world.add(o, true);
-                        h.counts.note("objects: made by the engine, from the log's list");
+        if has("REPLAY_SHOW_PAVED") {
+            println!("paved regions natively: {:?}", world.walls.paved_regions());
+        }
+        if has("REPLAY_SHOW_WALL_BYTES") {
+            // the second array's bytes (each tile's element) round the front yard, for study
+            if let Ok(arrays) = read_lot_arrays(club) {
+                for (n, a) in arrays.iter().enumerate() {
+                    let es = a.element_size as usize;
+                    println!("array {n}: {}x{}, {es} bytes a tile", a.width, a.height);
+                    for y in 5..16 {
+                        let row: Vec<String> = (15..25).map(|x| {
+                            let i = (y * a.width + x) as usize * es;
+                            a.bytes[i..i + es].iter().map(|b| format!("{b:02x}")).collect::<String>()
+                        }).collect();
+                        println!("  y {y:2}: {}", row.join(" "));
                     }
                 }
             }
         }
-        // The steps, in the log's order.
-        for &i in &by_tick[t as usize] {
-            let s = &log.steps[i];
-            let traced = has("REPLAY_TRACE_MAKERS") && matches!((s.tree, s.node), (0x2007, 1) | (0x2022, 1) | (0x200f, 6)) && s.look == b'X';
-            if traced {
-                println!("maker step {i} tick {} tree {:#x} node {}: engine's {}, consumed {}, id {:?}", s.tick, s.tree, s.node, engine_run[i], consumed.contains(&i), ids.get(&s.sim));
+        if let Some(id) = env("REPLAY_DUMP_TREE").and_then(|v| v.parse::<u16>().ok()) {
+            for f in lib.files() {
+                if let Some(&t) = f.trees.get(&id) {
+                    println!("tree {id} in {}:", f.path);
+                    for (n, node) in lib.tree_at(t).nodes.iter().enumerate() {
+                        println!("  {n}: op {} -> {}/{} operand {:?}", node.opcode, node.true_target, node.false_target, &node.operand[..8]);
+                    }
+                }
             }
-            if engine_run[i] {
-                h.counts.note("steps: outside the pass (the engine's own), not run");
-                continue;
+        }
+        if let Some(v) = env("REPLAY_SHOW_STACK_DUMPS") {
+            // study: the interpreters' first-step dumps ('k') of those whose first step is this tree
+            println!("log steps: {}; dumps {}; first sims {:x?}", log.steps.len(), log.stack_dumps.len(), log.stack_dumps.iter().take(3).map(|d| (d.tick, d.sim, d.frame)).collect::<Vec<_>>());
+            let want = atoi(&v) as u16;
+            // or the interpreter of the step whose frame's low half is `want`
+            let by_frame: Option<u32> = log.steps.iter().find(|x| x.frame & 0xFFFF == want as u32).map(|x| x.sim);
+            if let Some(sm) = by_frame {
+                println!("the step with frame ..{want:04x}: sim {sm:08x}; its dump {}", log.stack_dumps.iter().any(|d| d.sim == sm));
             }
-            if consumed.contains(&i) {
-                continue;
+            for d in &log.stack_dumps {
+                let (tick, sim, frame, words, below) = (&d.tick, &d.sim, &d.frame, &d.words, &d.below);
+                if by_frame.is_some_and(|sm| sm == *sim) {
+                    println!("dump tick {tick} sim {sim:08x} frame {frame:08x}; words {words:08x?}");
+                    for row in below.chunks(32).skip(8) {
+                        println!("  {:02x?}", row);
+                    }
+                }
+                let first = log.steps.iter().find(|x| x.sim == *sim);
+                if has("REPLAY_SHOW_STACK_DUMP_FIRSTS") {
+                    println!("dump sim {sim:08x} frame {frame:08x} first {:?}", first.map(|x| (x.tick, x.tree, x.node, x.frame)));
+                }
+                let Some(first) = first else { continue };
+                if first.tree != want && first.frame & 0xFFFF != want as u32 {
+                    continue;
+                }
+                println!("dump tick {tick} sim {sim:08x} frame {frame:08x} first {}:{}; words {:08x?}", first.tree, first.node, words);
+                for row in below.chunks(32).skip(8) {
+                    println!("  {:02x?}", row);
+                }
             }
-            if let Some(&id0) = ids.get(&s.sim) {
-                motives_before(id0, &sim, &mut h.world, &mut motives_done);
+        }
+        if let Some(pat) = env("REPLAY_SHOW_FILE") {
+            // study: a file's function table and tree labels
+            for f in lib.files().iter().filter(|f| f.path.contains(&pat)) {
+                println!("file {}: functions {:?}; semi {:?}", f.path, f.functions, f.semi.map(|s| &lib.file(s).path));
+                for (id, sl) in &f.slots {
+                    println!("  slots {id}: {sl:?}");
+                }
+                for (id, t) in &f.tables {
+                    println!("  table {id}: first {:?}; (action, guard, flags) {:?}", f.table_first.get(id), t.iter().map(|e| (e.action, e.guard, e.flags)).collect::<Vec<_>>());
+                }
+                for d in &f.definitions {
+                    let hits: Vec<(usize, u16)> = (0..80).map(|i| (i, d.field(i))).filter(|(_, v)| f.functions.contains_key(v)).collect();
+                    println!("  def {:08x}: fields naming a function table {hits:?}", d.guid());
+                }
+                let mut names: Vec<_> = f.tree_by_name.iter().map(|(n, id)| (*id, n.clone())).collect();
+                names.sort();
+                for (id, n) in names {
+                    println!("  tree {id} {n:?}");
+                }
             }
-            {
-                // A Sim waiting at IdleForInput with an entry queued, whose next logged steps are
-                // the engine's checks on a frame above: the IdleForInput step (the log's next
-                // 281:4 of this Sim) is run natively, its checks stepping through those steps.
-                let w = ids.get(&s.sim).and_then(|&id| h.world.find(id));
-                if let Some(w) = w.filter(|&w| h.world.get(w).person && s.node == 0) {
-                    // The evaluation (opcode 3 at the native top): its checks are this Sim's next
-                    // logged steps up to the opcode-3 step itself (its tree and node, looked up).
-                    let ein = sim.stack_of(&h.world, w);
-                    let en = if ein.done() { None } else { top_node(lib, ein) };
-                    let etop = ein.stack().last().and_then(|f| f.tree.map(|t| (lib.tree_at(t).id, f.node, f.file)));
-                    // Native on every lot (the club's too since its guard limit, person data
-                    // 36: docs/simulation.md, "Autonomy"). REPLAY_EVALUATION=0 turns it off.
-                    let evaluation = ev_env.as_ref().is_none_or(|e| e.starts_with('1'));
-                    if let (true, Some(en), Some((etree, enode, efile))) = (evaluation, en, etop)
-                        && (en.opcode == 3 || (en.opcode == 14 && !has("REPLAY_LOGGED_FIND_BEST")))
-                        && !(s.tree == etree as u16 && s.node == enode)
+        }
+        if let Some(pat) = env("REPLAY_TREE_NAMES") {
+            // study: the BHAV labels matching a pattern, by file
+            for f in lib.files() {
+                for (name, id) in &f.tree_by_name {
+                    if name.to_lowercase().contains(&pat.to_lowercase()) {
+                        println!("tree name: {} {id} {name:?}", f.path);
+                    }
+                }
+            }
+        }
+        if has("REPLAY_SHOW_PERSON_TABLE") {
+            for f in lib.files().iter().filter(|f| f.path.ends_with("person_sg.iff")) {
+                for (&id, t) in &f.tables {
+                    println!("person table {id}: first {:?}; guards {:?}", f.table_first.get(&id), t.iter().map(|e| (e.guard, e.autonomy_threshold, e.flags)).collect::<Vec<_>>());
+                }
+            }
+        }
+        if let Some(dump) = env("REPLAY_DUMP_ARRAYS") {
+            // the lot's three arrays, raw, for study
+            let bytes: Vec<u8> = read_lot_arrays(club).unwrap_or_default().iter().flat_map(|a| a.bytes.iter().copied()).collect();
+            let _ = std::fs::write(dump, bytes);
+        }
+        // The disc's club: its motives do not move by themselves (measured; World::motives_run).
+        world.motives_run = card_lot || has("REPLAY_MOTIVES_RUN");
+        world.neighbours = neighbours.to_vec();
+        if log.lists.first().is_none_or(|l| l.ids.len() != world.len()) {
+            println!(
+                "the log does not start with the lot loaded ({} objects in its first list, {} in the lot)",
+                log.lists.first().map_or(0, |l| l.ids.len()),
+                world.len()
+            );
+            return None;
+        }
+        let quiet = bench.is_some();
+        let mut h = ReplayHost {
+            lib,
+            world,
+            log: Rc::clone(&log_rc),
+            me: ObjectKey(0),
+            step: 0,
+            bench,
+            file_of_top: None,
+            nested: Vec::new(),
+            nested_pos: 0,
+            natively_delivered: BTreeSet::new(),
+            present: BTreeSet::new(),
+            deferred: BTreeSet::new(),
+            chosen: None,
+            score_at: 0,
+            on_check: None,
+            counts: Counts { quiet, ..Default::default() },
+            shown: Shown::default(),
+            now: 0,
+            routing_returns: BTreeMap::new(),
+            pre_made: BTreeSet::new(),
+            anim: cat.and_then(|c| AnimReplay::new(log, lib, c)),
+        };
+        for i in 0..native_plans.0 {
+            h.counts.note(if i < native_plans.1 {
+                "planner: a plan's points natively, in the log's place, the same as the log's"
+            } else {
+                "planner: a plan's points natively, in the log's place, NOT the log's"
+            });
+        }
+        let consumed: BTreeSet<usize> = BTreeSet::new(); // log steps a native primitive's checks have stepped
+        let sim = Simulator::new(lib);
+        if took_house {
+            h.counts.note("load: the lot's house (walls, floors) from the disc's copy, the save keeping none");
+        }
+        let finder = TreeFinder { lib, cache: HashMap::new(), shown: 0 };
+        // stand-ins given a file before their first own step (the target of a player's command):
+        // their first step still starts them as a stand-in's does
+        let unstarted: BTreeSet<ObjectKey> = BTreeSet::new();
+        let mut ids = stack_ids(log);
+        place_quiet_stacks(log, &h.world, &mut ids, &mut h.counts, lib);
+        let mut native_places: BTreeMap<(i16, u32), (i32, i32)> = BTreeMap::new();
+        // a walking Sim's place from the native walk where there is one (study REPLAY_LOGGED_PLACES:
+        // every place the log's)
+        let use_native_places = !has("REPLAY_LOGGED_PLACES");
+        // the routing runs' native returns, for the routing primitives' steps (its own counts dropped:
+        // the full pass after the steps counts them)
+        if !quiet && !log.places.is_empty() {
+            let native = routing(log, lib, &h.world, &h.world, &mut Counts { quiet: true, ..Default::default() }, &ids);
+            h.routing_returns = native.returns;
+            native_places = native.places;
+        }
+
+        // The log's steps by tick, in order.
+        let mut by_tick: Vec<Vec<usize>> = vec![Vec::new(); log.ticks as usize + 1];
+        for (i, s) in log.steps.iter().enumerate() {
+            if s.tick >= 1 && s.tick <= log.ticks {
+                by_tick[s.tick as usize].push(i);
+            }
+        }
+        let frames: BTreeMap<u32, Vec<u32>> = BTreeMap::new(); // the log's stacks: frame addresses, bottom first
+        let first_seen: BTreeMap<u32, u32> = BTreeMap::new(); // stack -> tick of its first step
+        let first_step: BTreeSet<u32> = BTreeSet::new(); // stacks whose first step was seen
+        let last_frame: HashMap<u32, (u32, TreeId)> = HashMap::new();
+        let unseen: BTreeSet<u32> = BTreeSet::new(); // placeholder addresses of saved frames below a first step
+        let delivered: BTreeSet<u32> = BTreeSet::new(); // Sims whose first interaction was seen
+        if has("REPLAY_SHOW_OFFLIST") {
+            let want = [0x80ff7f78u32, 0x80ff8350, 0x80ff8728];
+            for st in log.steps.iter().filter(|st| want.contains(&st.sim) && st.tick == 260) {
+                println!("offlist {:x} tick {} {}:{} -> {} so {} reads {:?} params {:?}", st.sim, st.tick, st.tree, st.node, st.after, st.stack_object, st.lookups.iter().map(|v| (v.scope, v.data, v.value, v.object == st.sim)).collect::<Vec<_>>(), st.params);
+            }
+            println!("offlist ids: {:?}", want.iter().map(|p| (format!("{p:x}"), ids.get(p))).collect::<Vec<_>>());
+        }
+        let frame_tree: HashMap<(u32, u32, u16), (TreeId, FileId)> = HashMap::new();
+        // a log of today's observer: its plans carry the search's region lists ('r')
+        let new_observer = log.plans.iter().any(|p| !p.lookup_regions[0].is_empty());
+        let (streak, best_streak) = (0usize, 0usize);
+
+        // Which steps are turns: those in the tick's pass over the objects ('Q' records). The others
+        // are the engine's own (the pie menu's checks on a Sim's stack: docs/simulation.md). A log
+        // without them is taken as every step a turn.
+        let have_passes = !log.passes.is_empty();
+        let engine_run: Vec<bool> = log.steps.iter().map(|s| have_passes && !s.in_pass).collect();
+        if !have_passes {
+            h.counts.note("log: no pass records (an older log): every step taken as a turn, no tick as paused");
+        }
+
+        let place_at = 0; // the next 'P' record (places: the native walk's where it has one, else the log's)
+        let motive_at = 0; // the next 'N' record
+        let shown_motives = 0;
+        let ev_env = env("REPLAY_EVALUATION");
+        let engine_list_at = 1;
+        // The time of day's light ('3' records, a light log's) from the engine's own clock: the
+        // hour (global 0), the minute (global 5) and two seconds a pass counted (`clock_pass`), each
+        // tick's calls against the clock after the tick (tick 0's before the first).
+        let mut time_at = 0;
+        check_time_of_day(log, 0, &h.world, &mut time_at, &mut h.counts);
+        Some(Replay {
+            lib,
+            log: log_rc,
+            lot,
+            h,
+            consumed,
+            sim,
+            finder,
+            unstarted,
+            ids,
+            native_places,
+            use_native_places,
+            by_tick,
+            frames,
+            first_seen,
+            first_step,
+            last_frame,
+            unseen,
+            delivered,
+            frame_tree,
+            new_observer,
+            streak,
+            best_streak,
+            have_passes,
+            engine_run,
+            place_at,
+            motive_at,
+            shown_motives,
+            ev_env,
+            engine_list_at,
+            time_at,
+            t: 0,
+        })
+    }
+
+    /// Runs the next tick (the log's, from 1), and says whether there was one. The world is then
+    /// the engine's at the end of that tick (`world`).
+    pub fn step(&mut self) -> bool {
+        if self.t >= self.log.ticks {
+            return false;
+        }
+        self.t += 1;
+        let t = self.t;
+        let log_rc = Rc::clone(&self.log);
+        let log: &Log = &log_rc;
+        let lib = self.lib;
+        let (use_native_places, new_observer, have_passes) = (self.use_native_places, self.new_observer, self.have_passes);
+        let (mut place_at, mut motive_at, mut shown_motives, mut engine_list_at, mut time_at, mut streak, mut best_streak) = (self.place_at, self.motive_at, self.shown_motives, self.engine_list_at, self.time_at, self.streak, self.best_streak);
+        let Self { h, sim, consumed, finder, unstarted, ids, native_places, by_tick, frames, first_seen, first_step, last_frame, unseen, delivered, frame_tree, engine_run, ev_env, .. } = self;
+        'tick: {
+            let mut tick_us = 0.0;
+            while place_at < log.places.len() && log.places[place_at].tick < t {
+                let p = log.places[place_at];
+                // a walking Sim's place from the native walk where the routing pass has one
+                let (x, y) = if use_native_places { native_places.get(&(p.id, p.tick)).copied().unwrap_or((p.x, p.y)) } else { (p.x, p.y) };
+                if use_native_places {
+                    if !native_places.contains_key(&(p.id, p.tick)) {
+                        let person = h.world.find(p.id).is_some_and(|k| h.world.get(k).person);
+                        if p.tick == 0 {
+                            let loaded = h.world.find(p.id).map(|k| { let o = h.world.get(k); (o.x16, o.y16, o.level) });
+                            h.counts.note(if loaded == Some((p.x, p.y, p.level)) {
+                                "places: a tick-0 placement natively where the lot loads it"
+                            } else if loaded.is_some_and(|(x, y, l)| (((x >> 4) << 4) + 8, ((y >> 4) << 4) + 8, l) == (p.x, p.y, p.level)) {
+                                "places: a tick-0 placement natively the centre of the tile the lot loads it on"
+                            } else if loaded.is_some_and(|(x, y, _)| (x < 0 || y < 0) && (p.x, p.y) == (-16, -16)) {
+                                "places: a tick-0 placement natively (-16, -16), the place of an object off the lot"
+                            } else if loaded.is_none() {
+                                "places: a tick-0 placement of an object not in the native lot"
+                            } else {
+                                "places: a tick-0 placement NOT where the lot loads it"
+                            });
+                            if has("REPLAY_SHOW_PLACES") && !loaded.is_some_and(|(x, y, l)| (((x >> 4) << 4) + 8, ((y >> 4) << 4) + 8, l) == (p.x, p.y, p.level)) {
+                                println!("tick-0 place of {}: logged {:?}, loaded {loaded:?}", p.id, (p.x, p.y, p.level));
+                            }
+                        }
+                        h.counts.note(&if p.tick == 0 {
+                            "places: the log's, no native walk: a tick-0 placement".to_string()
+                        } else if !person {
+                            if has("REPLAY_SHOW_PLACES") {
+                                let file = h.world.find(p.id).and_then(|k| h.world.get(k).file).map_or("-".to_string(), |f| file_name(lib, f));
+                                println!("moved object {} {file} at tick {} to {:?}", p.id, p.tick, (p.x, p.y, p.level));
+                            }
+                            "places: the log's, no native walk: not a person".to_string()
+                        } else {
+                            if has("REPLAY_SHOW_PLACES") {
+                                println!("person place without a native walk: {} at tick {} {:?}", p.id, p.tick, (p.x, p.y));
+                            }
+                            format!("places: the log's, no native walk: person {}", p.id)
+                        });
+                    }
+                    h.counts.note(if !native_places.contains_key(&(p.id, p.tick)) {
+                        "places: the log's (no native walk there)"
+                    } else if (x, y) == (p.x, p.y) {
+                        "places: the native walk's, the same as the log's"
+                    } else {
+                        if has("REPLAY_SHOW_WALK_MISS") {
+                            let prev = log.places.iter().rfind(|q| q.id == p.id && q.tick < p.tick).map(|q| (q.tick, q.x, q.y));
+                            let nxt = log.places.iter().find(|q| q.id == p.id && q.tick > p.tick).map(|q| (q.tick, q.x, q.y));
+                            let nat_prev = native_places.get(&(p.id, p.tick.saturating_sub(1))).copied();
+                            let nat_next = native_places.get(&(p.id, p.tick + 1)).copied();
+                            println!("walk miss {} tick {}: native {:?}, log {:?}; log before {prev:?} after {nxt:?}; native at t-1 {nat_prev:?} t+1 {nat_next:?}", p.id, p.tick, (x, y), (p.x, p.y));
+                        }
+                        "places: the native walk's, NOT the log's"
+                    });
+                }
+                if let Some(k) = h.world.find(p.id) {
+                    let o = h.world.get_mut(k);
+                    o.x16 = x;
+                    o.y16 = y;
+                    o.level = p.level;
+                }
+                place_at += 1;
+            }
+            let sync_before = h.bench.as_ref().map_or(0.0, |b| b.sync_us);
+            // A tick without a pass is a paused one: the native clock does not move in it.
+            if have_passes && !log.passes.contains_key(&t) {
+                h.counts.note("ticks: paused (no pass)");
+                for _ in &by_tick[t as usize] {
+                    h.counts.note("steps: outside the pass (the engine's own), not run");
+                }
+                break 'tick;
+            }
+            h.counts.note("ticks: run");
+            h.now = sim.now();
+            // The turns: the native simulator's against the lot objects the log stepped.
+            let mut logged_turns: Vec<i16> = Vec::new();
+            let mut seen: BTreeSet<u32> = BTreeSet::new();
+            for &i in &by_tick[t as usize] {
+                if engine_run[i] {
+                    continue;
+                }
+                let s = &log.steps[i];
+                let Some(&id) = ids.get(&s.sim) else { continue };
+                if h.world.find(id).is_none() || !seen.insert(s.sim) {
+                    continue;
+                }
+                logged_turns.push(id);
+            }
+            // The native pass: from its cursor (against where the log's started), over the objects
+            // the log's reached (to where it stopped), sleepers passed over.
+            let pass: PassRec = if have_passes { log.passes[&t] } else { PassRec::default() };
+            if have_passes {
+                h.counts.note(if sim.cursor() == pass.from as i16 { "passes: the native cursor where the log's pass starts" } else { "passes: DIFFERENT start" });
+            }
+            let mut native_turns: Vec<i16> = Vec::new();
+            // The persons reached, in id order, and whether their turn ends with the motive update.
+            let mut motives_due: Vec<(ObjectKey, bool)> = Vec::new();
+            let mut motives_done = 0;
+            let p0 = Instant::now();
+            for (k, asleep) in sim.pass_order(&h.world) {
+                let id = h.world.get(k).id();
+                if pass.stopped_at != 0 && id > pass.stopped_at as i16 {
+                    break;
+                }
+                if h.world.get(k).person {
+                    let due = sim.begin_turn(&mut h.world, k);
+                    motives_due.push((k, due));
+                }
+                if asleep {
+                    sim.pass_over(&h.world, k);
+                } else {
+                    native_turns.push(id);
+                }
+            }
+            if let Some(b) = &mut h.bench {
+                let d = us(p0);
+                b.pass_us += d;
+                tick_us += d;
+            }
+            // Their updates, at the end of their turns: before the first step of an object with a
+            // higher id (the pass goes up by id), or at the pass's end.
+            let motives_before = |id: i16, sim: &Simulator, world: &mut World, done: &mut usize| {
+                while *done < motives_due.len() {
+                    // an object removed during its turn has no update to finish
+                    let Some(o) = world.get_live(motives_due[*done].0) else {
+                        *done += 1;
+                        continue;
+                    };
+                    if o.id() >= id {
+                        break;
+                    }
+                    sim.end_turn(world, motives_due[*done].0, motives_due[*done].1);
+                    *done += 1;
+                }
+            };
+            let (mut a, mut b) = (logged_turns.clone(), native_turns.clone());
+            a.sort();
+            b.sort();
+            if a == b {
+                h.counts.note("turns: the same objects");
+            } else {
+                let only_log: Vec<i16> = a.iter().copied().filter(|x| b.binary_search(x).is_err()).collect();
+                let only_native: Vec<i16> = b.iter().copied().filter(|x| a.binary_search(x).is_err()).collect();
+                h.counts.note("turns: different objects");
+                h.counts.add("turns: objects the log ran, not the native", only_log.len());
+                h.counts.add("turns: objects the native would run, not the log", only_native.len());
+                for &id in &only_native {
+                    let k = h.world.find(id).unwrap();
+                    let i = sim.stack_of(&h.world, k);
+                    let op = top_node(lib, i).map_or("?".to_string(), |n| n.opcode.to_string());
+                    let slept = if i.sleep().woke() { " (slept)" } else { "" };
+                    if has("REPLAY_SHOW_ONLY_NATIVE") && h.shown.next("only native", 6) {
+                        println!("only native {id}: stack {:?} done {} error {:?}", i.stack().iter().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node)).collect::<Vec<_>>(), i.done(), i.error());
+                    }
+                    note!(h.counts, "turns: the native would run, at opcode {op}{slept}");
+                }
+                let show = has("REPLAY_SHOW_TURNS");
+                let shown = *h.shown.0.get("turns").unwrap_or(&0);
+                if show && shown < 10 {
+                    for &id in &only_log {
+                        let k = h.world.find(id).unwrap();
+                        let i = sim.stack_of(&h.world, k);
+                        println!("  {id}: done {} asleep {} depth {} error {}", i.done() as i32, i.asleep() as i32, i.stack().len(), i.error() as u16);
+                    }
+                }
+                if show && h.shown.next("turns", 10) {
+                    let mut l = format!("tick {t} turns differ: only the log's");
+                    for id in &only_log {
+                        l += &format!(" {id}");
+                    }
+                    l += "; only the native's";
+                    for id in &only_native {
+                        l += &format!(" {id}");
+                    }
+                    println!("{l}");
+                }
+            }
+
+            // objects the original's engine made that no step of theirs made first: from the list
+            // at the end of the tick before, placed by the log's places
+            if !has("REPLAY_LOGGED_OBJECTS") {
+                while engine_list_at < log.lists.len() && log.lists[engine_list_at].tick < t {
+                    let l = &log.lists[engine_list_at];
+                    engine_list_at += 1;
+                    for &id in l.ids.iter().rev() {
+                        if h.world.find(id).is_none() {
+                            let mut o = Object::new();
+                            o.data = vec![0; 72];
+                            o.data[DATA_OBJECT_ID] = id;
+                            (o.x16, o.y16) = log.places.iter().rfind(|p| p.id == id && p.tick < t).map_or((-16, -16), |p| (p.x, p.y));
+                            h.world.add(o, true);
+                            h.counts.note("objects: made by the engine, from the log's list");
+                        }
+                    }
+                }
+            }
+            // The steps, in the log's order.
+            for &i in &by_tick[t as usize] {
+                let s = &log.steps[i];
+                let traced = has("REPLAY_TRACE_MAKERS") && matches!((s.tree, s.node), (0x2007, 1) | (0x2022, 1) | (0x200f, 6)) && s.look == b'X';
+                if traced {
+                    println!("maker step {i} tick {} tree {:#x} node {}: engine's {}, consumed {}, id {:?}", s.tick, s.tree, s.node, engine_run[i], consumed.contains(&i), ids.get(&s.sim));
+                }
+                if engine_run[i] {
+                    h.counts.note("steps: outside the pass (the engine's own), not run");
+                    continue;
+                }
+                if consumed.contains(&i) {
+                    continue;
+                }
+                if let Some(&id0) = ids.get(&s.sim) {
+                    motives_before(id0, &sim, &mut h.world, &mut motives_done);
+                }
+                {
+                    // A Sim waiting at IdleForInput with an entry queued, whose next logged steps are
+                    // the engine's checks on a frame above: the IdleForInput step (the log's next
+                    // 281:4 of this Sim) is run natively, its checks stepping through those steps.
+                    let w = ids.get(&s.sim).and_then(|&id| h.world.find(id));
+                    if let Some(w) = w.filter(|&w| h.world.get(w).person && s.node == 0) {
+                        // The evaluation (opcode 3 at the native top): its checks are this Sim's next
+                        // logged steps up to the opcode-3 step itself (its tree and node, looked up).
+                        let ein = sim.stack_of(&h.world, w);
+                        let en = if ein.done() { None } else { top_node(lib, ein) };
+                        let etop = ein.stack().last().and_then(|f| f.tree.map(|t| (lib.tree_at(t).id, f.node, f.file)));
+                        // Native on every lot (the club's too since its guard limit, person data
+                        // 36: docs/simulation.md, "Autonomy"). REPLAY_EVALUATION=0 turns it off.
+                        let evaluation = ev_env.as_ref().is_none_or(|e| e.starts_with('1'));
+                        if let (true, Some(en), Some((etree, enode, efile))) = (evaluation, en, etop)
+                            && (en.opcode == 3 || (en.opcode == 14 && !has("REPLAY_LOGGED_FIND_BEST")))
+                            && !(s.tree == etree as u16 && s.node == enode)
+                        {
+                            let mut k = i;
+                            let mut nest: Vec<usize> = Vec::new();
+                            for &j in &by_tick[t as usize] {
+                                if j < i || log.steps[j].sim != s.sim {
+                                    continue;
+                                }
+                                // The opcode-3 step itself: its tree and node, in a frame below its
+                                // checks' (a guard can have the same tree id in another file: the
+                                // bed's 8233).
+                                if log.steps[j].tree == etree as u16 && log.steps[j].node == enode && log.steps[j].frame < s.frame {
+                                    k = j;
+                                    break; // (its lookup is its last check's)
+                                }
+                                nest.push(j);
+                            }
+                            // The checks of an object the native world does not have (made during the
+                            // session: the replay does not make objects natively yet) are set aside:
+                            // from its check's start in the bottom frame to the next check's start.
+                            {
+                                let bottom = log.steps[i].frame;
+                                let mut kept = Vec::new();
+                                let mut skipping = false;
+                                let mut skipped = 0;
+                                for &j in &nest {
+                                    let ns = &log.steps[j];
+                                    if ns.frame == bottom && ns.node == 0 {
+                                        skipping = h.world.find(ns.stack_object).is_none();
+                                    }
+                                    if skipping {
+                                        skipped += 1;
+                                        consumed.insert(j);
+                                        continue;
+                                    }
+                                    kept.push(j);
+                                }
+                                if skipped != 0 {
+                                    h.counts.add("autonomy: an evaluation's steps of objects not in the native world, set aside", skipped);
+                                }
+                                nest = kept;
+                            }
+                            if k != i && (nest.len() >= 20 || en.opcode == 14) {
+                                h.present.clear();
+                                for l in &log.lists {
+                                    if l.tick <= t {
+                                        h.present = l.ids.iter().copied().collect();
+                                    }
+                                }
+                                h.nested = nest.clone();
+                                h.nested_pos = 0;
+                                h.step = k;
+                                h.file_of_top = efile;
+                                h.me = w;
+                                let ein = sim.stack_of(&h.world, w);
+                                ein.reset_iterations();
+                                ein.step(&mut *h);
+                                let all_used = h.nested_pos == nest.len();
+                                h.counts.note(if all_used {
+                                    "autonomy: the evaluation used exactly the log's steps of it"
+                                } else {
+                                    "autonomy: the evaluation did NOT use the log's steps of it"
+                                });
+                                if !all_used && has("REPLAY_SHOW_AUTONOMY") {
+                                    println!("evaluation of {} at tick {t}: used {} of {} steps", h.world.get(w).id(), h.nested_pos, nest.len());
+                                }
+                                consumed.extend(nest.iter().copied());
+                                consumed.insert(k);
+                                h.nested.clear();
+                                continue;
+                            }
+                        }
+                    }
+                    // The engine checking a target's interactions on a Sim's stack (the player's menu
+                    // of an object or the Sim itself, fn_80219A74's list; docs/simulation.md, "A Sim's
+                    // own interactions re-checked"): the target's table's first tree, then, forward,
+                    // the guards of the interactions flagged 0x400 (all, if the first tree passes),
+                    // each with the target as stack object, above what the Sim runs (not over its
+                    // IdleForInput or evaluation, whose checks are theirs)
+                    if let Some(w) = w.filter(|&w| h.world.get(w).person && s.node == 0 && !has("REPLAY_NO_SELF_CHECKS"))
+                        && let Some(target) = h.world.find(s.stack_object)
                     {
+                        let o = h.world.get(target);
+                        let (ofile, oid) = (o.file, o.id());
+                        let tab = lib.table_of(ofile, o.person, h.world.definition(o));
+                        let win = sim.stack_of(&h.world, w);
+                        let below = win.stack().last().and_then(|f| f.tree).map(|t| lib.tree_at(t).id);
+                        let below_op = if win.done() { None } else { top_node(lib, win).map(|n| n.opcode) };
+                        // a table with no first tree starts at its first guard, and runs them all (the
+                        // "go here" marker's six at tree.log's 741 and 1684)
+                        let entry = match (tab.first, tab.file, tab.table) {
+                            (0, Some(tf), Some(tid)) => lib.table(tf, tid).iter().find(|e| e.guard != 0 && e.flags & 0x80 == 0).map_or(0, |e| e.guard),
+                            (f, _, _) => f,
+                        };
+                        if entry != 0 && s.tree == entry && below != Some(entry as i16) && !matches!(below_op, Some(3 | 17)) && let (Some(tf), Some(tid)) = (tab.file, tab.table) {
+                            let nest: Vec<usize> = by_tick[t as usize].iter().copied().filter(|&j| j >= i && log.steps[j].sim == s.sim).take_while(|&j| log.steps[j].frame >= s.frame).collect();
+                            let defaults = win.defaults().to_vec();
+                            h.nested = nest.clone();
+                            h.nested_pos = 0;
+                            h.me = w;
+                            let (mut same, mut diff) = (0, 0);
+                            let want_of = |h: &mut ReplayHost, tree: u16| -> Option<bool> { lib.tree(ofile, tree).and_then(|t| h.run_check(t, ofile, oid, &defaults)) };
+                            // once for each of the target's parts (a dance floor's 16 tiles: the
+                            // first tree 16 times, on the leader), its own if it has none
+                            let parts = h.world.objects().filter(|p| p.leader == oid && !p.person).count().max(1);
+                            let mut first = None;
+                            let mut checks = 0;
+                            for _ in 0..parts {
+                                if tab.first != 0 {
+                                    first = want_of(&mut *h, tab.first);
+                                    checks += 1;
+                                }
+                                for e in lib.table(tf, tid) {
+                                    if e.guard == 0 || (first == Some(false) && e.flags & 0x400 == 0) || e.flags & 0x80 != 0 {
+                                        continue;
+                                    }
+                                    if h.nested_pos >= h.nested.len() {
+                                        break;
+                                    }
+                                    let _ = want_of(&mut *h, e.guard);
+                                    checks += 1;
+                                }
+                            }
+                            let all = h.nested_pos == nest.len();
+                            if all { same += checks; } else { diff += 1; }
+                            h.counts.add("self checks: run natively, all the log's steps used", same.min(1) * checks);
+                            if diff != 0 {
+                                h.counts.note("self checks: run natively, NOT the log's steps");
+                                if has("REPLAY_SHOW_SELF_CHECKS") {
+                                    println!("self checks: tick {t} object {oid} used {} of {} steps, {checks} checks, first {first:?}", h.nested_pos, nest.len());
+                                }
+                            }
+                            h.counts.note("self checks: a run");
+                            if has("REPLAY_SHOW_SELF_RUNS") {
+                                let below_node = sim.stack_of(&h.world, w).stack().last().map(|f| f.node);
+                                println!("self run: tick {t} object {oid} below {below:?}:{below_node:?} first {first:?} checks {checks}");
+                            }
+                            consumed.extend(nest.iter().copied());
+                            h.nested.clear();
+                            continue;
+                        }
+                    }
+                    // The player's command (input the log does not record, as the dialogs' answers): a
+                    // Sim at its IdleForInput with nothing queued natively, whose log runs checks and
+                    // then, from 281 node 4, an interaction's tree a frame up on another object: that
+                    // interaction queued as the player's (World::queue_player_command), for the native
+                    // IdleForInput to deliver with its checks (the home log's 1579: Sim 237's "go here",
+                    // the marker 197's 4108 check, then its 4107)
+                    if let Some(w) = w.filter(|&w| h.world.get(w).person && h.world.get(w).queue.is_empty() && s.node == 0 && s.stack_object != h.world.get(w).id()) {
+                        let win = sim.stack_of(&h.world, w);
+                        let at_idle = !win.done() && top_node(lib, win).is_some_and(|n| n.opcode == 17);
+                        let idle = by_tick[t as usize].iter().copied().find(|&j| j > i && log.steps[j].sim == s.sim && log.steps[j].tree == 281 && log.steps[j].node == 4);
+                        let action = idle.and_then(|k| log.steps[k + 1..].iter().find(|x| x.sim == s.sim)).filter(|x| idle.is_some_and(|k| x.node == 0 && x.frame > log.steps[k].frame));
+                        if has("REPLAY_SHOW_PLAYER_COMMAND") {
+                            println!("player command? tick {t} sim {} at_idle {at_idle} idle {idle:?} action {:?} so {}", h.world.get(w).id(), action.map(|a| (a.tree, a.stack_object)), s.stack_object);
+                            if let Some(o) = h.world.find_object(s.stack_object) {
+                                let tab = lib.table_of(o.file, o.person, h.world.definition(o));
+                                println!("  target file {:?} def {:?} table {:?} {:?} first {}", o.file.map(|f| lib.file(f).path.clone()), h.world.definition(o).map(|d| d.interaction_table()), tab.file.map(|f| lib.file(f).path.clone()), tab.table, tab.first);
+                            }
+                        }
+                        // a target the player's click just made (the "go here" marker, a stand-in with
+                        // no file yet): the file of the check run on it (a file of one definition)
+                        if at_idle
+                            && action.is_some_and(|a| a.stack_object == s.stack_object)
+                            && let Some(tk) = h.world.find(s.stack_object)
+                            && h.world.get(tk).file.is_none()
+                            && let Some((_, cfile)) = finder.find(log, s)
+                            && let [d] = &lib.file(cfile).definitions[..]
+                            && let Some(def) = lib.definition(d.guid())
+                        {
+                            let o = h.world.get_mut(tk);
+                            o.guid = d.guid();
+                            o.definition = Some(def);
+                            o.file = Some(cfile);
+                            o.attributes = vec![0; lib.def(def).field(56) as usize];
+                            unstarted.insert(tk);
+                            h.counts.note("objects: a stand-in the player's command targets given its check's file");
+                        }
+                        if at_idle && let Some(a) = action && a.stack_object == s.stack_object && h.world.queue_player_command(w, a.stack_object, a.tree) {
+                            h.counts.note("queue: the player's command (from the log) queued for IdleForInput");
+                        }
+                    }
+                    if let Some(w) = w.filter(|&w| h.world.get(w).person && !h.world.get(w).queue.is_empty() && s.node == 0) {
+                        let win = sim.stack_of(&h.world, w);
+                        let wn = if win.done() { None } else { top_node(lib, win) };
+                        let wfile = win.stack().last().and_then(|f| f.file);
                         let mut k = i;
-                        let mut nest: Vec<usize> = Vec::new();
+                        let mut nest = Vec::new();
                         for &j in &by_tick[t as usize] {
                             if j < i || log.steps[j].sim != s.sim {
                                 continue;
                             }
-                            // The opcode-3 step itself: its tree and node, in a frame below its
-                            // checks' (a guard can have the same tree id in another file: the
-                            // bed's 8233).
-                            if log.steps[j].tree == etree as u16 && log.steps[j].node == enode && log.steps[j].frame < s.frame {
+                            if log.steps[j].tree == 281 && log.steps[j].node == 4 {
                                 k = j;
-                                break; // (its lookup is its last check's)
+                                break;
                             }
                             nest.push(j);
                         }
-                        // The checks of an object the native world does not have (made during the
-                        // session: the replay does not make objects natively yet) are set aside:
-                        // from its check's start in the bottom frame to the next check's start.
-                        {
-                            let bottom = log.steps[i].frame;
-                            let mut kept = Vec::new();
-                            let mut skipping = false;
-                            let mut skipped = 0;
-                            for &j in &nest {
-                                let ns = &log.steps[j];
-                                if ns.frame == bottom && ns.node == 0 {
-                                    skipping = h.world.find(ns.stack_object).is_none();
-                                }
-                                if skipping {
-                                    skipped += 1;
-                                    consumed.insert(j);
-                                    continue;
-                                }
-                                kept.push(j);
-                            }
-                            if skipped != 0 {
-                                h.counts.add("autonomy: an evaluation's steps of objects not in the native world, set aside", skipped);
-                            }
-                            nest = kept;
-                        }
-                        if k != i && (nest.len() >= 20 || en.opcode == 14) {
-                            h.present.clear();
-                            for l in &log.lists {
-                                if l.tick <= t {
-                                    h.present = l.ids.iter().copied().collect();
-                                }
-                            }
+                        if wn.is_some_and(|n| n.opcode == 17) && k != i {
                             h.nested = nest.clone();
                             h.nested_pos = 0;
                             h.step = k;
-                            h.file_of_top = efile;
+                            h.file_of_top = wfile;
                             h.me = w;
-                            let ein = sim.stack_of(&h.world, w);
-                            ein.reset_iterations();
-                            ein.step(&mut h);
-                            let all_used = h.nested_pos == nest.len();
-                            h.counts.note(if all_used {
-                                "autonomy: the evaluation used exactly the log's steps of it"
+                            let win = sim.stack_of(&h.world, w);
+                            win.reset_iterations();
+                            win.step(&mut *h);
+                            h.counts.note(if h.nested_pos == nest.len() {
+                                "queue: the checks used exactly the log's steps of them"
                             } else {
-                                "autonomy: the evaluation did NOT use the log's steps of it"
+                                "queue: the checks did NOT use the log's steps of them"
                             });
-                            if !all_used && has("REPLAY_SHOW_AUTONOMY") {
-                                println!("evaluation of {} at tick {t}: used {} of {} steps", h.world.get(w).id(), h.nested_pos, nest.len());
-                            }
                             consumed.extend(nest.iter().copied());
                             consumed.insert(k);
                             h.nested.clear();
@@ -2733,1177 +2977,1060 @@ pub fn run(log: &Log, lib: &Library, lot: (&LotChunks, Option<&LotChunks>), glob
                         }
                     }
                 }
-                // The engine checking a target's interactions on a Sim's stack (the player's menu
-                // of an object or the Sim itself, fn_80219A74's list; docs/simulation.md, "A Sim's
-                // own interactions re-checked"): the target's table's first tree, then, forward,
-                // the guards of the interactions flagged 0x400 (all, if the first tree passes),
-                // each with the target as stack object, above what the Sim runs (not over its
-                // IdleForInput or evaluation, whose checks are theirs)
-                if let Some(w) = w.filter(|&w| h.world.get(w).person && s.node == 0 && !has("REPLAY_NO_SELF_CHECKS"))
-                    && let Some(target) = h.world.find(s.stack_object)
-                {
-                    let o = h.world.get(target);
-                    let (ofile, oid) = (o.file, o.id());
-                    let tab = lib.table_of(ofile, o.person, h.world.definition(o));
-                    let win = sim.stack_of(&h.world, w);
-                    let below = win.stack().last().and_then(|f| f.tree).map(|t| lib.tree_at(t).id);
-                    let below_op = if win.done() { None } else { top_node(lib, win).map(|n| n.opcode) };
-                    // a table with no first tree starts at its first guard, and runs them all (the
-                    // "go here" marker's six at tree.log's 741 and 1684)
-                    let entry = match (tab.first, tab.file, tab.table) {
-                        (0, Some(tf), Some(tid)) => lib.table(tf, tid).iter().find(|e| e.guard != 0 && e.flags & 0x80 == 0).map_or(0, |e| e.guard),
-                        (f, _, _) => f,
-                    };
-                    if entry != 0 && s.tree == entry && below != Some(entry as i16) && !matches!(below_op, Some(3 | 17)) && let (Some(tf), Some(tid)) = (tab.file, tab.table) {
-                        let nest: Vec<usize> = by_tick[t as usize].iter().copied().filter(|&j| j >= i && log.steps[j].sim == s.sim).take_while(|&j| log.steps[j].frame >= s.frame).collect();
-                        let defaults = win.defaults().to_vec();
-                        h.nested = nest.clone();
-                        h.nested_pos = 0;
-                        h.me = w;
-                        let (mut same, mut diff) = (0, 0);
-                        let want_of = |h: &mut ReplayHost, tree: u16| -> Option<bool> { lib.tree(ofile, tree).and_then(|t| h.run_check(t, ofile, oid, &defaults)) };
-                        // once for each of the target's parts (a dance floor's 16 tiles: the
-                        // first tree 16 times, on the leader), its own if it has none
-                        let parts = h.world.objects().filter(|p| p.leader == oid && !p.person).count().max(1);
-                        let mut first = None;
-                        let mut checks = 0;
-                        for _ in 0..parts {
-                            if tab.first != 0 {
-                                first = want_of(&mut h, tab.first);
-                                checks += 1;
-                            }
-                            for e in lib.table(tf, tid) {
-                                if e.guard == 0 || (first == Some(false) && e.flags & 0x400 == 0) || e.flags & 0x80 != 0 {
-                                    continue;
-                                }
-                                if h.nested_pos >= h.nested.len() {
-                                    break;
-                                }
-                                let _ = want_of(&mut h, e.guard);
-                                checks += 1;
-                            }
+                let fr = frames.entry(s.sim).or_default();
+                if let Some(at) = fr.iter().position(|&f| f == s.frame) {
+                    fr.truncate(at + 1);
+                } else {
+                    // A frame not seen yet: a call (above the others), or a return into one of the
+                    // saved frames below the stack's first step, whose address the log had not shown
+                    // (placeholders in `unseen`): the frames above it are gone, and it takes the
+                    // place of the placeholder below them.
+                    let mut popped = false;
+                    // the first placeholder popped is the frame the return lands in (the one just
+                    // below the frames that returned: placeholders' addresses are guesses, the
+                    // frames' sizes vary)
+                    let mut landed: Option<u32> = None;
+                    while let Some(&b) = fr.last().filter(|&&b| b > s.frame) {
+                        fr.pop();
+                        popped = true;
+                        if landed.is_none() && unseen.contains(&b) {
+                            landed = Some(b);
                         }
-                        let all = h.nested_pos == nest.len();
-                        if all { same += checks; } else { diff += 1; }
-                        h.counts.add("self checks: run natively, all the log's steps used", same.min(1) * checks);
-                        if diff != 0 {
-                            h.counts.note("self checks: run natively, NOT the log's steps");
-                            if has("REPLAY_SHOW_SELF_CHECKS") {
-                                println!("self checks: tick {t} object {oid} used {} of {} steps, {checks} checks, first {first:?}", h.nested_pos, nest.len());
-                            }
-                        }
-                        h.counts.note("self checks: a run");
-                        if has("REPLAY_SHOW_SELF_RUNS") {
-                            let below_node = sim.stack_of(&h.world, w).stack().last().map(|f| f.node);
-                            println!("self run: tick {t} object {oid} below {below:?}:{below_node:?} first {first:?} checks {checks}");
-                        }
-                        consumed.extend(nest.iter().copied());
-                        h.nested.clear();
-                        continue;
+                    }
+                    if let Some(b) = landed {
+                        unseen.remove(&b);
+                        fr.push(s.frame);
+                    } else if popped && fr.last().is_some_and(|b| unseen.contains(b)) {
+                        unseen.remove(fr.last().unwrap());
+                        *fr.last_mut().unwrap() = s.frame;
+                    } else {
+                        fr.push(s.frame);
                     }
                 }
-                // The player's command (input the log does not record, as the dialogs' answers): a
-                // Sim at its IdleForInput with nothing queued natively, whose log runs checks and
-                // then, from 281 node 4, an interaction's tree a frame up on another object: that
-                // interaction queued as the player's (World::queue_player_command), for the native
-                // IdleForInput to deliver with its checks (the home log's 1579: Sim 237's "go here",
-                // the marker 197's 4108 check, then its 4107)
-                if let Some(w) = w.filter(|&w| h.world.get(w).person && h.world.get(w).queue.is_empty() && s.node == 0 && s.stack_object != h.world.get(w).id()) {
-                    let win = sim.stack_of(&h.world, w);
-                    let at_idle = !win.done() && top_node(lib, win).is_some_and(|n| n.opcode == 17);
-                    let idle = by_tick[t as usize].iter().copied().find(|&j| j > i && log.steps[j].sim == s.sim && log.steps[j].tree == 281 && log.steps[j].node == 4);
-                    let action = idle.and_then(|k| log.steps[k + 1..].iter().find(|x| x.sim == s.sim)).filter(|x| idle.is_some_and(|k| x.node == 0 && x.frame > log.steps[k].frame));
-                    if has("REPLAY_SHOW_PLAYER_COMMAND") {
-                        println!("player command? tick {t} sim {} at_idle {at_idle} idle {idle:?} action {:?} so {}", h.world.get(w).id(), action.map(|a| (a.tree, a.stack_object)), s.stack_object);
-                        if let Some(o) = h.world.find_object(s.stack_object) {
-                            let tab = lib.table_of(o.file, o.person, h.world.definition(o));
-                            println!("  target file {:?} def {:?} table {:?} {:?} first {}", o.file.map(|f| lib.file(f).path.clone()), h.world.definition(o).map(|d| d.interaction_table()), tab.file.map(|f| lib.file(f).path.clone()), tab.table, tab.first);
+                first_seen.entry(s.sim).or_insert(t);
+                // a step of an object its maker's step (later in the log) makes: the object made now
+                // (its GUID the maker's), if the original's list has it at the tick's end
+                if !has("REPLAY_LOGGED_OBJECTS")
+                    && let Some(&id) = ids.get(&s.sim)
+                    && h.world.find(id).is_none()
+                    && log.lists.iter().find(|l| l.tick >= s.tick).is_some_and(|l| l.ids.contains(&id))
+                    && let Some(guid) = by_tick[t as usize].iter().map(|&j| &log.steps[j]).find_map(|m| {
+                        // the maker's step this tick: its stack object becomes the id, its node is
+                        // opcode 42; the GUID in its operand
+                        if m.stack_object_after != id || m.stack_object == id || m.look != b'X' {
+                            return None;
                         }
+                        let (tree, _) = finder.find(log, m)?;
+                        let n = lib.tree_at(tree).nodes.get(m.node as usize).filter(|n| n.opcode == 42)?;
+                        Some(u32::from_le_bytes([n.operand[0], n.operand[1], n.operand[2], n.operand[3]]))
+                    }).or_else(|| {
+                        // no maker this tick (the engine made it: the marker): the file its own
+                        // step runs
+                        let (_, file) = finder.find(log, s)?;
+                        lib.file(file).definitions.first().map(|d| d.guid())
+                    })
+                    && let Some(k) = make_of_guid(&mut h.world, guid)
+                {
+                    let got = h.world.get(k).id();
+                    h.counts.note(if got == id { "objects: made before its maker's step (its init's), the id the original's" } else { "objects: made before its maker's step, the id DIFFERENT" });
+                    h.pre_made.insert(got);
+                    h.present.insert(got);
+                }
+                let Some(ok) = ids.get(&s.sim).and_then(|&id| h.world.find(id)) else {
+                    if has("REPLAY_SHOW_MADE") {
+                        println!("not run: tick {} sim {:x} id {:?} tree {:#x}", s.tick, s.sim, ids.get(&s.sim), s.tree);
                     }
-                    // a target the player's click just made (the "go here" marker, a stand-in with
-                    // no file yet): the file of the check run on it (a file of one definition)
-                    if at_idle
-                        && action.is_some_and(|a| a.stack_object == s.stack_object)
-                        && let Some(tk) = h.world.find(s.stack_object)
-                        && h.world.get(tk).file.is_none()
-                        && let Some((_, cfile)) = finder.find(log, s)
-                        && let [d] = &lib.file(cfile).definitions[..]
-                        && let Some(def) = lib.definition(d.guid())
+                    h.counts.note("steps: not a lot object's (not run)");
+                    continue;
+                };
+                let (o_file, o_person, o_id) = {
+                    let o = h.world.get(ok);
+                    (o.file, o.person, o.id())
+                };
+                // A return step's nodes are its caller's (the lookup of where to go back to): its
+                // tree is the frame's, from the frame's earlier steps.
+                let key = (s.sim, s.frame, s.tree);
+                let mut tf = if s.look == b'R' {
+                    frame_tree.get(&key).copied()
+                } else {
+                    let r = finder.find(log, s);
+                    if let Some(r) = r {
+                        frame_tree.insert(key, r);
+                    }
+                    r
+                };
+                // Several files can hold a tree of the same id and shape (a Sim's template_person and
+                // the character files): an own tree is taken from the object's file if it has it.
+                if let (Some((_, tfile)), Some(of), Some(rec)) = (tf, o_file, log.tree_of(s))
+                    && tree_kind(s.tree) == TreeKind::Own
+                    && tfile != of
+                    && rec.tree == s.tree
+                    && let Some(&ot) = lib.file(of).trees.get(&s.tree)
+                    && same_shape(lib.tree_at(ot), &rec.raw)
+                {
+                    tf = Some((ot, of));
+                }
+                // A step with no tree record (the observer writes one only for the node lookups it
+                // hooks: a tree a CallNamedTree reached has none): the tree native's stack is in,
+                // if it is that tree (its frame's file the one the call took it from). In logs of
+                // today's observer only (its plans' 'r' records): the older logs' tree records miss
+                // trees for another reason (its per-depth lookup they lack), native's not the log's.
+                if tf.is_none() && s.t.is_none() && new_observer {
+                    let i = sim.stack_of(&h.world, ok);
+                    if let Some(f) = i.stack().last().filter(|f| f.tree.is_some_and(|t| lib.tree_at(t).id as u16 == s.tree))
+                        && let (Some(t), Some(file)) = (f.tree, f.file)
                     {
-                        let o = h.world.get_mut(tk);
+                        tf = Some((t, file));
+                        frame_tree.insert(key, (t, file));
+                        h.counts.note("steps: no tree record, the tree native's stack has");
+                    }
+                }
+                let Some((tree, file)) = tf else {
+                    if has("REPLAY_TRACE_MAKERS") && matches!((s.tree, s.node), (0x2007, 1) | (0x2022, 1) | (0x200f, 6)) && s.look == b'X' {
+                        println!("  maker step {i}: tree not found (tree record {:?}, the object's file {:?})", log.tree_of(s).map(|r| (r.tree, r.raw.len() / 12)), o_file.map(|f| &lib.file(f).path));
+                    }
+                    h.counts.note("steps: tree not found on the disc");
+                    note!(h.counts, 
+                        "steps: tree not found: {}{}",
+                        if s.t.is_some() { "tree " } else { "no tree record, tree " },
+                        s.tree
+                    );
+                    continue;
+                };
+                // A tree the engine runs on an object over its Idle (the counter's update of its
+                // function scores, 8215 at ticks 165 and 844): pushed natively as an engine frame where
+                // the log starts it, from node 0, in the object's own file (when the engine does it is
+                // not native yet)
+                if !o_person && s.node == 0 && !has("REPLAY_NO_ENGINE_FRAMES") && lib.tree(o_file, s.tree) == Some(tree) {
+                    let i = sim.stack_of(&h.world, ok);
+                    let top_idle = !i.done() && top_node(lib, i).is_some_and(|n| n.opcode == 0) && i.stack().last().and_then(|f| f.tree) != Some(tree);
+                    if top_idle && i.push(lib, tree, &[]) {
+                        i.top().engine = true;
+                        i.top().file = Some(file);
+                        i.top().stack_object = s.stack_object;
+                        h.counts.note("frames: an engine frame pushed over an object's Idle (the log's tree)");
+                    }
+                }
+                // A stand-in the engine made (no file yet: the club's "go here" markers) takes the
+                // file and definition its first step's tree is in (a file of one definition) and
+                // starts as a made object does (main and init, Simulator::stack_of)
+                // A stand-in whose first step is a global tree (the club's markers: Global 280, "idle",
+                // above their 4097): its file is that of its first own step below, and its stack the
+                // calling frame (the node calling this tree whose return goes on to that step's node)
+                // with this tree above
+                if unstarted.remove(&ok) {
+                    h.world.get_mut(ok).file = None; // its first own step: started as a stand-in is
+                }
+                if h.world.get(ok).file.is_none() && !has("REPLAY_NO_STANDIN_FILE") && tree_kind(s.tree) == TreeKind::Global {
+                    let below = log.steps[i + 1..].iter().find(|x| x.sim == s.sim && x.frame < s.frame && tree_kind(x.tree) == TreeKind::Own);
+                    if let Some(b) = below
+                        && let Some((bt, bfile)) = finder.find(log, b)
+                        && let [d] = &lib.file(bfile).definitions[..]
+                        && let Some(def) = lib.definition(d.guid())
+                        && let Some(c) = lib.tree_at(bt).nodes.iter().position(|n| n.opcode == s.tree && (n.true_target == b.node as u8 || n.false_target == b.node as u8))
+                    {
+                        let o = h.world.get_mut(ok);
                         o.guid = d.guid();
                         o.definition = Some(def);
-                        o.file = Some(cfile);
+                        o.file = Some(bfile);
                         o.attributes = vec![0; lib.def(def).field(56) as usize];
-                        unstarted.insert(tk);
-                        h.counts.note("objects: a stand-in the player's command targets given its check's file");
-                    }
-                    if at_idle && let Some(a) = action && a.stack_object == s.stack_object && h.world.queue_player_command(w, a.stack_object, a.tree) {
-                        h.counts.note("queue: the player's command (from the log) queued for IdleForInput");
+                        o.stack = vec![
+                            Frame { tree: Some(bt), node: c as u16, params: b.params.clone(), locals: b.locals.clone(), stack_object: b.stack_object, file: Some(bfile), ..Default::default() },
+                            Frame { tree: Some(tree), node: s.node, params: s.params.clone(), locals: s.locals.clone(), stack_object: s.stack_object, file: Some(bfile), ..Default::default() },
+                        ];
+                        sim.forget(ok);
+                        h.counts.note("objects: a stand-in first seen in a global tree, given its own step's file and the calling frame");
                     }
                 }
-                if let Some(w) = w.filter(|&w| h.world.get(w).person && !h.world.get(w).queue.is_empty() && s.node == 0) {
-                    let win = sim.stack_of(&h.world, w);
-                    let wn = if win.done() { None } else { top_node(lib, win) };
-                    let wfile = win.stack().last().and_then(|f| f.file);
-                    let mut k = i;
-                    let mut nest = Vec::new();
-                    for &j in &by_tick[t as usize] {
-                        if j < i || log.steps[j].sim != s.sim {
-                            continue;
+                if h.world.get(ok).file.is_none() && !has("REPLAY_NO_STANDIN_FILE") {
+                    let f = lib.file(file);
+                    if let [d] = &f.definitions[..]
+                        && let Some(def) = lib.definition(d.guid())
+                    {
+                        let o = h.world.get_mut(ok);
+                        o.guid = d.guid();
+                        o.definition = Some(def);
+                        o.file = Some(file);
+                        o.attributes = vec![0; lib.def(def).field(56) as usize];
+                        // first seen mid-run (not at its init's first node: the club's markers 179,
+                        // 180 and 181, an Idle returning into their 4097 at node 1): its start is
+                        // not in the log, its frame the log's
+                        let init = f.functions.values().next().and_then(|t| t.first()).map(|e| e.1);
+                        if !(s.node == 0 && init == Some(s.tree)) {
+                            o.stack = vec![Frame { tree: Some(tree), node: s.node, params: s.params.clone(), locals: s.locals.clone(), stack_object: s.stack_object, file: Some(file), ..Default::default() }];
+                            h.counts.note("objects: a stand-in first seen mid-run, its frame the log's");
                         }
-                        if log.steps[j].tree == 281 && log.steps[j].node == 4 {
-                            k = j;
-                            break;
-                        }
-                        nest.push(j);
+                        sim.forget(ok);
+                        h.counts.note("objects: a stand-in given its first step's file and started");
                     }
-                    if wn.is_some_and(|n| n.opcode == 17) && k != i {
-                        h.nested = nest.clone();
-                        h.nested_pos = 0;
-                        h.step = k;
-                        h.file_of_top = wfile;
-                        h.me = w;
-                        let win = sim.stack_of(&h.world, w);
-                        win.reset_iterations();
-                        win.step(&mut h);
-                        h.counts.note(if h.nested_pos == nest.len() {
-                            "queue: the checks used exactly the log's steps of them"
+                }
+                // study: the log's steps of one object in a tick range ("id:first:last")
+                if let Some(v) = env("REPLAY_SHOW_LOG_STEPS") {
+                    let p: Vec<i64> = v.split(':').map(atoi).collect();
+                    if p.len() == 3 && (p[0] == o_id as i64 || p[0] == -1) && (p[1]..=p[2]).contains(&(t as i64)) {
+                        let op = lib.tree_at(tree).nodes.get(s.node as usize).map_or(-1, |n| n.opcode as i32);
+                        println!("log step: tick {t} object {o_id} {}:{} op {op} -> {} look {} res {} frame {:x} so {} params {:?}", s.tree, s.node, s.after, if s.look != 0 { s.look as char } else { '-' }, s.result, s.frame & 0xFFFF, s.stack_object, s.params);
+                    }
+                }
+                if has("REPLAY_SHOW_MADE_DEFS") && matches!(o_id, 197 | 201 | 202) && h.shown.next(&format!("made def {o_id}"), 1) {
+                    let o = h.world.get(ok);
+                    if let Some(d) = h.world.definition(o) {
+                        println!("made def {o_id} tick {t}: {:?} first step {}:{}; fields {:?}", o.file.map(|f| file_name(lib, f)), s.tree, s.node, (0..64).map(|i| d.field(i)).collect::<Vec<_>>());
+                    }
+                }
+                if has("REPLAY_SHOW_STANDIN") && h.world.get(ok).file.is_none() && h.shown.next(&format!("standin {o_id}"), 6) {
+                    println!("standin: tick {t} object {o_id} {}:{} -> {} file {} defs {:?}", s.tree, s.node, s.after, lib.file(file).path, lib.file(file).definitions.iter().map(|d| (d.guid(), (0..48).map(|i| d.field(i)).collect::<Vec<_>>())).collect::<Vec<_>>());
+                }
+                if has("REPLAY_FRAME_SIZES") {
+                    // study: a call's frame address against the caller's: the size of a frame
+                    if let Some(&(pf, pt)) = last_frame.get(&s.sim)
+                        && s.frame > pf
+                        && s.node == 0
+                    {
+                        let (ca, cl) = (lib.tree_at(pt).args, lib.tree_at(pt).locals);
+                        let (ea, el) = (lib.tree_at(tree).args, lib.tree_at(tree).locals);
+                        note!(h.counts, "study frame: delta {} caller args {ca} locals {cl} callee args {ea} locals {el}", s.frame - pf);
+                    }
+                    last_frame.insert(s.sim, (s.frame, tree));
+                }
+                if let Some(w) = env("REPLAY_SHOW_OPS") {
+                    // study: the opcodes a stack runs in a tick range, "id:from:to"
+                    let v: Vec<i64> = w.split(':').filter_map(|x| x.parse().ok()).collect();
+                    if v.len() == 3 && o_id as i64 == v[0] && (v[1]..=v[2]).contains(&(t as i64)) {
+                        let op = lib.tree_at(tree).nodes.get(s.node as usize).map_or(-1, |n| n.opcode as i32);
+                        note!(h.counts, "study ops: {}:{} op {op}", s.tree, s.node);
+                    }
+                }
+                // The interaction queue: the first interaction pushed onto a waiting Sim (a tree at
+                // node 0 above "Wait For Notify", Global 281, other than its checks) against the
+                // first entry of the queue the lot saved for it.
+                let before = (0..i).rev().map(|j| &log.steps[j]).find(|p| p.sim == s.sim);
+                if o_person && s.node == 0 && before.is_some_and(|b| b.tree == 281 && b.node == 4) && delivered.insert(s.sim) {
+                    if h.natively_delivered.contains(&o_id) {
+                        // checked by the native delivery
+                    } else if h.world.get(ok).queue.is_empty() {
+                        h.counts.note("queue: a waiting Sim's first interaction, with nothing queued (autonomy's)");
+                    } else {
+                        let q = h.world.get(ok).queue[0];
+                        let same = q.tree == s.tree as i16 && q.objects[1] == s.stack_object;
+                        h.counts.note(if same {
+                            "queue: a waiting Sim's first interaction the queue's first entry (tree, target)"
                         } else {
-                            "queue: the checks did NOT use the log's steps of them"
+                            "queue: a waiting Sim's first interaction NOT its queue's first entry"
                         });
-                        consumed.extend(nest.iter().copied());
-                        consumed.insert(k);
-                        h.nested.clear();
-                        continue;
+                        if !same && has("REPLAY_SHOW_PUSH") {
+                            println!("queue: Sim {o_id} got {} with {}; queued {} with {}", s.tree, s.stack_object, q.tree, q.objects[1]);
+                        }
                     }
                 }
-            }
-            let fr = frames.entry(s.sim).or_default();
-            if let Some(at) = fr.iter().position(|&f| f == s.frame) {
-                fr.truncate(at + 1);
-            } else {
-                // A frame not seen yet: a call (above the others), or a return into one of the
-                // saved frames below the stack's first step, whose address the log had not shown
-                // (placeholders in `unseen`): the frames above it are gone, and it takes the
-                // place of the placeholder below them.
-                let mut popped = false;
-                // the first placeholder popped is the frame the return lands in (the one just
-                // below the frames that returned: placeholders' addresses are guesses, the
-                // frames' sizes vary)
-                let mut landed: Option<u32> = None;
-                while let Some(&b) = fr.last().filter(|&&b| b > s.frame) {
-                    fr.pop();
-                    popped = true;
-                    if landed.is_none() && unseen.contains(&b) {
-                        landed = Some(b);
-                    }
-                }
-                if let Some(b) = landed {
-                    unseen.remove(&b);
-                    fr.push(s.frame);
-                } else if popped && fr.last().is_some_and(|b| unseen.contains(b)) {
-                    unseen.remove(fr.last().unwrap());
-                    *fr.last_mut().unwrap() = s.frame;
-                } else {
-                    fr.push(s.frame);
-                }
-            }
-            first_seen.entry(s.sim).or_insert(t);
-            // a step of an object its maker's step (later in the log) makes: the object made now
-            // (its GUID the maker's), if the original's list has it at the tick's end
-            if !has("REPLAY_LOGGED_OBJECTS")
-                && let Some(&id) = ids.get(&s.sim)
-                && h.world.find(id).is_none()
-                && log.lists.iter().find(|l| l.tick >= s.tick).is_some_and(|l| l.ids.contains(&id))
-                && let Some(guid) = by_tick[t as usize].iter().map(|&j| &log.steps[j]).find_map(|m| {
-                    // the maker's step this tick: its stack object becomes the id, its node is
-                    // opcode 42; the GUID in its operand
-                    if m.stack_object_after != id || m.stack_object == id || m.look != b'X' {
-                        return None;
-                    }
-                    let (tree, _) = finder.find(log, m)?;
-                    let n = lib.tree_at(tree).nodes.get(m.node as usize).filter(|n| n.opcode == 42)?;
-                    Some(u32::from_le_bytes([n.operand[0], n.operand[1], n.operand[2], n.operand[3]]))
-                }).or_else(|| {
-                    // no maker this tick (the engine made it: the marker): the file its own
-                    // step runs
-                    let (_, file) = finder.find(log, s)?;
-                    lib.file(file).definitions.first().map(|d| d.guid())
-                })
-                && let Some(k) = make_of_guid(&mut h.world, guid)
-            {
-                let got = h.world.get(k).id();
-                h.counts.note(if got == id { "objects: made before its maker's step (its init's), the id the original's" } else { "objects: made before its maker's step, the id DIFFERENT" });
-                h.pre_made.insert(got);
-                h.present.insert(got);
-            }
-            let Some(ok) = ids.get(&s.sim).and_then(|&id| h.world.find(id)) else {
-                if has("REPLAY_SHOW_MADE") {
-                    println!("not run: tick {} sim {:x} id {:?} tree {:#x}", s.tick, s.sim, ids.get(&s.sim), s.tree);
-                }
-                h.counts.note("steps: not a lot object's (not run)");
-                continue;
-            };
-            let (o_file, o_person, o_id) = {
-                let o = h.world.get(ok);
-                (o.file, o.person, o.id())
-            };
-            // A return step's nodes are its caller's (the lookup of where to go back to): its
-            // tree is the frame's, from the frame's earlier steps.
-            let key = (s.sim, s.frame, s.tree);
-            let mut tf = if s.look == b'R' {
-                frame_tree.get(&key).copied()
-            } else {
-                let r = finder.find(log, s);
-                if let Some(r) = r {
-                    frame_tree.insert(key, r);
-                }
-                r
-            };
-            // Several files can hold a tree of the same id and shape (a Sim's template_person and
-            // the character files): an own tree is taken from the object's file if it has it.
-            if let (Some((_, tfile)), Some(of), Some(rec)) = (tf, o_file, log.tree_of(s))
-                && tree_kind(s.tree) == TreeKind::Own
-                && tfile != of
-                && rec.tree == s.tree
-                && let Some(&ot) = lib.file(of).trees.get(&s.tree)
-                && same_shape(lib.tree_at(ot), &rec.raw)
-            {
-                tf = Some((ot, of));
-            }
-            // A step with no tree record (the observer writes one only for the node lookups it
-            // hooks: a tree a CallNamedTree reached has none): the tree native's stack is in,
-            // if it is that tree (its frame's file the one the call took it from). In logs of
-            // today's observer only (its plans' 'r' records): the older logs' tree records miss
-            // trees for another reason (its per-depth lookup they lack), native's not the log's.
-            if tf.is_none() && s.t.is_none() && new_observer {
-                let i = sim.stack_of(&h.world, ok);
-                if let Some(f) = i.stack().last().filter(|f| f.tree.is_some_and(|t| lib.tree_at(t).id as u16 == s.tree))
-                    && let (Some(t), Some(file)) = (f.tree, f.file)
-                {
-                    tf = Some((t, file));
-                    frame_tree.insert(key, (t, file));
-                    h.counts.note("steps: no tree record, the tree native's stack has");
-                }
-            }
-            let Some((tree, file)) = tf else {
-                if has("REPLAY_TRACE_MAKERS") && matches!((s.tree, s.node), (0x2007, 1) | (0x2022, 1) | (0x200f, 6)) && s.look == b'X' {
-                    println!("  maker step {i}: tree not found (tree record {:?}, the object's file {:?})", log.tree_of(s).map(|r| (r.tree, r.raw.len() / 12)), o_file.map(|f| &lib.file(f).path));
-                }
-                h.counts.note("steps: tree not found on the disc");
-                note!(h.counts, 
-                    "steps: tree not found: {}{}",
-                    if s.t.is_some() { "tree " } else { "no tree record, tree " },
-                    s.tree
-                );
-                continue;
-            };
-            // A tree the engine runs on an object over its Idle (the counter's update of its
-            // function scores, 8215 at ticks 165 and 844): pushed natively as an engine frame where
-            // the log starts it, from node 0, in the object's own file (when the engine does it is
-            // not native yet)
-            if !o_person && s.node == 0 && !has("REPLAY_NO_ENGINE_FRAMES") && lib.tree(o_file, s.tree) == Some(tree) {
-                let i = sim.stack_of(&h.world, ok);
-                let top_idle = !i.done() && top_node(lib, i).is_some_and(|n| n.opcode == 0) && i.stack().last().and_then(|f| f.tree) != Some(tree);
-                if top_idle && i.push(lib, tree, &[]) {
-                    i.top().engine = true;
-                    i.top().file = Some(file);
-                    i.top().stack_object = s.stack_object;
-                    h.counts.note("frames: an engine frame pushed over an object's Idle (the log's tree)");
-                }
-            }
-            // A stand-in the engine made (no file yet: the club's "go here" markers) takes the
-            // file and definition its first step's tree is in (a file of one definition) and
-            // starts as a made object does (main and init, Simulator::stack_of)
-            // A stand-in whose first step is a global tree (the club's markers: Global 280, "idle",
-            // above their 4097): its file is that of its first own step below, and its stack the
-            // calling frame (the node calling this tree whose return goes on to that step's node)
-            // with this tree above
-            if unstarted.remove(&ok) {
-                h.world.get_mut(ok).file = None; // its first own step: started as a stand-in is
-            }
-            if h.world.get(ok).file.is_none() && !has("REPLAY_NO_STANDIN_FILE") && tree_kind(s.tree) == TreeKind::Global {
-                let below = log.steps[i + 1..].iter().find(|x| x.sim == s.sim && x.frame < s.frame && tree_kind(x.tree) == TreeKind::Own);
-                if let Some(b) = below
-                    && let Some((bt, bfile)) = finder.find(log, b)
-                    && let [d] = &lib.file(bfile).definitions[..]
-                    && let Some(def) = lib.definition(d.guid())
-                    && let Some(c) = lib.tree_at(bt).nodes.iter().position(|n| n.opcode == s.tree && (n.true_target == b.node as u8 || n.false_target == b.node as u8))
-                {
-                    let o = h.world.get_mut(ok);
-                    o.guid = d.guid();
-                    o.definition = Some(def);
-                    o.file = Some(bfile);
-                    o.attributes = vec![0; lib.def(def).field(56) as usize];
-                    o.stack = vec![
-                        Frame { tree: Some(bt), node: c as u16, params: b.params.clone(), locals: b.locals.clone(), stack_object: b.stack_object, file: Some(bfile), ..Default::default() },
-                        Frame { tree: Some(tree), node: s.node, params: s.params.clone(), locals: s.locals.clone(), stack_object: s.stack_object, file: Some(bfile), ..Default::default() },
-                    ];
-                    sim.forget(ok);
-                    h.counts.note("objects: a stand-in first seen in a global tree, given its own step's file and the calling frame");
-                }
-            }
-            if h.world.get(ok).file.is_none() && !has("REPLAY_NO_STANDIN_FILE") {
-                let f = lib.file(file);
-                if let [d] = &f.definitions[..]
-                    && let Some(def) = lib.definition(d.guid())
-                {
-                    let o = h.world.get_mut(ok);
-                    o.guid = d.guid();
-                    o.definition = Some(def);
-                    o.file = Some(file);
-                    o.attributes = vec![0; lib.def(def).field(56) as usize];
-                    // first seen mid-run (not at its init's first node: the club's markers 179,
-                    // 180 and 181, an Idle returning into their 4097 at node 1): its start is
-                    // not in the log, its frame the log's
-                    let init = f.functions.values().next().and_then(|t| t.first()).map(|e| e.1);
-                    if !(s.node == 0 && init == Some(s.tree)) {
-                        o.stack = vec![Frame { tree: Some(tree), node: s.node, params: s.params.clone(), locals: s.locals.clone(), stack_object: s.stack_object, file: Some(file), ..Default::default() }];
-                        h.counts.note("objects: a stand-in first seen mid-run, its frame the log's");
-                    }
-                    sim.forget(ok);
-                    h.counts.note("objects: a stand-in given its first step's file and started");
-                }
-            }
-            // study: the log's steps of one object in a tick range ("id:first:last")
-            if let Some(v) = env("REPLAY_SHOW_LOG_STEPS") {
-                let p: Vec<i64> = v.split(':').map(atoi).collect();
-                if p.len() == 3 && (p[0] == o_id as i64 || p[0] == -1) && (p[1]..=p[2]).contains(&(t as i64)) {
-                    let op = lib.tree_at(tree).nodes.get(s.node as usize).map_or(-1, |n| n.opcode as i32);
-                    println!("log step: tick {t} object {o_id} {}:{} op {op} -> {} look {} res {} frame {:x} so {} params {:?}", s.tree, s.node, s.after, if s.look != 0 { s.look as char } else { '-' }, s.result, s.frame & 0xFFFF, s.stack_object, s.params);
-                }
-            }
-            if has("REPLAY_SHOW_MADE_DEFS") && matches!(o_id, 197 | 201 | 202) && h.shown.next(&format!("made def {o_id}"), 1) {
-                let o = h.world.get(ok);
-                if let Some(d) = h.world.definition(o) {
-                    println!("made def {o_id} tick {t}: {:?} first step {}:{}; fields {:?}", o.file.map(|f| file_name(lib, f)), s.tree, s.node, (0..64).map(|i| d.field(i)).collect::<Vec<_>>());
-                }
-            }
-            if has("REPLAY_SHOW_STANDIN") && h.world.get(ok).file.is_none() && h.shown.next(&format!("standin {o_id}"), 6) {
-                println!("standin: tick {t} object {o_id} {}:{} -> {} file {} defs {:?}", s.tree, s.node, s.after, lib.file(file).path, lib.file(file).definitions.iter().map(|d| (d.guid(), (0..48).map(|i| d.field(i)).collect::<Vec<_>>())).collect::<Vec<_>>());
-            }
-            if has("REPLAY_FRAME_SIZES") {
-                // study: a call's frame address against the caller's: the size of a frame
-                if let Some(&(pf, pt)) = last_frame.get(&s.sim)
-                    && s.frame > pf
-                    && s.node == 0
-                {
-                    let (ca, cl) = (lib.tree_at(pt).args, lib.tree_at(pt).locals);
-                    let (ea, el) = (lib.tree_at(tree).args, lib.tree_at(tree).locals);
-                    note!(h.counts, "study frame: delta {} caller args {ca} locals {cl} callee args {ea} locals {el}", s.frame - pf);
-                }
-                last_frame.insert(s.sim, (s.frame, tree));
-            }
-            if let Some(w) = env("REPLAY_SHOW_OPS") {
-                // study: the opcodes a stack runs in a tick range, "id:from:to"
-                let v: Vec<i64> = w.split(':').filter_map(|x| x.parse().ok()).collect();
-                if v.len() == 3 && o_id as i64 == v[0] && (v[1]..=v[2]).contains(&(t as i64)) {
-                    let op = lib.tree_at(tree).nodes.get(s.node as usize).map_or(-1, |n| n.opcode as i32);
-                    note!(h.counts, "study ops: {}:{} op {op}", s.tree, s.node);
-                }
-            }
-            // The interaction queue: the first interaction pushed onto a waiting Sim (a tree at
-            // node 0 above "Wait For Notify", Global 281, other than its checks) against the
-            // first entry of the queue the lot saved for it.
-            let before = (0..i).rev().map(|j| &log.steps[j]).find(|p| p.sim == s.sim);
-            if o_person && s.node == 0 && before.is_some_and(|b| b.tree == 281 && b.node == 4) && delivered.insert(s.sim) {
-                if h.natively_delivered.contains(&o_id) {
-                    // checked by the native delivery
-                } else if h.world.get(ok).queue.is_empty() {
-                    h.counts.note("queue: a waiting Sim's first interaction, with nothing queued (autonomy's)");
-                } else {
-                    let q = h.world.get(ok).queue[0];
-                    let same = q.tree == s.tree as i16 && q.objects[1] == s.stack_object;
-                    h.counts.note(if same {
-                        "queue: a waiting Sim's first interaction the queue's first entry (tree, target)"
-                    } else {
-                        "queue: a waiting Sim's first interaction NOT its queue's first entry"
-                    });
-                    if !same && has("REPLAY_SHOW_PUSH") {
-                        println!("queue: Sim {o_id} got {} with {}; queued {} with {}", s.tree, s.stack_object, q.tree, q.objects[1]);
-                    }
-                }
-            }
-            let interp = sim.stack_of(&h.world, ok);
-            let st_len = interp.stack().len();
-            let st_top = interp.stack().last().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.file));
-            if first_step.contains(&s.sim) {
-            } else if has("REPLAY_SHOW_FIRST_TREE") {
-                let o = h.world.get(ok);
-                let fields: Vec<usize> = h.world.definition(o).map(|d| (0..d.fields.len()).filter(|&k| d.field(k) == s.tree as u16 as i32 as _).collect()).unwrap_or_default();
-                note!(h.counts, "study first tree: node {} person {} the definition's fields equal to it {fields:?}", s.node, o.person);
-                let saved: Vec<(i16, u16)> = o.stack.iter().map(|f| (f.tree.map_or(-1, |t| lib.tree_at(t).id), f.node)).collect();
-                let rel = match saved.iter().position(|&(t, _)| t == s.tree as i16) {
-                    Some(k) if k + 1 == saved.len() => "the saved top's tree",
-                    Some(0) => "the saved bottom's tree",
-                    Some(_) => "a saved middle frame's tree",
-                    None if saved.is_empty() => "no saved stack",
-                    None => "no saved frame's tree",
-                };
-                note!(h.counts, "study first tree vs the saved stack: {rel}, node {}{}", s.node, if saved.last().is_some_and(|&(t, n)| t == s.tree as i16 && n == s.node) { " (the saved top itself)" } else { "" });
-                if fields.is_empty() && !o.person && h.shown.next("first tree", 4) {
-                    println!("first tree {} of object {o_id} ({:?}): def fields {:?}", s.tree, o.file.map(|f| file_name(lib, f)), h.world.definition(o).map(|d| &d.fields[..d.fields.len().min(40)]));
-                }
-            }
-            if first_step.insert(s.sim) {
-                // Each lot object's first step against the stack the lot saved.
-                let same0 = st_top.is_some_and(|(t, n, _)| t == Some(s.tree as i16) && n == s.node);
-                h.counts.note(if same0 { "load: a stack's first step at its saved top frame" } else { "load: a stack's first step NOT at its saved top frame" });
-                // The log shows only the frames that step: the saved frames below the first
-                // step's are taken as the log's too (addresses below its, never seen).
-                let fr = frames.get_mut(&s.sim).unwrap();
-                if same0 && st_len > fr.len() {
-                    // their addresses by the frames' sizes: 16 and the tree's parameters and
-                    // locals, two bytes each, to a multiple of 8 (all but 12 of the logs' 191,030
-                    // calls; study REPLAY_FRAME_SIZES)
-                    let size = |f: &Frame| f.tree.map_or(16, |t| {
-                        let tr = lib.tree_at(t);
-                        16 + (2 * (u32::from(tr.args) + u32::from(tr.locals))).div_ceil(8) * 8
-                    });
-                    let saved = interp.stack();
-                    let n = st_len - fr.len();
-                    let mut below = Vec::new();
-                    let mut at = s.frame;
-                    for k in (0..n).rev() {
-                        at = at.wrapping_sub(size(&saved[k]));
-                        below.push(at);
-                        unseen.insert(at);
-                    }
-                    below.reverse();
-                    fr.splice(0..0, below);
-                }
-                if !same0 && has("REPLAY_SHOW_LOAD") && h.shown.next("load", 12) {
-                    println!(
-                        "load: object {o_id} tick {t}: saved {}:{} (depth {st_len}), first step {}:{} (depth {})",
-                        st_top.and_then(|(t, _, _)| t).map_or(-1, |t| t as i32),
-                        st_top.map_or(-1, |(_, n, _)| n as i32),
-                        s.tree,
-                        s.node,
-                        fr.len()
-                    );
-                }
-            }
-            let fr_len = frames[&s.sim].len();
-            let temps = h.world.get(ok).temps.to_vec();
-            let interp = sim.stack_of(&h.world, ok);
-            // a call that gives no parameters passes the object's temps as they are now (the
-            // interpreter keeps a pointer to them, +44)
-            interp.set_defaults(temps);
-            // Returns the log does not show (a tree whose return the observer missed, such as
-            // 363 between 8283 and 8233 at the club): native deeper than the log and on a
-            // return node runs its returns until it is not.
-            let mut ran_returns = false;
-            while !interp.done() && interp.stack().len() > fr_len && interp.stack().last().is_some_and(|f| f.node > 250) {
-                interp.step(&mut h);
-                ran_returns = true;
-            }
-            if ran_returns {
-                h.counts.note("steps: native ran returns the log did not show");
-            }
-            // A CallNamedTree node whose record before its callee the log lacks (Global 337 node 3
-            // at tick 1356: node 4's step, then 8241's node 0 a frame up, the call's record after):
-            // native on the call node, the log a frame deeper at a tree's first node: the call
-            // node runs first.
-            if !interp.done()
-                && s.node == 0
-                && interp.stack().len() + 1 == fr_len
-                && top_node(lib, interp).is_some_and(|n| n.opcode == 28)
-            {
-                h.step = i;
-                h.file_of_top = interp.stack().last().and_then(|f| f.file);
-                h.me = ok;
-                interp.reset_iterations();
-                interp.step(&mut h);
-                h.counts.note("steps: a call node run ahead (its record before its callee's not in the log)");
-            }
-            // A CreateObjectInstance node the log has no record of (the dream controller's 4121 node
-            // 1 at tree.log's tick 85, making the marker 179: node 0's step, then node 2): native on
-            // it, the log in the same frame at one of its ways: the node runs first.
-            if !interp.done()
-                && interp.stack().len() == fr_len
-                && let Some(n) = top_node(lib, interp).filter(|n| n.opcode == 42)
-                && interp.stack().last().and_then(|f| f.tree).is_some_and(|t| lib.tree_at(t).id as u16 == s.tree)
-                && (s.node == n.true_target as u16 || s.node == n.false_target as u16)
-                && interp.stack().last().is_some_and(|f| f.node != s.node)
-            {
-                h.step = i;
-                h.file_of_top = interp.stack().last().and_then(|f| f.file);
-                h.me = ok;
-                interp.reset_iterations();
-                interp.step(&mut h);
-                h.counts.note("steps: a CreateObjectInstance node run ahead (no record of it in the log)");
-            }
-            let st_len = interp.stack().len();
-            let st_top = interp.stack().last().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.file));
-            let same = !interp.done() && interp.stack().len() == fr_len && st_top.is_some_and(|(t, n, _)| t == Some(s.tree as i16) && n == s.node);
-            if has("REPLAY_TRACE_MAKERS") && matches!((s.tree, s.node), (0x2007, 1) | (0x2022, 1) | (0x200f, 6)) && s.look == b'X' && !consumed.contains(&i) {
-                println!("  maker step {i}: tree found {:?}, native stack same {same} (native top {st_top:?}, depth {} of {fr_len}), node opcode {:?}", lib.file(file).path, interp.stack().len(), lib.tree_at(tree).nodes.get(s.node as usize).map(|n| n.opcode));
-            }
-            // A tree run again in a frame that has just returned (the previous step this
-            // stack's, in the same frame, a return; this one at node 0): a new check of an
-            // evaluation, which older logs show as the Sim's own steps (no nesting): not compared.
-            let rerun = !same
-                && s.node == 0
-                && i > 0
-                && log.steps[..i].iter().rev().find(|p| p.sim == s.sim).is_some_and(|p| p.frame == s.frame && p.node > 250 && p.node == p.after);
-            if rerun {
-                h.counts.note("steps: a tree run again in a frame just returned (a check, not compared)");
-                streak = 0;
-                // native takes the log's: the frames below kept, the top one the log's
-            }
-            if same {
-                h.counts.note("steps: the native stack as the log's");
-                streak += 1;
-                best_streak = best_streak.max(streak);
-            } else {
-                streak = 0;
-                // (not a call's record after its callee's, which is skipped below, not counted)
-                let call_record = st_top.is_some_and(|(t, n, _)| t == Some(s.tree as i16) && n == s.after)
-                    && lib.tree_at(tree).nodes.get(s.node as usize).is_some_and(|nd| nd.opcode == 28);
-                if has("REPLAY_SHOW_DIFFS") && !call_record {
-                    let cat = if interp.done() {
-                        0
-                    } else if st_len > fr_len {
-                        1
-                    } else if st_len < fr_len {
-                        2
-                    } else if st_top.is_some_and(|(t, _, _)| t.is_some() && t != Some(s.tree as i16)) {
-                        3
-                    } else {
-                        4
+                let interp = sim.stack_of(&h.world, ok);
+                let st_len = interp.stack().len();
+                let st_top = interp.stack().last().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.file));
+                if first_step.contains(&s.sim) {
+                } else if has("REPLAY_SHOW_FIRST_TREE") {
+                    let o = h.world.get(ok);
+                    let fields: Vec<usize> = h.world.definition(o).map(|d| (0..d.fields.len()).filter(|&k| d.field(k) == s.tree as u16 as i32 as _).collect()).unwrap_or_default();
+                    note!(h.counts, "study first tree: node {} person {} the definition's fields equal to it {fields:?}", s.node, o.person);
+                    let saved: Vec<(i16, u16)> = o.stack.iter().map(|f| (f.tree.map_or(-1, |t| lib.tree_at(t).id), f.node)).collect();
+                    let rel = match saved.iter().position(|&(t, _)| t == s.tree as i16) {
+                        Some(k) if k + 1 == saved.len() => "the saved top's tree",
+                        Some(0) => "the saved bottom's tree",
+                        Some(_) => "a saved middle frame's tree",
+                        None if saved.is_empty() => "no saved stack",
+                        None => "no saved frame's tree",
                     };
-                    const NAMES: [&str; 5] = ["stopped", "deeper", "log deeper", "another tree", "another node"];
-                    if h.shown.next(&format!("diffs {cat}"), env("REPLAY_DIFFS_LIMIT").map_or(6, |v| atoi(&v) as i32)) {
-                        let prev = (0..i).rev().map(|j| &log.steps[j]).find(|p| p.sim == s.sim);
+                    note!(h.counts, "study first tree vs the saved stack: {rel}, node {}{}", s.node, if saved.last().is_some_and(|&(t, n)| t == s.tree as i16 && n == s.node) { " (the saved top itself)" } else { "" });
+                    if fields.is_empty() && !o.person && h.shown.next("first tree", 4) {
+                        println!("first tree {} of object {o_id} ({:?}): def fields {:?}", s.tree, o.file.map(|f| file_name(lib, f)), h.world.definition(o).map(|d| &d.fields[..d.fields.len().min(40)]));
+                    }
+                }
+                if first_step.insert(s.sim) {
+                    // Each lot object's first step against the stack the lot saved.
+                    let same0 = st_top.is_some_and(|(t, n, _)| t == Some(s.tree as i16) && n == s.node);
+                    h.counts.note(if same0 { "load: a stack's first step at its saved top frame" } else { "load: a stack's first step NOT at its saved top frame" });
+                    // The log shows only the frames that step: the saved frames below the first
+                    // step's are taken as the log's too (addresses below its, never seen).
+                    let fr = frames.get_mut(&s.sim).unwrap();
+                    if same0 && st_len > fr.len() {
+                        // their addresses by the frames' sizes: 16 and the tree's parameters and
+                        // locals, two bytes each, to a multiple of 8 (all but 12 of the logs' 191,030
+                        // calls; study REPLAY_FRAME_SIZES)
+                        let size = |f: &Frame| f.tree.map_or(16, |t| {
+                            let tr = lib.tree_at(t);
+                            16 + (2 * (u32::from(tr.args) + u32::from(tr.locals))).div_ceil(8) * 8
+                        });
+                        let saved = interp.stack();
+                        let n = st_len - fr.len();
+                        let mut below = Vec::new();
+                        let mut at = s.frame;
+                        for k in (0..n).rev() {
+                            at = at.wrapping_sub(size(&saved[k]));
+                            below.push(at);
+                            unseen.insert(at);
+                        }
+                        below.reverse();
+                        fr.splice(0..0, below);
+                    }
+                    if !same0 && has("REPLAY_SHOW_LOAD") && h.shown.next("load", 12) {
                         println!(
-                            "{}: object {o_id} tick {t}: native {}:{} depth {st_len} (error {}), log {}:{} depth {fr_len}; its last step {}:{}->{} {} res {}",
-                            NAMES[cat],
+                            "load: object {o_id} tick {t}: saved {}:{} (depth {st_len}), first step {}:{} (depth {})",
                             st_top.and_then(|(t, _, _)| t).map_or(-1, |t| t as i32),
                             st_top.map_or(-1, |(_, n, _)| n as i32),
-                            interp.error() as u16,
                             s.tree,
                             s.node,
-                            prev.map_or(-1, |p| p.tree as i32),
-                            prev.map_or(-1, |p| p.node as i32),
-                            prev.map_or(-1, |p| p.after as i32),
-                            prev.map_or('-', |p| if p.look != 0 { p.look as char } else { '-' }),
-                            prev.map_or(-1, |p| p.result as i32)
+                            fr.len()
                         );
                     }
                 }
-                if interp.done() {
-                    if !rerun { h.counts.note("steps: different: the native stack stopped"); }
-                    if has("REPLAY_SHOW_STOPPED") {
-                        let p = if i > 0 && log.steps[i - 1].sim == s.sim { format!("{}:{}->{}", log.steps[i - 1].tree, log.steps[i - 1].node, log.steps[i - 1].after) } else { "another stack's".into() };
-                        note!(h.counts, "study stopped: error {:?} log {}:{} (before {p})", interp.error(), s.tree, s.node);
-                        if interp.error() == Error::ReturnFromBottom && has("REPLAY_SHOW_RFB") {
-                            let back: Vec<String> = (i.saturating_sub(6)..i).map(|j| &log.steps[j]).filter(|t| t.sim == s.sim).map(|t| format!("{}:{}->{} f{:x}", t.tree, t.node, t.after, t.frame & 0xFFF)).collect();
-                            println!("rfb: object {o_id} tick {t} log {}:{} frame {:x} depth {fr_len}; before: {}", s.tree, s.node, s.frame & 0xFFF, back.join(" | "));
+                let fr_len = frames[&s.sim].len();
+                let temps = h.world.get(ok).temps.to_vec();
+                let interp = sim.stack_of(&h.world, ok);
+                // a call that gives no parameters passes the object's temps as they are now (the
+                // interpreter keeps a pointer to them, +44)
+                interp.set_defaults(temps);
+                // Returns the log does not show (a tree whose return the observer missed, such as
+                // 363 between 8283 and 8233 at the club): native deeper than the log and on a
+                // return node runs its returns until it is not.
+                let mut ran_returns = false;
+                while !interp.done() && interp.stack().len() > fr_len && interp.stack().last().is_some_and(|f| f.node > 250) {
+                    interp.step(&mut *h);
+                    ran_returns = true;
+                }
+                if ran_returns {
+                    h.counts.note("steps: native ran returns the log did not show");
+                }
+                // A CallNamedTree node whose record before its callee the log lacks (Global 337 node 3
+                // at tick 1356: node 4's step, then 8241's node 0 a frame up, the call's record after):
+                // native on the call node, the log a frame deeper at a tree's first node: the call
+                // node runs first.
+                if !interp.done()
+                    && s.node == 0
+                    && interp.stack().len() + 1 == fr_len
+                    && top_node(lib, interp).is_some_and(|n| n.opcode == 28)
+                {
+                    h.step = i;
+                    h.file_of_top = interp.stack().last().and_then(|f| f.file);
+                    h.me = ok;
+                    interp.reset_iterations();
+                    interp.step(&mut *h);
+                    h.counts.note("steps: a call node run ahead (its record before its callee's not in the log)");
+                }
+                // A CreateObjectInstance node the log has no record of (the dream controller's 4121 node
+                // 1 at tree.log's tick 85, making the marker 179: node 0's step, then node 2): native on
+                // it, the log in the same frame at one of its ways: the node runs first.
+                if !interp.done()
+                    && interp.stack().len() == fr_len
+                    && let Some(n) = top_node(lib, interp).filter(|n| n.opcode == 42)
+                    && interp.stack().last().and_then(|f| f.tree).is_some_and(|t| lib.tree_at(t).id as u16 == s.tree)
+                    && (s.node == n.true_target as u16 || s.node == n.false_target as u16)
+                    && interp.stack().last().is_some_and(|f| f.node != s.node)
+                {
+                    h.step = i;
+                    h.file_of_top = interp.stack().last().and_then(|f| f.file);
+                    h.me = ok;
+                    interp.reset_iterations();
+                    interp.step(&mut *h);
+                    h.counts.note("steps: a CreateObjectInstance node run ahead (no record of it in the log)");
+                }
+                let st_len = interp.stack().len();
+                let st_top = interp.stack().last().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.file));
+                let same = !interp.done() && interp.stack().len() == fr_len && st_top.is_some_and(|(t, n, _)| t == Some(s.tree as i16) && n == s.node);
+                if has("REPLAY_TRACE_MAKERS") && matches!((s.tree, s.node), (0x2007, 1) | (0x2022, 1) | (0x200f, 6)) && s.look == b'X' && !consumed.contains(&i) {
+                    println!("  maker step {i}: tree found {:?}, native stack same {same} (native top {st_top:?}, depth {} of {fr_len}), node opcode {:?}", lib.file(file).path, interp.stack().len(), lib.tree_at(tree).nodes.get(s.node as usize).map(|n| n.opcode));
+                }
+                // A tree run again in a frame that has just returned (the previous step this
+                // stack's, in the same frame, a return; this one at node 0): a new check of an
+                // evaluation, which older logs show as the Sim's own steps (no nesting): not compared.
+                let rerun = !same
+                    && s.node == 0
+                    && i > 0
+                    && log.steps[..i].iter().rev().find(|p| p.sim == s.sim).is_some_and(|p| p.frame == s.frame && p.node > 250 && p.node == p.after);
+                if rerun {
+                    h.counts.note("steps: a tree run again in a frame just returned (a check, not compared)");
+                    streak = 0;
+                    // native takes the log's: the frames below kept, the top one the log's
+                }
+                if same {
+                    h.counts.note("steps: the native stack as the log's");
+                    streak += 1;
+                    best_streak = best_streak.max(streak);
+                } else {
+                    streak = 0;
+                    // (not a call's record after its callee's, which is skipped below, not counted)
+                    let call_record = st_top.is_some_and(|(t, n, _)| t == Some(s.tree as i16) && n == s.after)
+                        && lib.tree_at(tree).nodes.get(s.node as usize).is_some_and(|nd| nd.opcode == 28);
+                    if has("REPLAY_SHOW_DIFFS") && !call_record {
+                        let cat = if interp.done() {
+                            0
+                        } else if st_len > fr_len {
+                            1
+                        } else if st_len < fr_len {
+                            2
+                        } else if st_top.is_some_and(|(t, _, _)| t.is_some() && t != Some(s.tree as i16)) {
+                            3
+                        } else {
+                            4
+                        };
+                        const NAMES: [&str; 5] = ["stopped", "deeper", "log deeper", "another tree", "another node"];
+                        if h.shown.next(&format!("diffs {cat}"), env("REPLAY_DIFFS_LIMIT").map_or(6, |v| atoi(&v) as i32)) {
+                            let prev = (0..i).rev().map(|j| &log.steps[j]).find(|p| p.sim == s.sim);
+                            println!(
+                                "{}: object {o_id} tick {t}: native {}:{} depth {st_len} (error {}), log {}:{} depth {fr_len}; its last step {}:{}->{} {} res {}",
+                                NAMES[cat],
+                                st_top.and_then(|(t, _, _)| t).map_or(-1, |t| t as i32),
+                                st_top.map_or(-1, |(_, n, _)| n as i32),
+                                interp.error() as u16,
+                                s.tree,
+                                s.node,
+                                prev.map_or(-1, |p| p.tree as i32),
+                                prev.map_or(-1, |p| p.node as i32),
+                                prev.map_or(-1, |p| p.after as i32),
+                                prev.map_or('-', |p| if p.look != 0 { p.look as char } else { '-' }),
+                                prev.map_or(-1, |p| p.result as i32)
+                            );
                         }
-                        if interp.error() == Error::BadTransition && has("REPLAY_SHOW_BADT") {
-                            let back: Vec<String> = (i.saturating_sub(4)..i).map(|j| &log.steps[j]).filter(|t| t.sim == s.sim).map(|t| format!("{}:{}->{}", t.tree, t.node, t.after)).collect();
-                            let nodes: Vec<String> = interp.stack().last().and_then(|f| f.tree).map(|t| lib.tree_at(t)).unwrap_or(lib.tree_at(tree)).nodes.iter().take(4).map(|n| format!("op {} -> {}/{}", n.opcode, n.true_target, n.false_target)).collect();
-                            println!("badt: object {o_id} tick {t} log {}:{}; before {}; tree {} nodes {:?}; native stack {:?}", s.tree, s.node, back.join(" | "), s.tree, nodes, interp.stack().iter().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node)).collect::<Vec<_>>());
+                    }
+                    if interp.done() {
+                        if !rerun { h.counts.note("steps: different: the native stack stopped"); }
+                        if has("REPLAY_SHOW_STOPPED") {
+                            let p = if i > 0 && log.steps[i - 1].sim == s.sim { format!("{}:{}->{}", log.steps[i - 1].tree, log.steps[i - 1].node, log.steps[i - 1].after) } else { "another stack's".into() };
+                            note!(h.counts, "study stopped: error {:?} log {}:{} (before {p})", interp.error(), s.tree, s.node);
+                            if interp.error() == Error::ReturnFromBottom && has("REPLAY_SHOW_RFB") {
+                                let back: Vec<String> = (i.saturating_sub(6)..i).map(|j| &log.steps[j]).filter(|t| t.sim == s.sim).map(|t| format!("{}:{}->{} f{:x}", t.tree, t.node, t.after, t.frame & 0xFFF)).collect();
+                                println!("rfb: object {o_id} tick {t} log {}:{} frame {:x} depth {fr_len}; before: {}", s.tree, s.node, s.frame & 0xFFF, back.join(" | "));
+                            }
+                            if interp.error() == Error::BadTransition && has("REPLAY_SHOW_BADT") {
+                                let back: Vec<String> = (i.saturating_sub(4)..i).map(|j| &log.steps[j]).filter(|t| t.sim == s.sim).map(|t| format!("{}:{}->{}", t.tree, t.node, t.after)).collect();
+                                let nodes: Vec<String> = interp.stack().last().and_then(|f| f.tree).map(|t| lib.tree_at(t)).unwrap_or(lib.tree_at(tree)).nodes.iter().take(4).map(|n| format!("op {} -> {}/{}", n.opcode, n.true_target, n.false_target)).collect();
+                                println!("badt: object {o_id} tick {t} log {}:{}; before {}; tree {} nodes {:?}; native stack {:?}", s.tree, s.node, back.join(" | "), s.tree, nodes, interp.stack().iter().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node)).collect::<Vec<_>>());
+                            }
+                            if interp.error() == Error::Missing {
+                                let o = h.world.get(ok);
+                                let f = o.file.map(|f| lib.file(f));
+                                println!("missing: object {o_id} file {:?} semi {:?}; frame file {:?}; log {}:{}", f.map(|f| f.path.clone()), f.and_then(|f| f.semi).map(|x| lib.file(x).path.clone()), st_top.and_then(|t| t.2).map(|x| lib.file(x).path.clone()), s.tree, s.node);
+                            }
                         }
-                        if interp.error() == Error::Missing {
+                    } else if st_len != fr_len && !rerun {
+                        h.counts.note(if st_len < fr_len { "steps: different: the log's is deeper (a frame pushed)" } else { "steps: different: the native is deeper" });
+                    }
+                    if !interp.done() && st_len < fr_len && o_person && has("REPLAY_SHOW_PUSH") {
+                        let wn = top_node(lib, interp);
+                        let o = h.world.get(ok);
+                        let mut l = format!(
+                            "push: Sim {o_id} tick {t} onto {}:{} (op {}): {}:{} in {}, stack object {}, params",
+                            st_top.and_then(|(t, _, _)| t).map_or(-1, |t| t as i32),
+                            st_top.map_or(0, |(_, n, _)| n),
+                            wn.map_or(-1, |n| n.opcode as i32),
+                            s.tree,
+                            s.node,
+                            lib.file(file).path,
+                            s.stack_object
+                        );
+                        for p in &s.params {
+                            l += &format!(" {p}");
+                        }
+                        l += &format!(
+                            "; saved current id {} objects {} {} {}; queue",
+                            o.current.id, o.current.objects[0], o.current.objects[1], o.current.objects[2]
+                        );
+                        for q in &o.queue {
+                            l += &format!(
+                                " [id {} objects {} {} {} shorts {} {} {} {} a {} b {} c {} tree {}]",
+                                q.id, q.objects[0], q.objects[1], q.objects[2], q.shorts[0], q.shorts[1], q.shorts[2], q.shorts[3], q.a, q.b, q.c, q.tree
+                            );
+                        }
+                        println!("{l}");
+                    } else if st_top.is_none_or(|(t, _, _)| t != Some(s.tree as i16)) {
+                        if !rerun { h.counts.note("steps: different: another tree"); }
+                        if !rerun && has("REPLAY_SHOW_CURRENT") && t < 5 {
+                            let c = &h.world.get(ok).current;
+                            println!("current: tick {t} object {o_id} id {} objects {:?} shorts {:?} a {} b {} c {} tree {}; log {}:{}", c.id, c.objects, c.shorts, c.a, c.b, c.c, c.tree, s.tree, s.node);
+                        }
+                        if !rerun && has("REPLAY_SHOW_QUEUE_AT") && !h.world.get(ok).queue.is_empty() {
+                            let q: Vec<String> = h.world.get(ok).queue.iter().map(|q| format!("[id {} tree {} objects {:?} interaction {:?}]", q.id, q.tree, q.objects, q.interaction)).collect();
+                            println!("queue at: tick {t} object {o_id} log {}:{} so {}; {}", s.tree, s.node, s.stack_object, q.join(" "));
+                        }
+                        if !rerun && has("REPLAY_SHOW_OTHER_TREE") {
+                            println!("other tree: tick {t} object {o_id} queue {} native {:?} log {}:{} (op {})", h.world.get(ok).queue.len(), st_top.map(|(t, n, _)| (t, n)), s.tree, s.node, lib.tree_at(tree).nodes.get(s.node as usize).map_or(-1, |n| n.opcode as i32));
+                        }
+                        if has("REPLAY_SHOW_196") && o_id == 196 && h.shown.next("196", 2) {
                             let o = h.world.get(ok);
                             let f = o.file.map(|f| lib.file(f));
-                            println!("missing: object {o_id} file {:?} semi {:?}; frame file {:?}; log {}:{}", f.map(|f| f.path.clone()), f.and_then(|f| f.semi).map(|x| lib.file(x).path.clone()), st_top.and_then(|t| t.2).map(|x| lib.file(x).path.clone()), s.tree, s.node);
+                            println!("196: file {:?} guid {:08x} def {:?}; has 4129 {:?} 4137 {:?} 4116 {:?} 4106 {:?}", f.map(|f| f.path.clone()), o.guid, o.definition, f.map(|f| f.trees.contains_key(&4129)), f.map(|f| f.trees.contains_key(&4137)), f.map(|f| f.trees.contains_key(&4116)), f.map(|f| f.trees.contains_key(&4106)));
+                            if let Some(t) = lib.tree(o.file, 4116) {
+                                for (k, n) in lib.tree_at(t).nodes.iter().enumerate() {
+                                    println!("   4116 node {k}: op {} -> {} / {} operand {:02x?}", n.opcode, n.true_target, n.false_target, n.operand);
+                                }
+                            }
+                            for f in lib.files().iter().filter(|f| f.trees.contains_key(&4116) && f.trees.contains_key(&4106) && !f.trees.contains_key(&4137)) {
+                                println!("   a file with 4116 and 4106 but no 4137: {}", f.path);
+                            }
+                        }
+                        if has("REPLAY_SHOW_TREES") && h.shown.next("trees", if has("REPLAY_SHOW_ALL") { 100_000 } else { 12 }) {
+                            let p = if i > 0 && log.steps[i - 1].sim == s.sim {
+                                format!("{}:{}->{}", log.steps[i - 1].tree, log.steps[i - 1].node, log.steps[i - 1].after)
+                            } else {
+                                "another stack's".into()
+                            };
+                            println!(
+                                "tick {t} object {o_id}: native {}:{} (depth {st_len}), log {}:{} (depth {fr_len}), log step before: {p}",
+                                st_top.and_then(|(t, _, _)| t).map_or(-1, |t| t as i32),
+                                st_top.map_or(0, |(_, n, _)| n),
+                                s.tree,
+                                s.node
+                            );
+                        }
+                    } else if st_top.is_some_and(|(t, n, _)| t == Some(s.tree as i16) && n == s.after)
+                        && lib.tree_at(tree).nodes.get(s.node as usize).is_some_and(|nd| nd.opcode == 28)
+                    {
+                        // a CallNamedTree node's record, written when the call ends (after its
+                        // callee's steps): native is past it, at the node it went on to
+                        h.counts.note("steps: a call's record after its callee's (native past it)");
+                        continue;
+                    } else {
+                        if !rerun { h.counts.note("steps: different: another node"); }
+                        if has("REPLAY_SHOW_NODES") {
+                            let p = if i > 0 && log.steps[i - 1].sim == s.sim { format!("{}:{}->{}", log.steps[i - 1].tree, log.steps[i - 1].node, log.steps[i - 1].after) } else { "another stack's".into() };
+                            let op = lib.tree_at(tree).nodes.get(s.node as usize).map(|nd| nd.opcode);
+                            note!(h.counts, "study another node: tree {} native node {} log node {} op {op:?} after {} (before: {p})", s.tree, st_top.map_or(0, |(_, n, _)| n), s.node, s.after);
                         }
                     }
-                } else if st_len != fr_len && !rerun {
-                    h.counts.note(if st_len < fr_len { "steps: different: the log's is deeper (a frame pushed)" } else { "steps: different: the native is deeper" });
-                }
-                if !interp.done() && st_len < fr_len && o_person && has("REPLAY_SHOW_PUSH") {
-                    let wn = top_node(lib, interp);
-                    let o = h.world.get(ok);
-                    let mut l = format!(
-                        "push: Sim {o_id} tick {t} onto {}:{} (op {}): {}:{} in {}, stack object {}, params",
-                        st_top.and_then(|(t, _, _)| t).map_or(-1, |t| t as i32),
-                        st_top.map_or(0, |(_, n, _)| n),
-                        wn.map_or(-1, |n| n.opcode as i32),
-                        s.tree,
-                        s.node,
-                        lib.file(file).path,
-                        s.stack_object
-                    );
-                    for p in &s.params {
-                        l += &format!(" {p}");
+                    // Set to the log's: the frames below kept, the top one the log's.
+                    let keep = st_len.min(fr_len - 1);
+                    let mut nf: Vec<Frame> = interp.stack()[..keep].to_vec();
+                    while nf.len() < fr_len - 1 {
+                        nf.push(Frame::default()); // frames the log has, not known natively
                     }
-                    l += &format!(
-                        "; saved current id {} objects {} {} {}; queue",
-                        o.current.id, o.current.objects[0], o.current.objects[1], o.current.objects[2]
-                    );
-                    for q in &o.queue {
+                    // A frame's file is the object file its trees are named from: for a global or
+                    // semi-global tree, not the file the tree is in but one that names it (the
+                    // object's own if it does, else any whose semi-global file it is).
+                    let top_file = match tree_kind(s.tree) {
+                        TreeKind::Global => st_top.and_then(|(_, _, f)| f).or(o_file),
+                        TreeKind::SemiGlobal => {
+                            if o_file.is_some_and(|f| lib.file(f).semi == Some(file)) {
+                                o_file
+                            } else {
+                                // (none naming it: the tree's own file, as the C++ left it)
+                                (0..lib.files().len() as u32).map(FileId).find(|&f| lib.file(f).semi == Some(file)).or(Some(file))
+                            }
+                        }
+                        _ => Some(file),
+                    };
+                    nf.push(Frame {
+                        tree: Some(tree),
+                        node: s.node,
+                        params: s.params.clone(),
+                        locals: s.locals.clone(),
+                        stack_object: s.stack_object,
+                        file: top_file,
+                        ..Default::default()
+                    });
+                    interp.restore(nf);
+                    // another stack than the one it had: no sleep of the old one (nor a saved
+                    // Idle's waking) carries over
+                    interp.sleep().wake();
+                }
+                if let Some(w) = env("REPLAY_WATCH_ID")
+                    && let Ok(w) = w.parse::<i16>()
+                    && let Some(o) = h.world.find_object(w)
+                {
+                    let now = (o.data[2], o.data[3]);
+                    let was = h.shown.0.insert(format!("watch {w}"), (now.0 as i32) << 16 | (now.1 as u16 as i32));
+                    if was != Some((now.0 as i32) << 16 | (now.1 as u16 as i32)) {
+                        let prev = i.checked_sub(1).map(|k| &log.steps[k]);
+                        let ops: Vec<String> = h.world.objects().filter_map(|x| x.file).collect::<BTreeSet<_>>().into_iter().filter_map(|f| prev.and_then(|p| lib.tree(Some(f), p.tree).map(|t| lib.tree_at(t).nodes.get(p.node as usize).map(|n| (n.opcode, n.operand))))).flatten().map(|(op, o)| format!("op {op} {o:02x?}")).collect::<BTreeSet<_>>().into_iter().collect();
+                        println!("watch {w}: container/slot now {now:?} at tick {} step {i} ({}:{}; before it {:?}: {ops:?})", s.tick, s.tree, s.node, prev.map(|p| (p.tree, p.node, p.after)));
+                    }
+                }
+                if same {
+                    // The frame's own state as the native kept it, against the log's at the step.
+                    let f = interp.top();
+                    h.counts.note(if f.params == s.params { "frames: parameters the same natively" } else { "frames: parameters different (set to the log's)" });
+                    h.counts.note(if f.locals == s.locals { "frames: locals the same natively" } else { "frames: locals different (set to the log's)" });
+                    h.counts.note(if f.stack_object == s.stack_object {
+                        "frames: stack object the same natively"
+                    } else {
+                        "frames: stack object different (set to the log's)"
+                    });
+                    if f.stack_object != s.stack_object && i > 0 {
+                        let p = &log.steps[i - 1];
+                        let own = p.sim == s.sim;
+                        let what = if !own {
+                            "another stack's step"
+                        } else if p.frame != s.frame {
+                            if p.frame < s.frame { "a call" } else { "a return" }
+                        } else {
+                            "a step of the frame"
+                        };
+                        note!(h.counts, "frames: stack object different, after {what}");
+                        if has("REPLAY_SHOW_SO") && h.shown.next("so", if has("REPLAY_SHOW_SO_NEAR") { 100_000 } else { 12 }) {
+                            let mut l = format!(
+                                "stack object: native {}, log {} at {}:{}; before: {}:{}->{} ({}) so {}->{}{}",
+                                f.stack_object,
+                                s.stack_object,
+                                s.tree,
+                                s.node,
+                                p.tree,
+                                p.node,
+                                p.after,
+                                if p.look != 0 { p.look as char } else { '-' },
+                                p.stack_object,
+                                p.stack_object_after,
+                                if own { "" } else { " (another stack)" }
+                            );
+                            if let Some(e) = &p.expr {
+                                l += &format!(
+                                    " expr lhs {}/{} rhs {}/{} op {} lhs {}->{} rhs {}",
+                                    e.lhs_scope, e.lhs_data, e.rhs_scope, e.rhs_data, e.op, e.lhs, e.lhs_after, e.rhs
+                                );
+                            }
+                            for v in &p.lookups {
+                                l += &format!(" [V {}/{}={} fl {}]", v.scope, v.data, v.value, v.flags);
+                            }
+                            if let Some(n) = f.tree.and_then(|t| lib.tree_at(t).nodes.get(p.node as usize)) {
+                                l += &format!(" node {}: op {} operand {:02x?}", p.node, n.opcode, n.operand);
+                            }
+                            if has("REPLAY_SHOW_SO_NEAR") && let Some(me_o) = h.world.find_object(o_id) {
+                                let (mx, my) = (me_o.x16 >> 4, me_o.y16 >> 4);
+                                let order = h.world.order().to_vec();
+                                for (k, &key) in order.iter().enumerate() {
+                                    let o = h.world.get(key);
+                                    if ((o.x16 >> 4) - mx).abs() <= 1 && ((o.y16 >> 4) - my).abs() <= 1 && o.id() != o_id {
+                                        l += &format!(" | #{k} {}: ({},{}) guid {:08x} p {}", o.id(), o.x16 >> 4, o.y16 >> 4, o.guid, o.person);
+                                    }
+                                }
+                                l += &format!(" | me {o_id} at ({mx},{my})");
+                                if has("REPLAY_SHOW_SO_DATA") {
+                                    for id in [102i16, 66, 57, 101, 109, 53, 139, 52, 65, 61, 62, 60, 56, 135, 136] {
+                                        if let Some(o) = h.world.find_object(id) {
+                                            println!("obj {id}: guid {:08x} level {} x16 {} y16 {} data {:?} defn {:?}", o.guid, o.level, o.x16, o.y16, &o.data[..o.data.len().min(80)], h.world.definition(o).map(|d| &d.fields[..d.fields.len().min(80)]));
+                                        }
+                                    }
+                                }
+                            }
+                            if has("REPLAY_SHOW_SO_197") && let Some(o) = h.world.find_object(197) {
+                                l += &format!(" | tick {}: 197 container {} slot {} at ({},{})", s.tick, o.data[2], o.data[3], o.x16 >> 4, o.y16 >> 4);
+                                if let Some(c) = h.world.find_object(62) {
+                                    l += &format!("; 62 at ({},{}) container {}", c.x16 >> 4, c.y16 >> 4, c.data[2]);
+                                }
+                            }
+                            if has("REPLAY_SHOW_SO_59") {
+                                let order = h.world.order().to_vec();
+                                let hits: Vec<String> = order.iter().enumerate().map(|(k, &key)| (k, h.world.get(key))).filter(|(_, o)| o.data.get(59) == s.params.first().or(p.params.first())).map(|(k, o)| format!("#{k} {}", o.id())).collect();
+                                l += &format!(" | params {:?} (before {:?}); field 59 = p0: {}", s.params, p.params, hits.join(" "));
+                            }
+                            if has("REPLAY_SHOW_SO_OBJECTS") {
+                                for id in [p.stack_object, p.stack_object_after, o_id] {
+                                    if let Some(o) = h.world.find_object(id) {
+                                        l += &format!(
+                                            " | {id}: guid {:08x} person {} leader {} at ({},{},{}) container {} slot {} d0..12 {:?}",
+                                            o.guid, o.person, o.leader, o.x16 >> 4, o.y16 >> 4, o.level,
+                                            o.data.get(2).copied().unwrap_or(0), o.data.get(3).copied().unwrap_or(0),
+                                            &o.data[..o.data.len().min(12)]
+                                        );
+                                    }
+                                }
+                            }
+                            println!("{l}");
+                        }
+                    }
+                    f.params = s.params.clone();
+                    f.locals = s.locals.clone();
+                    f.stack_object = s.stack_object;
+                }
+                if interp.asleep() {
+                    if has("REPLAY_SHOW_MADE") {
+                        println!("asleep: tick {} id {} tree {:#x} node {}", s.tick, o_id, s.tree, s.node);
+                    }
+                    h.counts.note("steps: the log ran a stack the native has asleep");
+                    interp.sleep().wake();
+                }
+                h.step = i;
+                h.file_of_top = interp.stack().last().and_then(|f| f.file);
+                h.me = ok;
+                interp.reset_iterations();
+                let s0 = Instant::now();
+                let stepped = interp.step(&mut *h);
+                // A Sim that spent money this turn (AlterBudget, not a test) shows it when its turn
+                // ends: the engine pushes its "display money balloon" over the yielding frame, an
+                // engine frame with no stack object, run in the same turn (docs/simulation.md, "The
+                // money balloon")
+                if stepped == Step::Yield
+                    && h.world.get_live(ok).is_some_and(|o| o.spent)
+                    && std::mem::take(&mut h.world.get_mut(ok).spent)
+                    && let Some(t) = h.world.money_balloon_tree(ok)
+                    && interp.push(lib, t, &[])
+                {
+                    let f = interp.top();
+                    f.engine = true;
+                    f.stack_object = 0;
+                    f.file = h.world.get(ok).file;
+                    h.counts.note("frames: the money balloon pushed natively when a Sim that spent yields");
+                }
+                if let Some(b) = &mut h.bench {
+                    let d = us(s0);
+                    b.steps_us += d;
+                    tick_us += d;
+                    b.steps += 1;
+                }
+            }
+            motives_before(i16::MAX, &sim, &mut h.world, &mut motives_done);
+            if have_passes {
+                h.counts.note(if sim.stop_asked(&h.world) == (pass.stopped_at != 0) {
+                    "passes: stopped (or not) as the log's"
+                } else {
+                    "passes: DIFFERENT stop"
+                });
+            }
+            let stopped = have_passes && sim.stop_asked(&h.world);
+            sim.end_pass(&mut h.world, if have_passes { pass.stopped_at as i16 } else { 0 });
+            // the clock: the minute every 30 passes that ran to their end
+            h.world.clock_pass(stopped);
+            check_time_of_day(log, t, &h.world, &mut time_at, &mut h.counts);
+            // The persons' motives after the tick against the log's ('N' records), then set to the
+            // log's (what the scripts not native yet wrote).
+            while motive_at < log.motives.len() && log.motives[motive_at].tick < t {
+                motive_at += 1;
+            }
+            while motive_at < log.motives.len() && log.motives[motive_at].tick == t {
+                let m = &log.motives[motive_at];
+                motive_at += 1;
+                let Some(k) = h.world.find(m.id).filter(|&k| h.world.get(k).motives.len() >= 16) else {
+                    h.counts.note("motives: a person not in the world");
+                    continue;
+                };
+                let om = h.world.get(k).motives.clone();
+                let same = (0..16).all(|i| i == 3 || i == 13 || om[i] == m.motives[i]);
+                h.counts.note(if same {
+                    "motives: the native motives as the log's after the tick (all but 3 and 13)"
+                } else {
+                    "motives: DIFFERENT after the tick (set to the log's)"
+                });
+                if !same {
+                    for (i, (&a, &b)) in om.iter().zip(&m.motives).enumerate() {
+                        if i != 3 && i != 13 && a != b {
+                            note!(h.counts, 
+                                "motives: different after the tick: person {} motive {i}{}",
+                                m.id,
+                                if (a - b).abs() < 1e-3 { " (by a last bit)" } else { "" }
+                            );
+                        }
+                    }
+                }
+                if !same && has("REPLAY_SHOW_MOTIVES") && m.id == 237 && t >= 5020 && shown_motives < 6 {
+                    shown_motives += 1;
+                    let mut l = format!("tick {t} person {} (object #{}):", m.id, k.0);
+                    for i in [5, 6, 7, 8, 9, 14, 15] {
+                        l += &format!("  m{i} native {} log {}", g(om[i] as f64, 6), g(m.motives[i] as f64, 6));
+                    }
+                    println!("{l}");
+                }
+                h.world.get_mut(k).motives[..16].copy_from_slice(&m.motives);
+            }
+            if let Some(b) = &mut h.bench {
+                tick_us -= b.sync_us - sync_before; // the replay's own, inside the steps
+                if b.ticks.is_empty() || tick_us > b.ticks[b.worst_tick] {
+                    b.worst_tick = b.ticks.len();
+                }
+                b.ticks.push(tick_us);
+            }
+        }
+        self.place_at = place_at;
+        self.motive_at = motive_at;
+        self.shown_motives = shown_motives;
+        self.engine_list_at = engine_list_at;
+        self.time_at = time_at;
+        self.streak = streak;
+        self.best_streak = best_streak;
+        true
+    }
+
+    /// The world as the run has it now.
+    pub fn world(&self) -> &World<'l> {
+        &self.h.world
+    }
+
+    /// The tick the run is at (the last one stepped).
+    pub fn tick(&self) -> u32 {
+        self.t
+    }
+
+    /// The log's lights, the lot's clock and the rest the run keeps are the world's; this ends
+    /// the run: the checks that go over the whole log, and what was counted.
+    pub fn finish(mut self) -> (Counts, Option<Bench>) {
+        let log_rc = Rc::clone(&self.log);
+        let log: &Log = &log_rc;
+        let lib = self.lib;
+        let best_streak = self.best_streak;
+        let (club, house) = self.lot;
+        let Self { h, finder, ids, .. } = &mut self;
+        let world = &h.world;
+        let counts = &mut h.counts;
+        if has("REPLAY_SHOW_FILES") {
+            let mut f: BTreeMap<String, i32> = BTreeMap::new();
+            for s in &log.steps {
+                let Some(o) = ids.get(&s.sim).and_then(|&id| world.find_object(id)) else { continue };
+                if !o.person {
+                    continue;
+                }
+                if let Some((_, file)) = finder.find(log, s)
+                    && tree_kind(s.tree) == TreeKind::Own
+                {
+                    *f.entry(lib.file(file).path.clone()).or_default() += 1;
+                }
+            }
+            for (p, n) in &f {
+                println!("a lot Sim's own trees in {p}: {n} steps");
+            }
+        }
+        let bench_on = h.bench.is_some();
+        if !bench_on {
+            counts.add("steps: longest run with the native stack as the log's", best_streak);
+        }
+
+        // Autonomy's evaluations: a person's many guard checks in one tick (each at node 0 in the
+        // bottom frame of its checks), against the native candidates (autonomy_candidates), the
+        // persons' interactions and a version-11 table's first tree set aside.
+        if !bench_on {
+            let mut starts: BTreeMap<(u32, u32), Vec<usize>> = BTreeMap::new(); // (tick, stack) -> node-0 starts
+            for (i, s) in log.steps.iter().enumerate() {
+                if s.node == 0 {
+                    starts.entry((s.tick, s.sim)).or_default().push(i);
+                }
+            }
+            for (key, v) in &starts {
+                if v.len() < 40 {
+                    continue;
+                }
+                let mut per_frame: BTreeMap<u32, usize> = BTreeMap::new(); // the checks' bottom frame: the one with the most starts
+                for &i in v {
+                    *per_frame.entry(log.steps[i].frame).or_default() += 1;
+                }
+                let mut bottom = (0u32, 0usize);
+                for (&f, &n) in &per_frame {
+                    if n > bottom.1 || bottom.1 == 0 {
+                        bottom = (f, n);
+                    }
+                }
+                let bottom = bottom.0;
+                let Some(me) = ids.get(&key.1).and_then(|&id| world.find(id)).filter(|&k| world.get(k).person) else { continue };
+                // An evaluation goes over the lot: many objects (a pie menu's checks are of one).
+                let over: BTreeSet<i16> = v.iter().map(|&i| &log.steps[i]).filter(|s| s.frame == bottom).map(|s| s.stack_object).collect();
+                if over.len() < 10 || per_frame[&bottom] < 20 {
+                    continue;
+                }
+                let mut logged: Vec<(i16, u16)> = Vec::new();
+                for &i in v {
+                    let s = &log.steps[i];
+                    let Some(so) = world.find(s.stack_object) else { continue };
+                    if s.frame != bottom || so == me {
+                        continue;
+                    }
+                    let o = world.get(so);
+                    let tf = if o.person { o.file.and_then(|f| lib.file(f).semi) } else { o.file };
+                    let prefix = tf.is_some_and(|f| lib.file(f).prefix_of.values().any(|&p| p == s.tree));
+                    if !prefix {
+                        logged.push((s.stack_object, s.tree));
+                    }
+                }
+                // The objects on the lot then (the log's list at that tick: the replay does not
+                // remove objects natively yet, as the paper girl leaves).
+                let mut present: BTreeSet<i16> = BTreeSet::new();
+                for l in &log.lists {
+                    if l.tick <= key.0 {
+                        present = l.ids.iter().copied().collect();
+                    }
+                }
+                let native: Vec<(i16, u16)> = autonomy_candidates(world, me)
+                    .iter()
+                    .filter(|c| present.is_empty() || present.contains(&c.id))
+                    .map(|c| (c.id, c.interaction(lib).guard))
+                    .collect();
+                counts.note(if logged == native {
+                    "autonomy: an evaluation's candidates the same natively (objects and persons)"
+                } else {
+                    "autonomy: an evaluation's candidates DIFFERENT"
+                });
+                counts.add("autonomy: candidates checked in evaluations", logged.len());
+                if logged != native && has("REPLAY_SHOW_AUTONOMY") {
+                    let lo: BTreeSet<i16> = logged.iter().map(|x| x.0).collect();
+                    let na: BTreeSet<i16> = native.iter().map(|x| x.0).collect();
+                    let mut l = "objects only native:".to_string();
+                    for i in na.difference(&lo) {
+                        let o = world.find_object(*i);
                         l += &format!(
-                            " [id {} objects {} {} {} shorts {} {} {} {} a {} b {} c {} tree {}]",
-                            q.id, q.objects[0], q.objects[1], q.objects[2], q.shorts[0], q.shorts[1], q.shorts[2], q.shorts[3], q.a, q.b, q.c, q.tree
+                            " {i}({}, stack {})",
+                            o.and_then(|o| o.file).map_or("?".to_string(), |f| file_name(lib, f)),
+                            o.map_or(0, |o| o.stack.len())
                         );
                     }
                     println!("{l}");
-                } else if st_top.is_none_or(|(t, _, _)| t != Some(s.tree as i16)) {
-                    if !rerun { h.counts.note("steps: different: another tree"); }
-                    if !rerun && has("REPLAY_SHOW_CURRENT") && t < 5 {
-                        let c = &h.world.get(ok).current;
-                        println!("current: tick {t} object {o_id} id {} objects {:?} shorts {:?} a {} b {} c {} tree {}; log {}:{}", c.id, c.objects, c.shorts, c.a, c.b, c.c, c.tree, s.tree, s.node);
+                    let mut l = "only logged:".to_string();
+                    for i in lo.difference(&na) {
+                        l += &format!(" {i}");
                     }
-                    if !rerun && has("REPLAY_SHOW_QUEUE_AT") && !h.world.get(ok).queue.is_empty() {
-                        let q: Vec<String> = h.world.get(ok).queue.iter().map(|q| format!("[id {} tree {} objects {:?} interaction {:?}]", q.id, q.tree, q.objects, q.interaction)).collect();
-                        println!("queue at: tick {t} object {o_id} log {}:{} so {}; {}", s.tree, s.node, s.stack_object, q.join(" "));
-                    }
-                    if !rerun && has("REPLAY_SHOW_OTHER_TREE") {
-                        println!("other tree: tick {t} object {o_id} queue {} native {:?} log {}:{} (op {})", h.world.get(ok).queue.len(), st_top.map(|(t, n, _)| (t, n)), s.tree, s.node, lib.tree_at(tree).nodes.get(s.node as usize).map_or(-1, |n| n.opcode as i32));
-                    }
-                    if has("REPLAY_SHOW_196") && o_id == 196 && h.shown.next("196", 2) {
-                        let o = h.world.get(ok);
-                        let f = o.file.map(|f| lib.file(f));
-                        println!("196: file {:?} guid {:08x} def {:?}; has 4129 {:?} 4137 {:?} 4116 {:?} 4106 {:?}", f.map(|f| f.path.clone()), o.guid, o.definition, f.map(|f| f.trees.contains_key(&4129)), f.map(|f| f.trees.contains_key(&4137)), f.map(|f| f.trees.contains_key(&4116)), f.map(|f| f.trees.contains_key(&4106)));
-                        if let Some(t) = lib.tree(o.file, 4116) {
-                            for (k, n) in lib.tree_at(t).nodes.iter().enumerate() {
-                                println!("   4116 node {k}: op {} -> {} / {} operand {:02x?}", n.opcode, n.true_target, n.false_target, n.operand);
-                            }
+                    println!("{l}");
+                    if has("REPLAY_SHOW_CAND_FLAGS") {
+                        let mut by_flag: BTreeMap<(u32, bool), Vec<i16>> = BTreeMap::new();
+                        for c in autonomy_candidates(world, me).iter().filter(|c| present.is_empty() || present.contains(&c.id)) {
+                            let e = c.interaction(lib);
+                            by_flag.entry((e.flags, logged.contains(&(c.id, e.guard)))).or_default().push(c.id);
                         }
-                        for f in lib.files().iter().filter(|f| f.trees.contains_key(&4116) && f.trees.contains_key(&4106) && !f.trees.contains_key(&4137)) {
-                            println!("   a file with 4116 and 4106 but no 4137: {}", f.path);
+                        for ((f, inlog), ids) in by_flag {
+                            println!("   flags {f:08x} checked by the original {inlog}: {} candidates, e.g. {:?}", ids.len(), &ids[..ids.len().min(6)]);
                         }
-                    }
-                    if has("REPLAY_SHOW_TREES") && h.shown.next("trees", if has("REPLAY_SHOW_ALL") { 100_000 } else { 12 }) {
-                        let p = if i > 0 && log.steps[i - 1].sim == s.sim {
-                            format!("{}:{}->{}", log.steps[i - 1].tree, log.steps[i - 1].node, log.steps[i - 1].after)
-                        } else {
-                            "another stack's".into()
-                        };
-                        println!(
-                            "tick {t} object {o_id}: native {}:{} (depth {st_len}), log {}:{} (depth {fr_len}), log step before: {p}",
-                            st_top.and_then(|(t, _, _)| t).map_or(-1, |t| t as i32),
-                            st_top.map_or(0, |(_, n, _)| n),
-                            s.tree,
-                            s.node
-                        );
-                    }
-                } else if st_top.is_some_and(|(t, n, _)| t == Some(s.tree as i16) && n == s.after)
-                    && lib.tree_at(tree).nodes.get(s.node as usize).is_some_and(|nd| nd.opcode == 28)
-                {
-                    // a CallNamedTree node's record, written when the call ends (after its
-                    // callee's steps): native is past it, at the node it went on to
-                    h.counts.note("steps: a call's record after its callee's (native past it)");
-                    continue;
-                } else {
-                    if !rerun { h.counts.note("steps: different: another node"); }
-                    if has("REPLAY_SHOW_NODES") {
-                        let p = if i > 0 && log.steps[i - 1].sim == s.sim { format!("{}:{}->{}", log.steps[i - 1].tree, log.steps[i - 1].node, log.steps[i - 1].after) } else { "another stack's".into() };
-                        let op = lib.tree_at(tree).nodes.get(s.node as usize).map(|nd| nd.opcode);
-                        note!(h.counts, "study another node: tree {} native node {} log node {} op {op:?} after {} (before: {p})", s.tree, st_top.map_or(0, |(_, n, _)| n), s.node, s.after);
-                    }
-                }
-                // Set to the log's: the frames below kept, the top one the log's.
-                let keep = st_len.min(fr_len - 1);
-                let mut nf: Vec<Frame> = interp.stack()[..keep].to_vec();
-                while nf.len() < fr_len - 1 {
-                    nf.push(Frame::default()); // frames the log has, not known natively
-                }
-                // A frame's file is the object file its trees are named from: for a global or
-                // semi-global tree, not the file the tree is in but one that names it (the
-                // object's own if it does, else any whose semi-global file it is).
-                let top_file = match tree_kind(s.tree) {
-                    TreeKind::Global => st_top.and_then(|(_, _, f)| f).or(o_file),
-                    TreeKind::SemiGlobal => {
-                        if o_file.is_some_and(|f| lib.file(f).semi == Some(file)) {
-                            o_file
-                        } else {
-                            // (none naming it: the tree's own file, as the C++ left it)
-                            (0..lib.files().len() as u32).map(FileId).find(|&f| lib.file(f).semi == Some(file)).or(Some(file))
-                        }
-                    }
-                    _ => Some(file),
-                };
-                nf.push(Frame {
-                    tree: Some(tree),
-                    node: s.node,
-                    params: s.params.clone(),
-                    locals: s.locals.clone(),
-                    stack_object: s.stack_object,
-                    file: top_file,
-                    ..Default::default()
-                });
-                interp.restore(nf);
-                // another stack than the one it had: no sleep of the old one (nor a saved
-                // Idle's waking) carries over
-                interp.sleep().wake();
-            }
-            if let Some(w) = env("REPLAY_WATCH_ID")
-                && let Ok(w) = w.parse::<i16>()
-                && let Some(o) = h.world.find_object(w)
-            {
-                let now = (o.data[2], o.data[3]);
-                let was = h.shown.0.insert(format!("watch {w}"), (now.0 as i32) << 16 | (now.1 as u16 as i32));
-                if was != Some((now.0 as i32) << 16 | (now.1 as u16 as i32)) {
-                    let prev = i.checked_sub(1).map(|k| &log.steps[k]);
-                    let ops: Vec<String> = h.world.objects().filter_map(|x| x.file).collect::<BTreeSet<_>>().into_iter().filter_map(|f| prev.and_then(|p| lib.tree(Some(f), p.tree).map(|t| lib.tree_at(t).nodes.get(p.node as usize).map(|n| (n.opcode, n.operand))))).flatten().map(|(op, o)| format!("op {op} {o:02x?}")).collect::<BTreeSet<_>>().into_iter().collect();
-                    println!("watch {w}: container/slot now {now:?} at tick {} step {i} ({}:{}; before it {:?}: {ops:?})", s.tick, s.tree, s.node, prev.map(|p| (p.tree, p.node, p.after)));
-                }
-            }
-            if same {
-                // The frame's own state as the native kept it, against the log's at the step.
-                let f = interp.top();
-                h.counts.note(if f.params == s.params { "frames: parameters the same natively" } else { "frames: parameters different (set to the log's)" });
-                h.counts.note(if f.locals == s.locals { "frames: locals the same natively" } else { "frames: locals different (set to the log's)" });
-                h.counts.note(if f.stack_object == s.stack_object {
-                    "frames: stack object the same natively"
-                } else {
-                    "frames: stack object different (set to the log's)"
-                });
-                if f.stack_object != s.stack_object && i > 0 {
-                    let p = &log.steps[i - 1];
-                    let own = p.sim == s.sim;
-                    let what = if !own {
-                        "another stack's step"
-                    } else if p.frame != s.frame {
-                        if p.frame < s.frame { "a call" } else { "a return" }
-                    } else {
-                        "a step of the frame"
-                    };
-                    note!(h.counts, "frames: stack object different, after {what}");
-                    if has("REPLAY_SHOW_SO") && h.shown.next("so", if has("REPLAY_SHOW_SO_NEAR") { 100_000 } else { 12 }) {
-                        let mut l = format!(
-                            "stack object: native {}, log {} at {}:{}; before: {}:{}->{} ({}) so {}->{}{}",
-                            f.stack_object,
-                            s.stack_object,
-                            s.tree,
-                            s.node,
-                            p.tree,
-                            p.node,
-                            p.after,
-                            if p.look != 0 { p.look as char } else { '-' },
-                            p.stack_object,
-                            p.stack_object_after,
-                            if own { "" } else { " (another stack)" }
-                        );
-                        if let Some(e) = &p.expr {
-                            l += &format!(
-                                " expr lhs {}/{} rhs {}/{} op {} lhs {}->{} rhs {}",
-                                e.lhs_scope, e.lhs_data, e.rhs_scope, e.rhs_data, e.op, e.lhs, e.lhs_after, e.rhs
-                            );
-                        }
-                        for v in &p.lookups {
-                            l += &format!(" [V {}/{}={} fl {}]", v.scope, v.data, v.value, v.flags);
-                        }
-                        if let Some(n) = f.tree.and_then(|t| lib.tree_at(t).nodes.get(p.node as usize)) {
-                            l += &format!(" node {}: op {} operand {:02x?}", p.node, n.opcode, n.operand);
-                        }
-                        if has("REPLAY_SHOW_SO_NEAR") && let Some(me_o) = h.world.find_object(o_id) {
-                            let (mx, my) = (me_o.x16 >> 4, me_o.y16 >> 4);
-                            let order = h.world.order().to_vec();
-                            for (k, &key) in order.iter().enumerate() {
-                                let o = h.world.get(key);
-                                if ((o.x16 >> 4) - mx).abs() <= 1 && ((o.y16 >> 4) - my).abs() <= 1 && o.id() != o_id {
-                                    l += &format!(" | #{k} {}: ({},{}) guid {:08x} p {}", o.id(), o.x16 >> 4, o.y16 >> 4, o.guid, o.person);
-                                }
-                            }
-                            l += &format!(" | me {o_id} at ({mx},{my})");
-                            if has("REPLAY_SHOW_SO_DATA") {
-                                for id in [102i16, 66, 57, 101, 109, 53, 139, 52, 65, 61, 62, 60, 56, 135, 136] {
-                                    if let Some(o) = h.world.find_object(id) {
-                                        println!("obj {id}: guid {:08x} level {} x16 {} y16 {} data {:?} defn {:?}", o.guid, o.level, o.x16, o.y16, &o.data[..o.data.len().min(80)], h.world.definition(o).map(|d| &d.fields[..d.fields.len().min(80)]));
+                        println!("   logged {logged:?}");
+                        for &(id, _) in logged.iter().take(1) {
+                            if let Some(o) = world.find_object(id) {
+                                let d = world.definition(o);
+                                println!("   {id}: file {:?} def {:?} field 6 {:?} field 7 {:?} tables {:?}", o.file.map(|f| file_name(lib, f)), o.definition, d.map(|d| d.field(6)), d.map(|d| d.field(7)), d.and_then(|d| o.file.and_then(|f| lib.interactions_of(d, f))));
+                                if let (Some(d), Some(f)) = (d, o.file) && let Some(t) = lib.interactions_of(d, f) {
+                                    for e in lib.table(f, t) {
+                                        println!("      action {} guard {} threshold {} flags {:x}", e.action, e.guard, e.autonomy_threshold, e.flags);
                                     }
                                 }
                             }
                         }
-                        if has("REPLAY_SHOW_SO_197") && let Some(o) = h.world.find_object(197) {
-                            l += &format!(" | tick {}: 197 container {} slot {} at ({},{})", s.tick, o.data[2], o.data[3], o.x16 >> 4, o.y16 >> 4);
-                            if let Some(c) = h.world.find_object(62) {
-                                l += &format!("; 62 at ({},{}) container {}", c.x16 >> 4, c.y16 >> 4, c.data[2]);
-                            }
+                    }
+                    let mut k = 0;
+                    while k < logged.len() && k < native.len() && logged[k] == native[k] {
+                        k += 1;
+                    }
+                    println!(
+                        "evaluation at tick {} by {}: {} logged, {} native, first difference at {k}: log {}/{}, native {}/{}",
+                        key.0,
+                        world.get(me).id(),
+                        logged.len(),
+                        native.len(),
+                        logged.get(k).map_or(-1, |x| x.0 as i32),
+                        logged.get(k).map_or(-1, |x| x.1 as i32),
+                        native.get(k).map_or(-1, |x| x.0 as i32),
+                        native.get(k).map_or(-1, |x| x.1 as i32)
+                    );
+                }
+            }
+        }
+
+        // Autonomy's scores ('A', 'B' records): each recomputed natively (interaction_score, the
+        // curves from STR# 501) from the motives and adverts it read; the person is the one whose
+        // evaluation it was (the Sim of that tick's evaluation: Sim 12's or Sim 237's motives).
+        if !bench_on && !log.scores.is_empty() {
+            let curves = score_curves(lib);
+            counts.add("autonomy: score curves from the global file", curves.len());
+            for br in &log.bases {
+                let Some(sr) = log.scores.iter().find(|x| x.tick == br.tick) else { continue };
+                let Some(any) = world.objects().find(|o| o.person && o.definition.is_none()) else { continue };
+                let got = interaction_score(&curves, None, any, &sr.motives);
+                counts.note(if got == br.score { "autonomy: a base score the same natively (no advert)" } else { "autonomy: a base score DIFFERENT" });
+            }
+            for sr in &log.scores {
+                // The person: the Sim whose motives these are (person data for the personality).
+                let mut person = None;
+                for o in world.objects() {
+                    if o.person && o.definition.is_none() && o.motives.len() >= 16 {
+                        let near = [5, 7, 9].iter().all(|&i| (o.motives[i] - sr.motives[i]).abs() <= 60.0);
+                        if near && person.is_none_or(|p: &crate::world::Object| (o.motives[5] - sr.motives[5]).abs() < (p.motives[5] - sr.motives[5]).abs()) {
+                            person = Some(o);
                         }
-                        if has("REPLAY_SHOW_SO_59") {
-                            let order = h.world.order().to_vec();
-                            let hits: Vec<String> = order.iter().enumerate().map(|(k, &key)| (k, h.world.get(key))).filter(|(_, o)| o.data.get(59) == s.params.first().or(p.params.first())).map(|(k, o)| format!("#{k} {}", o.id())).collect();
-                            l += &format!(" | params {:?} (before {:?}); field 59 = p0: {}", s.params, p.params, hits.join(" "));
-                        }
-                        if has("REPLAY_SHOW_SO_OBJECTS") {
-                            for id in [p.stack_object, p.stack_object_after, o_id] {
-                                if let Some(o) = h.world.find_object(id) {
-                                    l += &format!(
-                                        " | {id}: guid {:08x} person {} leader {} at ({},{},{}) container {} slot {} d0..12 {:?}",
-                                        o.guid, o.person, o.leader, o.x16 >> 4, o.y16 >> 4, o.level,
-                                        o.data.get(2).copied().unwrap_or(0), o.data.get(3).copied().unwrap_or(0),
-                                        &o.data[..o.data.len().min(12)]
+                    }
+                }
+                let Some(person) = person else {
+                    counts.note("autonomy: a score's person not found");
+                    continue;
+                };
+                let ads: Vec<Advert> = (0..16).map(|m| Advert { min: sr.adverts[m][1], delta: sr.adverts[m][2], personality: sr.adverts[m][0] as u16 }).collect();
+                let got = interaction_score(&curves, Some(&ads), person, &sr.motives);
+                counts.note(if got == sr.score {
+                    "autonomy: a score the same natively (bit for bit)"
+                } else if (got - sr.score).abs() < 1e-5 {
+                    "autonomy: a score the same natively but for the last bits"
+                } else {
+                    "autonomy: a score DIFFERENT"
+                });
+            }
+        }
+
+        // Routing: each Sim's logged step from one tile to the next ('P'), against the lot's walls
+        // and the doors' openings (Walls). Measured on the save's lot.
+        if !bench_on && !log.places.is_empty() {
+            // the walkers' bodies from the lot as it loaded (a walker's id may be another object's,
+            // or none, by the run's end)
+            let mut loaded = World::new(lib);
+            loaded.load_lot(club).expect("the lot");
+            if let Some(h) = house {
+                let _ = loaded.take_house_from(h);
+            }
+            let _ = routing(log, lib, world, &loaded, counts, &ids);
+        }
+
+        // The motives' own update (update_motives), on each person's logged motives ('N' records):
+        // the native update of one record against the next. A pair it does not reproduce is a change
+        // the scripts made, or a tick the original did not update it.
+        if has("REPLAY_SHOW_TUNING")
+            && let Some(gf) = lib.global_file()
+        {
+            for (id, t) in &gf.tuning {
+                for (name, v) in t {
+                    println!("tuning {id}: {name} = {}", g(*v as f64, 6));
+                }
+            }
+        }
+        if !bench_on && !log.motives.is_empty() {
+            let (rates, ok) = MotiveRates::read(lib);
+            if !ok {
+                counts.note("motives: a rate missing from the tuning tables");
+            }
+            let mut by_person: BTreeMap<i16, Vec<usize>> = BTreeMap::new();
+            for (k, m) in log.motives.iter().enumerate() {
+                by_person.entry(m.id).or_default().push(k);
+            }
+            for (id, recs) in &by_person {
+                let Some(o) = world.find_object(*id) else { continue };
+                if !o.person || o.person_data.len() < 7 || o.motives_b.len() < 16 {
+                    continue;
+                }
+                let mut last: [f32; 16] = o.motives_b[..16].try_into().unwrap();
+                for k in 1..recs.len() {
+                    let (prev, cur) = (&log.motives[recs[k - 1]], &log.motives[recs[k]]);
+                    let mut now = prev.motives;
+                    let mut copy = last;
+                    update_motives(&rates, &mut now, &mut copy, o.person_data[3] as i32, o.person_data[6] as i32, 12);
+                    let same = (0..16).all(|i| i == 3 || i == 13 || now[i] == cur.motives[i]);
+                    if !same && has("REPLAY_SHOW_MOTIVES") {
+                        let near = (0..16).filter(|&i| i != 3 && i != 13 && (now[i] - cur.motives[i]).abs() < 1e-3).count();
+                        if near == 14 {
+                            for (i, (&a, &b)) in now.iter().zip(&cur.motives).enumerate() {
+                                if i != 3 && i != 13 && a != b {
+                                    println!(
+                                        "motive {i} of {id} at tick {}: native {}, log {} (before {})",
+                                        cur.tick,
+                                        g(a as f64, 9),
+                                        g(b as f64, 9),
+                                        g(prev.motives[i] as f64, 9)
                                     );
                                 }
                             }
                         }
-                        println!("{l}");
                     }
-                }
-                f.params = s.params.clone();
-                f.locals = s.locals.clone();
-                f.stack_object = s.stack_object;
-            }
-            if interp.asleep() {
-                if has("REPLAY_SHOW_MADE") {
-                    println!("asleep: tick {} id {} tree {:#x} node {}", s.tick, o_id, s.tree, s.node);
-                }
-                h.counts.note("steps: the log ran a stack the native has asleep");
-                interp.sleep().wake();
-            }
-            h.step = i;
-            h.file_of_top = interp.stack().last().and_then(|f| f.file);
-            h.me = ok;
-            interp.reset_iterations();
-            let s0 = Instant::now();
-            let stepped = interp.step(&mut h);
-            // A Sim that spent money this turn (AlterBudget, not a test) shows it when its turn
-            // ends: the engine pushes its "display money balloon" over the yielding frame, an
-            // engine frame with no stack object, run in the same turn (docs/simulation.md, "The
-            // money balloon")
-            if stepped == Step::Yield
-                && h.world.get_live(ok).is_some_and(|o| o.spent)
-                && std::mem::take(&mut h.world.get_mut(ok).spent)
-                && let Some(t) = h.world.money_balloon_tree(ok)
-                && interp.push(lib, t, &[])
-            {
-                let f = interp.top();
-                f.engine = true;
-                f.stack_object = 0;
-                f.file = h.world.get(ok).file;
-                h.counts.note("frames: the money balloon pushed natively when a Sim that spent yields");
-            }
-            if let Some(b) = &mut h.bench {
-                let d = us(s0);
-                b.steps_us += d;
-                tick_us += d;
-                b.steps += 1;
-            }
-        }
-        motives_before(i16::MAX, &sim, &mut h.world, &mut motives_done);
-        if have_passes {
-            h.counts.note(if sim.stop_asked(&h.world) == (pass.stopped_at != 0) {
-                "passes: stopped (or not) as the log's"
-            } else {
-                "passes: DIFFERENT stop"
-            });
-        }
-        let stopped = have_passes && sim.stop_asked(&h.world);
-        sim.end_pass(&mut h.world, if have_passes { pass.stopped_at as i16 } else { 0 });
-        // the clock: the minute every 30 passes that ran to their end
-        h.world.clock_pass(stopped);
-        check_time_of_day(log, t, &h.world, &mut time_at, &mut h.counts);
-        // The persons' motives after the tick against the log's ('N' records), then set to the
-        // log's (what the scripts not native yet wrote).
-        while motive_at < log.motives.len() && log.motives[motive_at].tick < t {
-            motive_at += 1;
-        }
-        while motive_at < log.motives.len() && log.motives[motive_at].tick == t {
-            let m = &log.motives[motive_at];
-            motive_at += 1;
-            let Some(k) = h.world.find(m.id).filter(|&k| h.world.get(k).motives.len() >= 16) else {
-                h.counts.note("motives: a person not in the world");
-                continue;
-            };
-            let om = h.world.get(k).motives.clone();
-            let same = (0..16).all(|i| i == 3 || i == 13 || om[i] == m.motives[i]);
-            h.counts.note(if same {
-                "motives: the native motives as the log's after the tick (all but 3 and 13)"
-            } else {
-                "motives: DIFFERENT after the tick (set to the log's)"
-            });
-            if !same {
-                for (i, (&a, &b)) in om.iter().zip(&m.motives).enumerate() {
-                    if i != 3 && i != 13 && a != b {
-                        note!(h.counts, 
-                            "motives: different after the tick: person {} motive {i}{}",
-                            m.id,
-                            if (a - b).abs() < 1e-3 { " (by a last bit)" } else { "" }
-                        );
+                    counts.note(if same {
+                        "motives: an update the same natively (bit for bit, all but 3 and 13)"
+                    } else {
+                        "motives: a change not the update's (a script's, or no update)"
+                    });
+                    // An update step (energy moves only by the update): the copy is the motives after it.
+                    let update_step = now[motive::ENERGY] == cur.motives[motive::ENERGY] && cur.motives[motive::ENERGY] != prev.motives[motive::ENERGY];
+                    if update_step {
+                        last = cur.motives;
+                    }
+                    if !same && update_step {
+                        counts.note("motives: an update step with a script's change besides");
                     }
                 }
             }
-            if !same && has("REPLAY_SHOW_MOTIVES") && m.id == 237 && t >= 5020 && shown_motives < 6 {
-                shown_motives += 1;
-                let mut l = format!("tick {t} person {} (object #{}):", m.id, k.0);
-                for i in [5, 6, 7, 8, 9, 14, 15] {
-                    l += &format!("  m{i} native {} log {}", g(om[i] as f64, 6), g(m.motives[i] as f64, 6));
-                }
-                println!("{l}");
-            }
-            h.world.get_mut(k).motives[..16].copy_from_slice(&m.motives);
         }
-        if let Some(b) = &mut h.bench {
-            tick_us -= b.sync_us - sync_before; // the replay's own, inside the steps
-            if b.ticks.is_empty() || tick_us > b.ticks[b.worst_tick] {
-                b.worst_tick = b.ticks.len();
-            }
-            b.ticks.push(tick_us);
-        }
+        let bench = h.bench.take();
+        (std::mem::take(&mut h.counts), bench)
     }
-
-    let world = &h.world;
-    let counts = &mut h.counts;
-    if has("REPLAY_SHOW_FILES") {
-        let mut f: BTreeMap<String, i32> = BTreeMap::new();
-        for s in &log.steps {
-            let Some(o) = ids.get(&s.sim).and_then(|&id| world.find_object(id)) else { continue };
-            if !o.person {
-                continue;
-            }
-            if let Some((_, file)) = finder.find(log, s)
-                && tree_kind(s.tree) == TreeKind::Own
-            {
-                *f.entry(lib.file(file).path.clone()).or_default() += 1;
-            }
-        }
-        for (p, n) in &f {
-            println!("a lot Sim's own trees in {p}: {n} steps");
-        }
-    }
-    let bench_on = h.bench.is_some();
-    if !bench_on {
-        counts.add("steps: longest run with the native stack as the log's", best_streak);
-    }
-
-    // Autonomy's evaluations: a person's many guard checks in one tick (each at node 0 in the
-    // bottom frame of its checks), against the native candidates (autonomy_candidates), the
-    // persons' interactions and a version-11 table's first tree set aside.
-    if !bench_on {
-        let mut starts: BTreeMap<(u32, u32), Vec<usize>> = BTreeMap::new(); // (tick, stack) -> node-0 starts
-        for (i, s) in log.steps.iter().enumerate() {
-            if s.node == 0 {
-                starts.entry((s.tick, s.sim)).or_default().push(i);
-            }
-        }
-        for (key, v) in &starts {
-            if v.len() < 40 {
-                continue;
-            }
-            let mut per_frame: BTreeMap<u32, usize> = BTreeMap::new(); // the checks' bottom frame: the one with the most starts
-            for &i in v {
-                *per_frame.entry(log.steps[i].frame).or_default() += 1;
-            }
-            let mut bottom = (0u32, 0usize);
-            for (&f, &n) in &per_frame {
-                if n > bottom.1 || bottom.1 == 0 {
-                    bottom = (f, n);
-                }
-            }
-            let bottom = bottom.0;
-            let Some(me) = ids.get(&key.1).and_then(|&id| world.find(id)).filter(|&k| world.get(k).person) else { continue };
-            // An evaluation goes over the lot: many objects (a pie menu's checks are of one).
-            let over: BTreeSet<i16> = v.iter().map(|&i| &log.steps[i]).filter(|s| s.frame == bottom).map(|s| s.stack_object).collect();
-            if over.len() < 10 || per_frame[&bottom] < 20 {
-                continue;
-            }
-            let mut logged: Vec<(i16, u16)> = Vec::new();
-            for &i in v {
-                let s = &log.steps[i];
-                let Some(so) = world.find(s.stack_object) else { continue };
-                if s.frame != bottom || so == me {
-                    continue;
-                }
-                let o = world.get(so);
-                let tf = if o.person { o.file.and_then(|f| lib.file(f).semi) } else { o.file };
-                let prefix = tf.is_some_and(|f| lib.file(f).prefix_of.values().any(|&p| p == s.tree));
-                if !prefix {
-                    logged.push((s.stack_object, s.tree));
-                }
-            }
-            // The objects on the lot then (the log's list at that tick: the replay does not
-            // remove objects natively yet, as the paper girl leaves).
-            let mut present: BTreeSet<i16> = BTreeSet::new();
-            for l in &log.lists {
-                if l.tick <= key.0 {
-                    present = l.ids.iter().copied().collect();
-                }
-            }
-            let native: Vec<(i16, u16)> = autonomy_candidates(world, me)
-                .iter()
-                .filter(|c| present.is_empty() || present.contains(&c.id))
-                .map(|c| (c.id, c.interaction(lib).guard))
-                .collect();
-            counts.note(if logged == native {
-                "autonomy: an evaluation's candidates the same natively (objects and persons)"
-            } else {
-                "autonomy: an evaluation's candidates DIFFERENT"
-            });
-            counts.add("autonomy: candidates checked in evaluations", logged.len());
-            if logged != native && has("REPLAY_SHOW_AUTONOMY") {
-                let lo: BTreeSet<i16> = logged.iter().map(|x| x.0).collect();
-                let na: BTreeSet<i16> = native.iter().map(|x| x.0).collect();
-                let mut l = "objects only native:".to_string();
-                for i in na.difference(&lo) {
-                    let o = world.find_object(*i);
-                    l += &format!(
-                        " {i}({}, stack {})",
-                        o.and_then(|o| o.file).map_or("?".to_string(), |f| file_name(lib, f)),
-                        o.map_or(0, |o| o.stack.len())
-                    );
-                }
-                println!("{l}");
-                let mut l = "only logged:".to_string();
-                for i in lo.difference(&na) {
-                    l += &format!(" {i}");
-                }
-                println!("{l}");
-                if has("REPLAY_SHOW_CAND_FLAGS") {
-                    let mut by_flag: BTreeMap<(u32, bool), Vec<i16>> = BTreeMap::new();
-                    for c in autonomy_candidates(world, me).iter().filter(|c| present.is_empty() || present.contains(&c.id)) {
-                        let e = c.interaction(lib);
-                        by_flag.entry((e.flags, logged.contains(&(c.id, e.guard)))).or_default().push(c.id);
-                    }
-                    for ((f, inlog), ids) in by_flag {
-                        println!("   flags {f:08x} checked by the original {inlog}: {} candidates, e.g. {:?}", ids.len(), &ids[..ids.len().min(6)]);
-                    }
-                    println!("   logged {logged:?}");
-                    for &(id, _) in logged.iter().take(1) {
-                        if let Some(o) = world.find_object(id) {
-                            let d = world.definition(o);
-                            println!("   {id}: file {:?} def {:?} field 6 {:?} field 7 {:?} tables {:?}", o.file.map(|f| file_name(lib, f)), o.definition, d.map(|d| d.field(6)), d.map(|d| d.field(7)), d.and_then(|d| o.file.and_then(|f| lib.interactions_of(d, f))));
-                            if let (Some(d), Some(f)) = (d, o.file) && let Some(t) = lib.interactions_of(d, f) {
-                                for e in lib.table(f, t) {
-                                    println!("      action {} guard {} threshold {} flags {:x}", e.action, e.guard, e.autonomy_threshold, e.flags);
-                                }
-                            }
-                        }
-                    }
-                }
-                let mut k = 0;
-                while k < logged.len() && k < native.len() && logged[k] == native[k] {
-                    k += 1;
-                }
-                println!(
-                    "evaluation at tick {} by {}: {} logged, {} native, first difference at {k}: log {}/{}, native {}/{}",
-                    key.0,
-                    world.get(me).id(),
-                    logged.len(),
-                    native.len(),
-                    logged.get(k).map_or(-1, |x| x.0 as i32),
-                    logged.get(k).map_or(-1, |x| x.1 as i32),
-                    native.get(k).map_or(-1, |x| x.0 as i32),
-                    native.get(k).map_or(-1, |x| x.1 as i32)
-                );
-            }
-        }
-    }
-
-    // Autonomy's scores ('A', 'B' records): each recomputed natively (interaction_score, the
-    // curves from STR# 501) from the motives and adverts it read; the person is the one whose
-    // evaluation it was (the Sim of that tick's evaluation: Sim 12's or Sim 237's motives).
-    if !bench_on && !log.scores.is_empty() {
-        let curves = score_curves(lib);
-        counts.add("autonomy: score curves from the global file", curves.len());
-        for br in &log.bases {
-            let Some(sr) = log.scores.iter().find(|x| x.tick == br.tick) else { continue };
-            let Some(any) = world.objects().find(|o| o.person && o.definition.is_none()) else { continue };
-            let got = interaction_score(&curves, None, any, &sr.motives);
-            counts.note(if got == br.score { "autonomy: a base score the same natively (no advert)" } else { "autonomy: a base score DIFFERENT" });
-        }
-        for sr in &log.scores {
-            // The person: the Sim whose motives these are (person data for the personality).
-            let mut person = None;
-            for o in world.objects() {
-                if o.person && o.definition.is_none() && o.motives.len() >= 16 {
-                    let near = [5, 7, 9].iter().all(|&i| (o.motives[i] - sr.motives[i]).abs() <= 60.0);
-                    if near && person.is_none_or(|p: &crate::world::Object| (o.motives[5] - sr.motives[5]).abs() < (p.motives[5] - sr.motives[5]).abs()) {
-                        person = Some(o);
-                    }
-                }
-            }
-            let Some(person) = person else {
-                counts.note("autonomy: a score's person not found");
-                continue;
-            };
-            let ads: Vec<Advert> = (0..16).map(|m| Advert { min: sr.adverts[m][1], delta: sr.adverts[m][2], personality: sr.adverts[m][0] as u16 }).collect();
-            let got = interaction_score(&curves, Some(&ads), person, &sr.motives);
-            counts.note(if got == sr.score {
-                "autonomy: a score the same natively (bit for bit)"
-            } else if (got - sr.score).abs() < 1e-5 {
-                "autonomy: a score the same natively but for the last bits"
-            } else {
-                "autonomy: a score DIFFERENT"
-            });
-        }
-    }
-
-    // Routing: each Sim's logged step from one tile to the next ('P'), against the lot's walls
-    // and the doors' openings (Walls). Measured on the save's lot.
-    if !bench_on && !log.places.is_empty() {
-        // the walkers' bodies from the lot as it loaded (a walker's id may be another object's,
-        // or none, by the run's end)
-        let mut loaded = World::new(lib);
-        loaded.load_lot(club).expect("the lot");
-        if let Some(h) = house {
-            let _ = loaded.take_house_from(h);
-        }
-        let _ = routing(log, lib, world, &loaded, counts, &ids);
-    }
-
-    // The motives' own update (update_motives), on each person's logged motives ('N' records):
-    // the native update of one record against the next. A pair it does not reproduce is a change
-    // the scripts made, or a tick the original did not update it.
-    if has("REPLAY_SHOW_TUNING")
-        && let Some(gf) = lib.global_file()
-    {
-        for (id, t) in &gf.tuning {
-            for (name, v) in t {
-                println!("tuning {id}: {name} = {}", g(*v as f64, 6));
-            }
-        }
-    }
-    if !bench_on && !log.motives.is_empty() {
-        let (rates, ok) = MotiveRates::read(lib);
-        if !ok {
-            counts.note("motives: a rate missing from the tuning tables");
-        }
-        let mut by_person: BTreeMap<i16, Vec<usize>> = BTreeMap::new();
-        for (k, m) in log.motives.iter().enumerate() {
-            by_person.entry(m.id).or_default().push(k);
-        }
-        for (id, recs) in &by_person {
-            let Some(o) = world.find_object(*id) else { continue };
-            if !o.person || o.person_data.len() < 7 || o.motives_b.len() < 16 {
-                continue;
-            }
-            let mut last: [f32; 16] = o.motives_b[..16].try_into().unwrap();
-            for k in 1..recs.len() {
-                let (prev, cur) = (&log.motives[recs[k - 1]], &log.motives[recs[k]]);
-                let mut now = prev.motives;
-                let mut copy = last;
-                update_motives(&rates, &mut now, &mut copy, o.person_data[3] as i32, o.person_data[6] as i32, 12);
-                let same = (0..16).all(|i| i == 3 || i == 13 || now[i] == cur.motives[i]);
-                if !same && has("REPLAY_SHOW_MOTIVES") {
-                    let near = (0..16).filter(|&i| i != 3 && i != 13 && (now[i] - cur.motives[i]).abs() < 1e-3).count();
-                    if near == 14 {
-                        for (i, (&a, &b)) in now.iter().zip(&cur.motives).enumerate() {
-                            if i != 3 && i != 13 && a != b {
-                                println!(
-                                    "motive {i} of {id} at tick {}: native {}, log {} (before {})",
-                                    cur.tick,
-                                    g(a as f64, 9),
-                                    g(b as f64, 9),
-                                    g(prev.motives[i] as f64, 9)
-                                );
-                            }
-                        }
-                    }
-                }
-                counts.note(if same {
-                    "motives: an update the same natively (bit for bit, all but 3 and 13)"
-                } else {
-                    "motives: a change not the update's (a script's, or no update)"
-                });
-                // An update step (energy moves only by the update): the copy is the motives after it.
-                let update_step = now[motive::ENERGY] == cur.motives[motive::ENERGY] && cur.motives[motive::ENERGY] != prev.motives[motive::ENERGY];
-                if update_step {
-                    last = cur.motives;
-                }
-                if !same && update_step {
-                    counts.note("motives: an update step with a script's change besides");
-                }
-            }
-        }
-    }
-    let bench = h.bench.take();
-    Some((std::mem::take(&mut h.counts), bench))
 }
 
 /// The routing checks: the Sims' steps, the original's plans, its routing steps' slots, and the
