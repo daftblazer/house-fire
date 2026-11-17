@@ -354,6 +354,14 @@ impl Assets {
 }
 
 impl Plan {
+    /// Where an object stands for its shadow's shear: the middle of its footprint (the light set
+    /// is its leader's tile's, `Placement::lit_at`; the shear's place is the group's middle: the
+    /// club's booth, logged -0.352, -0.060, is -0.348, -0.071 from its middle and -0.392, -0.189
+    /// from its leader's tile).
+    pub fn place_of(&self, d: &Planned) -> [f32; 2] {
+        self.placements.iter().find(|p| p.leader == d.object).map_or(d.origin, |p| [p.x, p.y])
+    }
+
     /// The room a planned shadow falls in: the outdoors (0) for a wall piece's, else its place's.
     fn shadow_room(&self, d: &Planned) -> usize {
         if d.kind == Kind::WallPiece { 0 } else { self.lights.room_of_place(d.origin[0], d.origin[1]) }
@@ -368,7 +376,7 @@ impl Assets {
         let view_of = |d: &Planned| match (d.kind, plan.shadow_room(d)) {
             (Kind::WallPiece, _) => shadow_view(view, wall_shear(sun)),
             (_, 0) => shadow_view(view, sun_shear(sun)),
-            _ => shadow_view(view, light_shear(d.origin, &plan.lights.at_in(d.centre, d.origin).points)),
+            _ => shadow_view(view, light_shear(plan.place_of(d), &plan.lights.at_in(d.centre, d.origin).points)),
         };
         let mut by_room: Vec<Vec<Made>> = Vec::new();
         for (k, m) in self.engine_shadows(scene, caches, &plan.models, &plan.shadows, &view_of) {
@@ -969,6 +977,32 @@ mod tests {
         assert_eq!([v[2], v[6], v[10]], [1.0, -0.25, 0.0]);
         // the ground itself (x, y columns) and the translation are the camera's
         assert_eq!([v[0], v[5], v[3]], [1.0, 1.0, 0.0]);
+    }
+
+    #[test]
+    fn the_shears_are_the_logged_ones_of_both_lots_suns() {
+        let near = |a: [f32; 2], b: [f32; 2]| (0..2).all(|k| (a[k] - b[k]).abs() < 2e-3);
+        // the club's sun and home's, with the views' third columns the logs show
+        let (club, home) = ([-0.4190, 0.8903, -0.2], [0.8223, -0.2109, -0.5285]);
+        assert!(near(wall_shear(club), [-0.6984, 1.4839]));
+        assert!(near(sun_shear(club), [-0.5086, 1.0806]));
+        assert!(near(wall_shear(home), [0.8855, -0.2271]));
+        assert!(near(sun_shear(home), [0.7188, -0.1843]));
+        // a lone light straight above the object shears nothing; one to the side shears away from it
+        let light = |at: [f32; 3]| housefire::lighting::Source { at, reach: 3.0, colour: [1.0; 3] };
+        assert_eq!(light_shear([5.0, 5.0], &[light([5.0, 5.0, 2.5])]), [0.0, 0.0]);
+        let s = light_shear([5.0, 5.0], &[light([3.0, 5.0, 2.5])]);
+        assert!(s[0] > 0.0 && s[1].abs() < 1e-6);
+        assert_eq!(light_shear([5.0, 5.0], &[]), [0.0, 0.0]);
+    }
+
+    #[test]
+    fn a_mesh_lying_on_the_ground_is_a_covering() {
+        let at = |z: i16| crate::frame::Vertex { position: [0, 0, z, 0], uv: [0, 0], colour: [0; 4], normal: [0; 4] };
+        let scale: Mat3x4 = [0.01, 0.0, 0.0, 0.0, 0.0, 0.01, 0.0, 0.0, 0.0, 0.0, 0.01, 0.018];
+        assert!(lies_flat(&[at(0), at(0)], &scale));
+        assert!(!lies_flat(&[at(0), at(100)], &scale));
+        assert!(!lies_flat(&[], &scale));
     }
 
     #[test]
