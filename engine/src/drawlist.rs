@@ -185,7 +185,9 @@ pub fn object_draws(models: &Models, placements: &[Placement], guids_of: impl Fn
 fn object_models<'a>(models: &'a Models, r: &ObjResources) -> impl Iterator<Item = (u32, usize)> + 'a {
     // an object with no model and no dataset has only the placeholder record (`tom_debug`) as its
     // resources' first word: the original draws nothing for it
-    let placeholder = r.model == 0 && r.dataset == 0;
+    // an object whose resources name no dataset (ResData flag 0x80000000: the parked scooter's
+    // vehicle row, a model of `models.arc` alone) is not drawn with the lot's objects
+    let placeholder = r.dataset == 0;
     let named = [r.model, r.key].into_iter().find(|&id| models.parts.record_by_id(id).is_some());
     let ids: Vec<u32> = match named {
         _ if placeholder => Vec::new(),
