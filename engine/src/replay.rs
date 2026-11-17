@@ -226,6 +226,9 @@ struct ReplayHost<'l> {
     me: ObjectKey,
     /// The log's step being replayed.
     step: usize,
+    /// What each person was last told to look towards (LookTowards at the stack object): the
+    /// tick and the place of the object, sixteenths.
+    looks: HashMap<i16, (u32, (i32, i32))>,
     bench: Option<Bench>,
     file_of_top: Option<FileId>,
     /// The log's steps of the checks a primitive runs (the interaction queue's), in order.
@@ -1409,6 +1412,13 @@ impl Host for ReplayHost<'_> {
             // wrote are checked through the next step's lookups).
             return got;
         }
+        if n.opcode == 22 && n.operand16(0) == 2 && self.world.get(me).person {
+            // LookTowards the stack object: the person's follower is given a route that turns
+            // it to face the object (`Replay::turn_followers`); the log's result taken
+            if let Some(o) = self.world.find_object(interp.top().stack_object) {
+                self.looks.insert(me_id, (s.tick, (o.x16, o.y16)));
+            }
+        }
         if n.opcode == 0 {
             // Idle
             let was = interp.sleep().woke();
@@ -2169,7 +2179,8 @@ struct Heading {
     /// The person it walks: the log's, else the one that stood where it did at its first frame.
     person: Option<i16>,
     angle: f32,
-    plan: Option<usize>,
+    /// The points of the route it follows, sixteenths.
+    route: Vec<(i32, i32)>,
     state: u32,
 }
 
@@ -2509,6 +2520,7 @@ impl<'l> Replay<'l> {
             log: Rc::clone(&log_rc),
             me: ObjectKey(0),
             step: 0,
+            looks: HashMap::new(),
             bench,
             file_of_top: None,
             nested: Vec::new(),
@@ -3902,13 +3914,18 @@ impl<'l> Replay<'l> {
                     heading.angle = direction_angle(self.h.world.get(key).facing());
                 }
                 direction = Some(facing_direction(heading.angle));
-                // the plan it starts: the latest that begins where it stands
+                // the route it starts: to face what its person was told to look towards this
+                // tick (the goal twice, then the object's place), else the latest plan that
+                // begins where it stands
                 let start = ((place.0 + 0.5) as i32, (place.1 + 0.5) as i32);
                 let upto = log.plans.partition_point(|p| p.tick <= f.tick);
-                heading.plan = log.plans[..upto].iter().rposition(|p| p.points.first() == Some(&start));
+                heading.route = match self.h.looks.get(&heading.person.unwrap_or(-1)) {
+                    Some(&(tick, target)) if tick == f.tick => vec![start, start, target],
+                    _ => log.plans[..upto].iter().rfind(|p| p.points.first() == Some(&start)).map(|p| p.points.clone()).unwrap_or_default(),
+                };
             }
             heading.state = f.after.state;
-            let points = heading.plan.map(|p| &log.plans[p].points[..]).unwrap_or(&[]);
+            let points = &heading.route[..];
             let leg = |i: usize| (points[i].0 - points[i - 1].0, points[i].1 - points[i - 1].1);
             let way = match f.before.state {
                 5 => Some((f.before.point.0 - place.0, f.before.point.1 - place.1)),
@@ -3930,6 +3947,12 @@ impl<'l> Replay<'l> {
                 *slot = d;
             }
         }
+    }
+
+    /// The route a follower is on, as the run has it (sixteenths): the engine's list for the
+    /// study of the original's ('follower_lists').
+    pub fn follower_route(&self, follower: u32) -> Option<&[(i32, i32)]> {
+        self.headings.get(&follower).map(|h| &h.route[..]).filter(|r| !r.is_empty())
     }
 
     /// The world as the run has it now.

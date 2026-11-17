@@ -1034,28 +1034,26 @@ Route_Run's own write at the primitive's end (8022081C, eight-way from the plan'
 not made: nothing in the club's run needs it.
 
 Natively `Replay::turn_followers` reads the log's follower frames ('Z', with the person's id: -1
-in this log, so the person is the one standing where the follower does at its first frame) and
-the plans (the latest one that starts where the route starts; the leg from the place on the
-line), keeps an angle per follower, and writes data 1 of the person after each frame. The study
-`LOCKSTEP_DIRECTIONS=1` (lockstep, `directions.rs`; LOCKSTEP_DIRECTIONS_TRACE=id for one
-person's changes) compares every person's data 1 at the end of every tick with the log's latest
-'_' record. Club-live log (club-d3000c, 9,420 ticks, 9 persons): 41,494 person-ticks the same,
-43,286 DIFFERENT. Every change a planned walk makes is the log's, tick for tick (Sim 172 at 7,
-19, 31, 58, 65, 75, 78; Sim 171 at 30; Sim 177 at 7 and 19; Sim 178 at 3557): the walks'
-turns, the quantising and the restart from a stale angle all fit. The rest is one kind: six
-routes of the dancers that have no plan in the log ('G': Route_Plan's return; 172 at tick 86,
-177 at 73, 174 at 4, 171 at 41, 178 at 156 and 3584), turn-only routes (the Sim already at its
-goal: state 1 to 3 at once and 12 to 45 frames of turning in state 3; the final directions 0, 1,
-6, 1, 1, 0 are where the logged '_' ends). Their list is not logged, so the angle stays and the
-person keeps the direction it had (the persons' tails after the first such route, 5 of the 9,
-are the 43,286). Their last leg is the approach of a plan that starts at its goal: one tile
-(16) from the Sim in the direction of the request's +40 (`planner::point_after_goal`, kind -3,
-the 'h' record's third word: 0 or 1 for Sim 178's logged plans, (-16, +16) from (360, 312) and
-(-16, 0) from (360, 328) towards object 57 at (344, 328): the eight-way direction from the Sim
-to it), and the planner is not called for them, so there is no 'h' to read. To close them: log
-the follower's list (+12) in 'Z', or find what the dancers' routing step passes (tree 0x100d node
-1, GotoRoutingSlot on the dance floor, id 135, slots 5, 7, 9, 14) and compute the approach
-natively.
+in this log, so the person is the one standing where the follower does at its first frame),
+keeps an angle per follower, and writes data 1 of the person after each frame. The route a
+follower starts is one of two: the latest logged plan that begins where it stands (the leg from
+the place on the line), or, when its person was told that tick to look towards its stack object
+(LookTowards, opcode 22, operand 2; the dance floor's "Choose dance orientation", tree 0x101e:
+SetToNext picks a tile object of the floor, then LookTowards), the turn-only route [goal, goal,
+the object's place], which the original builds without calling the planner (no 'G'): state 1 to
+3 at once, then 12 to 45 frames of turning in state 3. The engine builds that list from the
+step's stack object (`ReplayHost::looks`), not from the log. The study `LOCKSTEP_DIRECTIONS=1`
+(lockstep, `directions.rs`; LOCKSTEP_DIRECTIONS_PERSONS=1 by person, LOCKSTEP_DIRECTIONS_TRACE=id
+for one person's changes) compares every person's data 1 at the end of every tick with the
+log's latest '_' record, and the engine's lists with the ':' records (the follower's list
++12). Club-live log (club-d3000d, 9,420 ticks, 9 persons): 84,780 person-ticks the same,
+0 DIFFERENT (the never-written baseline: 31,727 different of 84,780 on the earlier log); the
+follower lists: 15 the same, 0 DIFFERENT. Every change is the log's tick for tick: the walks'
+turns (Sim 172 at 7, 19, 31, 58, 65, 75, 78), the quantising, the restart from a stale angle,
+and the six turn-only routes (172 at tick 86, 177 at 73, 174 at 4, 171 at 41, 178 at 156 and
+3584) with their final directions 0, 1, 6, 1, 1, 0. Not covered by the club run: a person
+whose route has neither a logged plan nor a LookTowards (it keeps its direction), and
+Route_Run's own write at the primitive's end (8022081C).
 
 **A routing primitive, natively** (`routing::walk_frames`, `routing_return_tick`). From its
 walker's start: the whole walk frame after frame, the turn, one frame more, and the return on the

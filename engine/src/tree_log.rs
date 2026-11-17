@@ -676,6 +676,9 @@ pub struct ResAskRec {
     pub caller: u32,
 }
 
+/// A follower's list after a frame (the ':' record): the tick, the follower, its points (x, y).
+pub type FollowerList = (u32, u32, Vec<(u32, u32)>);
+
 /// A walker's step ('Z', Route_Follow 800AE0A4): its follower and its state before and after.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct FollowRec {
@@ -805,7 +808,7 @@ pub struct Log {
     /// The steps logged before each tick's 'K' record (tick n's steps are from `tick_steps[n - 1]`).
     pub tick_steps: Vec<usize>,
     /// A follower's list of points when it changed, after a walker's step (':'): (tick, follower, points).
-    pub follower_lists: Vec<(u32, u32, Vec<(u32, u32)>)>,
+    pub follower_lists: Vec<FollowerList>,
     pub scores: Vec<ScoreRec>,
     pub bases: Vec<BaseRec>,
     pub choice_lists: Vec<ChoiceListRec>,
