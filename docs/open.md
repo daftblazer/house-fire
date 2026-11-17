@@ -38,12 +38,17 @@
   97.84%, rigid 97.99%): floors 5,487 px off (trilinear LOD, the porch near black in the
   reference, birch leaves 1,091 px darker with no shadow draw after them: unmeasured). The
   terrain's second layer is the terrain shader's own map (PTTEXMTX0 from `Shader::position_uv`).
-- **The engine mode's frame at 94.09% rigid, 95.60% whole** (floors 96.22%, shadows 91.76%) (render-check HF_ENGINE=1 --card,
-  frame 2400, after L1-L3 and S1; log mode 97.63 / 88.89%). Left: 15 object meshes' light sets
-  (below); the money trunk 678 and the cheat gnome 78 drawn but not by the original (flags,
-  fields, selectors, ResData, lists, level ruled out; the draw records' 72 bounds bytes
-  undecoded); 3 extra wall pieces at the screen's top edge (culling). Still from the log in
-  that mode: the camera ('c' parameters), the lot choice, the clock passes.
+- **The engine mode's frame at 97.21% whole** (render-check HF_ENGINE=1 --card, frame 2400,
+  after E1: rigid 97.02%, floors 97.35%, shadows 95.90%; log mode 97.47%). Stuck after two
+  packets each (W1, E1): the shadows' shears (SHADOW_SHEAR_OBJECT 1.144, _WALL 0.9286 fitted at
+  one clock; the 75 indoor objects' unsheared; ruled out: nearest/strongest light, sums of the
+  four directions by rank, reach, colour or distance, per-slot mixes; draws on one light set
+  share one shear; no other log has draw records at another clock) and the money trunk 678 /
+  gnome 78 px drawn but not by the original (no screen box separates the trunk, x 0.0617,
+  from the leftmost drawn object, 0.0618; flags, fields, selectors, ResData, lists, level ruled
+  out). Also left: the outer lot 619, window glass 226, counter 158, wall caps 127, lattice door
+  108, aquarium 105, birch 123; 15 object meshes' light sets (below). Still from the log: the
+  camera ('c' parameters), the lot choice, the clock passes.
 - **The engine's Sims** (S1): drawn from the engine's poses (Sims' own pixels 88.08%, log mode
   88.50%; `view`'s shot 99.99% of render-check's). Still from the log: the two 128x128 run-time
   textures and palettes (`rletextu.arc` composition not read), the cook's heading (the
