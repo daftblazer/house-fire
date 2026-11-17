@@ -501,11 +501,6 @@ impl Quantizer {
         from_space(&self.inverse, self.palette[i])
     }
 
-    /// The squared distance of a colour to palette entry `i`, in the transform's space.
-    pub fn distance_to(&self, rgb: [u8; 3], i: usize) -> f32 {
-        distance(self.palette[i], to_space(&self.forward, rgb))
-    }
-
     /// The palette index nearest a colour (801B8664, without its cache of answers): by a linear
     /// search of a small palette, else by the octree's cell the colour falls in and the
     /// palette entries of that cell's parent.
