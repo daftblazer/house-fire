@@ -104,7 +104,7 @@ log has for each Sim ('`' and '{'), is made by the composer `Sim_SetModels` (800
    indices go in the console's C8 tiles (8 by 4).
 
 Checked against the log of home-a39.log (`LOCKSTEP_SIM_TEXTURES=1`, `lockstep`, the study
-`engine/src/bin/lockstep/sim_textures.rs`): the cook (7 layers) and the male (the made Sim:
+`engine/src/bin/lockstep/sim_textures.rs`): the cook (7 layers) and the male (the made Sim,
 8 layers) are each the logged image and palette byte for byte: 0 of 16,384 texels and
 0 of 256 palette entries differ (141 and 192 colours; the log's entries past them are 0). The only
 other log with the records, home-a40.log, has the same two Sims (the same result); the club logs
