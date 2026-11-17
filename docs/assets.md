@@ -1907,16 +1907,15 @@ alpha written is then the fragment's own.
 The '}' records (home-a37; the GX calls a draw method makes itself, `Log::gx_calls`) say the same
 as the state records and nothing more: before each batch SetColorUpdate(1), SetAlphaUpdate(1),
 SetDstAlpha(on, 0x7F) for the floors; (1, 1, on 0) for the shadow draws; (0, 1, on 0) for the
-mask; then back. No call separates the walls' shadows from the trees', so the stacking guess of
-R2a (shadows ignoring the constant) is not explained by them, and it is not needed: the
-reference frames come from the recomp's renderer, which does not implement the constant
-destination alpha at all (`gcn-recomp/runtime/gx/render_vk.cpp` reads BP 0x41 only: the draw's
-own alpha is written, blended by the colour's factors, and read back by the shadows). With the
-constant not applied (`HONOUR_CONSTANT_DST_ALPHA` false in scene.rs; the renderer still supports
-it, for a target of the hardware's own picture) the floors write their vertex colours' alpha
-(0x80, half) and the shadows' blend reads that: floors 81.73 -> 82.54%, shadows 62.41 ->
-67.61%, with no stacking fit. Left fitted (`shadow_of`): the shadows' polygon texture (their
-alpha) is not applied, flat black at the light set's 127/255 (67.61%; applied 66.57%).
+mask; then back. The constant is the stencil: a floor leaves 0x7F, the first shadow over it
+darkens it by half and leaves 0, so overlapping shadows do not stack. gcn-recomp's renderers did
+not implement the constant (BP 0x42); they do now (the constant is the fragment's alpha, stored
+unblended; where the colour blend reads the fragment's alpha, the blended objects drawn after the
+last batch, the EFB keeps its alpha instead: exact would take dual-source blending, which their
+coverage attachment rules out). Against the reference frames made so (work/frames, from
+home-a40.log, the same log as home-a39): shadows 67.73 -> 86.59%, floors 82.57 -> 85.51%, whole
+frame 86.77 -> 88.89% (frame 2400), with no stacking fit. Left fitted (`shadow_of`): the shadows' polygon texture (their
+alpha) is not applied, flat black at the light set's 127/255 (86.59%, the same with the texture applied).
 
 The terrain's second layer: the '}' records give the texgen (SetTexCoordGen2: coordinate 1,
 2x4 matrix from the position, matrix 0x1E, one a floor strip) and the one load of
