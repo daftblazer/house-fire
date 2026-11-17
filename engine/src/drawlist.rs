@@ -60,6 +60,9 @@ pub struct Draw {
     /// The place on the lot (x, y, in tiles) of what the draw is part of: an object's, a wall
     /// piece's; the lot's own models, the origin. What the lights rank the draw by.
     pub origin: [f32; 2],
+    /// The place (x, y, in tiles) of the middle of the part's mesh at `world`: what the lights
+    /// of an object's part are found at (`origin` for a draw that is not an object's part).
+    pub centre: [f32; 2],
     /// The object's leader id (0 for a wall piece or the lot's own model).
     pub object: i16,
     /// The shader (`shaders.arc` id) the part is drawn with in place of its sub-model's own: a
@@ -117,6 +120,23 @@ pub fn world_of(m: &Mat4, scale: f32) -> [f32; 12] {
         out[r * 4 + 3] = m[12 + r];
     }
     out
+}
+
+/// The place (x, y) of the middle of a part's mesh (the mean of its vertices, in the record's
+/// units) at `world`; the world's own place for a mesh with no 16-bit positions (the cursors').
+pub fn mesh_centre(part: &Part<'_>, world: &[f32; 12]) -> [f32; 2] {
+    let (b, n) = (&part.batch.positions, part.batch.count);
+    if n == 0 || b.len() != 8 * n {
+        return [world[3], world[7]];
+    }
+    let mut sum = [0.0f32; 3];
+    for v in b.as_chunks::<8>().0 {
+        for (c, s) in sum.iter_mut().enumerate() {
+            *s += f32::from(i16::from_be_bytes([v[2 * c], v[2 * c + 1]]));
+        }
+    }
+    let m = sum.map(|s| s / n as f32);
+    [0, 1].map(|r| world[4 * r] * m[0] + world[4 * r + 1] * m[1] + world[4 * r + 2] * m[2] + world[4 * r + 3])
 }
 
 /// The part of the screen (0 to 1 across and down) a part's place may be in for the original to
@@ -192,7 +212,8 @@ fn object_parts(models: &Models, placements: &[Placement], guids_of: impl Fn(i16
                 // the root's own 3 x 3 is a pure turn: the record's scale is applied with the
                 // bones' (`idle_bones`) or here
                 let scale = if bones.is_some() { 1.0 } else { rec.scale };
-                out.push((Draw { kind: kind_of(&part), part: part.index, world: world_of(&m, scale), origin: [p.x, p.y], object: p.leader, shader: None, edge: None }, bones.is_none()));
+                let world = world_of(&m, scale);
+                out.push((Draw { kind: kind_of(&part), part: part.index, world, origin: [p.x, p.y], centre: mesh_centre(&part, &world), object: p.leader, shader: None, edge: None }, bones.is_none()));
             }
         }
     }
@@ -222,7 +243,7 @@ fn object_models<'a>(models: &'a Models, r: &ObjResources) -> impl Iterator<Item
 pub fn lot_draws(models: &Models, outer_lot: u32) -> Vec<Draw> {
     let Some(record) = models.parts.record_by_id(outer_lot) else { return Vec::new() };
     let scale = models.parts.record(record).scale;
-    models.parts.parts_of(record).map(|part| Draw { kind: Kind::LotList, part: part.index, world: world_of(&IDENTITY, scale), origin: [0.0; 2], object: 0, shader: None, edge: None }).collect()
+    models.parts.parts_of(record).map(|part| Draw { kind: Kind::LotList, part: part.index, world: world_of(&IDENTITY, scale), origin: [0.0; 2], centre: [0.0; 2], object: 0, shader: None, edge: None }).collect()
 }
 
 /// The wall models' sub-model that is not drawn in the lot's view (its hash, one of the two
@@ -316,7 +337,7 @@ pub fn wall_shadows(models: &Models, pieces: &[WallPiece], window_of: impl Fn([f
         };
         let world = world_of(&matrix, models.parts.record(record).scale);
         for part in models.parts.parts_of(record) {
-            out.push(Draw { kind: Kind::WallPiece, part: part.index, world, origin: [p.x, p.y], object: 0, shader: None, edge: None });
+            out.push(Draw { kind: Kind::WallPiece, part: part.index, world, origin: [p.x, p.y], centre: [p.x, p.y], object: 0, shader: None, edge: None });
         }
     }
     out
@@ -342,7 +363,7 @@ pub fn diagonal_shadows(models: &Models, walls: &crate::routing::Walls, fences: 
             let scale = models.parts.record(record).scale;
             let (cx, cy) = (x as f32 + 0.5, y as f32 + 0.5);
             for part in models.parts.parts_of(record) {
-                out.push(Draw { kind: Kind::WallPiece, part: part.index, world: world_of(&wall_matrix(cx, cy, angle), scale), origin: [cx, cy], object: 0, shader: None, edge: None });
+                out.push(Draw { kind: Kind::WallPiece, part: part.index, world: world_of(&wall_matrix(cx, cy, angle), scale), origin: [cx, cy], centre: [cx, cy], object: 0, shader: None, edge: None });
             }
         }
     }
@@ -384,7 +405,7 @@ pub fn wall_draws(models: &Models, pieces: &[WallPiece], patterns: &[u32], eye: 
             let Some(record) = models.parts.record_by_id(crate::shader::name_hash(name)) else { continue };
             let rec = models.parts.record(record);
             for part in models.parts.parts_of(record) {
-                out.push(Draw { kind: Kind::WallPiece, part: part.index, world: world_of(&lamps::object_matrix(p.x, p.y, p.angle), rec.scale), origin: [p.x, p.y], object: 0, shader: None, edge: Some(edge_of(p, true)) });
+                out.push(Draw { kind: Kind::WallPiece, part: part.index, world: world_of(&lamps::object_matrix(p.x, p.y, p.angle), rec.scale), origin: [p.x, p.y], centre: [p.x, p.y], object: 0, shader: None, edge: Some(edge_of(p, true)) });
             }
             continue;
         }
@@ -399,7 +420,7 @@ pub fn wall_draws(models: &Models, pieces: &[WallPiece], patterns: &[u32], eye: 
             // beside it (caps, 5 and 6 vertices) with their own
             let face = part.batch.list.is_some() && part.batch.count >= WALL_FACE_VERTICES;
             let shader = face.then(|| patterns.get(usize::from(p.pattern)).copied()).flatten();
-            out.push(Draw { kind: Kind::WallPiece, part: part.index, world, origin: [p.x, p.y], object: 0, shader, edge: Some(edge_of(p, false)) });
+            out.push(Draw { kind: Kind::WallPiece, part: part.index, world, origin: [p.x, p.y], centre: [p.x, p.y], object: 0, shader, edge: Some(edge_of(p, false)) });
         }
     }
     out
@@ -451,7 +472,7 @@ pub fn diagonal_draws(models: &Models, walls: &crate::routing::Walls, fences: &[
                 for part in models.parts.parts_of(record).filter(|q| q.batch.hash != UNDRAWN_WALL_SUB) {
                     let face = part.batch.list.is_some() && part.batch.count >= WALL_FACE_VERTICES;
                     let ends = [[end0.0 as f32, end0.1 as f32], [end1.0 as f32, end1.1 as f32]];
-                    out.push(Draw { kind: Kind::WallPiece, part: part.index, world, origin: place, object: 0, shader: face.then_some(pattern).flatten(), edge: Some(ends) });
+                    out.push(Draw { kind: Kind::WallPiece, part: part.index, world, origin: place, centre: place, object: 0, shader: face.then_some(pattern).flatten(), edge: Some(ends) });
                 }
             }
         }
@@ -560,7 +581,7 @@ mod tests {
     fn draw(object: i16, z: f32) -> Draw {
         let mut world = [0.0; 12];
         world[11] = z;
-        Draw { kind: Kind::ObjectPart, part: (0, 0, 0), world, origin: [0.0; 2], object, shader: None, edge: None }
+        Draw { kind: Kind::ObjectPart, part: (0, 0, 0), world, origin: [0.0; 2], centre: [0.0; 2], object, shader: None, edge: None }
     }
 
     #[test]

@@ -218,10 +218,10 @@ fn main() -> ExitCode {
             let mut counted = std::collections::BTreeSet::new();
             for m in &made {
                 let d = &plan.draws[m.from];
-                let Some(o) = oracle.iter().find(|o| (0..12).all(|i| (o.0[i] - m.draw.world[i]).abs() < 1e-4 * if i % 4 == 3 { 1.0 } else { 0.05 })) else { continue };
+                let Some(o) = oracle.iter().find(|o| o.3 == scene.meshes[m.draw.mesh.0 as usize].vertices.len() && (0..12).all(|i| (o.0[i] - m.draw.world[i]).abs() < 1e-4 * if i % 4 == 3 { 1.0 } else { 0.05 })) else { continue };
                 let Lighting::Lit { points: logged, .. } = &o.1 else { continue };
                 let Lighting::Lit { points: ours, .. } = engine_scene::lighting_for(&plan.lights.of(d), &view) else { continue };
-                if !counted.insert((d.origin[0].to_bits(), d.origin[1].to_bits(), d.edge.map(|e| (e[1][0].to_bits(), e[1][1].to_bits())))) { continue; }
+                if !counted.insert((d.centre[0].to_bits(), d.centre[1].to_bits(), d.edge.map(|e| (e[1][0].to_bits(), e[1][1].to_bits())))) { continue; }
                 let places = |ps: &[frame::Point]| { let mut k: Vec<String> = ps.iter().map(|p| format!("{:.1?}", to_world(p.position))).collect(); k.sort(); k };
                 let (l, e) = (places(logged), places(&ours));
                 let kind = if d.edge.is_some() { "wall or fence" } else { "object" };
@@ -230,8 +230,29 @@ fn main() -> ExitCode {
                     t.0 += 1;
                 } else {
                     t.1 += 1;
-                    println!("LD {kind} {} at {:?} edge {:?}\n    log {l:?}\n    eng {e:?}", m.info.model, d.origin, d.edge);
+                    // which whole-tile grid points near the place give the log's set
+                    let hits: Vec<(i32, i32)> = (-3..=3).flat_map(|dx| (-3..=3).map(move |dy| (dx, dy))).map(|(dx, dy)| (d.origin[0].round() as i32 + dx, d.origin[1].round() as i32 + dy)).filter(|&(x, y)| {
+                        let Lighting::Lit { points, .. } = engine_scene::lighting_for(&plan.lights.at_in(d.centre, [x as f32, y as f32]), &view) else { return false };
+                        places(&points) == l
+                    }).collect();
+                    println!("LD grid points giving the log's set: {hits:?}");
+                    println!("LD {kind} {} ({} vertices) at {:?} centre {:.3?} edge {:?}\n    log {l:?}\n    eng {e:?}", m.info.model, scene.meshes[m.draw.mesh.0 as usize].vertices.len(), d.origin, d.centre, d.edge);
                 }
+            }
+            // the windows' meshes one by one (the log's set found by vertex count and matrix): `LW`
+            for m in made.iter().filter(|m| m.info.model.contains("Window") && !m.info.model.contains("Door")) {
+                let n = scene.meshes[m.draw.mesh.0 as usize].vertices.len();
+                let w = &m.draw.world;
+                let near = |a: &[f32; 12]| (0..12).all(|i| (a[i] - w[i]).abs() <= 1e-4 * if i % 4 == 3 { 1.0 } else { 0.05 });
+                let log = oracle.iter().find(|o| o.3 == n && near(&o.0)).map_or("none".to_string(), |o| match &o.1 {
+                    Lighting::Lit { ambient, directionals, .. } => format!("amb {:.3} sun {}", ambient[0], !directionals.is_empty()),
+                    _ => "vertex colours".into(),
+                });
+                let vs = &scene.meshes[m.draw.mesh.0 as usize].vertices;
+                let mean: [f32; 3] = [0, 1, 2].map(|c| vs.iter().map(|v| f32::from(v.position[c])).sum::<f32>() / n as f32);
+                let nrm: [f32; 3] = [0, 1, 2].map(|c| vs.iter().map(|v| f32::from(v.normal[c])).sum::<f32>() / n as f32);
+                let at: [f32; 3] = [0, 1, 2].map(|r| w[4 * r] * mean[0] + w[4 * r + 1] * mean[1] + w[4 * r + 2] * mean[2] + w[4 * r + 3]);
+                println!("LW {} {n} at {:?} sub {} rows {:.2?} {:.2?} {:.2?} mean {:.0?} normal {:.0?} centre {:.3?} log {log}", m.info.model, plan.draws[m.from].origin, plan.draws[m.from].part.2, [w[0], w[1], w[2]].map(|x| x * 1000.0), [w[4], w[5], w[6]].map(|x| x * 1000.0), [w[8], w[9], w[10]].map(|x| x * 1000.0), mean, nrm, at);
             }
             for (kind, (same, differ)) in tally {
                 println!("LSUM {kind}: same {same}, differ {differ}");

@@ -2262,19 +2262,34 @@ What C3 found (frame 2400, pixels of the rigid draws beyond 4):
 
 What is left, in pixels of the 10,725 beyond (frame 2400, 2401 within 15):
 
-- The windows' objects (`_NEW_Single_Hung_Window`, 4,124 pixels; ~2,394 beyond): not the wall's
-  form or its depth (L2: the pixel (225, 37) of 2400, a frame line, is drawn by the engine, not
-  hidden by the wall, at (65, 65, 81) where the log's is (254, 254, 226)). It is the light set: the
-  log lights each window's three meshes (10, 52 and 53 vertices, the engine's sub-models 2, 1 and 0,
-  the layer flags 72, 136 and 8) with one of two sets, the inside one (ambient 0.122, no sun, 4
-  points on the room's side, 0.8 in) and an outside one (ambient 0.161, the sun, 4 points other
-  than those, 0.8 out); the engine gives all three the inside set. The log's: at 8 of its 10
-  windows (the y = 14 and 15 walls and (13, 22.5)) the 52-vertex frame has the outside set and the
-  others the inside; at the other 2 ((13, 17.5), (23.5, 24)) the 10- and 53-vertex ones have the
-  outside and the 52-vertex the inside. With the log's sets by mesh (`HF_ORACLE` with the oracle
-  taken by vertex count, a local study edit, not kept) the rigid figure goes 92.78% to 95.13% in
-  engine mode. What decides the 8 and the 2, and the outside set's points, is not found (the
-  light code's: `lighting.rs`, `Light_FillWindow` in `light.rs`).
+- The windows' objects (`_NEW_Single_Hung_Window`, 4,124 pixels): L3 found the rule. The log lights
+  each of a window's three meshes (10, 52 and 53 vertices) with the set of the room that the
+  mesh's middle (the mean of its vertices at the draw's matrix, `drawlist::mesh_centre`, `Draw::centre`)
+  is in: the frame's 52 vertices are 0.03 on one side of the wall plane, the 53-vertex glass 0.03 on
+  the other and the 10-vertex quad on the plane (0.002 off). The window turned the other way (at
+  (13, 17.5) and (23.5, 24)) has them the other way round, so no rule of the window or wall is
+  needed. The set of the room across is the inside's (ambient 0.122, no sun) or the outside's
+  (0.161, the sun, the outdoor room's four lights at the grid point of the window's place); both
+  were made already, only the room was chosen by the place (`LotLights::at_in`: the room from the
+  mesh's middle, the grid point from the object's place). All 30 window meshes of home at 2400 have
+  the log's set (the engine's room by tile, `room_at`, at the middle). In engine mode: rigid 92.32% to
+  94.09% (2401: 92.31% to 94.07%), whole 86.71% to 87.19% (86.70% to 87.18%).
+  `HF_LIGHTSTUDY=1` with `HF_ORACLE=1` prints `LW` for each window mesh (middle, log's ambient and
+  sun), and `LD` for each mesh whose four lights differ from the log's, with the grid points
+  within 3 tiles that would give the log's set. `LSUM object` counts meshes now, not places
+  (before L3: 308 same, 35 differ; after: 328 same, 15 differ; walls 84 of 84 unchanged).
+  What is left of the objects (15 meshes): the trash can (2 meshes), the deckchair at (23.5, 17.5)
+  (1), the lattice door (1; the walnut doors are right now), the cacti at (24.5, 24.5) and
+  (24.5, 13.5) (3 meshes each), the rose bushes at (19.5, 6.5) and (19.5, 10.5) (2 each) and the
+  outer lot's model (no light set logged). They are ties of the grid point: the log's x is 20 at
+  (19.5, 6.5) and 19 at (19.5, 10.5) for the same place (the meshes' middles are 19.525, 19.505 and
+  19.475, 19.495, but the trash can's 19.514 and 19.494 both take 19). Tried: the grid point from
+  the middle (24 differ), from the floor of the place (57), rounding ties to even (30). The
+  original's lookup (0x80169ABC, read in the recomp's generated C) is
+  `trunc(x + 0.5)`, `trunc(y + 0.5)` of a position vector its caller (0x80053734 with the record's
+  +896) gives, clamped to 0..38, then the cell's four room bytes searched for the object's room (an
+  unlisted room gives a default entry): the position is not the place or a mesh middle, and the
+  cell's room list (`light::CellRooms`) is not used by the engine's `cell`, which takes any room.
 - 2,147 + 851 + 1,228 + 459 of the walls, the windowed walls, the diagonals and the fence
   (3 to 5 levels off): the light sets (L1: the walls' and fences' now equal the log's).
 - 678 + 78 of the money trunk (object 248) and the cheat gnome (105), drawn by the engine, not

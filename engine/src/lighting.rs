@@ -217,14 +217,15 @@ impl LotLights {
     }
 
     /// What lights a draw of the lot's list: a wall piece or fence along its edge, anything else
-    /// at its place.
+    /// at its place, in the room of its mesh's middle (a window's frame and glass are on the two
+    /// sides of the wall, so they take the two rooms' sets: the log's windows, all 30 meshes).
     pub fn of(&self, d: &crate::drawlist::Draw) -> Lights {
         match d.edge {
             // a fence stands on its edge (its place is the edge's middle), a wall piece's place is
             // its tile's centre, half a tile off the edge
             Some(ends) if (0..2).all(|k| (d.origin[k] - 0.5 * (ends[0][k] + ends[1][k])).abs() < 1e-3) => self.fence(d.origin[0], d.origin[1], ends[0]),
             Some(ends) => self.along(d.origin[0], d.origin[1], ends),
-            None => self.at(d.origin[0], d.origin[1]),
+            None => self.at_in(d.centre, d.origin),
         }
     }
 
@@ -260,7 +261,13 @@ impl LotLights {
     /// whole tiles: the room's own lights first, then its windows', the strongest first; 72 of
     /// the home lot's 98 object places give the log's four lights, `docs/assets.md`).
     pub fn at(&self, x: f32, y: f32) -> Lights {
-        let room = self.room_at(x, y);
+        self.at_in([x, y], [x, y])
+    }
+
+    /// `at` for a mesh whose middle `centre` is in the room (its ambient, the sun) and whose object
+    /// is at `origin` (the light grid's point).
+    pub fn at_in(&self, centre: [f32; 2], origin: [f32; 2]) -> Lights {
+        let (room, (x, y)) = (self.room_at(centre[0], centre[1]), (origin[0], origin[1]));
         let points = self.cell(room, [x.round(), y.round()]).map_or(Vec::new(), |ids| ids.iter().filter(|&&i| i != 0xFFFF).map(|&i| self.sources[usize::from(i)]).collect());
         Lights { ambient: self.ambients.get(room).copied().unwrap_or([0.0; 3]), sun: (room == 0).then_some(self.sun), points }
     }
@@ -304,6 +311,17 @@ mod tests {
         assert_eq!(l.at(1.5, 4.0).ambient, [0.2; 3]);
         // an edge with outdoors on both sides stays outdoors
         assert_eq!(l.at(3.0, 0.5).ambient, [0.1; 3]);
+    }
+
+    #[test]
+    fn a_mesh_takes_the_room_of_its_middle_not_of_its_objects_place() {
+        let l = lot();
+        // a window at (1.0, 3.5): the frame's middle is a little west of the edge (outdoors), the
+        // glass's a little east (room 1)
+        assert_eq!(l.at_in([0.97, 3.5], [1.0, 3.5]).ambient, [0.1; 3]);
+        assert!(l.at_in([0.97, 3.5], [1.0, 3.5]).sun.is_some());
+        assert_eq!(l.at_in([1.03, 3.5], [1.0, 3.5]).ambient, [0.2; 3]);
+        assert!(l.at_in([1.03, 3.5], [1.0, 3.5]).sun.is_none());
     }
 
     #[test]
