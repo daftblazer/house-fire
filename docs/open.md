@@ -51,3 +51,12 @@
   outer lot 723, lattice door 571, aquarium 207. Still from the log in that mode: the camera,
   the lot choice, the clock passes. Draw list (LOCKSTEP_FRAME_DRAWS=1039): 570 same, 3
   DIFFERENT, 26 missing (objects' script animations, sink counter variants, wall caps).
+- **The engine mode's Sims and shadows** (W1, stage 5d): the Sims' skinned parts, their 34
+  shadow draws and the portrait still come from the log (1,551 px, 0.54% of the frame): the
+  controller running the Sims' layers to a tick's pose from a loaded lot, and the run-time
+  skin/clothes texture, are not built. Shadows from the engine at 78.55% (log mode 86.59%):
+  shears fitted at one clock (SHADOW_SHEAR_OBJECT 1.144, _WALL 0.9286, source unknown), the
+  indoor objects' (from their light sets) not made (75 draws unsheared), the diagonal walls'
+  extends forms. The camera from the log's 'c' parameters (no input on a loaded lot). The front
+  wall's foot shows the floor where the reference is dark (the `_garbage` pieces not drawn).
+
