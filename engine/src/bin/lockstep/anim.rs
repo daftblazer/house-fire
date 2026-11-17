@@ -16,7 +16,7 @@ mod streams;
 pub use bones::bones;
 pub use draws::draws;
 pub use flags::flags;
-pub use lamps::{engine_lamps, lamps};
+pub use lamps::{engine_lamps_at, lamps};
 pub use outfits::outfits;
 pub use loads::loads;
 pub use poses::poses;

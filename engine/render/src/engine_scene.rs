@@ -506,7 +506,7 @@ impl Lot {
         // the eye: -R^T t of the view
         let eye = [0, 1].map(|i| -(0..3).map(|r| view[4 * r + i] * view[4 * r + 3]).sum::<f32>());
         let lot = housefire::drawlist::lot_draws_with(world, &self.resources, &self.models, &self.art, tick, Some(eye), &mut self.poses.borrow_mut());
-        let lamps = housefire::lamps::on_lot(&lot.placements, |id| lot.guids.get(&id).cloned().unwrap_or_default(), &self.resources, &self.models.sources);
+        let lamps = housefire::lamps::on_lot(&lot.placements, |id| lot.guids.get(&id).cloned().unwrap_or_default(), |id| housefire::lamps::object_graphic(world, id), &self.resources, &self.models.sources);
         let g = |i: usize| world.globals.get(i).copied().map_or(0, i32::from);
         let clock = (g(0), g(5), g(6));
         let mut lights = housefire::lighting::LotLights::build(world, &self.resources, &lamps, clock);

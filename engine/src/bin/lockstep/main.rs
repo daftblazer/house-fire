@@ -787,9 +787,12 @@ fn main() -> ExitCode {
         frame_draws::frame_draws(&log, &lot_world, &objects, &d, t);
     }
     // (the engine's lamps, for the window lights study LOCKSTEP_WINDOW_LIGHTS only: they read every skeleton and animation of the disc)
-    let lamps = if std::env::var_os("LOCKSTEP_WINDOW_LIGHTS").is_some() { anim::engine_lamps(&lot_world, &objects, &d) } else { Vec::new() };
-    let tiles = (tiles.0, tiles.1, tiles.2, objects);
-    set_to_next_check(&lib, &ngh, &disc_ngh, &tiles, &log, &step_object, &lamps, &mut notes);
+    // (the lamps as the replay of this log has them at a tick: the study asks for the rebuild's and the grid build's)
+    let card = args.iter().position(|a| a == "--card").and_then(|i| args.get(i + 1)).map(String::as_str);
+    let lot: i64 = args.iter().position(|a| a == "--lot").and_then(|i| args.get(i + 1)).and_then(|v| v.parse().ok()).unwrap_or(-1);
+    let lamps_at = |tick: u32| if std::env::var_os("LOCKSTEP_WINDOW_LIGHTS").is_some() { anim::engine_lamps_at(&log, &lib, card, lot, &objects, &d, tick) } else { Vec::new() };
+    let tiles = (tiles.0, tiles.1, tiles.2, objects.clone());
+    set_to_next_check(&lib, &ngh, &disc_ngh, &tiles, &log, &step_object, &lamps_at, &mut notes);
 
     for (k, v) in &notes.out {
         println!("  {k:<62} {v}");

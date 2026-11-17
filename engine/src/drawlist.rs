@@ -630,7 +630,7 @@ mod tests {
 
     #[test]
     fn an_object_casts_a_shadow_unless_hung_on_a_wall_or_a_floor_covering() {
-        let row = |flags| ObjResources { dataset: 1, model: 0, flags, key: 0, idle: 0 };
+        let row = |flags| ObjResources { dataset: 1, model: 0, flags, key: 0, idle: 0, states: Vec::new() };
         let resources: BTreeMap<u32, ObjResources> = [(1, row(0x0200_0000)), (2, row(0x4200_0000)), (3, row(0x0100_0000)), (4, row(0x1100_0000)), (5, row(0x2200_0000))].into();
         // object n has the resource row n
         let guids_of = |id: i16| vec![id as u32];
@@ -641,7 +641,7 @@ mod tests {
 
     #[test]
     fn a_part_on_its_objects_own_matrix_is_lifted_in_the_shadow_pass() {
-        let resources: BTreeMap<u32, ObjResources> = [(1, ObjResources { dataset: 1, model: 0, flags: 0x0200_0000, key: 0, idle: 0 })].into();
+        let resources: BTreeMap<u32, ObjResources> = [(1, ObjResources { dataset: 1, model: 0, flags: 0x0200_0000, key: 0, idle: 0, states: Vec::new() })].into();
         let parts = [(draw(1, 0.0), true), (draw(1, 0.075), false)];
         let shadows = object_shadows(&parts, |id| vec![id as u32], &resources);
         assert_eq!(shadows[0].world[11], SHADOW_LIFT);

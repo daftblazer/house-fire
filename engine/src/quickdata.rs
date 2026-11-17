@@ -114,7 +114,7 @@ impl Image {
 
 /// What an object draws with: the dataset it loads (an archive entry's id, `arc::Entry::id`) and
 /// its model's name hash.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ObjResources {
     pub dataset: u32,
     pub model: u32,
@@ -128,13 +128,26 @@ pub struct ObjResources {
     /// object's controller plays when it is idle (a lamp's, one still pose of two frames); 0
     /// without one.
     pub idle: u32,
+    /// The animation ids of every state the object's graphic number picks from (its data field
+    /// 0): the record is a list of 32-byte states, each with the record's key in its first word
+    /// and its animation in its third (the first is the idle one). Empty without a record.
+    pub states: Vec<u32>,
 }
 
 impl ObjResources {
+    /// The animation id of graphic `graphic` (the idle one for a graphic the list lacks or leaves
+    /// without an animation).
+    pub fn animation(&self, graphic: i16) -> u32 {
+        usize::try_from(graphic).ok().and_then(|g| self.states.get(g)).copied().filter(|&id| id != 0).unwrap_or(self.idle)
+    }
+
     pub fn on_wall(&self) -> bool {
         self.flags & 0x4000_0000 != 0
     }
 }
+
+/// The most states an object's record is read for (the longest on the disc has 5).
+const MAX_STATES: usize = 16;
 
 /// Each object's resources by GUID, from `SimsObjects`: an `ObjDefinition` row (196 bytes, the
 /// GUID at +0x1c) points (+0xc0) at an `ObjDefinition::ResData` row (48 bytes: flags at +4, the
@@ -144,7 +157,9 @@ pub fn object_resources(img: &Image) -> BTreeMap<u32, ObjResources> {
     img.rows("ObjDefinition")
         .filter_map(|r| {
             let res = img.ptr(r + 0xc0)?;
-            Some((img.u32(r + 0x1c)?, ObjResources { dataset: img.u32(res + 0x10)?, model: img.u32(res + 0x18)?, flags: img.u32(res + 4)?, key: img.ptr(res).and_then(|k| img.u32(k)).unwrap_or(0), idle: img.ptr(res).and_then(|k| img.u32(k + 8)).unwrap_or(0) }))
+            let record = img.ptr(res);
+            let states = record.map(|k| (0..MAX_STATES).map(|i| k + 32 * i).take_while(|&e| img.u32(e) == img.u32(k)).filter_map(|e| img.u32(e + 8)).collect()).unwrap_or_default();
+            Some((img.u32(r + 0x1c)?, ObjResources { dataset: img.u32(res + 0x10)?, model: img.u32(res + 0x18)?, flags: img.u32(res + 4)?, key: record.and_then(|k| img.u32(k)).unwrap_or(0), idle: record.and_then(|k| img.u32(k + 8)).unwrap_or(0), states }))
         })
         .collect()
 }

@@ -76,6 +76,10 @@ impl Anim {
                         _ => None,
                     },
                     vectors: [n[1], n[2], n[4]].map(stream),
+                    scalars: [n[5], n[6]].map(|w| match Channel::of(w) {
+                        Channel::Stream(at) => Some(Arc::new(ScalarStream::decode(words, at))),
+                        _ => None,
+                    }),
                 })
                 .collect()
         })
@@ -88,6 +92,8 @@ impl Anim {
 pub(crate) struct NodeKeys {
     pub rotation: Option<(RotHeader, Arc<RotTable>)>,
     pub vectors: [Option<(StreamHeader, Arc<KeyTable3>)>; 3],
+    /// Words 5 and 6, the factor and radius.
+    pub scalars: [Option<Arc<ScalarStream>>; 2],
 }
 
 /// The decoded streams of an animation, kept beside it: never part of what an animation is, so
@@ -598,6 +604,60 @@ pub fn stream_header(words: &[u32], at: u32) -> StreamHeader {
     }
     let record_bits = gap_bits + scalar_bits + 3 * value_bits;
     StreamHeader { keys, gap_bits, scalar_bits, value_bits, scalar_scale, scale, offset, first_record: p, record_bits }
+}
+
+/// A scalar channel's stream (a node's words 5 and 6: a light's factor and radius; the evaluator
+/// is 801BD7BC, `Anim_ScalarStream`). It is a vector stream with one value: the key count (20
+/// bits), the widths of the gap, the bias and the value (5 bits each, a value width of 0 is 32),
+/// the value's range and minimum as two 32-bit floats, then records of the gap, the bias and
+/// the value. The window, the tangents and the curve are the vector streams' (`Keys3`,
+/// `channel3`), on the first component.
+#[derive(Debug)]
+pub struct ScalarStream {
+    header: StreamHeader,
+    table: KeyTable3,
+}
+
+impl ScalarStream {
+    /// The stream at bit `at` of `words`, its keys decoded.
+    pub fn decode(words: &[u32], at: u32) -> ScalarStream {
+        let mut p = at;
+        let mut take = |w: u32| {
+            let v = bits(words, p, w);
+            p += w;
+            v
+        };
+        let keys = take(20);
+        let gap_bits = take(5);
+        let scalar_bits = take(5);
+        let scalar_scale = if scalar_bits == 0 { 0.0 } else { 1.0 / ((1i64 << (scalar_bits - 1)) - 1) as i32 as f32 };
+        let value_bits = match take(5) {
+            0 => 32,
+            w => w,
+        };
+        let factor = 1.0 / ((1u64 << value_bits) - 1) as u32 as i32 as f32;
+        let scale = factor * f32::from_bits(take(32));
+        let offset = f32::from_bits(take(32));
+        let record_bits = gap_bits + scalar_bits + value_bits;
+        let header = StreamHeader { keys, gap_bits, scalar_bits, value_bits, scalar_scale, scale: [scale, 0.0, 0.0], offset: [offset, 0.0, 0.0], first_record: p, record_bits };
+        let timeline = Timeline::decode(words, keys, p, record_bits, gap_bits);
+        let points = (0..keys).map(|k| [(bits(words, p + k * record_bits + gap_bits + scalar_bits, value_bits) as f32).mul_add(scale, offset), 0.0, 0.0]).collect();
+        let scalars = if scalar_bits == 0 { Vec::new() } else { (0..keys).map(|k| header.scalar(words, k)).collect() };
+        ScalarStream { header, table: KeyTable3 { timeline, points, scalars } }
+    }
+
+    /// The value at `place` (frames), the stream read from its start: the window that holds the
+    /// place (the last for a place past the end), curved.
+    pub fn read(&self, words: &[u32], place: f32) -> f32 {
+        let keys = self.header.keys;
+        if keys < 2 {
+            return self.table.points.first().map_or(0.0, |p| p[0]);
+        }
+        let k = Keys3 { header: &self.header, words, table: Some(&self.table) };
+        let at = (0..keys - 1).find(|&i| place <= k.time(i + 1) as f32).unwrap_or(keys - 2);
+        let (first, last, window) = k.window(at);
+        channel3(first, last, 0, &window, place)[0]
+    }
 }
 
 /// A key's three values in a stream's bits (801BCE50): `width`-bit unsigned fields from bit

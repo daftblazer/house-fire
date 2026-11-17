@@ -38,7 +38,18 @@ pub fn engine_lamps(world: &World, res: &BTreeMap<u32, housefire::quickdata::Obj
         .filter(|w| w.on_lot() && !w.person)
         .map(|w| housefire::scene::Part { id: w.id(), leader: if w.leader != 0 { w.leader } else { w.id() }, x16: w.x16, y16: w.y16, facing: i32::from(w.facing()), wall: res.get(&w.guid).is_some_and(|r| r.on_wall()) })
         .collect();
-    lamps::on_lot(&housefire::scene::placements(&parts), |id| world.find_object(id).into_iter().chain(world.objects().filter(|o| o.leader == id)).map(|o| o.guid).collect(), res, &Sources::read(disc))
+    lamps::on_lot(&housefire::scene::placements(&parts), |id| world.find_object(id).into_iter().chain(world.objects().filter(|o| o.leader == id)).map(|o| o.guid).collect(), |id| lamps::object_graphic(world, id), res, &Sources::read(disc))
+}
+
+/// The engine's lamps as the run has them at `tick`: the log replayed natively (`Replay`) to it,
+/// so that the objects' graphics (a lamp's switch, the dance floor's mode) are what the scripts
+/// set by then. `lot` is the replay's lot index (`--lot`, -1 the default), `card` its save.
+pub fn engine_lamps_at(log: &housefire::tree_log::Log, lib: &housefire::library::Library, card: Option<&str>, lot: i64, res: &BTreeMap<u32, housefire::quickdata::ObjResources>, disc: &Disc, tick: u32) -> Vec<Lamp> {
+    use housefire::replay::{Replay, RunWith, Start};
+    let Ok(start) = Start::read(disc, card, lot) else { return Vec::new() };
+    let Some(mut replay) = Replay::new(log, lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, None, RunWith { card_lot: start.card_lot, cat: None }) else { return Vec::new() };
+    while replay.tick() < tick && replay.step() {}
+    engine_lamps(replay.world(), res, disc)
 }
 
 /// The squared distance between two places.
@@ -139,8 +150,8 @@ pub fn lamps(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quickdata:
 
     // 3. the lamps' final places without the bones (the clubs' logs have none): each lamp
     // object's last record's kind-0 lights against the engine's lights, each place bit for bit
-    // some engine lamp light's, and its colour and reach the idle pose's (a lamp in another
-    // animation state, or a light on a stream, keeps its own)
+    // some engine lamp light's, and its colour and reach those of the animation its graphic picks (the
+    // save's graphic: a lamp the run switches since is in another state)
     let mut last: BTreeMap<u32, &housefire::tree_log::ObjectLightsRec> = BTreeMap::new();
     for o in &log.object_lights {
         last.insert(o.object, o);
@@ -190,7 +201,7 @@ pub fn lamps(log: &Log, world: &World, res: &BTreeMap<u32, housefire::quickdata:
         }
     }
     println!(
-        "lamp objects' last kind-0 lights ({} objects, {} engine lights): {lights}, at an engine lamp's place bit for bit {found} (DIFFERENT -> {}), engine lights used {}; colour and reach the idle pose's {idle}, on a stream (place only) {animated}, of another animation state {other_state}",
+        "lamp objects' last kind-0 lights ({} objects, {} engine lights): {lights}, at an engine lamp's place bit for bit {found} (DIFFERENT -> {}), engine lights used {}; colour and reach those of the animation its graphic picks {idle}, on a stream (place only) {animated}, of another animation (the run sets the graphic: the replay's lamps, set_to_next.rs) {other_state}",
         last.len(),
         all.len(),
         lights - found,

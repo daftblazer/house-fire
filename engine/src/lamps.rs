@@ -1,8 +1,9 @@
 //! The lamps' lights placed from the engine's own data (`docs/assets.md`, "The lamps' lights").
 //!
-//! An object with a light plays one still animation when it is idle (its resources' idle
-//! animation, `quickdata::ObjResources::idle`: two frames, every channel constant, or for the
-//! disco's lights a colour and radius that run on scalar streams). The nodes of that animation
+//! An object with a light plays the animation its graphic number picks among its states
+//! (`quickdata::ObjResources::animation`: the idle one, a lamp's "on", the dance floor's modes;
+//! two still frames with every channel constant, or for the disco's lights a factor and radius
+//! that run on scalar streams, `anim::ScalarStream`). The nodes of that animation
 //! that carry the colour, factor and radius channels (words 4 to 6) are its lights. The pose of
 //! every node is built from the animation, the skeleton's bones are computed from the poses on the
 //! object's own matrix, and a light sits at its node's bone, with the node's colour, factor and
@@ -28,8 +29,9 @@ const LIGHT_WORDS: [usize; 3] = [4, 5, 6];
 /// A lamp's light placed on its object: the node it hangs from, where it is (tiles, the third the
 /// height), its colour (the node's by its factor) and its reach (the light's radius twice, by the
 /// get-light's quarter). A light whose factor or radius runs on a stream (`animated`: the dance
-/// floor's and laser show's, not decoded yet) has only its place from the engine: its colour and
-/// reach are those of the stream's defaults.
+/// floor's and laser show's) takes them at the animation's place `IDLE_PLACE`: the play's own
+/// place follows the render frames since the object's graphic changed, which the simulation does
+/// not keep.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LampLight {
     pub node: usize,
@@ -68,28 +70,15 @@ fn is_animated(node: &Node) -> bool {
     [5, 6].iter().any(|&w| matches!(Channel::of(node[w]), Channel::Stream(_)))
 }
 
-/// The poses of every node of `anim` at its idle place. The scalar streams (words 5 and 6; not
-/// decoded) are left out of a node's pose, which then keeps their defaults.
+/// The poses of every node of `anim` at its idle place.
 pub fn idle_poses(anim: &Anim) -> Vec<Pose> {
     poses_at(anim, IDLE_PLACE)
 }
 
 /// The poses of every node of `anim` at `place` (a frame, as the animation's tracks are read).
 pub fn poses_at(anim: &Anim, place: f32) -> Vec<Pose> {
-    // (an animation with no scalar streams is read as it is, keeping its decoded keys)
-    let mut owned;
-    let plain = if anim.nodes.iter().any(is_animated) {
-        owned = anim.clone();
-        for node in owned.nodes.iter_mut().filter(|n| is_animated(n)) {
-            node[5] = 0;
-            node[6] = 0;
-        }
-        &owned
-    } else {
-        anim
-    };
-    let mut streams = TrackStreams::new(plain);
-    (0..plain.nodes.len()).map(|i| streams.local(plain, i, place, 0).unwrap_or_default()).collect()
+    let mut streams = TrackStreams::new(anim);
+    (0..anim.nodes.len()).map(|i| streams.local(anim, i, place, 0)).collect()
 }
 
 /// The poses of an object idle in `anim` on `skeleton`: the bone matrices (rows, the
@@ -152,6 +141,13 @@ impl Sources {
     }
 }
 
+/// An object's graphic number: its data field 0, which its scripts set (a lamp's switch, a dance
+/// floor's mode) and which picks its animation among the object's states. 0 for an object not
+/// in the world.
+pub fn object_graphic(world: &crate::world::World, id: i16) -> i16 {
+    world.find_object(id).and_then(|o| o.data.first().copied()).unwrap_or(0)
+}
+
 /// A lamp object of the lot: its leader's id, where it is drawn and its lights.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Lamp {
@@ -161,14 +157,16 @@ pub struct Lamp {
 }
 
 /// The lamps among the lot's drawn objects: each placement whose group has a model, a skeleton
-/// and an idle animation with light nodes. `guids_of` gives the GUIDs of a leader's parts (its
+/// and an animation with light nodes. `guids_of` gives the GUIDs of a leader's parts (its
 /// own first): a multi-tile object's resources are on one of its parts' definitions, not always
-/// the leader's.
-pub fn on_lot(placements: &[Placement], guids_of: impl Fn(i16) -> Vec<u32>, resources: &BTreeMap<u32, ObjResources>, sources: &Sources) -> Vec<Lamp> {
+/// the leader's. `graphic` gives a leader's graphic number (`object_graphic`), which picks the
+/// animation the lamp is posed from (`ObjResources::animation`: a lit lamp's "on", a dance
+/// floor's strobe).
+pub fn on_lot(placements: &[Placement], guids_of: impl Fn(i16) -> Vec<u32>, graphic: impl Fn(i16) -> i16, resources: &BTreeMap<u32, ObjResources>, sources: &Sources) -> Vec<Lamp> {
     placements
         .iter()
         .filter_map(|p| {
-            let (skeleton, anim) = guids_of(p.leader).iter().filter_map(|g| resources.get(g)).find_map(|r| Some((sources.skeletons.get(&r.model)?, sources.anims.get(&r.idle)?)))?;
+            let (skeleton, anim) = guids_of(p.leader).iter().filter_map(|g| resources.get(g)).find_map(|r| Some((sources.skeletons.get(&r.model)?, sources.anims.get(&r.animation(graphic(p.leader)))?)))?;
             let lights = lights(skeleton, anim, &object_matrix(p.x, p.y, p.angle));
             (!lights.is_empty()).then_some(Lamp { leader: p.leader, place: *p, lights })
         })

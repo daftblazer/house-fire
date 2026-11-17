@@ -102,18 +102,15 @@ pub fn poses(log: &housefire::tree_log::Log, d: &Disc) {
             // the root node's fix: the components the track's flags name take the track's values.
             // Only +124 (the first) is logged; the other two are taken from the state after
             let root_fixed = i == 0 && rec.flags & TRACK_ROOT_FIX != 0;
-            let attempt = |ts: &mut TrackStreams| -> Result<(Pose, bool), pose::Unsupported> {
-                let mut local = ts.local(anim, i, p.place, before[0])?;
+            let attempt = |ts: &mut TrackStreams| -> (Pose, bool) {
+                let mut local = ts.local(anim, i, p.place, before[0]);
                 if root_fixed {
                     pose::fix_root(&mut local, rec.flags, [f32::from_bits(rec.word124), f32::from_bits(after[6]), f32::from_bits(after[7])]);
                 }
-                Ok((local, pose::fold(&Pose::from_words(before), &local, fold).to_words() == *after))
+                (local, pose::fold(&Pose::from_words(before), &local, fold).to_words() == *after)
             };
             let (saved, unset) = (ts.save(i), ts.unset_modes(i));
-            let Ok((mut local, mut same)) = attempt(ts) else {
-                *skipped.entry("nodes with a scalar stream (not decoded)".into()).or_default() += 1;
-                continue;
-            };
+            let (mut local, mut same) = attempt(ts);
             // a stream's blend flag is the memory's leftover until a window step sets it: if the
             // node differs, try its unset streams with each flag
             let mut stale = false;
@@ -123,14 +120,14 @@ pub fn poses(log: &housefire::tree_log::Log, d: &Disc) {
                     for (bit, &stream) in unset.iter().enumerate() {
                         ts.set_mode(i, stream, (flags >> bit & 1) as u8);
                     }
-                    if let Ok((l, true)) = attempt(ts) {
+                    if let (l, true) = attempt(ts) {
                         (local, same, stale) = (l, true, true);
                         break;
                     }
                 }
                 if !same {
                     ts.restore(i, saved);
-                    local = attempt(ts).map_or(local, |(l, _)| l);
+                    local = attempt(ts).0;
                 }
             }
             // +124 is the root fix's first value (the translation's x) when the flags name it

@@ -17,7 +17,7 @@ type RoomLists = (Vec<Vec<(i32, i32)>>, std::collections::BTreeMap<u32, usize>);
 pub type DiscTables = (Vec<u32>, Vec<u32>, Vec<housefire::quickdata::FloorPattern>, std::collections::BTreeMap<u32, housefire::quickdata::ObjResources>);
 
 #[allow(clippy::too_many_arguments)]
-pub fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &DiscTables, log: &housefire::tree_log::Log, step_object: &[Option<FileId>], engine_lamps: &[housefire::lamps::Lamp], notes: &mut Notes) {
+pub fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &DiscTables, log: &housefire::tree_log::Log, step_object: &[Option<FileId>], lamps_at: &dyn Fn(u32) -> Vec<housefire::lamps::Lamp>, notes: &mut Notes) {
     let (lots, lot_ids, walk, best, best_n) = pick_lot(lib, ngh, log);
     let raw_of = |s: &StepRec| -> Option<&[u8]> {
         let t = log.tree_of(s)?;
@@ -669,7 +669,7 @@ pub fn set_to_next_check(lib: &Library, ngh: &[u8], disc_ngh: &[u8], tiles: &Dis
                             }
                             println!("grid build at tick {} from the engine: cells {}, rooms the same {rooms_same}; cell rooms {cell_rooms}, the four lights the same {lit_same}", g.tick, g.cells.len());
                         }
-                        lamps_from_the_engine(&log, b, rooms, &objs, &info, &order, engine_lamps, &lw, walls);
+                        lamps_from_the_engine(&log, b, rooms, &objs, &info, &order, lamps_at, &lw, walls);
                         println!("window lights' nearest lights: {fills} fills after a build ({first_fills} before any), from the other side's room {near_same}");
                     }
                 }
@@ -972,11 +972,12 @@ fn lamps_from_the_engine(
     objs: &[(housefire::light::LightKind, i32, i32)],
     info: &[((f32, f32), u32, i32)],
     other_order: &[usize],
-    lamps: &[housefire::lamps::Lamp],
+    lamps_at: &dyn Fn(u32) -> Vec<housefire::lamps::Lamp>,
     lw: &World,
     walls: &housefire::routing::Walls,
 ) {
     use housefire::light::{self, LightKind};
+    let lamps = lamps_at(b.tick);
     let by_leader: BTreeMap<i16, &housefire::lamps::Lamp> = lamps.iter().map(|l| (l.leader, l)).collect();
     let mut all = objs.to_vec();
     let mut lamp_lights = Vec::new();
@@ -1043,7 +1044,20 @@ fn lamps_from_the_engine(
             }
             println!("  ranges engine {ranges:?}\n  ranges build  {:?}", &g.ranges[..rooms]);
         }
-        let mut as_built = lights.clone();
+        // the lamps as they stand when the grid is built (the dance floor's and laser show's
+        // states change with the run)
+        let at_build = lamps_at(g.tick);
+        let mut lights_at_build = lights.clone();
+        {
+            let by_leader: BTreeMap<i16, &housefire::lamps::Lamp> = at_build.iter().map(|l| (l.leader, l)).collect();
+            let built: Vec<housefire::lamps::LampLight> = lw.objects().filter(|o| o.on_lot()).filter_map(|o| by_leader.get(&o.id())).flat_map(|l| l.lights.iter().copied()).collect();
+            for (k, &i) in own.iter().enumerate() {
+                if let Some(l) = built.get(i - objs.len()) {
+                    lights_at_build[256 + k] = (l.at, l.reach);
+                }
+            }
+        }
+        let mut as_built = lights_at_build.clone();
         let mut moving = 0;
         for k in 0..own_lights.len() {
             if let Some(l) = g.lights.get(256 + k).filter(|_| own_lights[k].animated) {
@@ -1051,7 +1065,7 @@ fn lamps_from_the_engine(
                 moving += 1;
             }
         }
-        for (name, set) in [("the engine's lamps and windows", &lights), ("the lights on streams as built", &as_built)] {
+        for (name, set) in [("the engine's lamps and windows", &lights_at_build), ("the lights on streams as built", &as_built)] {
             let (mut cell_rooms, mut lit_same) = (0, 0);
             for (ci, cell) in g.cells.iter().enumerate() {
                 let (x, y) = (2 + ci / 36, 2 + ci % 36);

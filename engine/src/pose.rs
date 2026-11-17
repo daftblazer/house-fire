@@ -6,7 +6,8 @@
 //! channels".
 
 use crate::mathf;
-use crate::anim::{self, Anim, Channel, FlagStream, RotStream, Stream, fma32};
+use crate::anim::{self, Anim, Channel, FlagStream, RotStream, ScalarStream, Stream, fma32};
+use std::sync::Arc;
 
 /// The node state flag whose set bit carries the state's 0x18 bits into the pose and stops the flag channel being read.
 pub const FLAGS_KEEP: u32 = 0x10;
@@ -79,13 +80,6 @@ impl Pose {
     }
 }
 
-/// What a local pose could not be made from: not decoded yet.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Unsupported {
-    /// A scalar channel (word 5 or 6) given by a stream (801BD7BC).
-    ScalarStream,
-}
-
 /// The readers of one track's streams, a node's channels each with the window it keeps from read
 /// to read (the game keeps them in the track's +148 array). Made for a track playing `anim`.
 #[derive(Clone, Debug)]
@@ -99,6 +93,8 @@ pub struct NodeStreams {
     rotation: Option<RotStream>,
     /// Words 1, 2 and 4 (`anim::NodeKeys::vectors`' order).
     vectors: [Option<Stream>; 3],
+    /// Words 5 and 6: read from their start at each place (`anim::ScalarStream`).
+    scalars: [Option<Arc<ScalarStream>>; 2],
 }
 
 impl TrackStreams {
@@ -111,6 +107,7 @@ impl TrackStreams {
             .map(|n| NodeStreams {
                 rotation: n.rotation.as_ref().map(|(header, table)| RotStream::with_table(words, *header, table.clone())),
                 vectors: n.vectors.each_ref().map(|v| v.as_ref().map(|(header, table)| Stream::with_table(words, *header, table.clone()))),
+                scalars: n.scalars.clone(),
             })
             .collect();
         TrackStreams { nodes }
@@ -149,7 +146,7 @@ impl TrackStreams {
     /// state's flags before the pose: with `FLAGS_KEEP` set its 0x18 bits are carried, with it
     /// clear its flag channel is read. Each stream keeps its own window, so the order the game
     /// reads them in does not matter.
-    pub fn local(&mut self, anim: &Anim, i: usize, place: f32, state_flags: u32) -> Result<Pose, Unsupported> {
+    pub fn local(&mut self, anim: &Anim, i: usize, place: f32, state_flags: u32) -> Pose {
         let node = &anim.nodes[i];
         let words = &anim.bit_words;
         let streams = &mut self.nodes[i];
@@ -197,23 +194,17 @@ impl TrackStreams {
         {
             pose.flags = if f.read(words, anim.bits, place) { pose.flags & !FLAG_CHANNEL } else { pose.flags | FLAG_CHANNEL };
         }
-        // words 5 and 6: scalars (flags 0x40 and 0x80), a constant or a stream not decoded here
-        let mut unsupported = None;
-        for (word, flag) in [(5, 0x40), (6, 0x80)] {
-            match Channel::of(node[word]) {
-                Channel::None => {}
-                Channel::Constant(at) => {
-                    pose.flags |= flag;
-                    let v = anim.constants.get(at).copied().unwrap_or(0.0);
-                    if word == 5 { pose.scalar_a = v } else { pose.scalar_b = v }
-                }
-                Channel::Stream(_) => {
-                    pose.flags |= flag;
-                    unsupported = Some(Unsupported::ScalarStream);
-                }
-            }
+        // words 5 and 6: scalars (flags 0x40 and 0x80), a constant or a stream
+        for (slot, (word, flag)) in [(5, 0x40), (6, 0x80)].into_iter().enumerate() {
+            let v = match (Channel::of(node[word]), &streams.scalars[slot]) {
+                (Channel::None, _) => continue,
+                (Channel::Constant(at), _) => anim.constants.get(at).copied().unwrap_or(0.0),
+                (Channel::Stream(_), stream) => stream.as_ref().map_or(0.0, |s| s.read(words, place)),
+            };
+            pose.flags |= flag;
+            if word == 5 { pose.scalar_a = v } else { pose.scalar_b = v }
         }
-        unsupported.map_or(Ok(pose), Err)
+        pose
     }
 }
 

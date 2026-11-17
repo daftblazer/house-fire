@@ -116,9 +116,8 @@ pub fn node_states(count: usize, tracks: &[Track]) -> Vec<NodeState> {
             if w == 0.0 {
                 continue;
             }
-            if let Ok(local) = streams.local(t.anim, i, t.place, state.flags) {
-                *state = pose::fold(state, &local, Fold::of(w, t.layer));
-            }
+            let local = streams.local(t.anim, i, t.place, state.flags);
+            *state = pose::fold(state, &local, Fold::of(w, t.layer));
         }
     }
     states.iter().map(|p| NodeState { flags: p.flags, rotation: p.rotation, translation: p.translation, scale: p.scale }).collect()
