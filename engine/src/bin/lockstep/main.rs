@@ -28,6 +28,7 @@
 //! objects' addresses: it shows their keys.
 
 mod anim;
+mod directions;
 mod frame_draws;
 mod lot;
 mod set_to_next;
@@ -643,6 +644,12 @@ fn main() -> ExitCode {
         }
     }
 
+    // (LOCKSTEP_DIRECTIONS: each person's direction in the engine's world against the log's at
+    // every tick start; with the run's --card and --lot)
+    if std::env::var_os("LOCKSTEP_DIRECTIONS").is_some() {
+        let opt = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1));
+        directions::directions(&log, &d, &lib, opt("--card").map(String::as_str), opt("--lot").and_then(|v| v.parse().ok()).unwrap_or(-1));
+    }
     // (LOCKSTEP_ANIM_CHANNELS: every logged scale or translation read ('%') through the
     // engine's `anim::channel3` on its logged window: the same bits, close, or different)
     if std::env::var_os("LOCKSTEP_ANIM_CHANNELS").is_some() {

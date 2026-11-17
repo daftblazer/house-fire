@@ -447,6 +447,83 @@ pub fn turn_frames(angle: f32) -> u32 {
     (angle / TURN_PER_FRAME + 0.01) as u32 + 1
 }
 
+/// The follower's turn rate a second while it walks (state 2): a full turn (the DOL's 2 pi at
+/// 802A8D68); in the other states a quarter turn (pi / 2, 802A8D64).
+const TURN_RATE_WALKING: f32 = std::f32::consts::TAU;
+const TURN_RATE_OTHER: f32 = std::f32::consts::FRAC_PI_2;
+/// A frame at this speed factor or more (the fast mode, 5) turns at once (the DOL's 2.0 at
+/// 802A8D94).
+const TURN_AT_ONCE_FACTOR: f32 = 2.0;
+/// The DOL's constants of the quantising of a facing angle to a direction (fn_800B0FB0):
+/// degrees a radian (0x802A909C), the half of an eighth (0x802A90A0) and an eighth (0x802A90A4).
+const DEGREES_PER_RADIAN: f32 = 57.295_776;
+const HALF_EIGHTH: f32 = 22.5;
+const EIGHTH: f32 = 45.0;
+/// The DOL's degrees to radians (0x802A8D28), in the angle of a direction (fn_800AD1BC, at a
+/// route's start; its 45 at 0x802A8D24 is `EIGHTH`).
+const DEGREES_TO_RADIANS: f32 = 0.017_453_292;
+
+/// A person's direction (object data 1: 0 towards -x, 2 towards +y, 4 towards +x, 6 towards -y,
+/// eighths of a turn) from the facing angle of its route follower (fn_800B0FB0): the angle in
+/// radians, 0 towards +y and growing towards -x, quantised to the eighth it is in.
+pub fn facing_direction(angle: f32) -> i16 {
+    // (a fused multiply and add, as the original's)
+    let q = ((f64::from(-angle)).mul_add(f64::from(DEGREES_PER_RADIAN), f64::from(HALF_EIGHTH)) as f32) / EIGHTH;
+    (q.floor() as i32 + 2).rem_euclid(8) as i16
+}
+
+/// The facing angle a route follower starts with, from its person's direction (fn_800AD1BC, when
+/// its route starts and it did not last run on): the direction's angle wrapped into (-pi, pi].
+pub fn direction_angle(direction: i16) -> f32 {
+    use std::f32::consts::{PI, TAU};
+    let a = f32::from(direction) - 2.0;
+    let mut angle = -(a * EIGHTH * DEGREES_TO_RADIANS);
+    if angle < PI {
+        angle += TAU;
+    }
+    if angle > PI {
+        angle -= TAU;
+    }
+    angle
+}
+
+/// A route follower's facing angle after a frame (fn_800AE6FC): it turns towards the way it
+/// goes, `(dx, dy)` (the leg it is on, or in state 5 from its place to its point), by `budget`
+/// (the frame's time times its speed factor, `factor`) times its turn rate, at most up to it.
+/// Where it goes is none (both under a thousandth) it stays as it is. `walking` is its state 2.
+pub fn turn_towards(angle: f32, (dx, dy): (f32, f32), walking: bool, budget: f32, factor: f32) -> f32 {
+    use std::f32::consts::{PI, TAU};
+    let target = if dx.abs() < 0.001 && dy.abs() < 0.001 { angle } else { (-dx).atan2(dy) };
+    let mut gap = target - angle;
+    if gap > PI {
+        gap = -(TAU - gap);
+    }
+    if gap < -PI {
+        gap += TAU;
+    }
+    let sign = if gap < 0.0 { -1.0 } else { 1.0 };
+    let rate = if walking { TURN_RATE_WALKING } else { TURN_RATE_OTHER };
+    let mut turned = ((f64::from(sign * budget)).mul_add(f64::from(rate), f64::from(angle))) as f32;
+    while turned > PI {
+        turned -= TAU;
+    }
+    while turned <= -PI {
+        turned += TAU;
+    }
+    // past the target: on it
+    let mut over = turned - target;
+    while over < -PI {
+        over += TAU;
+    }
+    while over > PI {
+        over -= TAU;
+    }
+    if (gap < 0.0 && over < 0.0) || (gap >= 0.0 && over > 0.0) || factor >= TURN_AT_ONCE_FACTOR {
+        turned = target;
+    }
+    turned
+}
+
 /// A point `s` along a line (its points, sixteenths) from leg `i` at fraction `t` of it, never
 /// past its end.
 pub fn along_line(points: &[(f32, f32)], mut i: usize, mut t: f32, mut s: f32) -> (f32, f32) {

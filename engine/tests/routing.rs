@@ -3,7 +3,7 @@
 
 use housefire::library::Slot;
 use housefire::routing::{
-    routing_return_tick, run_on_point, slot_goal_score, slot_pick, turn_frames, walk_frames, walk_rates, walk_step, walk_top, FrameClock, WALK_TOP_ADULT,
+    direction_angle, facing_direction, routing_return_tick, run_on_point, turn_towards, slot_goal_score, slot_pick, turn_frames, walk_frames, walk_rates, walk_step, walk_top, FrameClock, WALK_TOP_ADULT,
     WALK_TOP_CHILD,
 };
 
@@ -113,4 +113,45 @@ fn the_planners_steps_and_a_way_in_one_cell() {
     assert_eq!(coarse_way(&border, growth, (100, 100), (300, 120)).map(|w| w.points), Some(vec![(100, 100), (300, 120)]));
     // a start inside a blocked rect has no cell, so no way
     assert!(coarse_way(&border, growth, (0, 0), (300, 120)).is_none());
+}
+
+#[test]
+fn directions_and_their_angles() {
+    // an eighth's angle quantises back to it, all eight
+    for d in 0..8 {
+        assert_eq!(facing_direction(direction_angle(d)), d, "{d}");
+    }
+    // 0 towards +y is direction 2; a quarter turn either way is 4 and 0 (+x and -x)
+    assert_eq!(facing_direction(0.0), 2);
+    assert_eq!(facing_direction(-std::f32::consts::FRAC_PI_2), 4);
+    assert_eq!(facing_direction(std::f32::consts::FRAC_PI_2), 0);
+    // the boundary is half an eighth off the centre
+    assert_eq!(facing_direction(22.4_f32.to_radians()), 2);
+    assert_eq!(facing_direction(22.6_f32.to_radians()), 1);
+    assert_eq!(facing_direction(-22.4_f32.to_radians()), 2);
+    assert_eq!(facing_direction(-22.6_f32.to_radians()), 3);
+}
+
+#[test]
+fn a_follower_turns_towards_where_it_goes() {
+    use std::f32::consts::FRAC_PI_2;
+    let frame = 0.033;
+    // facing 0 (angle pi/2) with a leg of (-4, -12) (the club's Sim 177 at tick 7): the angle
+    // grows, a quarter turn a second in a state that does not walk
+    let a = turn_towards(direction_angle(0), (-4.0, -12.0), false, frame, 1.0);
+    assert!((a - (FRAC_PI_2 + FRAC_PI_2 * frame)).abs() < 1e-6);
+    // a walking follower turns four times as fast
+    let w = turn_towards(direction_angle(0), (-4.0, -12.0), true, frame, 1.0);
+    assert!((w - (FRAC_PI_2 + 4.0 * FRAC_PI_2 * frame)).abs() < 1e-6);
+    // it ends on the target, not past it
+    let t = (4.0f32).atan2(-12.0);
+    let mut a = direction_angle(0);
+    for _ in 0..200 {
+        a = turn_towards(a, (-4.0, -12.0), false, frame, 1.0);
+    }
+    assert_eq!(a, t);
+    assert_eq!(facing_direction(a), 6);
+    // no leg: no turn; the fast mode: at once
+    assert_eq!(turn_towards(1.0, (0.0, 0.0005), false, frame, 1.0), 1.0);
+    assert_eq!(turn_towards(direction_angle(0), (-4.0, -12.0), false, frame * 5.0, 5.0), t);
 }

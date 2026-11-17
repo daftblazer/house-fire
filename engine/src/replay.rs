@@ -45,14 +45,14 @@ use crate::motives::{MotiveRates, motive, update_motives};
 use crate::primitives::{
     call_named_tree, create_object, drop_onto, grab, make_of_guid, place_made, remove_object, snap, dialog, idle, idle_for_input, present, push_action, random, run_functional_tree, function_entry, set_motive_delta, set_to_next, test_object_type,
 };
-use crate::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, slot_pick, run_on_point, walk_frames, routing_return_tick, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
+use crate::routing::{BLOCKS, direction_angle, facing_direction, turn_towards, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, slot_pick, run_on_point, walk_frames, routing_return_tick, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
 use crate::planner::{choose_goal, coarse_way, point_after_goal, refine, Growth, MapRect};
 use crate::library::Slot;
 use crate::disc::Disc;
 use crate::save::{LotChunks, Neighbour, memory_card_file, read_lot_arrays, read_lot_globals, read_lots, read_neighbours};
 use crate::simulator::{SimHost, Simulator};
 use crate::tree_log::{Log, PassRec, PlanRec, StepRec, same_shape};
-use crate::world::{DATA_OBJECT_ID, PORTAL_FUNCTION, SIT_FUNCTION, Object, ObjectKey, ScriptVariables, World};
+use crate::world::{DATA_FACING, DATA_OBJECT_ID, PORTAL_FUNCTION, SIT_FUNCTION, Object, ObjectKey, ScriptVariables, World};
 use crate::{FileId, TreeId};
 
 /// The study switches (`REPLAY_*`, `HF_*`) as the environment had them at the start, read once:
@@ -2161,6 +2161,38 @@ fn native_plan_points(pl: &PlanRec, world: &World) -> Option<Vec<(i32, i32)>> {
     Some(points)
 }
 
+/// What the run keeps of a route follower to turn its person (`Replay::turn_followers`): the
+/// angle it faces, the plan it walks (an index into the log's) and the state it was in after its
+/// last frame.
+#[derive(Default)]
+struct Heading {
+    /// The person it walks: the log's, else the one that stood where it did at its first frame.
+    person: Option<i16>,
+    angle: f32,
+    plan: Option<usize>,
+    state: u32,
+}
+
+/// The leg of a walk's points a walker at `place` is on: the index of the point it goes to (at
+/// least 1), the first leg that has it, else the nearest. Legs of no length have none.
+fn leg_at(points: &[(i32, i32)], place: (f32, f32)) -> usize {
+    let mut best = (f32::MAX, 1);
+    for i in 1..points.len() {
+        let (a, b) = ((points[i - 1].0 as f32, points[i - 1].1 as f32), (points[i].0 as f32, points[i].1 as f32));
+        let (ex, ey) = (b.0 - a.0, b.1 - a.1);
+        let len2 = ex * ex + ey * ey;
+        if len2 == 0.0 {
+            continue;
+        }
+        let u = (((place.0 - a.0) * ex + (place.1 - a.1) * ey) / len2).clamp(0.0, 1.0);
+        let d2 = (place.0 - a.0 - u * ex).powi(2) + (place.1 - a.1 - u * ey).powi(2);
+        if d2 < best.0 - 1e-6 {
+            best = (d2, i);
+        }
+    }
+    best.1
+}
+
 /// `lot`: the lot as loaded, and the disc's copy of it (its house) if a save is loaded.
 /// The run natively, one tick at a time (`step`): the simulator and the host (the world and what
 /// the replay keeps between steps), and the checks' state.
@@ -2196,6 +2228,9 @@ pub struct Replay<'l> {
     ev_env: Option<String>,
     engine_list_at: usize,
     time_at: usize,
+    /// The route followers' facing (`Heading`), by follower, and how far into the log's steps of them the run is.
+    headings: HashMap<u32, Heading>,
+    heading_at: usize,
     t: u32,
 }
 
@@ -2597,6 +2632,8 @@ impl<'l> Replay<'l> {
             engine_list_at,
             time_at,
             t: 0,
+            headings: HashMap::new(),
+            heading_at: 0,
         })
     }
 
@@ -3828,7 +3865,71 @@ impl<'l> Replay<'l> {
         self.time_at = time_at;
         self.streak = streak;
         self.best_streak = best_streak;
+        self.turn_followers();
         true
+    }
+
+    /// The tick's frames of the route followers (the log's 'Z' records; the walks and their
+    /// plans are the log's) turn their persons: each follower keeps the angle it faces
+    /// (`routing::turn_towards`, from the leg of its plan it is on, or in state 5 the way to its
+    /// point), and a person in a state that walks or waits to turn (1 to 3) is given the
+    /// direction of it (`routing::facing_direction`, object data 1) after each frame (Route_Follow,
+    /// 800AE634). A route starts when a follower is in state 1 after another state: its angle is
+    /// then its person's direction's, unless the last route ran on (state 5), and the person is
+    /// given the direction of it (800AD1BC, 800AD5C4). A route whose plan the log has not (the
+    /// original's own turn-only routes) is not turned.
+    fn turn_followers(&mut self) {
+        let log = Rc::clone(&self.log);
+        while self.heading_at < log.follows.len() && log.follows[self.heading_at].tick <= self.t {
+            let f = &log.follows[self.heading_at];
+            self.heading_at += 1;
+            let heading = self.headings.entry(f.follower).or_default();
+            let place = (f.before.x, f.before.y);
+            if heading.person.is_none() {
+                heading.person = if f.person >= 0 {
+                    Some(f.person)
+                } else {
+                    // (the observer's id is -1 where the person is not in its list: the one
+                    // person standing where the follower does, to a sixteenth)
+                    let mut near = self.h.world.objects().filter(|o| o.person && o.on_lot() && (o.x16 as f32 - place.0).abs() < 1.0 && (o.y16 as f32 - place.1).abs() < 1.0);
+                    near.next().map(|o| o.id()).filter(|_| near.next().is_none())
+                };
+            }
+            let Some(key) = heading.person.and_then(|id| self.h.world.find(id)) else { continue };
+            let mut direction = None;
+            if f.before.state == 1 && heading.state != 1 {
+                if heading.state != 5 {
+                    heading.angle = direction_angle(self.h.world.get(key).facing());
+                }
+                direction = Some(facing_direction(heading.angle));
+                // the plan it starts: the latest that begins where it stands
+                let start = ((place.0 + 0.5) as i32, (place.1 + 0.5) as i32);
+                let upto = log.plans.partition_point(|p| p.tick <= f.tick);
+                heading.plan = log.plans[..upto].iter().rposition(|p| p.points.first() == Some(&start));
+            }
+            heading.state = f.after.state;
+            let points = heading.plan.map(|p| &log.plans[p].points[..]).unwrap_or(&[]);
+            let leg = |i: usize| (points[i].0 - points[i - 1].0, points[i].1 - points[i - 1].1);
+            let way = match f.before.state {
+                5 => Some((f.before.point.0 - place.0, f.before.point.1 - place.1)),
+                _ if points.len() < 2 => None,
+                1 => Some(leg(1)).map(|(x, y)| (x as f32, y as f32)),
+                2 => Some(leg(leg_at(points, place))).map(|(x, y)| (x as f32, y as f32)),
+                3 => Some(leg(points.len() - 1)).map(|(x, y)| (x as f32, y as f32)),
+                _ => None,
+            };
+            if let Some(way) = way {
+                heading.angle = turn_towards(heading.angle, way, f.before.state == 2, WALK_FRAME * f.before.factor, f.before.factor);
+                if f.before.state != 5 {
+                    direction = Some(facing_direction(heading.angle));
+                }
+            }
+            if let Some(d) = direction
+                && let Some(slot) = self.h.world.get_mut(key).data.get_mut(DATA_FACING)
+            {
+                *slot = d;
+            }
+        }
     }
 
     /// The world as the run has it now.

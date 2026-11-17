@@ -681,6 +681,8 @@ pub struct ResAskRec {
 pub struct FollowRec {
     pub tick: u32,
     pub follower: u32,
+    /// The id of the person the follower walks (-1 when the observer found none).
+    pub person: i16,
     pub before: FollowState,
     pub after: FollowState,
 }
@@ -1991,7 +1993,7 @@ pub fn read_log(path: &str) -> Option<Log> {
                     break;
                 }
                 let follower = r.u32();
-                r.i16();
+                let person = r.i16();
                 let mut w = [[0u32; 8]; 2];
                 for half in &mut w {
                     for x in half.iter_mut() {
@@ -2007,7 +2009,7 @@ pub fn read_log(path: &str) -> Option<Log> {
                     point: (f32::from_bits(h[4]), f32::from_bits(h[3])),
                     mode: h[6],
                 };
-                log.follows.push(FollowRec { tick: log.ticks, follower, before: side(&w[0]), after: side(&w[1]) });
+                log.follows.push(FollowRec { tick: log.ticks, follower, person, before: side(&w[0]), after: side(&w[1]) });
             }
             b'F' => {
                 // a person moved to a place (801F0410), with its callers: read past for now
