@@ -9,9 +9,10 @@ use housefire::iff::Order;
 use housefire::interp::{Frame, PrimResult, Sleep};
 use housefire::library::Library;
 use housefire::goals::Goals;
-use housefire::primitives::{complete_goal, dialog, idle, idle_for_input_waiting, present, random, set_to_next, test_object_type};
+use housefire::primitives::{complete_goal, dialog, idle, idle_for_input_waiting, present, random, relationship, set_to_next, test_object_type};
+use housefire::save::{Neighbour, NeighbourRelationship, SavedRelationship};
 use housefire::expression::Variables;
-use housefire::world::{DATA_OBJECT_ID, Object, ObjectKey, ScriptVariables, World};
+use housefire::world::{DATA_OBJECT_ID, Object, ObjectKey, PERSON_NEIGHBOUR_ID, ScriptVariables, World};
 
 fn node(op: u16, operand: [u8; 8]) -> Node {
     Node { opcode: op, true_target: 1, false_target: 2, operand, order: Order::Little }
@@ -234,4 +235,52 @@ fn idle_for_input_counts_its_wait_down() {
     assert_eq!(f.params, vec![9, 0]);
     // a parameter the frame does not have: the original's script error
     assert_eq!(idle_for_input_waiting(&node(17, [2, 0, 0, 0, 0, 0, 0, 0]), &mut f), PrimResult::Stop);
+}
+
+#[test]
+fn relationship_reads_writes_and_creates() {
+    let lib = Library::default();
+    let mut w = World::new(&lib);
+    let mut make = |id: i16, nid: Option<i16>, rels: Vec<SavedRelationship>| {
+        let mut o = Object::new();
+        o.data.resize(72, 0);
+        o.data[DATA_OBJECT_ID] = id;
+        if let Some(nid) = nid {
+            o.person = true;
+            o.person_data.resize(PERSON_NEIGHBOUR_ID + 1, 0);
+            o.person_data[PERSON_NEIGHBOUR_ID] = nid;
+        }
+        o.relationships = rels;
+        w.add(o, false)
+    };
+    let me = make(12, Some(3), vec![SavedRelationship { with: 7, values: vec![0, 2] }]);
+    make(7, None, Vec::new());
+    make(14, Some(5), Vec::new());
+    w.neighbours = vec![
+        Neighbour { id: 3, relationships: vec![NeighbourRelationship { with: 5, values: vec![40] }], ..Neighbour::default() },
+        Neighbour { id: 5, ..Neighbour::default() },
+    ];
+    let mut f = Frame { locals: vec![0], ..Frame::default() };
+    // operand: field, who to whom, flags (1 no create, 2 neighbours, 4 write), local, scope, -, datum
+    let run = |op: [u8; 8], so: i16, w: &mut World, f: &mut Frame| {
+        f.stack_object = so;
+        relationship(&node(26, op), &mut ScriptVariables::new(w, me, f))
+    };
+    // my own with an object: field 1 into local 0
+    assert_eq!(run([1, 0, 1, 0, 25, 0, 0, 0], 7, &mut w, &mut f), PrimResult::True);
+    assert_eq!(f.locals[0], 2);
+    // no field 2, not creating: false
+    assert_eq!(run([2, 0, 1, 0, 25, 0, 0, 0], 7, &mut w, &mut f), PrimResult::False);
+    // two Sims: the neighbours' relationship
+    assert_eq!(run([0, 0, 1, 0, 25, 0, 0, 0], 14, &mut w, &mut f), PrimResult::True);
+    assert_eq!(f.locals[0], 40);
+    // the other way there is none; creating makes it, zero
+    assert_eq!(run([0, 1, 1, 0, 25, 0, 0, 0], 14, &mut w, &mut f), PrimResult::False);
+    assert_eq!(run([0, 1, 0, 0, 25, 0, 0, 0], 14, &mut w, &mut f), PrimResult::True);
+    assert_eq!(f.locals[0], 0);
+    // writing a literal into it (no create needed now)
+    assert_eq!(run([0, 1, 5, 0, 7, 0, 9, 0], 14, &mut w, &mut f), PrimResult::True);
+    assert_eq!(w.neighbours[1].relationships[0].values, vec![9]);
+    // a write does not create: false
+    assert_eq!(run([3, 1, 5, 0, 7, 0, 9, 0], 14, &mut w, &mut f), PrimResult::False);
 }

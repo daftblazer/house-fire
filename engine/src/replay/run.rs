@@ -323,6 +323,20 @@ impl<'l> Replay<'l> {
         world.motives_run = card_lot || has("REPLAY_MOTIVES_RUN");
         world.neighbours = neighbours.to_vec();
         world.goals = goals;
+        if has("REPLAY_SHOW_RELS") {
+            // study: the relationships' value counts, the objects' and the neighbours'
+            for k in world.order().to_vec() {
+                let o = world.get(k);
+                for r in &o.relationships {
+                    println!("rel object {} -> {}: {} values {:?}", o.id(), r.with, r.values.len(), r.values);
+                }
+            }
+            for x in &world.neighbours {
+                for r in &x.relationships {
+                    println!("rel neighbour {} -> {}: {} values {:?}", x.id, r.with, r.values.len(), r.values);
+                }
+            }
+        }
         if log.lists.first().is_none_or(|l| l.ids.len() != world.len()) {
             println!(
                 "the log does not start with the lot loaded ({} objects in its first list, {} in the lot)",

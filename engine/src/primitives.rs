@@ -4,9 +4,9 @@ use crate::bhav::{Node, TreeKind, tree_kind};
 use crate::expression::Variables;
 use crate::iff::Order;
 use crate::interp::{Frame, Interpreter, PrimResult, Sleep};
-use crate::save::{MotiveDelta, SavedQueueEntry};
+use crate::save::{MotiveDelta, NeighbourRelationship, SavedQueueEntry, SavedRelationship};
 use crate::simulator::SimHost;
-use crate::world::{Object, ObjectKey, PresentationEvent, ScriptVariables, World, scope};
+use crate::world::{Object, ObjectKey, PERSON_NEIGHBOUR_ID, PresentationEvent, ScriptVariables, World, scope};
 
 /// A 16-bit field of a node's operand at byte `i`, in the file's byte order.
 fn field(n: &Node, i: usize) -> i16 {
@@ -56,6 +56,104 @@ pub fn complete_goal(n: &Node, vars: &mut ScriptVariables) -> Option<PrimResult>
         Some(_) => PrimResult::False,
         None => PrimResult::Stop,
     })
+}
+
+/// Relationship2 (opcode 26): reads or writes one value of a relationship, from one object or
+/// neighbour to another. Read from the original's fn_802089D8 (`docs/primitives.md`). The
+/// operand: byte 0 the value's field; byte 1 who to whom (0 me to the stack object, 1 the stack
+/// object to me, 2 the stack object to the object in the local byte 3 names, 3 that object to
+/// the stack object); byte 2 flags (bit 0: do not create, bit 1: the ids are neighbours', bit 2:
+/// write); byte 4 the variable's scope, bytes 6-7 its datum. Between two Sims (or with bit 1) the
+/// relationship is the neighbours' (NBRS, by their neighbour ids), else the first object's own,
+/// with the second by id. A relationship without that field is false, unless creating: then it
+/// is made (zeros) up to it. Then the variable gets the value, or (writing) the value the
+/// variable: true. No such object, neighbour or parameter: the original's script errors (21,
+/// 51: `Stop`).
+pub fn relationship(n: &Node, vars: &mut ScriptVariables) -> PrimResult {
+    let o = n.operand;
+    let (field, mode, flags) = (o[0] as usize, o[1], o[2]);
+    let (neighbours, write) = (flags & 2 != 0, flags & 4 != 0);
+    let create = flags & 1 == 0;
+    let w = &*vars.world;
+    let nid = |id: i16| w.find_object(id).filter(|x| x.person).and_then(|x| x.person_data.get(PERSON_NEIGHBOUR_ID).copied());
+    let me = w.get(vars.me).id();
+    // with bit 1 the stack object and the local hold neighbour ids, and I am my neighbour
+    let mine = if neighbours { nid(me) } else { Some(me) };
+    let so = vars.frame.stack_object;
+    let local = vars.frame.locals.get(o[3] as usize).copied();
+    let (a, b) = match mode {
+        0 => (mine, Some(so)),
+        1 => (Some(so), mine),
+        2 => match local { Some(l) => (Some(so), Some(l)), None => return PrimResult::Stop },
+        3 => match local { Some(l) => (Some(l), Some(so)), None => return PrimResult::Stop },
+        _ => return PrimResult::Stop,
+    };
+    let (Some(a), Some(b)) = (a, b) else { return PrimResult::Stop };
+    let pair = if neighbours {
+        Some((a, b))
+    } else {
+        let (Some(oa), Some(ob)) = (w.find_object(a), w.find_object(b)) else { return PrimResult::Stop };
+        if oa.person && ob.person { nid(a).zip(nid(b)) } else { None }
+    };
+    let values: Option<&mut Vec<i32>> = match pair {
+        Some((na, nb)) => {
+            if !w.neighbours.iter().any(|x| x.id == nb) {
+                return PrimResult::Stop;
+            }
+            let Some(x) = vars.world.neighbours.iter_mut().find(|x| x.id == na) else { return PrimResult::Stop };
+            match x.relationships.iter().position(|r| r.with == nb) {
+                Some(k) => Some(&mut x.relationships[k].values),
+                None if create => {
+                    x.relationships.push(NeighbourRelationship { with: nb, values: Vec::new() });
+                    x.relationships.last_mut().map(|r| &mut r.values)
+                }
+                None => None,
+            }
+        }
+        None => {
+            let Some(ka) = w.find(a) else { return PrimResult::Stop };
+            let x = vars.world.get_mut(ka);
+            match x.relationships.iter().position(|r| r.with == b as i32) {
+                Some(k) => Some(&mut x.relationships[k].values),
+                None if create => {
+                    x.relationships.push(SavedRelationship { with: b as i32, values: Vec::new() });
+                    x.relationships.last_mut().map(|r| &mut r.values)
+                }
+                None => None,
+            }
+        }
+    };
+    let Some(values) = values else { return PrimResult::False };
+    if values.len() <= field {
+        if !create {
+            return PrimResult::False;
+        }
+        values.resize(field + 1, 0);
+    }
+    let have = values[field];
+    let datum = i16::from_le_bytes([o[6], o[7]]);
+    if write {
+        let Some(v) = vars.get(o[4], datum) else { return PrimResult::Stop };
+        set_relationship(vars, pair, a, b, field, v.value as i32);
+        PrimResult::True
+    } else if vars.set(o[4], datum, have as i16) {
+        PrimResult::True
+    } else {
+        PrimResult::Stop
+    }
+}
+
+fn set_relationship(vars: &mut ScriptVariables, pair: Option<(i16, i16)>, a: i16, b: i16, field: usize, value: i32) {
+    let values = match pair {
+        Some((na, nb)) => vars.world.neighbours.iter_mut().find(|x| x.id == na).and_then(|x| x.relationships.iter_mut().find(|r| r.with == nb)).map(|r| &mut r.values),
+        None => match vars.world.find(a) {
+            Some(k) => vars.world.get_mut(k).relationships.iter_mut().find(|r| r.with == b as i32).map(|r| &mut r.values),
+            None => None,
+        },
+    };
+    if let Some(v) = values.and_then(|v| v.get_mut(field)) {
+        *v = value;
+    }
 }
 
 /// Dialog (opcode 36): opens a dialog for the player (a presentation event, the world's

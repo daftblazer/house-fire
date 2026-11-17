@@ -7,7 +7,7 @@ use crate::expression::{ExpressionOperand, Variables, expression};
 use crate::interp::{Error, Host, Interpreter, Mode, PrimResult, Trees};
 use crate::library::Library;
 use crate::primitives::{
-    call_named_tree, complete_goal, create_object, drop_onto, grab, place_made, remove_object, snap, dialog, idle, idle_for_input, idle_for_input_waiting, present, push_action, random, run_functional_tree, set_motive_delta, set_to_next, test_object_type,
+    call_named_tree, complete_goal, create_object, drop_onto, grab, place_made, remove_object, snap, dialog, idle, idle_for_input, idle_for_input_waiting, present, push_action, random, relationship, run_functional_tree, set_motive_delta, set_to_next, test_object_type,
 };
 use crate::routing::slot_places;
 use crate::simulator::SimHost;
@@ -627,6 +627,28 @@ impl Host for ReplayHost<'_> {
                 return got;
             }
             self.counts.note("primitives: SetMotiveDelta: an influence, the log's taken");
+        }
+        if n.opcode == 26 {
+            // Relationship2: the saved relationships, the objects' and the neighbours'
+            self.sync(interp, s);
+            let got = relationship(n, &mut ScriptVariables::new(&mut self.world, me, interp.top()));
+            let want = self.logged(s, n);
+            if has("REPLAY_SHOW_RELOPS") {
+                let f = interp.top();
+                println!("rel op {}:{} by {me_id} so {} operand {:02x?} locals {:?}: native {}, log {}", s.tree, s.node, f.stack_object, n.operand, f.locals, got as i32, want as i32);
+            }
+            // (a node whose two ends are one: the log cannot tell true from false)
+            let either = n.true_target == n.false_target && matches!(got, PrimResult::True | PrimResult::False);
+            if got == want || either {
+                note!(self.counts, "primitives: Relationship2: the same natively, {}", if got == PrimResult::True { "true" } else { "false" });
+                return got;
+            }
+            self.counts.note("primitives: Relationship2: DIFFERENT (the log's taken)");
+            if has("REPLAY_SHOW_DIFF") && self.shown.next("rel", 12) {
+                let f = interp.top();
+                println!("Relationship2 at {}:{} by {me_id} so {} operand {:02x?}: native {}, log {}, params {:?}", s.tree, s.node, f.stack_object, n.operand, got as i32, want as i32, f.params);
+            }
+            return want;
         }
         if n.opcode == 56 {
             // CompleteGoal: the goal's mark in the save's progress

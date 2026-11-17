@@ -73,18 +73,31 @@ read-only record of the +0x238 call's result per object per tick).
 The engine has it as `idle()` (`engine/src/primitives.rs`), the interpreter's `Sleep` and the
 simulator's pass. `engine/tests/primitives.rs` and `engine/tests/simulator.rs` test it.
 
-## Relationship2 (opcode 26): not native yet
+## Relationship2 (opcode 26): one value of a relationship
 
-Reads and writes the relationships between objects (each object's saved RelMatrix, `lots.md`)
-and between neighbours (NBRS's). 128 uses in the session, with six operand forms. For the
-commonest get (`00 02 01 00 08 00 00 00`, 27 uses) the step is true exactly when the object
-has a saved relationship with the stack object (5 of 5), false otherwise (22 of 22). The
-other forms do not follow from the operand's obvious reading (one of them is both true and
-false between objects with no relationship). Castaway's `cXObject::TryRelationship2` (0xAA8
-bytes) shows why: modes in operand byte 1 (0, 2, 4 ...), objects or neighbours
-(`Relationship2Param::GetUseNeighbors`), a create flag (`GetCreate`), pet ownership. It is
-the relationship system, to come as one; the engine keeps the saved relationships
-(`Object::relationships`; the club's 16) for it.
+Native for every use (`primitives::relationship`; 107 on home-full, 146 on club-full, 0
+different), read from the original's `fn_802089D8`, with Castaway's `Relationship2Param`
+getters naming the flags. The operand:
+
+- byte 0: the value's field (the relationship is a list of 32-bit values);
+- byte 1: who to whom: 0 me to the stack object, 1 the stack object to me, 2 the stack object
+  to the object in the local byte 3 names, 3 that object to the stack object (a local index
+  past the frame's: error 51);
+- byte 2: flags. Bit 0 set: do not create. Bit 1: the ids are neighbours' (NBRS ids; I am
+  then my own neighbour id, person data 31). Bit 2: write. Bit 3: pet ownership (not used by
+  the discs' forms seen);
+- byte 4: the variable's scope, bytes 6-7 its datum.
+
+Without bit 1 both are objects by id (none: error 21). If both are Sims (the object type 2 test,
+vtable +0x368) the relationship is their neighbours' (fn_801FD05C's person data, the
+neighbourhood manager's +0x118 lookup), else the first object's own (`Object::relationships`,
+the saved RelMatrix, `lots.md`) with the second's id. If the list is too short for the field:
+not creating, false; creating, the list is made (zeros) up to the field. Then reading puts the
+value into the variable, writing puts the variable into the value, and the step is true. A
+write does not create: the group talk's exit (global 403, `01 01 05 ...`) writes field 1 of a
+relationship that is not there, and the next read of it (global 401) is false. That step's
+two ends are the same node, so the log cannot tell its result; the replay counts such a step
+as the same either way.
 
 ## CallNamedTree (opcode 28)
 
