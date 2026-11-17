@@ -99,7 +99,7 @@ impl Assets {
                 None => material_of(&MaterialRec { tick: 0, layers: 0, layer: [[0; 0x18]; 2], textures: [(0, [0; 128]); 2], strips_before: 0 }, lit, bound),
             };
             info.unsupported = unsupported;
-            state_of(&mut material, d.kind, cutout);
+            state_of(&mut material, d.kind, cutout, shader.and_then(|sh| sh.layers.first()).map(|l| l.value));
             out.push(Made {
                 draw: Draw { mesh, world: d.world, bones: None, projection: None, viewport: None, view: Some(input.view), material, lighting, id: 0 },
                 info,
@@ -122,13 +122,16 @@ pub const DST_ALPHA_GROUND: u8 = 0x7F;
 /// Z less-or-equal with writes, no culling; a one-layer opaque material whose texture has clear
 /// pixels tests alpha at least 127, the blended ones at least 5, with source alpha over the
 /// picture).
-fn state_of(m: &mut Material, kind: Kind, cutout: bool) {
+fn state_of(m: &mut Material, kind: Kind, cutout: bool, reference: Option<f32>) {
+    // the alpha test's reference is the shader's first layer's float (0.5 and 0.4: 127 and 102 of
+    // 255, the logged ones; 0.02: 5), else the constants
+    let at = |fallback: u8| reference.filter(|v| (0.0..=1.0).contains(v)).map_or(fallback, |v| (v * 255.0) as u8);
     m.depth_test = Some(Compare::LEQUAL);
     m.depth_write = true;
     m.cull = Cull::None;
     m.alpha_test = match m.blend {
-        Blend::Opaque => (cutout && m.layers[1].is_none()).then(|| AlphaTest::at_least(ALPHA_TEST_OPAQUE)),
-        _ => Some(AlphaTest::at_least(ALPHA_TEST_BLENDED)),
+        Blend::Opaque => (cutout && m.layers[1].is_none()).then(|| AlphaTest::at_least(at(ALPHA_TEST_OPAQUE))),
+        _ => Some(AlphaTest::at_least(at(ALPHA_TEST_BLENDED))),
     };
     m.dst_alpha = Some(if kind == Kind::LotList { DST_ALPHA_GROUND } else { DST_ALPHA_OBJECT });
 }
@@ -251,4 +254,42 @@ pub fn splice(scene: &mut Scene, made: Vec<Made>) -> usize {
     }
     scene.frame.draws = out;
     removed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use housefire::lighting::{Lights, Source, Sun};
+
+    #[test]
+    fn a_light_set_is_tinted_and_turned_into_the_view() {
+        // a view turning x to -y (and y to x), moving by (0, 0, -10)
+        let view: Mat3x4 = [0.0, 1.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, -10.0];
+        let lights = Lights {
+            ambient: [0.4; 3],
+            sun: Some(Sun { colour: [1.0; 3], direction: [-1.0, 0.0, 0.0] }),
+            points: vec![Source { at: [1.0, 2.0, 3.0], reach: 2.0, colour: [0.6; 3] }],
+        };
+        let Lighting::Lit { ambient, directionals, points } = lighting_for(&lights, &view) else { panic!("lit") };
+        assert!((ambient[0] - 0.2).abs() < 0.003);
+        // to the sun is the direction negated: +x, which the view turns to -y
+        assert_eq!(directionals.len(), 1);
+        assert!((directionals[0].to_light[1] + 1.0).abs() < 1e-6 && directionals[0].to_light[0].abs() < 1e-6);
+        assert!((directionals[0].colour[0] - 0.5).abs() < 0.003);
+        assert_eq!(points[0].position, [2.0, -1.0, -7.0]);
+        assert!((points[0].k1 - 0.2).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_alpha_tests_reference_is_the_shaders_float() {
+        let mut m = Material { combine: Combine::Vertex, layers: [None, None], blend: Blend::Opaque, cull: Cull::None, depth_test: None, depth_write: false, alpha_test: None, write_colour: true, write_alpha: true, dst_alpha: None, layer1_from_position: None, sphere: None };
+        state_of(&mut m, Kind::ObjectList, true, Some(0.4));
+        assert_eq!(m.alpha_test.map(|a| a.refs[0]), Some(102));
+        // no clear pixels in its texture: no test
+        state_of(&mut m, Kind::ObjectList, false, Some(0.4));
+        assert_eq!(m.alpha_test, None);
+        assert_eq!(m.dst_alpha, Some(DST_ALPHA_OBJECT));
+        state_of(&mut m, Kind::LotList, false, None);
+        assert_eq!(m.dst_alpha, Some(DST_ALPHA_GROUND));
+    }
 }

@@ -173,7 +173,8 @@ impl LotLights {
     /// outside, and its four lights (`light::cell_lights`: the room's own lights first, then
     /// its windows', the strongest first).
     pub fn at(&self, x: f32, y: f32) -> Lights {
-        let room = self.room(x.floor() as i32, y.floor() as i32);
+        // an object on a tile's edge (a door's place: x or y a whole number) is in the tile before it
+        let room = self.room(x.ceil() as i32 - 1, y.ceil() as i32 - 1);
         let geometry: Vec<([f32; 3], f32)> = self.sources.iter().map(|s| (s.at, s.reach)).collect();
         let points = self
             .ranges
@@ -181,5 +182,43 @@ impl LotLights {
             .and_then(|r| light::cell_lights([x, y, light::GRID_Z], (r[2], r[3]), (r[0], r[1]), &geometry))
             .map_or(Vec::new(), |ids| ids.iter().filter(|&&i| i != 0xFFFF).map(|&i| self.sources[usize::from(i)]).collect());
         Lights { ambient: self.ambients.get(room).copied().unwrap_or([0.0; 3]), sun: (room == 0).then_some(self.sun), points }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A 4 x 4 lot whose tile (1, 3) is room 1 and the rest outside, with no lights.
+    fn lot() -> LotLights {
+        let mut room_of = vec![0u8; 16];
+        room_of[3 * 4 + 1] = 1;
+        LotLights {
+            sources: vec![Source { at: [0.0; 3], reach: 0.0, colour: [0.0; 3] }; 512],
+            ranges: vec![[0, 0, 256, 256], [0, 0, 256, 256]],
+            ambients: vec![[0.1; 3], [0.2; 3]],
+            sun: Sun { colour: [1.0; 3], direction: [0.0, 0.0, -1.0] },
+            room_of,
+            width: 4,
+        }
+    }
+
+    #[test]
+    fn an_object_on_a_tiles_edge_is_in_the_tile_before_it() {
+        let l = lot();
+        // a door at (2.0, 3.5) sits on the edge of tiles 1 and 2: the one before it, room 1
+        assert_eq!(l.at(2.0, 3.5).ambient, [0.2; 3]);
+        assert!(l.at(2.0, 3.5).sun.is_none());
+        // inside a tile: that tile's room; outside is room 0 and has the sun
+        assert_eq!(l.at(2.5, 3.5).ambient, [0.1; 3]);
+        assert!(l.at(2.5, 3.5).sun.is_some());
+    }
+
+    #[test]
+    fn a_tile_off_the_lot_is_outside() {
+        let l = lot();
+        assert_eq!(l.room(-1, 0), 0);
+        assert_eq!(l.room(9, 9), 0);
+        assert_eq!(l.room(1, 3), 1);
     }
 }

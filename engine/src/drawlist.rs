@@ -447,6 +447,18 @@ mod tests {
     }
 
     #[test]
+    fn a_wall_pieces_edge_runs_along_its_wall() {
+        // the part on tile (13, 15) with its wall on the +x side (turned 90): the edge x = 14 from y 15 to 16
+        let piece = WallPiece { x: 13.5, y: 15.5, angle: 90.0, fence: false, pattern: 0, cap: false, opening: Opening::None, form: Form::Straight };
+        let e = edge_of(&piece, false);
+        assert!((e[0][0] - 14.0).abs() < 1e-5 && (e[0][1] - 15.0).abs() < 1e-5, "{e:?}");
+        assert!((e[1][0] - 14.0).abs() < 1e-5 && (e[1][1] - 16.0).abs() < 1e-5, "{e:?}");
+        // a fence stands on the edge itself
+        let fence = WallPiece { x: 14.5, y: 12.0, angle: 0.0, fence: true, ..piece };
+        assert_eq!(edge_of(&fence, true), [[14.0, 12.0], [15.0, 12.0]]);
+    }
+
+    #[test]
     fn an_animation_clock_loops_from_the_first_tick() {
         // the trees' sway on tick 1,039 (home): 2 x 1,039 + 1 less 10 x 201
         assert_eq!(clock(201, 60.0, true, 1039), 69.0);

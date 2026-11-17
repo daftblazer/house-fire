@@ -1,7 +1,16 @@
 //! `render-check LOG ISO FRAME`: renders one frame of the home lot from the observer log's
 //! records with the engine's own renderer, and compares it with the recompiled game's own dump
 //! of that frame (`$HF_FRAMES/world_NNNNN.png`, the picture before the 2D layer). Writes our
-//! picture and a difference picture under `$HF_FRAMES/r1/`.
+//! picture and a difference picture under `$HF_FRAMES/r1/` (`HF_OUT=name`: another folder).
+//!
+//! The engine mode (`HF_ENGINE=1`, with `--card CARD` for a save's lot): the lot's model draws
+//! (objects, walls, the lot's own model) are made from the engine's own world (`engine_scene`)
+//! in place of the log's rigid and display-list draws; floors, shadows, Sims and the portrait stay
+//! the log's, and so does the camera. Studies for it: `HF_ORACLE=1` takes the light sets from the
+//! log's draw at the same world matrix, `HF_MATDIFF=1` compares the materials and states with
+//! the log's, `HF_LIGHTSTUDY=1` prints both light sets in world space, `HF_DRAWS=prefix` the
+//! planned draws of a model, `HF_OBJECTS=1` the lot's objects, `HF_LISTMODEL=name` a model's
+//! draws in draw order, `HF_HOUSE=n` the lot's house number (default 1).
 //!
 //! Study aids (environment): `HF_WORST=n` lists the n models whose pixels are furthest off,
 //! `HF_PROBE="x,y;x,y"` explains the draw at those pixels, `HF_MODEL=name` samples a model's
@@ -207,6 +216,8 @@ fn main() -> ExitCode {
                     by.entry("no log draw".into()).or_insert((0, m.info.model.clone())).0 += 1;
                     continue;
                 };
+                let ulps = (0..12).map(|i| (m.draw.world[i].to_bits() as i64 - o.0[i].to_bits() as i64).abs()).max().unwrap_or(0);
+                by.entry(format!("WORLD {} ulps", if ulps == 0 { "0".to_string() } else if ulps < 16 { "1..15".into() } else if ulps < 4096 { "16..4095".into() } else { "more".to_string() })).or_insert((0, m.info.model.clone())).0 += 1;
                 let (e, l) = (&m.draw.material, &o.2);
                 let mut diffs = Vec::new();
                 if std::mem::discriminant(&e.combine) != std::mem::discriminant(&l.combine) || e.combine != l.combine && !matches!(e.combine, frame::Combine::Crossfade { .. }) {
@@ -250,6 +261,13 @@ fn main() -> ExitCode {
         println!("engine mode: {} draws planned, {planned} made; the log's {removed} rigid and display-list draws left out", plan.draws.len());
     }
 
+    if let Ok(name) = std::env::var("HF_LISTMODEL") {
+        // (study aid: the draws of a model in draw order: its mesh's vertices, textures, flags, state)
+        for (i, d) in scene.frame.draws.iter().enumerate().filter(|(_, d)| scene.drawn[d.id as usize - 1].model == name) {
+            let info = &scene.drawn[d.id as usize - 1];
+            println!("  draw {i}: {} vertices at ({:.2}, {:.2}, {:.2}) {:?} flags {:?} {:?} blend {:?} alpha {:?}", scene.meshes[d.mesh.0 as usize].vertices.len(), d.world[3], d.world[7], d.world[11], info.textures, info.flags, d.material.combine, d.material.blend, d.material.alpha_test.map(|a| a.refs[0]));
+        }
+    }
     let gpu = Gpu::new(std::env::var_os("HF_VALIDATE").is_some()).expect("Vulkan");
     let mut renderer = Renderer::new(&gpu, WIDTH, HEIGHT);
     let mesh_ids = renderer.load_meshes(&scene.meshes);
