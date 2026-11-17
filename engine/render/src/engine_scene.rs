@@ -529,7 +529,7 @@ impl Lot {
         let mut out = plays.clone();
         let Some(build) = log.grid_builds.iter().rfind(|b| b.tick <= tick) else { return out };
         let copies = |t: u32| log.frames.iter().rev().find(|f| f.0 <= t).map_or(0, |f| f.1);
-        let behind = copies(tick).saturating_sub(copies(build.tick)) as f32;
+        let behind = (copies(tick) + DISPLAY_COPIES_AFTER_TICK).saturating_sub(copies(build.tick)) as f32;
         // the own lights (from index 256) as the build logged them
         let logged: Vec<[f32; 3]> = build.lights.iter().skip(256).map(|l| l.0).collect();
         let lot = housefire::drawlist::lot_draws_with(world, &self.resources, &self.models, &self.art, None, &mut Default::default(), plays);
@@ -671,7 +671,7 @@ pub fn run_to(replay: &mut housefire::replay::Replay<'_>, log: &housefire::tree_
     while replay.tick() + 1 < tick && replay.step() {
         observe(replay);
     }
-    let now = copies(tick);
+    let now = copies(tick) + DISPLAY_COPIES_AFTER_TICK;
     housefire::drawlist::Plays { tick, by_id: seen.into_iter().map(|(id, (graphic, changed))| (id, Play { graphic, frames: changed.map(|t| now.saturating_sub(copies(t))), anchor: None })).collect() }
 }
 
@@ -689,6 +689,11 @@ pub struct Engine {
     /// The Sims' draws from the engine's world (`sims`); with none, the log's stay.
     pub sims: Option<crate::sims::SimDraws>,
 }
+
+/// The display copies the picture of a tick is drawn after the copy count the log holds at it:
+/// the moving lamps' places in the logged frame are one copy past it (the dance floor's cones and
+/// pools equal the frame's second pass at 1, not 0, 0.9 or 1.1: 72% to 80% of the club's frame).
+const DISPLAY_COPIES_AFTER_TICK: u32 = 1;
 
 /// The room whose batch the log's Sims' shadows go in until the engine makes them (the home
 /// lot's Sims are in the main rooms, room 1).

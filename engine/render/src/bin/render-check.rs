@@ -353,6 +353,14 @@ fn main() -> ExitCode {
             l.texture = texture_ids[l.texture.0 as usize];
         }
     }
+    // HF_DROPSTRIP="lo,hi" (study aid, log mode): leave out the model draws of the log's strips lo..hi
+    if let Some((lo, hi)) = std::env::var("HF_DROPSTRIP").ok().and_then(|v| v.split_once(',').map(|(a, b)| (a.parse::<usize>().unwrap_or(0), b.parse::<usize>().unwrap_or(0)))) {
+        let drawn = &scene.drawn;
+        scene.frame.draws.retain(|d| {
+            let i = &drawn[d.id as usize - 1];
+            !(matches!(i.class, Class::RigidStrip | Class::DisplayList) && (lo..hi).contains(&i.strip))
+        });
+    }
     let picture = renderer.render(&scene.frame);
 
     skin_check(&log, tick, &scene, &renderer);
@@ -468,7 +476,7 @@ fn main() -> ExitCode {
             let info = &scene.drawn[d.id as usize - 1];
             if matches!(info.class, Class::RigidStrip | Class::DisplayList) {
                 let m = &d.material;
-                *counts.entry(format!("{} {:?} {:?} {:?} dw{}", info.model, info.textures[0], m.blend, m.alpha_test.map(|a| a.refs[0]), m.depth_write)).or_default() += 1;
+                *counts.entry(format!("{} {:?} {:?} {:?} dw{} {} {:?}", info.model, info.textures[0], m.blend, m.alpha_test.map(|a| a.refs[0]), m.depth_write, match d.lighting { Lighting::Lit { .. } => "lit", Lighting::VertexColours => "vcol", Lighting::Black => "black" }, m.combine)).or_default() += 1;
             }
         }
         for (k, n) in counts {
@@ -486,7 +494,7 @@ fn main() -> ExitCode {
             let (x, y, z) = (d.world[3], d.world[7], d.world[11]);
             let depth = v[8] * x + v[9] * y + v[10] * z + v[11];
             let dist = ((v[0] * x + v[1] * y + v[2] * z + v[3]).powi(2) + (v[4] * x + v[5] * y + v[6] * z + v[7]).powi(2) + depth * depth).sqrt();
-            println!("mats {:5} depth {depth:8.3} dist {dist:8.3} {} {:?} {}", d.id, info.model, info.textures[0], d.world.map(|v| format!("{v:.3e}")).join(" "));
+            println!("mats {:5} depth {depth:8.3} dist {dist:8.3} {} s{} {:?} {}", d.id, info.model, info.strip, info.textures[0], d.world.map(|v| format!("{v:.3e}")).join(" "));
         }
     }
     // HF_MODELMAP=name: the pixels of that model's draws, off ones in red, the rest in grey
