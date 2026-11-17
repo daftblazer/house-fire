@@ -19,6 +19,7 @@ pub mod motives;
 pub mod planner;
 pub mod pose;
 pub mod primitives;
+pub mod replay;
 pub mod rle_texture;
 pub mod quickdata;
 pub mod scene;
