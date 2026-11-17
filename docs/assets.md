@@ -2201,33 +2201,70 @@ within 4 in every channel:
 | rigid draws' pixels | 79,447: 97.63% | 81,608: 84.73% (12,464 beyond) | 86.62% (10,921 beyond) |
 | whole frame | 88.89% | 85.28% | 85.81% |
 
-The engine mode is **below** the aim of 91.82% for the rigid pixels. How it got there (frame 2400):
-the draws with the log's light sets as an oracle and a destination alpha of 0 for all 84.1%
-(from 40.2% with the model's own shader on the walls and the placeholder `tom_debug` drawn);
-with the engine's light sets 69.7%, 80.65% with the walls lit from their edge's ends, 83.06% with the
-diagonal walls (which hid the rooms behind them), 83.56% with the doors' edge rule, 83.86% with the
-alpha reference from the shader's float, 84.73% with the nearest grid point. The light sets are
-worth 1.9% (86.62% with the log's), the rest is not the lights.
+The engine mode is **below** the aim of 91.82% for the rigid pixels (C3 took it from 84.73% to
+86.64% on 2400, 86.62% on 2401). How it got there (frame 2400): the draws with the log's light sets
+as an oracle and a destination alpha of 0 for all 84.1% (from 40.2% with the model's own shader on
+the walls and the placeholder `tom_debug` drawn); with the engine's light sets 69.7%, 80.65% with
+the walls lit from their edge's ends, 83.06% with the diagonal walls (which hid the rooms behind
+them), 83.56% with the doors' edge rule, 83.86% with the alpha reference from the shader's float,
+84.73% with the nearest grid point; C3: 86.12% without the objects whose resources name no
+dataset (the scooter), 86.31% with the engine's draws after the floors, 86.64% with the windows'
+room across an edge. The light sets are worth about 2.5% now (89.18% with the log's).
 
-What is left, in pixels of the 12,464 beyond (frame 2400):
+What C3 found (frame 2400, pixels of the rigid draws beyond 4):
 
-- 2,767 of the windows' objects (`_NEW_Single_Hung_Window`, 4,124 pixels): the frames' white lines
-  are two coplanar meshes (53 and 52 vertices, the same matrix) that the original's depth rounding
-  lets win in dashes; the engine's matrices differ from the logged ones in the last bits, and
-  the later draw wins all over (solid lines). In the log mode the logged matrices give the dashes
-  (466 pixels off). Not told apart without the game's own depth.
+- **The scooter (1,319 pixels, fixed).** Its `ObjDefinition::ResData` row (flags 0x82000000) has
+  no dataset (word +0x10 is 0): the model is in `models.arc` alone. The original draws the objects
+  that have a dataset; `drawlist::object_models` now draws nothing for an object whose resources
+  name none (it was "no model and no dataset" only). Lockstep's frame draws: 570 same, 3 DIFFERENT,
+  26 missing (564, 3, 32 before).
+- **Draw order against the floors (151 pixels, and the glass).** The log draws every floor
+  strip and shadow mask (indices up to 398 of the frame) and then the objects. C2 put its block
+  where the log's first model draw was (the outer lot model, index 74), so a window's glass (it
+  writes depth) drawn before the later floors hid the floors behind it: dark panes. `splice` now
+  puts the block at the first model draw after the last floor strip or mask. (The original's own
+  order of the objects and walls is spatial, not opaque-then-blended: at the back wall it goes
+  tile by tile, a wall piece, then the objects on its tile, the window's two frame meshes then its
+  glass. `HF_ORDER=1` lists the log's order; no linear key over the place fits it, 121 of 201
+  steps at best, so the engine keeps the opaque-then-blended order.)
+- **Windows' light (about 330 pixels).** A window in a wall at x = 13.0 or y = 14.0 is on the
+  edge of an outdoor tile and a room: `LotLights::room_at` takes the tile before the edge, or the
+  room across it when the tile before is outdoors (the engine lit them by the sun). The doors
+  lose 63 pixels by it (the walnut door 946 to 1,009: the log's choice for a door is not this).
+
+What is left, in pixels of the 10,725 beyond (frame 2400, 2401 within 15):
+
+- 2,394 of the windows' objects (`_NEW_Single_Hung_Window`, 4,124 pixels; 2,333 even with the
+  log's light sets): the frames' white lines (the 53- and 52-vertex meshes, one place) come out dim
+  grey and hidden by the wall where the log's are bright lavender; without the walls (`HF_SKIP=wall_`)
+  the frame is there as a bright 3D outline, so the wall's face wins the depth at the window's
+  place. The logged matrices equal the engine's but for signed zeros; the meshes are the same
+  vertex for vertex; the materials the same (the log's layer flag words, 8 and 0x88 for the two
+  frame meshes, 0 in the shader: not used by the renderer). The order did not matter (walls first:
+  the same figure). Not found.
 - 2,147 + 851 + 1,228 + 459 of the walls, the windowed walls, the diagonals and the fence
   (3 to 5 levels off): the light sets (14 of 35 differ in one light).
-- 1,319 + 678 + 78 pixels drawn for objects the original does not draw on this frame: the scooter
-  (object 251, parked at (23, 3.5)), the money trunk (248) and the cheat gnome (105). The lot's
-  objects list at the tick holds all three and nothing in their resources or fields tells them
-  apart from the drawn ones (checked: level, flags, the log's object list); the rule is not found.
-  Without them the figure is about 85.7%.
-- 946 of the walnut door (its light set at the room boundary), 723 of the outer lot's, 571 of the
-  lattice door (two layers, the log tests alpha), 269 of the book case, 207 of the aquarium, the
-  rest in small parts.
+- 678 + 78 of the money trunk (object 248) and the cheat gnome (105), drawn by the engine, not
+  by the original. Checked and ruled out: the log's object list (both in it), flags (2 and 2,048,
+  others with 2 are drawn), the objects' data fields (only field 33 = 8, with 36 = 20 and 37 = 64,
+  tells them from every drawn object: the mark of the scooter's parts too: a catalogue class, not
+  a hide flag), selectors ('s' records exist for both, with their dataset ids), ResData rows (same
+  flags and form as drawn objects), the object's address, level, attributes and temps. Their
+  bounds sphere and box (the record's 72 bytes: centre and radius as 4 floats, then two boxes of
+  min and max, the second the union of the sub-models' vertex boxes in the record's raw units)
+  are inside the view by any radius: the trunk's place is at x 0.058, the gnome's at x -0.004 of
+  the screen, both at the left edge, where no logged object has its place (the leftmost is the
+  mulberry's at 0.062, which is a tree with a radius of 0.12). A test of the object's place
+  against a box (x from about 0.06 on) would hide both, but the scooter's bounds are too large
+  (4 by 7 tiles for an object of about one: its parts are on bones) to say anything. The rule is not found.
+- 1,009 of the walnut door (its light set at the room boundary), 723 of the outer lot's (286 with
+  the log's lights), 571 of the lattice door (two layers, the log tests alpha), 269 of the book
+  case, 207 of the aquarium, the rest in small parts.
 
-Shared code changed: `drawlist::Draw` gained `origin`, `object`, `shader` and `edge`; `wall_draws`
+Shared code changed in C3: `drawlist::object_models` (an object with no dataset draws nothing),
+`lighting::LotLights::room_at` (an edge's room), `engine_scene::splice` (the block's place);
+render-check gained `HF_ORDER`, `HF_SKIP` and `HF_SKIPTEX`. Log mode unchanged (97.63/97.62%,
+whole 88.89%). Before that, in C2: `drawlist::Draw` gained `origin`, `object`, `shader` and `edge`; `wall_draws`
 takes the wall patterns; `lot_draws_of` makes the lot's whole list (lockstep's `frame_draws` uses
 it: its figures are unchanged, 564 the same); `is_sims` and `is_held` moved to `drawlist`;
 `lot::pick_lot` moved to `lotpick`; `shader::index`; `Assets` (the renderer's) keeps the textures

@@ -10,7 +10,9 @@
 //! log's draw at the same world matrix, `HF_MATDIFF=1` compares the materials and states with
 //! the log's, `HF_LIGHTSTUDY=1` prints both light sets in world space, `HF_DRAWS=prefix` the
 //! planned draws of a model, `HF_OBJECTS=1` the lot's objects, `HF_LISTMODEL=name` a model's
-//! draws in draw order, `HF_HOUSE=n` the lot's house number (default 1).
+//! draws in draw order, `HF_ORDER=1` the whole draw order (runs collapsed), `HF_SKIP=prefix` and
+//! `HF_SKIPTEX=name` leave a model's or a texture's engine draws out, `HF_HOUSE=n` the lot's house
+//! number (default 1).
 //!
 //! Study aids (environment): `HF_WORST=n` lists the n models whose pixels are furthest off,
 //! `HF_PROBE="x,y;x,y"` explains the draw at those pixels, `HF_MODEL=name` samples a model's
@@ -169,6 +171,15 @@ fn main() -> ExitCode {
             }
         };
         let made = assets.engine_draws(&mut scene, &engine_scene::Inputs { draws: &plan.draws, models: &plan.models, shaders: &shaders, lighting: &lighting, view });
+        // (HF_SKIP=prefix and HF_SKIPTEX=name, study aids: leave out the engine's draws of the
+        // models with that name, or of the materials whose first layer has that texture)
+        let mut made = made;
+        if let Ok(prefix) = std::env::var("HF_SKIP") {
+            made.retain(|m| !m.info.model.starts_with(&prefix));
+        }
+        if let Ok(texture) = std::env::var("HF_SKIPTEX") {
+            made.retain(|m| m.info.textures[0].as_deref() != Some(texture.as_str()));
+        }
         let planned = made.len();
         if std::env::var_os("HF_LIGHTSTUDY").is_some() {
             // the log's light sets in world space, once for each object place; the engine's lamps
@@ -261,6 +272,25 @@ fn main() -> ExitCode {
         println!("engine mode: {} draws planned, {planned} made; the log's {removed} rigid and display-list draws left out", plan.draws.len());
     }
 
+    if std::env::var_os("HF_ORDER").is_some() {
+        // (study aid: the draws in order, runs of the same class, model and blend collapsed)
+        let mut last = String::new();
+        let mut n = 0;
+        for d in &scene.frame.draws {
+            let info = &scene.drawn[d.id as usize - 1];
+            let tag = format!("{:?}/{}/{}", info.class, info.model, if matches!(d.material.blend, frame::Blend::Opaque) { "op" } else { "bl" });
+            if tag == last {
+                n += 1;
+                continue;
+            }
+            if n > 0 {
+                println!("ORD {last} x{n}");
+            }
+            last = tag;
+            n = 1;
+        }
+        println!("ORD {last} x{n}");
+    }
     if let Ok(name) = std::env::var("HF_LISTMODEL") {
         // (study aid: the draws of a model in draw order: its mesh's vertices, textures, flags, state)
         for (i, d) in scene.frame.draws.iter().enumerate().filter(|(_, d)| scene.drawn[d.id as usize - 1].model == name) {

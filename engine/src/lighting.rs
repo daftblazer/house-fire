@@ -230,6 +230,17 @@ mod tests {
     }
 
     #[test]
+    fn an_object_on_an_edge_takes_the_room_across_it_when_the_tile_before_is_outside() {
+        let l = lot();
+        // a window at (1.0, 3.5) is on the edge of tiles 0 (outside) and 1 (room 1): room 1
+        assert_eq!(l.at(1.0, 3.5).ambient, [0.2; 3]);
+        // and at (1.5, 4.0) the tile before it in y is room 1 already
+        assert_eq!(l.at(1.5, 4.0).ambient, [0.2; 3]);
+        // an edge with outdoors on both sides stays outdoors
+        assert_eq!(l.at(3.0, 0.5).ambient, [0.1; 3]);
+    }
+
+    #[test]
     fn a_tile_off_the_lot_is_outside() {
         let l = lot();
         assert_eq!(l.room(-1, 0), 0);
