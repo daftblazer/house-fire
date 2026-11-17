@@ -45,10 +45,9 @@
   terrain's second layer is the terrain shader's own map (PTTEXMTX0 from `Shader::position_uv`).
 - **The engine mode's frame at 97.21% whole** (render-check HF_ENGINE=1 --card, frame 2400,
   after E1: rigid 97.02%, floors 97.35%, shadows 95.90%; log mode 97.47%). Stuck after two
-  packets each (W1, E1): the shadows' shears (SHADOW_SHEAR_OBJECT 1.144, _WALL 0.9286 fitted at
-  one clock; the 75 indoor objects' unsheared; ruled out: nearest/strongest light, sums of the
-  four directions by rank, reach, colour or distance, per-slot mixes; draws on one light set
-  share one shear; no other log has draw records at another clock) and the money trunk 678 /
+  packets each (W1, E1): the shadows' shears (found on the club in K5: walls from the sun over
+  |z|+0.4, indoor objects an inverse-power sum of the light set, constants in engine_scene.rs;
+  home's engine shadows held at 95.89%: its gap is elsewhere) and the money trunk 678 /
   gnome 78 px drawn but not by the original (no screen box separates the trunk, x 0.0617,
   from the leftmost drawn object, 0.0618; flags, fields, selectors, ResData, lists, level ruled
   out). Also left: the outer lot 619, window glass 226, counter 158, wall caps 127, lattice door
@@ -78,13 +77,15 @@
   layer. Not read. render-check's club reference is the full frame (work/frames-club3: the
   frame_ PNGs copied as world_), so the portrait and HUD count as misses in both modes. (The
   log's two frames in tick 964 were the 'two passes': split since 76f6c37.)
-- **The club in engine mode at 80.53% whole** (K2-K4; frame 3001 of club-d3000b.log, work/frames-club3;
-  log mode 97.62%, rigid 98.65%, floors 95.31%, shadows 99.31%): rigid 80.87%, floors 87.81%,
-  shadows 69.17%, Sims 38.06%. Left (55.8k px): the dance floor 23k (cones under the Sims, the
-  robe Sim), the DJ booth 9.2k (moving parts 0.03-0.05 off in x), four Sims' headings (logged
-  1, 4, 1, 1; ours 2-5: turns the engine doesn't keep), the bar 1.2k; a Sim the game doesn't
-  draw (the robe Sim, 0 of 58 bones; data field 34 = 1 alone: a guess); shadows (the indoor
-  shears, above). DISPLAY_COPIES_AFTER_TICK 1 fitted by scan. Still from the log in that mode
-  (K2): a moving lamp's place (the 'e' light-grid positions), the Sims' identities (the
-  dressing records, by order). ROOM_AMBIENT_COLOUR (0.8, 0.8, 1.0) fitted from the club's
-  logged 25,25,31. Home's engine-mode PNG changed by a few pixels in K2 (97.23 -> 97.24%).
+- **The club in engine mode at 87.59% whole** (K2-K5; frame 3001 of club-d3000b.log, work/frames-club3;
+  log mode 97.62%): rigid 88.78%, floors 94.28%, shadows 84.26%, Sims 38.05%. K5: shadow shears
+  from the sun and the light set, multi-tile objects lit at the leader's tile, lamps' lights
+  at the grid's last build, floor coverings (flat opaque meshes under 0.05: drawn with the
+  floors, no shadow). Left (35.6k px): the five Sims ~12k (poses, headings, a black arm on the
+  dancer) and the portrait 3k; the dance floor 16.9k; the robe Sim the game doesn't draw
+  (+0.26% if skipped, no data rule); bar 1.2k, booth 1.2k, doors 960, counter 0.5k. Lead: the
+  grid-point tie (floor in y fixes the doors 960 -> 173 px, home wants ceil: -0.22%).
+  Unexplained: the shear divisors (0.4; 0.9744|z|+0.629) and the power 1.7, fitted on two
+  suns. Still from the log in that mode (K2): a moving lamp's place ('e' records), the Sims'
+  identities (dressing records, by order). Reference is the full frame, so the portrait and
+  HUD count as misses in both modes.
