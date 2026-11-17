@@ -802,6 +802,8 @@ pub struct Log {
     pub directions: Vec<(u32, i16, i16)>,
     /// The steps logged before each tick's 'K' record (tick n's steps are from `tick_steps[n - 1]`).
     pub tick_steps: Vec<usize>,
+    /// A follower's list of points when it changed, after a walker's step (':'): (tick, follower, points).
+    pub follower_lists: Vec<(u32, u32, Vec<(u32, u32)>)>,
     pub scores: Vec<ScoreRec>,
     pub bases: Vec<BaseRec>,
     pub choice_lists: Vec<ChoiceListRec>,
@@ -2138,6 +2140,19 @@ pub fn read_log(path: &str) -> Option<Log> {
                     break;
                 }
                 r.p += 7;
+            }
+            b':' => {
+                // a follower's list of points changed
+                if !r.has(6) {
+                    break;
+                }
+                let follower = r.u32();
+                let n = r.u16() as usize;
+                if !r.has(8 * n) {
+                    break;
+                }
+                let points = (0..n).map(|_| (r.u32(), r.u32())).collect();
+                log.follower_lists.push((log.ticks, follower, points));
             }
             b'_' => {
                 // a person's direction (data 1) changed (before the tick's 'K')
