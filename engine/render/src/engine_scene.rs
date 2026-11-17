@@ -237,12 +237,19 @@ pub fn splice(scene: &mut Scene, made: Vec<Made>) -> usize {
     let mut engine = Some(opaque);
     let mut out = Vec::new();
     let mut removed = 0;
-    for d in std::mem::take(&mut scene.frame.draws) {
+    // the original draws every floor strip (and the masks of the shadows over them) before its
+    // first object: a blended draw (a window's glass, which writes depth) put in front of a
+    // floor strip hides it. So the engine's draws go at the first model draw after the last floor.
+    let last_floor = scene.frame.draws.iter().rposition(|d| matches!(scene.drawn[d.id as usize - 1].class, Class::Floor | Class::FloorMask)).unwrap_or(0);
+    for (at, d) in std::mem::take(&mut scene.frame.draws).into_iter().enumerate() {
         if !is_model(&d, &scene.drawn) {
             out.push(d);
             continue;
         }
         removed += 1;
+        if at < last_floor {
+            continue;
+        }
         if let Some(list) = engine.take() {
             for mut m in list {
                 scene.drawn.push(m.info.clone());

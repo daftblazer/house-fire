@@ -169,13 +169,27 @@ impl LotLights {
         Lights { ambient: self.ambients.get(room).copied().unwrap_or([0.0; 3]), sun: (room == 0).then_some(self.sun), points }
     }
 
+    /// The room an object at (x, y) is in. On a tile's edge (a door's or window's place: x or y a
+    /// whole number) it is in the tile before the edge, or in the one after it when that is
+    /// outdoors (a window in a wall at x = 13 looks into the room east of it).
+    fn room_at(&self, x: f32, y: f32) -> usize {
+        let (cx, cy) = (x.ceil() as i32 - 1, y.ceil() as i32 - 1);
+        let before = self.room(cx, cy);
+        if before != 0 {
+            return before;
+        }
+        // the tiles across the edge(s): the one after in x when x is whole, in y when y is whole
+        let (ax, ay) = (x.fract() == 0.0, y.fract() == 0.0);
+        let across = [(ax, cx + 1, cy), (ay, cx, cy + 1), (ax && ay, cx + 1, cy + 1)];
+        across.into_iter().filter(|a| a.0).map(|a| self.room(a.1, a.2)).find(|&r| r != 0).unwrap_or(0)
+    }
+
     /// What lights an object at (x, y) on the lot: its room's ambient, the sun if the room is
     /// outside, and its four lights (`light::cell_lights` at the light grid's point nearest to it,
     /// whole tiles: the room's own lights first, then its windows', the strongest first; 72 of
     /// the home lot's 98 object places give the log's four lights, `docs/assets.md`).
     pub fn at(&self, x: f32, y: f32) -> Lights {
-        // an object on a tile's edge (a door's place: x or y a whole number) is in the tile before it
-        let room = self.room(x.ceil() as i32 - 1, y.ceil() as i32 - 1);
+        let room = self.room_at(x, y);
         let geometry: Vec<([f32; 3], f32)> = self.sources.iter().map(|s| (s.at, s.reach)).collect();
         let points = self
             .ranges
