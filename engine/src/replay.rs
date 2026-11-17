@@ -2800,7 +2800,7 @@ impl<'l> Replay<'l> {
                     continue;
                 }
                 if let Some(&id0) = ids.get(&s.sim) {
-                    motives_before(id0, &sim, &mut h.world, &mut motives_done);
+                    motives_before(id0, sim, &mut h.world, &mut motives_done);
                 }
                 {
                     // A Sim waiting at IdleForInput with an entry queued, whose next logged steps are
@@ -3289,7 +3289,7 @@ impl<'l> Replay<'l> {
                 if first_step.contains(&s.sim) {
                 } else if has("REPLAY_SHOW_FIRST_TREE") {
                     let o = h.world.get(ok);
-                    let fields: Vec<usize> = h.world.definition(o).map(|d| (0..d.fields.len()).filter(|&k| d.field(k) == s.tree as u16 as i32 as _).collect()).unwrap_or_default();
+                    let fields: Vec<usize> = h.world.definition(o).map(|d| (0..d.fields.len()).filter(|&k| d.field(k) == s.tree as i32 as _).collect()).unwrap_or_default();
                     note!(h.counts, "study first tree: node {} person {} the definition's fields equal to it {fields:?}", s.node, o.person);
                     let saved: Vec<(i16, u16)> = o.stack.iter().map(|f| (f.tree.map_or(-1, |t| lib.tree_at(t).id), f.node)).collect();
                     let rel = match saved.iter().position(|&(t, _)| t == s.tree as i16) {
@@ -3734,7 +3734,7 @@ impl<'l> Replay<'l> {
                     b.steps += 1;
                 }
             }
-            motives_before(i16::MAX, &sim, &mut h.world, &mut motives_done);
+            motives_before(i16::MAX, sim, &mut h.world, &mut motives_done);
             if have_passes {
                 h.counts.note(if sim.stop_asked(&h.world) == (pass.stopped_at != 0) {
                     "passes: stopped (or not) as the log's"
@@ -4020,7 +4020,7 @@ impl<'l> Replay<'l> {
             if let Some(h) = house {
                 let _ = loaded.take_house_from(h);
             }
-            let _ = routing(log, lib, world, &loaded, counts, &ids);
+            let _ = routing(log, lib, world, &loaded, counts, ids);
         }
 
         // The motives' own update (update_motives), on each person's logged motives ('N' records):
