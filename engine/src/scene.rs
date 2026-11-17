@@ -28,6 +28,9 @@ pub struct Placement {
     pub x: f32,
     pub y: f32,
     pub angle: f32,
+    /// Where the lights find the object: its leader's own place, which is not the group's middle
+    /// (`x`, `y`) for an object of several tiles; a wall-hung object's is `x`, `y`.
+    pub lit_at: [f32; 2],
 }
 
 /// The placements of the objects whose parts are given, one for each leader.
@@ -51,7 +54,8 @@ pub fn placements(parts: &[Part]) -> Vec<Placement> {
                 x += 0.45 * s;
                 y -= 0.45 * c;
             }
-            Placement { leader, x, y, angle }
+            let lit_at = if ps.iter().any(|p| p.wall) { [x, y] } else { [lead.x16.div_euclid(16) as f32 + 0.5, lead.y16.div_euclid(16) as f32 + 0.5] };
+            Placement { leader, x, y, angle, lit_at }
         })
         .collect()
 }
@@ -717,8 +721,8 @@ mod tests {
         // a painting of two panels on a wall, facing 0 (its lead with no resources of its own)
         let painting = [Part { id: 137, leader: 137, x16: 304, y16: 352, facing: 0, wall: false }, Part { id: 138, leader: 137, x16: 304, y16: 368, facing: 0, wall: true }];
         let p = placements(&[bed, tree, painting.to_vec()].concat());
-        assert_eq!(p[0], Placement { leader: 29, x: 14.5, y: 27.0, angle: 0.0 });
-        assert_eq!(p[1], Placement { leader: 137, x: 19.95, y: 23.0, angle: 90.0 });
-        assert_eq!(p[2], Placement { leader: 153, x: 9.0, y: 9.0, angle: 90.0 });
+        assert_eq!(p[0], Placement { leader: 29, x: 14.5, y: 27.0, angle: 0.0, lit_at: [14.5, 26.5] });
+        assert_eq!(p[1], Placement { leader: 137, x: 19.95, y: 23.0, angle: 90.0, lit_at: [19.95, 23.0] });
+        assert_eq!(p[2], Placement { leader: 153, x: 9.0, y: 9.0, angle: 90.0, lit_at: [8.5, 8.5] });
     }
 }

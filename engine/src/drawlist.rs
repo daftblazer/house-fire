@@ -302,7 +302,7 @@ fn object_parts(models: &Models, placements: &[Placement], guids_of: impl Fn(i16
                 // bones' (`idle_bones`) or here
                 let scale = if bones.is_some() { 1.0 } else { rec.scale };
                 let world = world_of(&m, scale);
-                out.push((Draw { kind: kind_of(&part), part: part.index, world, origin: [p.x, p.y], centre: mesh_centre(&part, &world), object: p.leader, shader: None, edge: None }, bones.is_none()));
+                out.push((Draw { kind: kind_of(&part), part: part.index, world, origin: p.lit_at, centre: mesh_centre(&part, &world), object: p.leader, shader: None, edge: None }, bones.is_none()));
             }
         }
     }
