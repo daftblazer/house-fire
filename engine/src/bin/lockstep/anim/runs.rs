@@ -124,7 +124,7 @@ pub fn runs(lib: &Library, log: &housefire::tree_log::Log, d: &Disc, step_object
         };
         let spans: BTreeSet<u32> = (0..42)
             .map(|ph| {
-                let mut clock = housefire::routing::FrameClock { time: ph as f32 / 1000.0 };
+                let mut clock = housefire::routing::FrameClock { ms: ph as f32 };
                 let (mut t, mut f) = (0u32, 0u32);
                 while f < frames_needed {
                     f += clock.frames_to_tick();

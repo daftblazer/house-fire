@@ -1050,7 +1050,18 @@ impl<'l> Replay<'l> {
                     // The frame's own state as the native kept it, against the log's at the step.
                     let f = interp.top();
                     h.counts.note(if f.params == s.params { "frames: parameters the same natively" } else { "frames: parameters different (set to the log's)" });
-                    h.counts.note(if f.locals == s.locals { "frames: locals the same natively" } else { "frames: locals different (set to the log's)" });
+                    // A local the frame has not written is zero here and whatever the stack's
+                    // memory held in the original (docs/interpreter.md, "Locals are not
+                    // cleared"): a difference by design, not one the engine owes.
+                    let written_same = f.locals.len() == s.locals.len()
+                        && f.locals.iter().zip(&s.locals).enumerate().all(|(k, (a, b))| a == b || (k < 64 && f.unset >> k & 1 != 0));
+                    h.counts.note(if f.locals == s.locals {
+                        "frames: locals the same natively"
+                    } else if written_same {
+                        "frames: locals the same natively but the unwritten ones (the original's left over)"
+                    } else {
+                        "frames: locals different (set to the log's)"
+                    });
                     h.counts.note(if f.stack_object == s.stack_object {
                         "frames: stack object the same natively"
                     } else {

@@ -1346,6 +1346,34 @@ pub(super) fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, c
             "routing: a walker's step natively NOT the original's"
         });
     }
+    // the frames before each tick by the native clock (logs with ',' records)
+    let mut clock_frames: BTreeMap<u32, u32> = BTreeMap::new();
+    // The frame clock against the original's own (',' records): from the first tick's clock,
+    // each tick's frames and the clock after it natively, the speed setting an input.
+    if log.clock.len() > 1 {
+        let mut clock = FrameClock { ms: log.clock[0].2 };
+        let (mut same, mut different) = (0, 0);
+        clock_frames.insert(log.clock[0].0, 0);
+        for w in log.clock.windows(2) {
+            let ((_, speed_before, _, frame_before), (_, speed, ms, frame)) = (w[0], w[1]);
+            if speed != speed_before {
+                clock.restart();
+            }
+            let frames = clock.frames_to_tick_at(crate::routing::speed_factor(i32::from(speed)));
+            clock_frames.insert(w[1].0, frames);
+            if frames == frame.wrapping_sub(frame_before) && clock.ms.to_bits() == ms.to_bits() {
+                same += 1;
+            } else {
+                different += 1;
+                if different <= 5 {
+                    println!("clock different at tick {}: speed {speed_before} -> {speed}, frames native {frames} log {}, clock native {} log {ms}", w[1].0, frame.wrapping_sub(frame_before), clock.ms);
+                }
+                clock.ms = ms;
+            }
+        }
+        counts.add("clock: a tick's frames and the clock after it natively the original's, to the bit", same);
+        counts.add("clock: a tick's frames or clock DIFFERENT", different);
+    }
     let mut native_frame_ticks: Vec<u32> = Vec::new();
     // Frames and ticks (`FrameClock`): the frames each tick holds natively against a walker's
     // frames in each tick of the log, from the first tick it has any; the clock's phase there is
@@ -1369,15 +1397,22 @@ pub(super) fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, c
         }
         let speed_from = |t: u32| speed_at.range(..=t).next_back().map_or(1.0, |e| *e.1);
         if let (Some((&first, _)), Some((&last, _))) = (per.first_key_value(), per.last_key_value()) {
-            let best = (0..42)
+            // the clock starts afresh after the tick before a change of speed
+            let frames_at = |clock: &mut FrameClock, t: u32| {
+                let frames = clock.frames_to_tick_at(speed_from(t));
+                if speed_from(t + 1) != speed_from(t) {
+                    clock.restart();
+                }
+                frames
+            };
+            // with the original's clock logged, the native clock from its first value (no phase
+            // to fit); else the best phase
+            let logged = !clock_frames.is_empty();
+            let frames_at = |clock: &mut FrameClock, t: u32| if logged { clock_frames.get(&t).copied().unwrap_or(0) } else { frames_at(clock, t) };
+            let best = (0..if logged { 1 } else { 42 })
                 .map(|ph| {
-                    let mut clock = FrameClock { time: ph as f32 / 1000.0 };
-                    let n = (first..=last)
-                        .filter(|&t| {
-                            let frames = clock.frames_to_tick_at(speed_from(t));
-                            per.get(&t) == Some(&frames)
-                        })
-                        .count();
+                    let mut clock = FrameClock { ms: ph as f32 };
+                    let n = (first..=last).filter(|&t| per.get(&t) == Some(&frames_at(&mut clock, t))).count();
                     (n, ph)
                 })
                 .max()
@@ -1385,9 +1420,9 @@ pub(super) fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, c
             counts.add("routing: ticks a walker moves in", per.len());
             counts.add("routing: ticks whose walker frames are natively the original's (the frame clock)", best.0);
             // the tick of each frame natively, from the first (the clock at its phase)
-            let mut clock = FrameClock { time: best.1 as f32 / 1000.0 };
+            let mut clock = FrameClock { ms: best.1 as f32 };
             for t in first..=last + 200 {
-                for _ in 0..clock.frames_to_tick_at(speed_from(t)) {
+                for _ in 0..frames_at(&mut clock, t) {
                     native_frame_ticks.push(t);
                 }
             }

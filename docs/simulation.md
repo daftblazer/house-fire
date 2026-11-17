@@ -1088,7 +1088,7 @@ fast mode keeps the phase after it (afresh again: 3,178 ticks; the leftover kept
 as the same part of a tick: 1,853), so it is not kept. The DOL has no 0.042, but 1/24 at
 8037BC58 and 8037DB70: with it as the tick and the frame at 0.033 only 2,413 ticks hold the
 original's frames, so the clock's ratio (14 frames in 11 ticks, 0.033 / 0.042) is not those two
-constants; its real source is still to find.
+constants. (Found 2026-11-17: 42.0, in milliseconds; "Frames and ticks" below.)
 
 The club's logs (`tree.log`, `tree3.log`) are older than the places, walkers and plans records
 (`P`, `Z`, `G`, `H`): their routing runs cannot be checked natively, and the replay's host takes
@@ -1546,13 +1546,33 @@ walker's. With it as an input, each frame's: 8 of the 10 whole walks take the or
 exactly (the yard's long walks too, and tick 1931's, paused midway rather than cut short); the
 two left start at a speed a little off (ticks 1380 and 1619).
 
-**Frames and ticks** (`routing::FrameClock`, `TICK_TIME`). A simulation tick holds one walker
-frame or two, in a steady pattern (three ticks of two in every eleven: 14 frames in 11 ticks,
-0.042 / 0.033), paused or not: the frames run on a clock of 0.033 s a frame and a tick each time
-it has passed another 0.042 s. Natively from the first tick a walker moves in, its start phase
-fitted once (the log begins in play), over the 3,835 ticks the most moving walker moves in:
-3,736 hold its frames exactly (97%); the rest drift by a frame (the 0.042 measured, not yet found
-in the code).
+**Frames and ticks** (`routing::FrameClock`; read from the code 2026-11-17, replacing the fitted
+0.042). The simulator's frame function (fn_802389A4, called once a frame; it calls
+`Simulator_SimulateOneTick` from 802390D0) keeps a clock in milliseconds, a single float at the
+simulator's +1216:
+
+- each frame adds the frame's time (r13 - 29720, 0.033 s) x 1000 (802CEBCC), at most 66.67
+  (802CEBD0), times the speed's factor (the simulator's virtual at +72: 0 gives 1.0, -1 0.5, -2
+  5.0, -3 10.0, anything else 0; 802CEBD4 to 802CEBE4), in one fused multiply-add;
+- the sum is held to 840 (802CEBF4, twenty ticks), the frame's time cut by what was dropped;
+- then, while the clock holds 42.0 (802CEBFC) or more, 42 is taken off and a tick runs;
+- after a tick that did not run (fn_80239280 says no: a pause, a dialog) the clock is set to 0,
+  and so it is after a tick while the flag at r13 - 28660 is set (the speed was changed).
+
+So the "0.042" is 42.0 in milliseconds, and with a frame of 33 every value is a whole number:
+the pattern (14 frames in 11 ticks) never drifts. The frame's time itself (fn_8015F4B4, the
+frame counter's function) is the mean of the last three elapsed times, each held between 0.033
+and 15 x 0.033: 0.033 exactly whenever the machine keeps up.
+
+Checked against the observer's ',' record (the speed setting at the simulator's +1088, the clock
+and the frame counter as each tick starts) on the whole sessions: home-full.log 6,868 of 6,868
+ticks to the bit (frames before the tick and the clock after it), club-full.log 9,417 of 9,418.
+The one: club tick 3204, the change into the fast mode, has a frame more than the native clock:
+a frame whose tick did not run (fn_80239280), which also sets the clock to 0; its cause is not
+read. In replay on home: all 3,835 ticks a walker moves in hold the original's frames (3,822
+with the fitted clock) and all 14 covered routing runs return on the original's tick (12, 2
+not). A real-time run and an unpaced one give the same log byte for byte: the frame's time is
+0.033 either way, so the pattern depends on nothing but the speed.
 
 **A routing primitive's return.** GotoRoutingSlot and GotoRelativePosition yield (result 1) every
 tick from their plan until they return. Their walker done (state 4), the follower runs one frame

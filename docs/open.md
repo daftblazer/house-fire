@@ -19,21 +19,21 @@ engineering of the original's code, not more fitting. The list below this sectio
    steps with nothing set: home 50,938. First: a free mode (the log only as the player's
    commands, dialog answers and random seed) that reports the first tick and step where the
    native stack leaves the log's; then that tick driven to the log's end, on home then club.
-   The measure meanwhile (2026-11-17): `tools/log_debt.py` on a replay's summary, home 46,278,
-   club 45,158, the fast log 30,512, to drive to zero (zero = the log only compared with).
-   Everything after stage 4 (saves, menus, story, multiplayer) stands on this.
-2. **The original's loop of frames and ticks** (one cause under at least six items): how many
-   simulation ticks and animation frames a display frame holds, and their order. Not modelled,
-   so: 20 of home's 1,186 walking places a frame early or late (plan.md "Next"); the walkers'
-   frame phase fitted once per log (3,736 of 3,835 ticks, a 0.042 drift unexplained,
-   simulation.md 1553); the club's laser place after tick 6 (1.98 animation frames per render
-   frame, below); the male's head a tick behind (below); which bone set a skinned draw uses (296
-   of 4,712, below); which loads pause whose Animate (primitives.md 412-418). The simulation must
-   stay deterministic to the bit, so the answer is a frame clock inside the simulation's state,
-   read from the game's main loop, with the '|' frame records as the answer key. Lead
-   (2026-11-17): the unpaced run (`FAST=1 work/record.sh`) plays the same inputs with another
-   count of ticks and frames per poll, and is exact run to run: two pacings of one session to
-   read the rule from.
+   The measure meanwhile (2026-11-17): `tools/log_debt.py` on a replay's summary, home.log 25,672,
+   club.log 32,667, home-full 21,709, club-full 5,867, to drive to zero (zero = the log only
+   compared with). Nearly all of it is CompleteGoal (56), which needs the goals' state from the
+   save; the frames' uncleared locals and Animate are not owed (loop.md 5e e3).
+2. **The original's loop of frames and ticks**: THE RULE FOUND 2026-11-17 (simulation.md
+   "Frames and ticks"; `routing::FrameClock`): a clock in milliseconds, 33 a frame times the
+   speed's factor, a tick for every 42.0 (802CEBFC), held to 840, afresh after the speed's
+   change; native to the bit on every tick of the home session and all but one of the club's.
+   Left, each now a matter of using it: the replay's animation frames still placed by the log
+   (animate.rs); the 20 walking places a frame early or late (plan.md "Next"); the club's laser
+   place after tick 6; the male's head a tick behind; which bone set a skinned draw uses (296
+   of 4,712); which loads pause whose Animate (primitives.md 412-418). Unread: the held frame
+   (fn_80239280 says no tick and the clock is set to 0: club tick 3204, at the change into the
+   fast mode, one frame more than the native clock), and the frame function's own order of
+   tick, animation and draw (fn_8015F4B4 and its callers 800851A4, 80064794).
 3. **The planner and the walk, natively and whole.** The pieces agree where the log is between
    them; free, the walk parts at six frames and stays off (the door's fast mode, a ramp, two
    brakes, a walk begun at speed: simulation.md 940). Fitted or unread: the planner's weight 3

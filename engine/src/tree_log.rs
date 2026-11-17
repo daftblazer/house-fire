@@ -805,6 +805,9 @@ pub struct Log {
     pub motives: Vec<MotiveRec>,
     /// A person's direction (data 1) when it changed, at the start of a tick ('_'): (tick, id, direction).
     pub directions: Vec<(u32, i16, i16)>,
+    /// The frame clock as each tick starts (','): (tick, the speed setting, the clock's
+    /// milliseconds after this tick's share was taken, the game's frame counter).
+    pub clock: Vec<(u32, i16, f32, u32)>,
     /// The steps logged before each tick's 'K' record (tick n's steps are from `tick_steps[n - 1]`).
     pub tick_steps: Vec<usize>,
     /// A follower's list of points when it changed, after a walker's step (':'): (tick, follower, points).
@@ -2158,6 +2161,14 @@ pub fn read_log(path: &str) -> Option<Log> {
                 }
                 let points = (0..n).map(|_| (r.u32(), r.u32())).collect();
                 log.follower_lists.push((log.ticks, follower, points));
+            }
+            b',' => {
+                if !r.has(10) {
+                    break;
+                }
+                let speed = r.i16();
+                let ms = f32::from_bits(r.u32());
+                log.clock.push((log.ticks, speed, ms, r.u32()));
             }
             b'_' => {
                 // a person's direction (data 1) changed (before the tick's 'K')

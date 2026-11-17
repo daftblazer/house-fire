@@ -4,8 +4,7 @@
 use housefire::library::Slot;
 use housefire::routing::{
     direction_angle, facing_direction, routing_return_tick, run_on_point, turn_towards, slot_goal_score, slot_pick, turn_frames, walk_frames, walk_rates, walk_step, walk_top, FrameClock, WALK_TOP_ADULT,
-    WALK_TOP_CHILD,
-};
+    WALK_TOP_CHILD, speed_factor};
 
 #[test]
 fn run_on_points_of_the_home_log() {
@@ -56,15 +55,34 @@ fn turns_and_tops() {
 
 #[test]
 fn the_frame_clock_holds_14_frames_in_11_ticks() {
-    let mut clock = FrameClock { time: 0.0 };
+    // whole milliseconds: exactly 14 frames in every 11 ticks, with no drift
+    let mut clock = FrameClock::default();
     let frames: u32 = (0..1100).map(|_| clock.frames_to_tick()).sum();
-    assert!((1399..=1401).contains(&frames), "{frames}");
-    // the fast mode (5): a frame every 3 or 4 ticks
-    let mut clock = FrameClock { time: 0.0 };
+    assert_eq!(frames, 1400);
+    assert_eq!(clock.ms, 0.0);
+    // the fast mode (5): 165 a frame, a frame every 3 or 4 ticks
+    let mut clock = FrameClock::default();
     let per: Vec<u32> = (0..55).map(|_| clock.frames_to_tick_at(5.0)).collect();
     assert!(per.iter().all(|&n| n <= 1));
-    let total: u32 = per.iter().sum();
-    assert!((13..=15).contains(&total), "{total}");
+    assert_eq!(per.iter().sum::<u32>(), 14);
+}
+
+#[test]
+fn the_frame_clock_as_the_original_ran_it() {
+    // the home session's first ticks (the clock after each tick, the frames before it)
+    let mut clock = FrameClock { ms: 24.0 };
+    let got: Vec<(u32, f32)> = (0..7).map(|_| (clock.frames_to_tick(), clock.ms)).collect();
+    assert_eq!(got, [(1, 15.0), (1, 6.0), (2, 30.0), (1, 21.0), (1, 12.0), (1, 3.0), (2, 27.0)]);
+    // into the fast mode at tick 426: the clock afresh, then 165 a frame
+    let mut clock = FrameClock { ms: 27.0 };
+    clock.restart();
+    assert_eq!((clock.frames_to_tick_at(speed_factor(-2)), clock.ms), (1, 123.0));
+    // the clock holds twenty ticks at most
+    let mut clock = FrameClock { ms: 800.0 };
+    clock.frame(speed_factor(-3));
+    assert_eq!(clock.ms, 840.0);
+    assert_eq!(speed_factor(-1), 0.5);
+    assert_eq!(speed_factor(1), 0.0);
 }
 
 #[test]

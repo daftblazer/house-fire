@@ -403,35 +403,69 @@ pub fn routing_return_tick(frame_ticks: &[u32], walk: u32, turn: u32) -> Option<
     frame_ticks.get((walk + turn) as usize).map(|t| t + 1)
 }
 
-/// The simulation's tick against the walker's frame (`WALK_FRAME`): 0.042 s, measured (the home
-/// log's ticks hold 1 or 2 frames, 14 in 11 ticks; `docs/simulation.md`, "Frames and ticks").
+/// The frame clock, as the original runs it (its fn_802389A4, once a frame; read 2026-11-17,
+/// `docs/simulation.md`, "Frames and ticks"). A clock in milliseconds, single floats: each frame
+/// adds the frame's time (0.033 s x 1000, 802CEBCC; at most 66.67, 802CEBD0) times the game's
+/// speed, the sum held to `CLOCK_MOST`; then a tick runs for every `TICK_MS` it holds. All its
+/// values are whole numbers, so it never drifts.
+pub const FRAME_MS: f32 = 33.0;
+/// A tick's share of the clock (802CEBFC).
+pub const TICK_MS: f32 = 42.0;
+/// The most the clock holds: twenty ticks (802CEBF4).
+pub const CLOCK_MOST: f32 = 840.0;
+/// The same in seconds, for what is measured against a frame's time.
 pub const TICK_TIME: f32 = 0.042;
 
-/// The frames between ticks: the frame clock adds a frame's time each frame and a tick runs each
-/// time it has gone a tick's further. `frames_to_tick` gives the frames before the next tick.
-#[derive(Clone, Copy, Debug)]
+/// The clock's factor for the game's speed setting (802CEBD4..E4): 0 normal, -1 half, -2 fast,
+/// -3 fastest; anything else stands still.
+pub fn speed_factor(setting: i32) -> f32 {
+    match setting {
+        0 => 1.0,
+        -1 => 0.5,
+        -2 => 5.0,
+        -3 => 10.0,
+        _ => 0.0,
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct FrameClock {
-    pub time: f32,
+    /// Milliseconds not yet spent on ticks.
+    pub ms: f32,
 }
 
 impl FrameClock {
+    /// A frame passes at the game's speed factor.
+    pub fn frame(&mut self, factor: f32) {
+        // one rounding, as the original's fused multiply-add
+        self.ms = FRAME_MS.mul_add(factor, self.ms).min(CLOCK_MOST);
+    }
+    /// Whether a tick is due; it is taken off the clock.
+    pub fn tick_due(&mut self) -> bool {
+        let due = self.ms >= TICK_MS;
+        if due {
+            self.ms -= TICK_MS;
+        }
+        due
+    }
+    /// The clock starts afresh after a tick that did not run (a pause, a dialog) and after the
+    /// tick in which the speed was changed (the original's flag at r13 - 28660).
+    pub fn restart(&mut self) {
+        self.ms = 0.0;
+    }
     pub fn frames_to_tick(&mut self) -> u32 {
         self.frames_to_tick_at(1.0)
     }
-    /// The same at the game's speed (`speed`: 1 normal, 5 fastest; the simulation's ticks run
-    /// that much faster against the frames, so a tick takes `TICK_TIME / speed` of the clock;
-    /// paused, 0, taken as 1).
-    pub fn frames_to_tick_at(&mut self, speed: f32) -> u32 {
-        let tick = TICK_TIME / if speed > 0.0 { speed } else { 1.0 };
+    /// The frames before the next tick at a speed factor (a clock that stands still, 0, taken
+    /// as 1: the callers ask only for ticks that ran).
+    pub fn frames_to_tick_at(&mut self, factor: f32) -> u32 {
+        let factor = if factor > 0.0 { factor } else { 1.0 };
         let mut frames = 0;
-        loop {
-            if self.time >= tick {
-                self.time -= tick;
-                return frames;
-            }
-            self.time += WALK_FRAME;
+        while !self.tick_due() {
+            self.frame(factor);
             frames += 1;
         }
+        frames
     }
 }
 
