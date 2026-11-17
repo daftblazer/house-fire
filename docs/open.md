@@ -71,4 +71,10 @@
   takes x 20, (19.5, 10.5) x 19). The original's lookup (0x80169ABC) rounds a position the caller
   passes (not the place, not a mesh middle) and searches the cell's four room bytes for the
   object's room (a default entry if absent); the engine's `cell` ignores that list.
+- **The club's world dumps are black** (club-d3000.log, frames 3000-3001, GCN_DUMP_WORLD): the
+  recomp copies the world at the first draw after the 2D layer's marker changes
+  (render_vk.cpp, `g_world_taken`), and on the club the EFB is black then: likely an EFB copy
+  with clear (the dance floor's or lasers' render-to-texture?) between the scene and the 2D
+  layer. Not read. render-check's club reference is the full frame (work/frames-club2: the
+  frame_ PNGs copied as world_), so the portrait and HUD count as misses in both modes.
 
