@@ -2146,7 +2146,7 @@ Where each part comes from (library: `drawlist`, `lighting`, `shader::index`; re
   (`material_of`, the factor byte 0xFF kept as 0x80), their textures by the layer's id in
   `textures.arc` or the datasets' LFXTs. A wall face (the 18 or 23 vertex list) takes its pattern's
   shader (`quickdata::wall_patterns` by `WallPiece::pattern`), not the model's `_garbage`. Against
-  the log's materials at the same world matrix and vertex count (`HF_MATDIFF=1`): of 551 matched
+  the log's materials at the same world matrix and vertex count (`HF_MATDIFF=1`): of about 550 matched
   draws the layer count, combine mode, blend and textures are the same but for 18 two-layer draws
   of the lattice door (the log tests alpha, the engine does not), 2 of the bed, the rug's depth
   write and 4 of the outer lot's destination alpha. The samplers are the one assumed for all
@@ -2201,11 +2201,13 @@ within 4 in every channel:
 | rigid draws' pixels | 79,447: 97.63% | 81,608: 84.73% (12,464 beyond) | 86.62% (10,921 beyond) |
 | whole frame | 88.89% | 85.28% | 85.81% |
 
-The engine mode is **below** the aim of 91.82% for the rigid pixels. What the packet's steps gave:
-the draws alone (placeholder, patterns, extras left) 70.9% with the log's light sets (the engine's
-first walls and a destination alpha of 0 for all); the state rules 84.1%; the engine's light sets
-80.65% before the walls' two-ends rule and the doors' edge rule, 83.56% with them, 84.73% with
-the grid point; the diagonal walls (+5.5% of the covered area: they hid the rooms behind).
+The engine mode is **below** the aim of 91.82% for the rigid pixels. How it got there (frame 2400):
+the draws with the log's light sets as an oracle and a destination alpha of 0 for all 84.1%
+(from 40.2% with the model's own shader on the walls and the placeholder `tom_debug` drawn);
+with the engine's light sets 69.7%, 80.65% with the walls lit from their edge's ends, 83.06% with the
+diagonal walls (which hid the rooms behind them), 83.56% with the doors' edge rule, 83.86% with the
+alpha reference from the shader's float, 84.73% with the nearest grid point. The light sets are
+worth 1.9% (86.62% with the log's), the rest is not the lights.
 
 What is left, in pixels of the 12,464 beyond (frame 2400):
 
