@@ -449,6 +449,23 @@ pub fn call_named_tree(interp: &mut Interpreter, n: &Node, world: &World) -> Pri
     PrimResult::False
 }
 
+/// IdleForInput (opcode 17) with nothing queued for the Sim: a count of the ticks to wait, in the
+/// parameter that operand bytes 0-1 name. Above zero, it goes down by one and the node waits
+/// (Yield); at zero, true. A parameter the frame does not have is the original's script error 8
+/// (Stop). Read from the original's 80226378: this is its branch for a Sim with nothing to break
+/// its wait (the vtable +0x240 test, Castaway's `cXPerson::ShouldInterrupt`, whose last test is
+/// the queue's count); with something queued it delivers it (`idle_for_input`). Not modelled: the
+/// flag the original sets and clears with it (bit 0x40 of +0x36 of the stack's owner), which
+/// nothing in the logs reads.
+pub fn idle_for_input_waiting(n: &Node, f: &mut Frame) -> PrimResult {
+    let Some(count) = usize::try_from(field(n, 0)).ok().and_then(|p| f.params.get_mut(p)) else { return PrimResult::Stop };
+    if *count == 0 {
+        return PrimResult::True;
+    }
+    *count -= 1;
+    PrimResult::Yield
+}
+
 /// IdleForInput (opcode 17), where a Sim waits in "Wait For Notify" (Global 281) for its next
 /// interaction. With an entry queued: the engine's checks on the entry's target, as its
 /// interaction table (TTAB) names them (the tree the table runs first, then the interaction's

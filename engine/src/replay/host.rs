@@ -7,7 +7,7 @@ use crate::expression::{ExpressionOperand, Variables, expression};
 use crate::interp::{Error, Host, Interpreter, Mode, PrimResult, Trees};
 use crate::library::Library;
 use crate::primitives::{
-    call_named_tree, complete_goal, create_object, drop_onto, grab, place_made, remove_object, snap, dialog, idle, idle_for_input, present, push_action, random, run_functional_tree, set_motive_delta, set_to_next, test_object_type,
+    call_named_tree, complete_goal, create_object, drop_onto, grab, place_made, remove_object, snap, dialog, idle, idle_for_input, idle_for_input_waiting, present, push_action, random, run_functional_tree, set_motive_delta, set_to_next, test_object_type,
 };
 use crate::routing::slot_places;
 use crate::simulator::SimHost;
@@ -541,6 +541,20 @@ impl Host for ReplayHost<'_> {
             let q: Vec<_> = self.world.get(me).queue.iter().map(|q| (q.tree, q.objects[1], q.interaction, q.rank)).collect();
             let next = log.steps[self.step + 1..].iter().find(|x| x.sim == s.sim).map(|x| (x.tree, x.node, x.stack_object, x.frame > s.frame));
             println!("idle queue: tick {} sim {me_id} nested {}; queue (tree, target, interaction, rank) {q:?}; the log's next {next:?}", s.tick, self.nested.len());
+        }
+        if n.opcode == 17 && self.world.get(me).person && (self.world.get(me).queue.is_empty() || n.operand16(1) == 0) {
+            // IdleForInput with nothing queued, or a wait that does not deliver: the wait's count
+            let got = idle_for_input_waiting(n, interp.top());
+            let want = self.logged(s, n);
+            if got == want {
+                note!(self.counts, "primitives: IdleForInput waiting: the same natively, {}", if got == PrimResult::True { "true" } else { "a tick more" });
+                return got;
+            }
+            self.counts.note("primitives: IdleForInput waiting: DIFFERENT (the log's taken)");
+            if has("REPLAY_SHOW_DIFF") && self.shown.next("ifi", 8) {
+                println!("IdleForInput waiting at {}:{} by {me_id}: native {}, log {} (result {}), params {:?}", s.tree, s.node, got as i32, want as i32, s.result, s.params);
+            }
+            return want;
         }
         if n.opcode == 17 && self.world.get(me).person && !self.world.get(me).queue.is_empty() && !self.nested.is_empty() {
             // IdleForInput delivering an entry

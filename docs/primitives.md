@@ -174,6 +174,31 @@ The engine has it as `goals::Goals` (`quickdata::house_goals`, `save::read_goal_
 - club: 2,772;
 - tree: 2,377; tree3: 541.
 
+## IdleForInput (opcode 17): a Sim's wait
+
+Where a Sim waits in "Wait For Notify" (Global 281). Read from the original's handler,
+fn_80226378 (the person switch fn_802246B0's case, 80224830). The operand: bytes 0-1 a
+parameter's number (the wait's count), bytes 2-3 whether the wait may deliver.
+
+1. A parameter the frame does not have is script error 8.
+2. It asks the Sim (a vtable +0x240 call). Castaway's same place is `cXPerson::ShouldInterrupt`:
+   the current action cancelled, a pending one of higher priority, a low motive, or something
+   queued.
+3. If that is no: a count in the parameter. Above zero, it goes down by one and the node waits
+   (the log's result 1). At zero, true.
+4. If yes: a wait whose bytes 2-3 are 0 is true at once. Otherwise, with nothing queued, true;
+   with an entry queued, the target's checks and then the entry's tree (`idle_for_input`,
+   simulation.md "Where a Sim's interactions come in").
+
+Every use logged fits the count for the waits of bytes 2-3 = 0, also where the engine has
+entries queued (the dance floor's 4104 on the club's dancers). So the +0x240 test answered no
+there; it is not read yet. The engine has the count as `idle_for_input_waiting()`
+(`engine/src/primitives.rs`); bit 0x40 of +0x36, which the original sets and clears with it, is
+not modelled (nothing logged reads it). Measured with `replay`, every use the log's:
+- club: 286 waits a tick more, 514 true, 13 deliveries;
+- home: 45 true, 4 deliveries;
+- tree: 230, 442, 11; tree3: 50, 86, 8.
+
 ## Random (opcode 8)
 
 A random number into a variable. The operand, as 16-bit little-endian fields: bytes 0-1 the

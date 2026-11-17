@@ -9,7 +9,7 @@ use housefire::iff::Order;
 use housefire::interp::{Frame, PrimResult, Sleep};
 use housefire::library::Library;
 use housefire::goals::Goals;
-use housefire::primitives::{complete_goal, dialog, idle, present, random, set_to_next, test_object_type};
+use housefire::primitives::{complete_goal, dialog, idle, idle_for_input_waiting, present, random, set_to_next, test_object_type};
 use housefire::expression::Variables;
 use housefire::world::{DATA_OBJECT_ID, Object, ObjectKey, ScriptVariables, World};
 
@@ -221,4 +221,17 @@ fn complete_goal_reads_the_goals_mark() {
     assert_eq!(ask(2, 0, 1, &mut w, &mut f), Some(PrimResult::Stop));
     // the new form is not modelled
     assert_eq!(ask(1, 0, 0, &mut w, &mut f), None);
+}
+
+#[test]
+fn idle_for_input_counts_its_wait_down() {
+    // the count in the parameter operand bytes 0-1 name: down by one a tick, then true
+    let n = node(17, [1, 0, 0, 0, 0, 0, 0, 0]);
+    let mut f = Frame { params: vec![9, 2], ..Frame::default() };
+    assert_eq!(idle_for_input_waiting(&n, &mut f), PrimResult::Yield);
+    assert_eq!(idle_for_input_waiting(&n, &mut f), PrimResult::Yield);
+    assert_eq!(idle_for_input_waiting(&n, &mut f), PrimResult::True);
+    assert_eq!(f.params, vec![9, 0]);
+    // a parameter the frame does not have: the original's script error
+    assert_eq!(idle_for_input_waiting(&node(17, [2, 0, 0, 0, 0, 0, 0, 0]), &mut f), PrimResult::Stop);
 }
