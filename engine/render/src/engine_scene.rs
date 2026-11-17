@@ -73,6 +73,10 @@ pub struct Caches {
     textures: TextureCache,
     /// A floor strip's mesh by a hash of its corners.
     floors: HashMap<u64, MeshId>,
+    /// Whether the floors' meshes are the frame's own (`Scene::transient`, ids `TRANSIENT_MESH`
+    /// and the place) instead of added to the scene's for good: for a window, where the light
+    /// moves their colours every tick.
+    pub transient_floors: bool,
 }
 
 impl Assets {
@@ -266,10 +270,15 @@ impl Assets {
                 }
                 h.finish()
             };
-            let mesh = *caches.floors.entry(key).or_insert_with(|| {
-                scene.meshes.push(crate::scene::floor_mesh(&vertices));
-                MeshId(scene.meshes.len() as u32 - 1)
-            });
+            let mesh = if caches.transient_floors {
+                scene.transient.push(crate::scene::floor_mesh(&vertices));
+                MeshId(TRANSIENT_MESH | (scene.transient.len() as u32 - 1))
+            } else {
+                *caches.floors.entry(key).or_insert_with(|| {
+                    scene.meshes.push(crate::scene::floor_mesh(&vertices));
+                    MeshId(scene.meshes.len() as u32 - 1)
+                })
+            };
             let world = crate::scene::floor_world();
             let draw = |material: Material| Draw { mesh, world, bones: None, projection: None, viewport: None, view: Some(view), material, lighting: Lighting::VertexColours, id: 0 };
             let mask_info = DrawInfo { class: Class::FloorMask, ..info.clone() };
@@ -366,9 +375,8 @@ pub fn camera(log: &housefire::tree_log::Log, tick: u32) -> Option<(Mat3x4, [f32
 
 /// The disc's files the lot's draws are made from, read once: the models, what the objects draw
 /// with (`quickdata::object_resources`), the floors' patterns, the shaders.
-pub struct Lot<'d> {
-    disc: &'d housefire::disc::Disc,
-    house: usize,
+pub struct Lot {
+    art: housefire::drawlist::LotArt,
     pub models: std::rc::Rc<Models>,
     pub resources: std::rc::Rc<std::collections::BTreeMap<u32, housefire::quickdata::ObjResources>>,
     patterns: Vec<housefire::quickdata::FloorPattern>,
@@ -376,15 +384,15 @@ pub struct Lot<'d> {
     pub shaders: HashMap<u32, Shader>,
 }
 
-impl<'d> Lot<'d> {
+impl Lot {
     /// `house` is the lot's house number (its `HouseData` row: the loaded lot does not keep it).
-    pub fn new(disc: &'d housefire::disc::Disc, house: usize) -> Option<Lot<'d>> {
+    pub fn new(disc: &housefire::disc::Disc, house: usize) -> Option<Lot> {
         let quick = disc.read("quickdat.arc")?;
         let image = |name: &str| housefire::arc::entries(&quick).unwrap_or_default().into_iter().find(|e| e.name == name).and_then(|e| housefire::quickdata::Image::read(housefire::arc::bytes(&quick, &e)));
         let resources = housefire::arc::entries(&quick)?.into_iter().find(|e| e.name == "SimsObjects").and_then(|e| housefire::quickdata::Image::read(housefire::arc::bytes(&quick, &e))).map(|img| housefire::quickdata::object_resources(&img))?;
         let patterns = image("SimsTiles").map(|img| housefire::quickdata::floor_patterns(&img)).unwrap_or_default();
         let terrain = image("SimsUI").map(|img| housefire::quickdata::houses(&img)).and_then(|h| h.get(house).map(|h| h.terrain)).unwrap_or(0);
-        Some(Lot { disc, house, models: std::rc::Rc::new(Models::read(disc)), resources: std::rc::Rc::new(resources), patterns, terrain, shaders: housefire::shader::index(disc) })
+        Some(Lot { art: housefire::drawlist::LotArt::read(disc, house), models: std::rc::Rc::new(Models::read(disc)), resources: std::rc::Rc::new(resources), patterns, terrain, shaders: housefire::shader::index(disc) })
     }
 
     /// The draws of the lot as `world` has it at `tick`, seen from the eye of `view`. The clock the
@@ -392,7 +400,7 @@ impl<'d> Lot<'d> {
     pub fn plan(&self, world: &housefire::world::World, tick: u32, view: &Mat3x4) -> Plan {
         // the eye: -R^T t of the view
         let eye = [0, 1].map(|i| -(0..3).map(|r| view[4 * r + i] * view[4 * r + 3]).sum::<f32>());
-        let lot = housefire::drawlist::lot_draws_of(world, &self.resources, &self.models, self.disc, self.house, tick, Some(eye));
+        let lot = housefire::drawlist::lot_draws_with(world, &self.resources, &self.models, &self.art, tick, Some(eye));
         let guids_of = |id: i16| world.find_object(id).into_iter().chain(world.objects().filter(|o| o.leader == id)).map(|o| o.guid).collect::<Vec<u32>>();
         let guids = lot.placements.iter().map(|p| (p.leader, guids_of(p.leader))).collect();
         let lamps = housefire::lamps::on_lot(&lot.placements, guids_of, &self.resources, &self.models.sources);
@@ -528,6 +536,75 @@ pub fn assemble(scene: &mut Scene, engine: Engine) -> usize {
     out.extend(overlay);
     scene.frame.draws = out;
     removed
+}
+
+/// A window's frames from the engine's world, one after another: the scene keeps the meshes and
+/// textures of every frame so far (`Caches`: each added once, for the caller to upload the new
+/// ones), and each frame's draws are made from the world and the camera alone, in the original's
+/// order. The Sims (and the interface) are not drawn yet.
+pub struct Builder<'a> {
+    assets: &'a Assets,
+    lot: &'a Lot,
+    caches: Caches,
+    pub scene: Scene,
+}
+
+/// What a `Builder` frame was made of, for a log.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Counts {
+    /// The lot's planned draws, shadows and floor strips.
+    pub planned: usize,
+    pub shadows: usize,
+    pub floors: usize,
+    /// Draws in the frame.
+    pub draws: usize,
+}
+
+impl<'a> Builder<'a> {
+    pub fn new(assets: &'a Assets, lot: &'a Lot) -> Builder<'a> {
+        let frame = Frame { camera: Camera { view: IDENTITY, projection: [0.0; 6] }, draws: Vec::new(), backdrop: None };
+        Builder { assets, lot, caches: Caches { transient_floors: true, ..Caches::default() }, scene: Scene { frame, drawn: Vec::new(), all: Vec::new(), meshes: Vec::new(), transient: Vec::new(), textures: Vec::new() } }
+    }
+
+    /// The frame of `world` on `tick` seen through `camera` (a view and a projection): in
+    /// `scene.frame`, with the meshes and textures it needs appended to the scene's.
+    pub fn build(&mut self, world: &housefire::world::World, tick: u32, camera: (Mat3x4, [f32; 6])) -> Counts {
+        let (view, projection) = camera;
+        let scene = &mut self.scene;
+        scene.frame.draws.clear();
+        scene.drawn.clear();
+        scene.all.clear();
+        scene.transient.clear();
+        scene.frame.camera = Camera { view, projection };
+        let plan = self.lot.plan(world, tick, &view);
+        let lighting = |d: &Planned| lighting_for(&plan.lights.of(d), &view);
+        let made = self.assets.engine_draws(scene, &mut self.caches, &Inputs { draws: &plan.draws, models: &plan.models, shaders: &self.lot.shaders, lighting: &lighting, view });
+        let floors: Vec<(usize, FloorDraws)> = plan.floors.iter().zip(self.assets.engine_floors(scene, &mut self.caches, &plan.floors, &self.lot.shaders, view)).map(|(st, f)| (st.room, f)).collect();
+        let sun = plan.lights.at(1.0, 1.0).sun.map_or([0.0; 3], |s| s.direction);
+        let mut by_room: Vec<Vec<Made>> = Vec::new();
+        let room_of = |d: &Planned| if d.kind == Kind::WallPiece { 0 } else { plan.lights.room_of_place(d.origin[0], d.origin[1]) };
+        let view_of = |d: &Planned| match (d.kind, room_of(d)) {
+            (Kind::WallPiece, _) => shadow_view(&view, sun, SHADOW_SHEAR_WALL),
+            (_, 0) => shadow_view(&view, sun, SHADOW_SHEAR_OBJECT),
+            _ => shadow_view(&view, [0.0; 3], 1.0),
+        };
+        for (k, m) in self.assets.engine_shadows(scene, &mut self.caches, &plan.models, &plan.shadows, &view_of) {
+            let d = &plan.shadows[k];
+            // (the original draws what its bounds put on the screen: the pieces' are not drawn off it)
+            if d.kind == Kind::WallPiece && !housefire::drawlist::in_view(&view, &projection, &d.world) {
+                continue;
+            }
+            let room = room_of(d);
+            if by_room.len() <= room {
+                by_room.resize_with(room + 1, Vec::new);
+            }
+            by_room[room].push(m);
+        }
+        let (lot, objects): (Vec<Made>, Vec<Made>) = made.into_iter().partition(|m| plan.draws[m.from].kind == Kind::LotList && m.draw.material.blend == Blend::Opaque);
+        let counts = Counts { planned: plan.draws.len(), shadows: plan.shadows.len(), floors: floors.len(), draws: 0 };
+        assemble(scene, Engine { floors, lot, shadows: by_room, objects });
+        Counts { draws: scene.frame.draws.len(), ..counts }
+    }
 }
 
 #[cfg(test)]

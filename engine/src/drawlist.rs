@@ -498,15 +498,37 @@ pub struct LotDraws {
     pub shadows: Vec<Draw>,
 }
 
+/// What the lot's draws need from the disc's `quickdat.arc` besides the object resources, read
+/// once for a house: the fences' styles, the wall patterns and the house's outer lot model.
+pub struct LotArt {
+    fences: Vec<u32>,
+    patterns: Vec<u32>,
+    outer_lot: Option<u32>,
+}
+
+impl LotArt {
+    /// `house` is the lot's house number (its `HouseData` row: the loaded lot does not keep it).
+    pub fn read(disc: &Disc, house: usize) -> LotArt {
+        let quick = disc.read("quickdat.arc").unwrap_or_default();
+        let image = |name: &str| crate::arc::entries(&quick).unwrap_or_default().into_iter().find(|e| e.name == name).and_then(|e| crate::quickdata::Image::read(crate::arc::bytes(&quick, &e)));
+        let tiles = image("SimsTiles");
+        LotArt {
+            fences: tiles.as_ref().map(crate::quickdata::fence_styles).unwrap_or_default(),
+            patterns: tiles.as_ref().map(crate::quickdata::wall_patterns).unwrap_or_default(),
+            outer_lot: image("SimsUI").map(|img| crate::quickdata::houses(&img)).and_then(|h| h.get(house).map(|h| h.outer_lot)),
+        }
+    }
+}
+
 /// `res` is `quickdata::object_resources` of the disc's `SimsObjects`, `house` the lot's house
 /// number (its `HouseData` row: the loaded lot does not keep it).
 pub fn lot_draws_of(world: &crate::world::World, res: &BTreeMap<u32, ObjResources>, models: &Models, disc: &Disc, house: usize, tick: u32, eye: Option<[f32; 2]>) -> LotDraws {
-    let quick = disc.read("quickdat.arc").unwrap_or_default();
-    let image = |name: &str| crate::arc::entries(&quick).unwrap_or_default().into_iter().find(|e| e.name == name).and_then(|e| crate::quickdata::Image::read(crate::arc::bytes(&quick, &e)));
-    let tiles = image("SimsTiles");
-    let fences = tiles.as_ref().map(crate::quickdata::fence_styles).unwrap_or_default();
-    let patterns = tiles.as_ref().map(crate::quickdata::wall_patterns).unwrap_or_default();
-    let outer_lot = image("SimsUI").map(|img| crate::quickdata::houses(&img)).and_then(|h| h.get(house).map(|h| h.outer_lot));
+    lot_draws_with(world, res, models, &LotArt::read(disc, house), tick, eye)
+}
+
+/// `lot_draws_of` with the disc's art read already (a caller that draws every tick).
+pub fn lot_draws_with(world: &crate::world::World, res: &BTreeMap<u32, ObjResources>, models: &Models, art: &LotArt, tick: u32, eye: Option<[f32; 2]>) -> LotDraws {
+    let (fences, patterns, outer_lot) = (&art.fences, &art.patterns, art.outer_lot);
     let parts: Vec<crate::scene::Part> = world
         .objects()
         .filter(|w| w.on_lot() && !w.person)
@@ -516,15 +538,15 @@ pub fn lot_draws_of(world: &crate::world::World, res: &BTreeMap<u32, ObjResource
     let guids_of = |id: i16| world.find_object(id).into_iter().chain(world.objects().filter(|o| o.leader == id)).map(|o| o.guid).collect::<Vec<u32>>();
     let parts = object_parts(models, &placements, guids_of, res, tick);
     let mut draws: Vec<Draw> = parts.iter().map(|p| p.0).collect();
-    let pieces = crate::scene::wall_pieces(&world.walls, 64, &fences);
+    let pieces = crate::scene::wall_pieces(&world.walls, 64, fences);
     let windows = window_edges(models, &placements, guids_of, res);
     let window_of = |at: [f32; 2]| windows.iter().find(|w| (w.0[0] - at[0]).abs() < 0.1 && (w.0[1] - at[1]).abs() < 0.1).map(|w| w.1);
     let mut shadows = wall_shadows(models, &pieces, window_of);
     shadows.extend(diagonal_shadows(models, &world.walls));
     shadows.extend(object_shadows(&parts, guids_of, res));
     if let Some(eye) = eye {
-        draws.extend(wall_draws(models, &pieces, &patterns, eye, window_of));
-        draws.extend(diagonal_draws(models, &world.walls, &patterns, eye));
+        draws.extend(wall_draws(models, &pieces, patterns, eye, window_of));
+        draws.extend(diagonal_draws(models, &world.walls, patterns, eye));
     }
     draws.extend(outer_lot.map(|id| lot_draws(models, id)).unwrap_or_default());
     LotDraws { draws, placements, pieces, shadows }

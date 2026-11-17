@@ -2394,3 +2394,48 @@ Shared code changed in W1: `drawlist` (`LotDraws::shadows`, `wall_shadows`, `dia
 of 8 and cargo test and clippy hold (`runchecks` 10 of 10); lockstep's frame draws are unchanged
 (570 the same, 3 different, 26 missing); the log mode is unchanged (rigid 97.63%, whole 88.89%).
 
+
+## The window
+
+`view LOG ISO --card CARD [--lot N] [--ticks N] [--frame-times FILE] [--shot TICK FILE]`
+(`engine/render/src/bin/view.rs`) runs the engine's own simulation of the lot and draws each tick
+from its state: a window (winit 0.30, Wayland or X11; the surface is made through ash from its raw
+handles) with a Vulkan swapchain, FIFO, 4 images, a UNORM format. The renderer draws its picture
+as before and blits it onto the swapchain image (`Renderer::draw` with a `Present`).
+
+The simulation is `housefire::replay::Replay` (the library's; the `replay` binary is its command
+line): `Replay::new` loads the lot and the log's inputs, `step` runs one tick, `world` reads it.
+`run` is `new`, `step` to the end, `finish`, so the replay's figures are as they were. `view`
+passes no animation catalog: the Sims' Animate steps are answered from the log, which the world
+does not need for the lot's objects.
+
+Per frame (tick T, 30 a second on a fixed schedule from the first frame, a late one does not move
+the rest): the camera is the log's last 'c' record at or before T (`engine_scene::camera`); the
+world is the one the run has when T begins (T-1 ticks run, the clock's passes before T, as
+render-check counts them); `engine_scene::Builder` makes the draws (`Lot::plan`, then the
+engine's draws, floors and shadows in the original's order); the meshes and textures not seen
+before go to the GPU (`Caches`: 243 meshes and 94 textures for the 1,200 ticks); the floors' strips
+are the frame's own meshes (`Renderer::set_transient_meshes`, one host-visible set rewritten each
+frame: the light moves their colours every tick, so as persistent meshes they grew by 36 a tick);
+then tick T runs. The Sims (their skinned parts, what they hold, their shadows) and the interface
+are not drawn.
+
+Measured (home-a39.log, the answer-key run: gamescope headless 640x448 at 30, an RX 9070 XT, 1,200
+ticks, frames 31 to 1,200): the frames begin 33.33 ms apart (99.83% within 2 ms of it; the one
+outlier is the shot's frame, drawn twice and written as PNG), the frame's whole CPU time 7.0 ms
+mean (p99 8.8; the waits for the GPU included), of it the tick 0.22 ms mean (max 3.7), the build of
+the frame 2.84 ms (p99 3.5), the GPU's own 0.15 ms (max 0.22). `HF_VALIDATE=1`: no validation
+messages (gamescope's window layer forces VK_EXT_swapchain_maintenance1 on, which asks for the
+instance extension VK_EXT_surface_maintenance1; `view` enables it when listed).
+
+The shot of tick 1,039 against render-check's engine mode of the same frame (`work/frames/w1/
+ours_2400.png`): 98.89% of the pixels within 4; 3,028 of the 3,175 beyond are in the portrait's
+square (the interface, not drawn), the other 147 are at the house's top right (x 480 to 560,
+y 0 to 80) and 13 at (200, 160); the cause is not separated (the engine-mode picture has the log's
+Sims there and the window none; the running world's object states differ too).
+The running world at tick 1,039 against the loaded save: the same 206 objects (none new or gone);
+204 non-Sim objects' places differ (the six listed by `HF_WORLD_DIFF=1` are each x16 and y16 +8:
+a tile's corner as the save keeps it, its centre as the run has it; the draws match, so the draw
+list does not see it), the 2 Sims moved; 10 objects' data differ (listed by `HF_WORLD_DIFF=1`);
+the clock is the same, 7:36:32 (the loaded 7:04:00 and 1,038 passes less the stopped ones, as
+`engine_scene::plan` counts them).

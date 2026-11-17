@@ -32,6 +32,10 @@ pub struct Camera {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct MeshId(pub u32);
 
+/// The first id of the transient meshes (`Renderer::set_transient_meshes`): their ids are this
+/// bit and their place in the list given, valid for one frame.
+pub const TRANSIENT_MESH: u32 = 1 << 31;
+
 /// A texture uploaded to the renderer (`Renderer::load_texture`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TextureId(pub u32);

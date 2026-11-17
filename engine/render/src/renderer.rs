@@ -142,6 +142,9 @@ pub struct Renderer<'g> {
     draw_capacity: usize,
     tex_sets: HashMap<[Option<TextureRef>; 2], vk::DescriptorSet>,
     meshes: Vec<MeshSlot>,
+    /// The meshes of the one frame (`set_transient_meshes`), all in the first of `mesh_sets`.
+    transient: Vec<MeshSlot>,
+    transient_capacity: (usize, usize),
     mesh_sets: Vec<MeshSet>,
     textures: Vec<Tex>,
     white: TextureId,
@@ -279,10 +282,16 @@ impl<'g> Renderer<'g> {
             draw_capacity,
             tex_sets: HashMap::new(),
             meshes: Vec::new(),
+            transient: Vec::new(),
+            transient_capacity: (0, 0),
             mesh_sets: Vec::new(),
             textures: Vec::new(),
             white: TextureId(0),
         };
+        // the transient meshes' set is the first, its buffers the host's to write each frame
+        let empty = || r.gpu.buffer(0, vk::BufferUsageFlags::VERTEX_BUFFER, vk::MemoryPropertyFlags::HOST_VISIBLE);
+        let set = MeshSet { vertices: empty(), indices: empty(), skin: None };
+        r.mesh_sets.push(set);
         r.bind_draw_buffer();
         r.white = r.load_texture(&[(1, 1, vec![0xFFFF_FFFF])]);
         r
@@ -305,6 +314,38 @@ impl<'g> Renderer<'g> {
             ];
             unsafe { self.gpu.device.update_descriptor_sets(&write, &[]) };
         }
+    }
+
+    fn slot(&self, id: MeshId) -> MeshSlot {
+        if id.0 & TRANSIENT_MESH != 0 { self.transient[(id.0 & !TRANSIENT_MESH) as usize] } else { self.meshes[id.0 as usize] }
+    }
+
+    /// The meshes of the next frame only (the floors' strips, whose colours change with the light
+    /// every tick): written to the host-visible buffers of the transient set, replacing the last
+    /// frame's. The ids (`TRANSIENT_MESH` and the place in `meshes`) are valid until the next call,
+    /// which must come after the last frame using them has finished. Rigid meshes only.
+    pub fn set_transient_meshes(&mut self, meshes: &[MeshData]) -> Vec<MeshId> {
+        let (mut vertices, mut indices) = (Vec::new(), Vec::<u32>::new());
+        self.transient.clear();
+        for m in meshes {
+            assert!(m.skin.is_empty(), "a transient mesh is rigid");
+            self.transient.push(MeshSlot { set: 0, first_index: indices.len() as u32, index_count: m.indices.len() as u32, vertex_offset: vertices.len() as i32, vertex_count: m.vertices.len() as u32, skinned: false, uv_unit: f32::from(1u16 << m.uv_shift) });
+            vertices.extend_from_slice(&m.vertices);
+            indices.extend_from_slice(&m.indices);
+        }
+        let (vertex_bytes, index_bytes) = (std::mem::size_of_val(vertices.as_slice()), std::mem::size_of_val(indices.as_slice()));
+        if vertex_bytes > self.transient_capacity.0 || index_bytes > self.transient_capacity.1 {
+            let gpu = self.gpu;
+            unsafe { gpu.device.device_wait_idle().ok() };
+            self.transient_capacity = (self.transient_capacity.0.max(vertex_bytes).next_power_of_two(), self.transient_capacity.1.max(index_bytes).next_power_of_two());
+            let host = vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT;
+            let set = &mut self.mesh_sets[0];
+            gpu.destroy_buffer(std::mem::replace(&mut set.vertices, gpu.buffer(self.transient_capacity.0 as u64, vk::BufferUsageFlags::VERTEX_BUFFER, host)));
+            gpu.destroy_buffer(std::mem::replace(&mut set.indices, gpu.buffer(self.transient_capacity.1 as u64, vk::BufferUsageFlags::INDEX_BUFFER, host)));
+        }
+        self.gpu.write(&self.mesh_sets[0].vertices, 0, bytes_of(&vertices));
+        self.gpu.write(&self.mesh_sets[0].indices, 0, bytes_of(&indices));
+        (0..meshes.len() as u32).map(|i| MeshId(TRANSIENT_MESH | i)).collect()
     }
 
     /// Uploads meshes into one vertex and one index buffer, once; the ids come back in order.
@@ -579,7 +620,7 @@ impl<'g> Renderer<'g> {
         let mut skinned_vertices = 0u32;
         let mut skin_delta = vec![0i32; frame.draws.len()];
         for (i, d) in frame.draws.iter().enumerate() {
-            let mesh = self.meshes[d.mesh.0 as usize];
+            let mesh = self.slot(d.mesh);
             let Some(bones) = d.bones.as_ref().filter(|_| mesh.skinned) else { continue };
             jobs.push((mesh.set, i, SkinJob { first: mesh.vertex_offset as u32, count: mesh.vertex_count, bones: bone_rows.len() as u32, base: skinned_vertices }));
             for m in bones.iter() {
@@ -601,7 +642,7 @@ impl<'g> Renderer<'g> {
         }
         gpu.write(&self.bones_buffer, 0, bytes_of(&bone_rows));
         self.last_skinned = jobs.iter().map(|&(_, i, j)| (i, j.base, j.count)).collect();
-        let records: Vec<DrawRecord> = frame.draws.iter().enumerate().map(|(i, d)| record(&frame.camera, d, self.meshes[d.mesh.0 as usize].uv_unit, skin_delta[i])).collect();
+        let records: Vec<DrawRecord> = frame.draws.iter().enumerate().map(|(i, d)| record(&frame.camera, d, self.slot(d.mesh).uv_unit, skin_delta[i])).collect();
         gpu.write(&self.draw_buffer, 0, bytes_of(&records));
         // the pipelines and descriptor sets a draw needs, made before recording
         let prepared: Vec<(vk::Pipeline, vk::DescriptorSet)> = frame
@@ -609,7 +650,7 @@ impl<'g> Renderer<'g> {
             .iter()
             .map(|d| {
                 let m = &d.material;
-                (self.pipeline(PipelineKey { blend: m.blend, cull: m.cull, depth_test: m.depth_test, depth_write: m.depth_write, write_colour: m.write_colour, write_alpha: m.write_alpha, dst_alpha: m.dst_alpha, skinned: d.bones.is_some() && self.meshes[d.mesh.0 as usize].skinned }), self.texture_set(m.layers))
+                (self.pipeline(PipelineKey { blend: m.blend, cull: m.cull, depth_test: m.depth_test, depth_write: m.depth_write, write_colour: m.write_colour, write_alpha: m.write_alpha, dst_alpha: m.dst_alpha, skinned: d.bones.is_some() && self.slot(d.mesh).skinned }), self.texture_set(m.layers))
             })
             .collect();
 
@@ -678,7 +719,7 @@ impl<'g> Renderer<'g> {
                     d.cmd_bind_descriptor_sets(cb, vk::PipelineBindPoint::GRAPHICS, self.pipeline_layout, 1, &[set], &[]);
                     last_set = set;
                 }
-                let mesh = self.meshes[draw.mesh.0 as usize];
+                let mesh = self.slot(draw.mesh);
                 if mesh.set != last_mesh_set {
                     let set = &self.mesh_sets[mesh.set];
                     d.cmd_bind_vertex_buffers(cb, 0, &[set.vertices.buffer], &[0]);

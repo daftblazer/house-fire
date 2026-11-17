@@ -207,6 +207,9 @@ pub struct Scene {
     /// Every draw of the log's frame, drawn or not.
     pub all: Vec<DrawInfo>,
     pub meshes: Vec<MeshData>,
+    /// The meshes of this frame only (`Renderer::set_transient_meshes`), ids `TRANSIENT_MESH` and
+    /// the place here.
+    pub transient: Vec<MeshData>,
     /// The textures wanted, by the hash the log names them: (their RGBA levels), indexed by
     /// `TextureId` once loaded in this order.
     pub textures: Vec<Vec<(u32, u32, Vec<u32>)>>,
@@ -818,7 +821,7 @@ impl Assets {
         }
         let camera = Camera { view: camera_view.unwrap_or(IDENTITY), projection: main_projection.unwrap_or([0.0; 6]) };
         let backdrop = draws.iter().any(|d| d.viewport.is_some()).then_some((PORTRAIT_BACKDROP, PORTRAIT_BACKDROP_COLOUR));
-        Scene { frame: Frame { camera, draws, backdrop }, drawn, all, meshes, textures: cache.list }
+        Scene { frame: Frame { camera, draws, backdrop }, drawn, all, meshes, transient: Vec::new(), textures: cache.list }
     }
 
     /// Which class a strip is and, for a model's, its part.

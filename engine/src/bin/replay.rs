@@ -28,8 +28,8 @@
 
 use housefire::disc::Disc;
 use housefire::library::Library;
-use housefire::replay::{Bench, RunWith, atoi, env, has, run};
-use housefire::save::{memory_card_file, read_lot_arrays, read_lot_globals, read_lots, read_neighbours};
+use housefire::replay::{Bench, RunWith, Start, atoi, env, has, run};
+use housefire::save::read_lot_arrays;
 use housefire::tree_log::read_log;
 use std::process::ExitCode;
 
@@ -70,41 +70,21 @@ fn main() -> ExitCode {
         }
         i += 1;
     }
-    let ngh = match &card_path {
-        Some(p) => {
-            let mut card = std::fs::read(p).unwrap_or_default();
-            card.truncate(1 << 22);
-            let ngh = memory_card_file(&card, "G4ME69").unwrap_or_default();
-            if ngh.is_empty() {
-                println!("no Bustin' Out save on {p}");
-                return ExitCode::from(1);
-            }
-            if lot_index < 0 {
-                lot_index = 0;
-            }
-            ngh
+    let start = match Start::read(&d, card_path.as_deref(), lot_index) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("{e}");
+            return ExitCode::from(1);
         }
-        None => d.read("Runtime/default.ngh").unwrap_or_default(),
     };
-    let lots = read_lots(&ngh).expect("the lots");
-    let neighbours = read_neighbours(&ngh).expect("the neighbours");
-    if lots.is_empty() {
-        println!("no lots");
-        return ExitCode::from(1);
-    }
-    let the_lot = if lot_index < 0 || lot_index as usize >= lots.len() { lots.last().unwrap() } else { &lots[lot_index as usize] };
-    let lot_globals = read_lot_globals(&ngh).expect("the lots' globals");
-    let the_globals: &[i16] = if lot_index < 0 || lot_index as usize >= lot_globals.len() { lot_globals.last().map_or(&[], |g| g) } else { &lot_globals[lot_index as usize] };
-    let card_lot = card_path.is_some();
+    let (the_lot, the_globals, neighbours, lot_globals, card_lot) = (start.lot(), start.globals(), &start.neighbours, &start.lot_globals, start.card_lot);
     if has("REPLAY_SHOW_LOT_CLOCKS") {
         // study: each lot's clock (globals 0, 5, 6: the hour, minute and second)
         for (k, g) in lot_globals.iter().enumerate() {
             println!("lot {k}: {:?}, house number (global 10) {:?}", [0, 5, 6].map(|i| g.get(i).copied()), g.get(10));
         }
     }
-    // the disc's copy of the lot (its house: walls and floors a save may not keep)
-    let disc_lots = if card_lot && !has("REPLAY_NO_DISC_HOUSE") { read_lots(&d.read("Runtime/default.ngh").unwrap_or_default()).unwrap_or_default() } else { Vec::new() };
-    let house = usize::try_from(lot_index).ok().and_then(|i| disc_lots.get(i));
+    let house = start.house.as_ref();
     if has("REPLAY_SHOW_LOT_CHUNKS") {
         // study: the lot's chunks and its arrays as read
         let kinds: Vec<(String, usize)> = the_lot.chunks.iter().map(|(k, c)| (k.clone(), c.len())).collect();
@@ -122,7 +102,7 @@ fn main() -> ExitCode {
         }
     }
     if !bench {
-        let Some((counts, _)) = run(&log, &lib, (the_lot, house), the_globals, &neighbours, None, RunWith { card_lot, cat: (!log.tracks.is_empty()).then(|| housefire::anim::Catalog::read(&d, env("REPLAY_HOUSE").and_then(|v| v.parse().ok()).unwrap_or(1))) }) else { return ExitCode::from(1) };
+        let Some((counts, _)) = run(&log, &lib, (the_lot, house), the_globals, neighbours, None, RunWith { card_lot, cat: (!log.tracks.is_empty()).then(|| housefire::anim::Catalog::read(&d, env("REPLAY_HOUSE").and_then(|v| v.parse().ok()).unwrap_or(1))) }) else { return ExitCode::from(1) };
         for (k, n) in &counts.map {
             println!("  {k:<66} {n}");
         }
@@ -131,7 +111,7 @@ fn main() -> ExitCode {
     // The benchmark: five runs, each figure the median of the runs (the PC is shared).
     let mut runs: Vec<Bench> = Vec::new();
     for _ in 0..5 {
-        let Some((_, Some(b))) = run(&log, &lib, (the_lot, house), the_globals, &neighbours, Some(Bench::default()), RunWith { card_lot, cat: None }) else { return ExitCode::from(1) };
+        let Some((_, Some(b))) = run(&log, &lib, (the_lot, house), the_globals, neighbours, Some(Bench::default()), RunWith { card_lot, cat: None }) else { return ExitCode::from(1) };
         runs.push(b);
     }
     let median = |f: &dyn Fn(&Bench) -> f64| {
