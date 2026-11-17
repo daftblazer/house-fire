@@ -6,7 +6,7 @@ use crate::bhav::{Node, Tree};
 use crate::expression::{ExpressionOperand, Variables, expression};
 use crate::interp::{Error, Host, Interpreter, Mode, PrimResult, Trees};
 use crate::library::Library;
-use crate::primitives::{
+use crate::primitives::{balloon_or_string, change_suit, relationship_old, direction_to, distance_to, 
     call_named_tree, complete_goal, create_object, drop_onto, grab, place_made, remove_object, snap, dialog, idle, idle_for_input, idle_for_input_waiting, may_sleep, present, push_action, random, relationship, run_functional_tree, set_motive_delta, set_to_next, test_object_type, notify_stack_object,
 };
 use crate::routing::slot_places;
@@ -640,6 +640,46 @@ impl Host for ReplayHost<'_> {
             self.counts.note("primitives: NotifyStackObject: DIFFERENT (the log's taken)");
             return want;
         }
+        if n.opcode == 11 || n.opcode == 12 {
+            // DistanceTo, DirectionTo: from the two places
+            self.sync(interp, s);
+            let name = if n.opcode == 11 { "DistanceTo" } else { "DirectionTo" };
+            let got = {
+                let mut vars = ScriptVariables::new(&mut self.world, me, interp.top());
+                if n.opcode == 11 { distance_to(n, &mut vars) } else { direction_to(n, &mut vars) }
+            };
+            let want = self.logged(s, n);
+            // (the direction goes to a variable, a local in every use logged: the frame after)
+            let f = interp.top();
+            if got == want && f.locals == s.locals_after && f.params == s.params_after {
+                note!(self.counts, "primitives: {name}: the same natively");
+                return got;
+            }
+            note!(self.counts, "primitives: {name}: DIFFERENT (the log's taken)");
+            if has("REPLAY_SHOW_DIFF") {
+                println!("{name} at {}:{} by {me_id} so {} operand {:02x?}: native {got:?} locals {:?}, log {want:?} locals {:?}", s.tree, s.node, f.stack_object, n.operand, f.locals, s.locals_after);
+            }
+            f.locals = s.locals_after.clone();
+            f.params = s.params_after.clone();
+            return want;
+        }
+        if n.opcode == 24 {
+            // Relationship, the older form: the value to or from a parameter
+            self.sync(interp, s);
+            let got = relationship_old(n, &mut ScriptVariables::new(&mut self.world, me, interp.top()));
+            let want = self.logged(s, n);
+            let f = interp.top();
+            if got == want && f.params == s.params_after {
+                self.counts.note("primitives: Relationship: the same natively");
+                return got;
+            }
+            self.counts.note("primitives: Relationship: DIFFERENT (the log's taken)");
+            if has("REPLAY_SHOW_DIFF") {
+                println!("Relationship at {}:{} by {me_id} so {} operand {:02x?}: native {got:?} params {:?}, log {want:?} params {:?}", s.tree, s.node, f.stack_object, n.operand, f.params, s.params_after);
+            }
+            f.params = s.params_after.clone();
+            return want;
+        }
         if n.opcode == 26 {
             // Relationship2: the saved relationships, the objects' and the neighbours'
             self.sync(interp, s);
@@ -790,6 +830,30 @@ impl Host for ReplayHost<'_> {
                 "queue: PushAction DIFFERENT"
             });
             return want;
+        }
+        if matches!(n.opcode, 6 | 41 | 50) {
+            // the presentation's: an accessory, a balloon, the action's name
+            let so = interp.top().stack_object;
+            let got = if n.opcode == 6 { change_suit(n, &mut self.world, me_id) } else { Some(balloon_or_string(n, &mut self.world, me_id, so)) };
+            self.world.presentation.clear(); // no front end here
+            if let Some(got) = got {
+                let want = self.logged(s, n);
+                let name = match n.opcode {
+                    6 => "ChangeSuit",
+                    41 => "SetBalloon",
+                    _ => "MakeActionString",
+                };
+                let f = interp.top();
+                if got == want && f.params == s.params_after && f.locals == s.locals_after && f.stack_object == s.stack_object_after {
+                    note!(self.counts, "primitives: {name}: the same natively");
+                    return got;
+                }
+                note!(self.counts, "primitives: {name}: DIFFERENT (the log's taken)");
+                f.params = s.params_after.clone();
+                f.locals = s.locals_after.clone();
+                f.stack_object = s.stack_object_after;
+                return want;
+            }
         }
         if matches!(n.opcode, 23 | 7 | 48) {
             // the presentation's requests

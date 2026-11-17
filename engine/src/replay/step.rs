@@ -31,6 +31,7 @@ impl<'l> Replay<'l> {
         let lib = self.lib;
         let (use_native_places, new_observer, have_passes) = (self.use_native_places, self.new_observer, self.have_passes);
         let (mut place_at, mut motive_at, mut shown_motives, mut engine_list_at, mut time_at, mut streak, mut best_streak) = (self.place_at, self.motive_at, self.shown_motives, self.engine_list_at, self.time_at, self.streak, self.best_streak);
+        self.h.counts.tick = t;
         let Self { h, sim, consumed, finder, unstarted, ids, native_places, by_tick, frames, first_seen, first_step, last_frame, unseen, delivered, frame_tree, engine_run, ev_env, .. } = self;
         'tick: {
             let mut tick_us = 0.0;

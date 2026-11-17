@@ -7,6 +7,10 @@ use std::time::Instant;
 pub struct Counts {
     pub map: BTreeMap<String, usize>,
     pub quiet: bool,
+    /// The tick being run (0 before the first and for the checks over the whole log).
+    pub tick: u32,
+    /// The tick each kind was first counted in (`replay --free`).
+    pub first: BTreeMap<String, u32>,
 }
 
 impl Counts {
@@ -20,6 +24,7 @@ impl Counts {
                 Some(c) => *c += n,
                 None => {
                     self.map.insert(k.to_string(), n);
+                    self.first.insert(k.to_string(), self.tick);
                 }
             }
         }

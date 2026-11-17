@@ -1,7 +1,7 @@
 //! The club run natively, tick after tick, against a log of the recompiled Bustin' Out's
 //! interpreter (its `src/tree_log.cpp`, BUSTIN_TREE_LOG) and the disc it ran.
 //!
-//! Usage: replay LOG ISO [--card CARD] [--lot N] [--bench]
+//! Usage: replay LOG ISO [--card CARD] [--lot N] [--bench] [--free]
 //!
 //! --card: the lot from a save on a memory card image (its first lot, Mom's house in the user's
 //! save, unless --lot says), not the disc's club; the neighbours are the save's too.
@@ -36,7 +36,7 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 3 {
-        println!("usage: replay LOG ISO [--card CARD] [--lot N] [--bench]");
+        println!("usage: replay LOG ISO [--card CARD] [--lot N] [--bench] [--free]");
         return ExitCode::from(2);
     }
     let Some(log) = read_log(&args[1]) else {
@@ -49,6 +49,7 @@ fn main() -> ExitCode {
     };
     let lib = Library::bustin_out(&d);
     let mut bench = false;
+    let mut free = false;
     let mut card_path: Option<String> = None;
     let mut lot_index: i64 = -1;
     let mut i = 3;
@@ -59,6 +60,7 @@ fn main() -> ExitCode {
                 i += 1;
                 card_path = Some(args[i].clone());
             }
+            "--free" => free = true,
             "--lot" if i + 1 < args.len() => {
                 i += 1;
                 lot_index = atoi(&args[i]);
@@ -108,6 +110,12 @@ fn main() -> ExitCode {
         let Some((counts, _)) = run(&log, &lib, (the_lot, house), the_globals, neighbours, None, RunWith { card_lot, goals: start.goals.clone(), cat: (!log.tracks.is_empty()).then(|| housefire::anim::Catalog::read(&d, house_number)) }) else { return ExitCode::from(1) };
         for (k, n) in &counts.map {
             println!("  {k:<66} {n}");
+        }
+        if free {
+            // the tick each kind was first counted in (tools/log_debt.py: how far the run is free)
+            for (k, t) in &counts.first {
+                println!("first {t}: {k}");
+            }
         }
         return ExitCode::SUCCESS;
     }

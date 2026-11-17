@@ -7,7 +7,11 @@ answered from the log, places with no native walk, runs not modelled. When the s
 log is only compared with, never taken from, and the replay is a free run. The player's
 commands, the dialogs' answers and the random numbers are inputs and are not counted.
 
-usage: replay LOG ISO [...] | tools/log_debt.py [--top N]
+With `replay --free` it also says how far the run is free: the first tick anything is taken
+from the log (until then the replay is a free run), and each kind's first tick, earliest first:
+the order to work them in. Kinds counted by the checks over the whole log have no tick ("end").
+
+usage: replay LOG ISO [...] [--free] | tools/log_debt.py [--top N]
 """
 import re
 import sys
@@ -23,7 +27,12 @@ INPUT = re.compile(r"player's command|Dialog")
 def main() -> None:
     top = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[1] == "--top" else 8
     rows = []
+    first = {}
     for line in sys.stdin:
+        f = re.match(r"first (\d+): (.*)$", line.rstrip("\n"))
+        if f:
+            first[f.group(2)] = int(f.group(1))
+            continue
         m = re.match(r"\s+(.*?)\s+(\d+)$", line.rstrip("\n"))
         if not m:
             continue
@@ -34,6 +43,16 @@ def main() -> None:
     print(f"log debt: {sum(c for c, _ in rows)} in {len(rows)} kinds")
     for count, label in rows[:top]:
         print(f"  {count:8d}  {label}")
+    if first:
+        END = 4294967295
+        ticked = sorted((first[l], c, l) for c, l in rows if first.get(l, END) != END)
+        if ticked:
+            print(f"free run: until tick {ticked[0][0]} ({ticked[0][2]})")
+        for t, count, label in ticked[:top]:
+            print(f"  tick {t:6d}  {count:8d}  {label}")
+        late = [(c, l) for c, l in rows if first.get(l, END) == END]
+        if late:
+            print(f"  no tick (whole-log checks): {sum(c for c, _ in late)} in {len(late)} kinds")
 
 
 if __name__ == "__main__":

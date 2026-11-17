@@ -27,6 +27,7 @@ impl<'l> Replay<'l> {
         let Self { h, finder, ids, .. } = &mut self;
         let world = &h.world;
         let counts = &mut h.counts;
+        counts.tick = u32::MAX; // the checks over the whole log
         if has("REPLAY_SHOW_FILES") {
             let mut f: BTreeMap<String, i32> = BTreeMap::new();
             for s in &log.steps {

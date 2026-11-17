@@ -71,7 +71,42 @@ pub fn complete_goal(n: &Node, vars: &mut ScriptVariables) -> Option<PrimResult>
 /// 51: `Stop`).
 pub fn relationship(n: &Node, vars: &mut ScriptVariables) -> PrimResult {
     let o = n.operand;
-    let (field, mode, flags) = (o[0] as usize, o[1], o[2]);
+    let third = vars.frame.locals.get(o[3] as usize).copied();
+    relate(vars, Relate { field: o[0] as usize, mode: o[1], flags: o[2], third, scope: o[4], datum: i16::from_le_bytes([o[6], o[7]]) })
+}
+
+/// Relationship (opcode 24), the older form of Relationship2: the same relationships and rules,
+/// its operand laid out otherwise and the value read into or written from a parameter of the
+/// frame. Byte 0: not zero to write; byte 1 the value's field; byte 2 the parameter (negative,
+/// or a frame without parameters: the original's error 8, `Stop`); byte 3 who to whom (as
+/// Relationship2's, the third object the frame's first parameter); byte 4 flags (bit 0: do not
+/// create, bit 1: the ids are neighbours'). Read from the original's 802095B8.
+pub fn relationship_old(n: &Node, vars: &mut ScriptVariables) -> PrimResult {
+    let o = n.operand;
+    let third = vars.frame.params.first().copied();
+    let write = if o[0] != 0 { 4 } else { 0 };
+    if (o[2] as i8) < 0 || vars.frame.params.is_empty() {
+        // (the original finds the relationship first: one without the field is false before this)
+        let found = relate(vars, Relate { field: o[1] as usize, mode: o[3], flags: o[4] & 3 | 8, third, scope: scope::PARAMETER, datum: 0 });
+        return if found == PrimResult::True { PrimResult::Stop } else { found };
+    }
+    relate(vars, Relate { field: o[1] as usize, mode: o[3], flags: o[4] & 3 | write, third, scope: scope::PARAMETER, datum: i16::from(o[2]) })
+}
+
+/// What a relationship primitive asks: the value's field, who to whom, the flags as
+/// Relationship2's (bit 0: do not create, bit 1: neighbours' ids, bit 2: write; bit 3 here:
+/// only find the value), the third object's id, and the variable.
+struct Relate {
+    field: usize,
+    mode: u8,
+    flags: u8,
+    third: Option<i16>,
+    scope: u8,
+    datum: i16,
+}
+
+fn relate(vars: &mut ScriptVariables, r: Relate) -> PrimResult {
+    let Relate { field, mode, flags, third: local, scope: to_scope, datum } = r;
     let (neighbours, write) = (flags & 2 != 0, flags & 4 != 0);
     let create = flags & 1 == 0;
     let w = &*vars.world;
@@ -80,7 +115,6 @@ pub fn relationship(n: &Node, vars: &mut ScriptVariables) -> PrimResult {
     // with bit 1 the stack object and the local hold neighbour ids, and I am my neighbour
     let mine = if neighbours { nid(me) } else { Some(me) };
     let so = vars.frame.stack_object;
-    let local = vars.frame.locals.get(o[3] as usize).copied();
     let (a, b) = match mode {
         0 => (mine, Some(so)),
         1 => (Some(so), mine),
@@ -131,12 +165,14 @@ pub fn relationship(n: &Node, vars: &mut ScriptVariables) -> PrimResult {
         values.resize(field + 1, 0);
     }
     let have = values[field];
-    let datum = i16::from_le_bytes([o[6], o[7]]);
+    if flags & 8 != 0 {
+        return PrimResult::True;
+    }
     if write {
-        let Some(v) = vars.get(o[4], datum) else { return PrimResult::Stop };
+        let Some(v) = vars.get(to_scope, datum) else { return PrimResult::Stop };
         set_relationship(vars, pair, a, b, field, v.value as i32);
         PrimResult::True
-    } else if vars.set(o[4], datum, have as i16) {
+    } else if vars.set(to_scope, datum, have as i16) {
         PrimResult::True
     } else {
         PrimResult::Stop
@@ -196,6 +232,98 @@ pub fn apply_motive_deltas(p: &mut Object) {
 pub fn present(n: &Node, world: &mut World, me: i16) -> PrimResult {
     world.presentation.push(PresentationEvent { opcode: n.opcode, object: me, operand: n.operand });
     PrimResult::True
+}
+
+/// ChangeSuit (opcode 6), an accessory put on or taken off the Sim (a held prop: the pan, the
+/// brush): the presentation's, and true. Operand byte 0 is the entry of a suit table, byte 1
+/// which table (0 the global file's, 2 the frame's own file's), bit 0 of bytes 2-3 takes it off.
+/// Not modelled (`None`): table 1, the Sim's own clothes by kind (it changes person data 8 and
+/// 21, with random numbers); the original's errors for another table (47) or a missing entry
+/// (48). Read from the original's 80225EDC.
+pub fn change_suit(n: &Node, world: &mut World, me: i16) -> Option<PrimResult> {
+    matches!(n.operand[1], 0 | 2).then(|| present(n, world, me))
+}
+
+/// SetBalloon (opcode 41), the thought or speech balloon over an object, and MakeActionString
+/// (opcode 50), the action's name for the queue: the presentation's, and true. The balloon over
+/// the stack object (bit 0 of operand bytes 0-1) with none is the original's error 21 (`Stop`).
+/// Read from the original's 80205D98 and 80208140.
+pub fn balloon_or_string(n: &Node, world: &mut World, me: i16, stack_object: i16) -> PrimResult {
+    if n.opcode == 41 && n.operand[0] & 1 != 0 && world.find(stack_object).is_none() {
+        return PrimResult::Stop;
+    }
+    present(n, world, me)
+}
+
+/// The object a DistanceTo or DirectionTo measures from: me, or with the flag (bit 0 of the
+/// operand's `flag` byte) the object whose id a variable holds (the next byte its scope, the
+/// 16 bits after its datum). Outer None: no such variable (the original's error).
+fn measured_from(n: &Node, vars: &mut ScriptVariables, flag: usize) -> Option<Option<ObjectKey>> {
+    let id = if n.operand[flag] & 1 == 0 { vars.get(scope::MY_DATA, 11)? } else { vars.get(n.operand[flag + 1], field(n, flag + 2))? };
+    Some(vars.world.find(id.value))
+}
+
+/// DistanceTo (opcode 11): the distance in whole tiles (cut, not rounded) from an object
+/// (`measured_from`, flag byte 2) to the stack object, into the temp of operand bytes 0-1;
+/// true. The distance is the autonomy's (`autonomy::person_distance`: 20 tiles a level). Either
+/// object missing: -1 in the temp, still true. A temp above 7 is the original's error 2.
+/// Read from the original's 802119CC.
+pub fn distance_to(n: &Node, vars: &mut ScriptVariables) -> PrimResult {
+    let temp = field(n, 0) as u16 as usize;
+    if temp > 7 {
+        return PrimResult::Stop;
+    }
+    let Some(from) = measured_from(n, vars, 2) else { return PrimResult::Stop };
+    let to = vars.world.find(vars.frame.stack_object);
+    let d = match (from, to) {
+        (Some(a), Some(b)) => crate::autonomy::person_distance(vars.world.get(a), vars.world.get(b)) as i32 as i16,
+        _ => -1,
+    };
+    let me = vars.me;
+    vars.world.get_mut(me).temps[temp] = d;
+    PrimResult::True
+}
+
+/// DirectionTo (opcode 12): which of the eight directions the stack object lies in from an
+/// object (`measured_from`, flag byte 4), into the variable of operand bytes 0-1 (datum) and
+/// 2-3 (scope); true. From the two places' differences (dx, dy): a straight direction where
+/// one difference is more than twice the other, a diagonal otherwise; 0 for dx negative, 2 for
+/// dy positive, 4 for dx positive, 6 for dy negative, the diagonals between (a place on itself:
+/// 3). No such object is the original's error (23 the measured one, 21 the stack object:
+/// `Stop`). Read from the original's 80211B5C.
+pub fn direction_to(n: &Node, vars: &mut ScriptVariables) -> PrimResult {
+    let (datum, to_scope) = (field(n, 0), field(n, 2) as u8);
+    if vars.get(to_scope, datum).is_none() {
+        return PrimResult::Stop;
+    }
+    let Some(Some(from)) = measured_from(n, vars, 4) else { return PrimResult::Stop };
+    let Some(to) = vars.world.find(vars.frame.stack_object) else { return PrimResult::Stop };
+    let (a, b) = (vars.world.get(from), vars.world.get(to));
+    let (dx, dy) = (b.x16.wrapping_sub(a.x16), b.y16.wrapping_sub(a.y16));
+    let (ax, ay) = (dx.wrapping_abs(), dy.wrapping_abs());
+    let mut d = if ax > ay.wrapping_mul(2) {
+        4
+    } else if ax.wrapping_mul(2) >= ay {
+        3
+    } else {
+        2
+    };
+    if dy < 0 {
+        d = match d {
+            2 => 6,
+            3 => 5,
+            d => d,
+        };
+    }
+    if dx < 0 {
+        d = match d {
+            4 => 0,
+            3 => 1,
+            5 => 7,
+            d => d,
+        };
+    }
+    if vars.set(to_scope, datum, d) { PrimResult::True } else { PrimResult::Stop }
 }
 
 /// TestObjectType (opcode 32): whether the object whose id a variable holds (operand bytes 4-5

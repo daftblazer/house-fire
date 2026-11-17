@@ -127,6 +127,56 @@ relationship that is not there, and the next read of it (global 401) is false. T
 two ends are the same node, so the log cannot tell its result; the replay counts such a step
 as the same either way.
 
+## Relationship (opcode 24): Relationship2's older form
+
+Native (`primitives::relationship_old`; 40 uses on home-full, 0 different), read from the
+original's `fn_802095B8`. The same relationships and rules as Relationship2 (one shared core),
+the operand laid out otherwise: byte 0 not zero to write; byte 1 the value's field; byte 2 the
+frame's parameter the value goes to or comes from (negative, or a frame with no parameters:
+error 8); byte 3 who to whom (0 to 3 as Relationship2's byte 1, the third object the frame's
+first parameter); byte 4 flags (bit 0: do not create, bit 1: neighbours' ids). The frame's
+accessors: `fn_8023FC80` is its parameters (+0x10), `fn_8023FC88` its locals.
+
+## DistanceTo (11) and DirectionTo (12): from the two places
+
+Native (`primitives::distance_to`, `direction_to`; 2 and 28 uses, 0 different), read from the
+original's `fn_802119CC` and `fn_80211B5C`. Both measure from me, or with a flag (bit 0 of
+byte 2 for the distance, of byte 4 for the direction) from the object whose id a variable holds
+(the next byte its scope, the 16 bits after its datum), to the stack object.
+
+- DistanceTo: the autonomy's distance (`fn_801F1C18`: tiles, 20 a level) cut to a whole number,
+  into the temp of bytes 0-1 (above 7: error 2); an object missing: -1. Always true.
+- DirectionTo: into the variable of bytes 0-1 (datum) and 2-3 (scope). With dx, dy the places'
+  differences (the stack object's less the measured one's, sixteenths): |dx| > 2|dy| is a
+  straight 4, 2|dx| >= |dy| a diagonal 3, else a straight 2; dy negative turns 2 into 6 and 3
+  into 5; dx negative turns 4 into 0, 3 into 1 and 5 into 7. No measured object: error 23; no
+  stack object: 21. (The dispatcher's -1 before the call is a playback mode's stored answer,
+  `8037C3DC`, never set in play.)
+
+## ChangeSuit (6), SetBalloon (41), MakeActionString (50): the presentation's
+
+Native as presentation events that answer true (`primitives::change_suit`,
+`balloon_or_string`; home-full 13, 18, 7 uses and club-full 70 ChangeSuit, 0 different).
+
+- ChangeSuit (person switch, `fn_80225EDC`): byte 0 the entry of a suit table, byte 1 the table
+  (0 the global file's, 2 the frame's own file's: an accessory, put on the Sim's body or with
+  bit 0 of bytes 2-3 taken off), true. Table 1 is the Sim's own clothes by kind: it changes
+  person data 8 and 21 and draws random numbers; no script in the logs uses it: not modelled.
+  Another table is error 47, a missing entry 48 (the tables are not read here yet).
+- SetBalloon (`fn_80205D98`, after the dispatcher sends its record): the balloon's slot on the
+  object (me, or with bit 0 of bytes 0-1 the stack object: none is error 21); only the
+  balloon's own state changes.
+- MakeActionString (`fn_80208140`): builds the action's name from a string table for the
+  queue's picture; true.
+
+Still the log's: Budget (25, `fn_8020BEA4`: the amount's scope by byte 0 (0 literal, 1
+parameter, 2 local, else byte 1), datum bytes 2-3; the expense's kind byte 6 (above 8: error
+56); flags bytes 4-5: bit 0 only test, bit 1 the amount negated, bit 2 the other account; false
+if the amount is positive and the funds are less, else (not testing) the funds change and
+true) until the family's funds are read from the save; TestInteractingWith (37,
+`fn_80225E50`: true if an entry of the person's list at +0x49C, 12 bytes each, is the stack
+object; the list not identified yet).
+
 ## CallNamedTree (opcode 28)
 
 Calls a tree by name. The operand (Castaway's `CallNamedTreeParam`): bytes 0-1 a string
