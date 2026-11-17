@@ -9,6 +9,23 @@
 /// The cache of colour counts: 511 buckets by the colour's remainder (the original's size).
 const BUCKETS: usize = 511;
 
+/// The most colours a palette holds (a C8 image's).
+pub const MAX_COLOURS: usize = 256;
+
+/// The octree's deepest level at the start (pruning under memory pressure lowers it).
+const START_DEPTH: usize = 10;
+
+/// How many nodes short of its capacity the octree is pruned (the original's margin).
+const CAPACITY_MARGIN: usize = 10;
+
+/// The original's division by 7 (of the memory parameter in eighths) as a multiply by this and a
+/// shift by 32.
+const RECIPROCAL_OF_7: u64 = 0x2492_4925;
+
+/// The root cell's centre coordinate and half its side, in the transform's space (a cell of side
+/// 512 about (256, 256, 256) holds the colours' 0 to 255).
+const ROOT_HALF_SIDE: f32 = 256.0;
+
 /// An octree node: a cell of the colour space and what fell in it.
 #[derive(Clone, Default)]
 struct Node {
@@ -304,7 +321,7 @@ impl Quantizer {
     /// parameter (the original's 0x7F00 for a Sim's picture).
     pub fn new(colours: usize, memory: u32) -> Quantizer {
         let forward = transform();
-        let capacity = ((u64::from(memory >> 3) * 0x2492_4925) >> 32) as usize - 1;
+        let capacity = ((u64::from(memory >> 3) * RECIPROCAL_OF_7) >> 32) as usize - 1;
         let mut q = Quantizer {
             forward,
             inverse: invert(&forward).unwrap_or([0.0; 16]),
@@ -312,16 +329,16 @@ impl Quantizer {
             free: Vec::new(),
             capacity,
             in_use: 0,
-            max_depth: 10,
+            max_depth: START_DEPTH,
             leaves: 0,
             threshold: 0,
             next_threshold: 0,
-            colours: colours.min(256),
+            colours: colours.min(MAX_COLOURS),
             cache: vec![(u32::MAX, 0); BUCKETS],
             palette: Vec::new(),
         };
         // the root: the cell of side 512 about (256, 256, 256), with every weight kept
-        let root = q.alloc(0, 0, 0, [256.0; 3]);
+        let root = q.alloc(0, 0, 0, [ROOT_HALF_SIDE; 3]);
         q.nodes[root].weight = u32::MAX;
         q.nodes[root].parent = root;
         q.leaves = 0;
@@ -364,11 +381,11 @@ impl Quantizer {
 
     /// A point with a count into the octree, pruning first when it is nearly full.
     fn insert(&mut self, p: [f32; 3], count: u32) {
-        if self.in_use >= self.capacity - 10 {
+        if self.in_use >= self.capacity - CAPACITY_MARGIN {
             loop {
                 self.reduce(1);
                 self.max_depth -= 1;
-                if self.in_use < self.capacity - 10 {
+                if self.in_use < self.capacity - CAPACITY_MARGIN {
                     break;
                 }
             }
@@ -379,7 +396,7 @@ impl Quantizer {
             let octant = usize::from(p[0] > n.centre[0]) | usize::from(p[1] > n.centre[1]) << 1 | usize::from(p[2] > n.centre[2]) << 2;
             let mut child = n.children[octant];
             if child == 0 {
-                let d = 256.0f32 / (1u32 << k) as f32;
+                let d = ROOT_HALF_SIDE / (1u32 << k) as f32;
                 let c = n.centre;
                 let centre = std::array::from_fn(|i| if octant >> i & 1 != 0 { c[i] + d } else { c[i] - d });
                 self.nodes[at].mask |= 1 << octant;

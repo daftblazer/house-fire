@@ -371,7 +371,7 @@ impl SimTexture {
 const QUANTIZER_MEMORY: u32 = 0x7F00;
 
 /// The palette's size, a C8 image's colours.
-pub const PALETTE_ENTRIES: usize = 256;
+pub const PALETTE_ENTRIES: usize = crate::quantizer::MAX_COLOURS;
 
 /// The palette entries' format, the format 2 of a GXTlutObj (RGB5A3), and the high bit it sets on
 /// a colour with no transparency.
