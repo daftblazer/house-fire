@@ -2122,3 +2122,111 @@ What is left. The Sims' own pixels (1,470: 1,410 the portrait, 60 in the house) 
 largest; unverified now); the portrait square is 93.99%. Three skinned strips have no part
 found (above), and the backdrop is fitted. The Sims' shadows are in the shadows' class (67.61 to
 67.73%).
+
+## The frame from the engine's state
+
+The last step of stage 5: `render-check` with `HF_ENGINE=1` (and `--card CARD` for the home lot) makes
+the lot's model draws, the rigid object parts, the objects' display lists, the walls and the lot's
+own model, from the engine's world instead of the log's records. The floors, the shadows, the
+Sims and the portrait stay the log's (they have their own sections), and so does the camera: the
+engine's `scene::Camera` is the player's input (the eye, the zoom, the angle), which a lot loaded
+from a save does not have at tick 1,039, so the logged view and projection are used (the eye the
+walls face is read off that view). The log serves for three more things the engine cannot run
+to: which lot of the card the log ran on (`lotpick::pick_lot`, as lockstep), the animation clock
+(`tick`) and the game clock (the passes the player's dialog stopped, `PassRec::stopped_at`).
+
+Where each part comes from (library: `drawlist`, `lighting`, `shader::index`; renderer:
+`engine_scene.rs`):
+
+- Draws and matrices: `drawlist::lot_draws_of` (objects, walls, fences, diagonal walls, the lot's
+  model). The placeholder `tom_debug` that an object with no model and no dataset has as its
+  resources' first word is not drawn (it was 5 draws and 10,876 pixels of green).
+- Materials: the sub-model's shader (`shaders.arc` by the sub-model's hash, `shader::index`: by the
+  entry's id and by the CRC of its name), its layers as the device's material record
+  (`material_of`, the factor byte 0xFF kept as 0x80), their textures by the layer's id in
+  `textures.arc` or the datasets' LFXTs. A wall face (the 18 or 23 vertex list) takes its pattern's
+  shader (`quickdata::wall_patterns` by `WallPiece::pattern`), not the model's `_garbage`. Against
+  the log's materials at the same world matrix and vertex count (`HF_MATDIFF=1`): of 551 matched
+  draws the layer count, combine mode, blend and textures are the same but for 18 two-layer draws
+  of the lattice door (the log tests alpha, the engine does not), 2 of the bed, the rug's depth
+  write and 4 of the outer lot's destination alpha. The samplers are the one assumed for all
+  (repeat both ways, linear, the mip levels the texture has) and equal the logged GXTexObj's on every
+  draw but the easel's (clamp); the LFXT header's flags word is not decoded.
+- GX state, as the records show it: Z less-or-equal with writes, no culling; an opaque one-layer
+  material whose first texture has clear pixels tests alpha at least the shader's first layer's
+  float times 255 (0.5 gives 127, 0.4 the rose bush's 102), a blended one (flag 0x40) at least
+  that (0.02 gives 5); the destination alpha constant is 0 for objects and walls, 0x7F for the
+  lot's own model (`engine_scene::state_of`; the rug, the only object with 0x7F and no depth write,
+  is run-time textured and not told apart).
+- Lights (`lighting::LotLights`, built from `light`'s ported pieces; the study `HF_LIGHTSTUDY=1`
+  prints both sets in world space):
+  - the clock is the lot's saved one (7:04:00 at home) plus two seconds for each tick before the
+    frame whose pass ran to its end (`World::clock_pass`): 7:36:32 at tick 1,039, where the sun's
+    direction matches the logged one (to 3 places; the original is at 7:36:40, four seconds later:
+    the first tick's own is not counted);
+  - outdoors (room 0): the ambient colour times the time of day's factor, the sun (colour times
+    factor, direction `light::sun_direction`, negated and turned by the view), tinted by 0.5 (both
+    the light and ambient tint: the logged `tints`); the logged ambient and sun colours match to
+    the byte;
+  - indoors: the ambient colour times `light::room_ambient` (day 0.3 and night 0.2, times the
+    room's window brightness: the door and window objects in the room over its tiles), no sun;
+    0.122/0.153 in the main rooms and 0.125/0.157 in the bedroom, the logged ones;
+  - lights: each window's two lights (`light::window_light_places`, `window_light_params`, the
+    sun and nearest lamps' mix `window_mix`) and the lamps' (`lamps::on_lot`), sorted into the rooms'
+    ranges as Light_Rebuild does (`light::sort_lights`); an object gets the four of
+    `light::cell_lights` at the light grid's point nearest it (rounded to whole tiles), in the room of the tile before its place when
+    it is on an edge (a door at y = 24.0 is in tile 23): the window lights' colours (0.302, 0.302,
+    0.275 ...) match the log's to the byte; 72 of the 98 object places have the four lights the
+    log's set has (66 with the exact place, 71 with the grid point above); a lamp's light is its
+    colour times the tint, its falloff 1 + 0.1 x reach x distance.
+  - a wall piece or fence is lit from the grid points at the two ends of its edge
+    (`LotLights::along`, `drawlist::edge_of`): the two strongest lights of each end, so a light
+    both ends share is in the set twice, as the log's sets are ([a, b, a, c]). 21 of 35 wall and
+    fence sets equal the log's; the rest differ by one light (the lamp at (15.5, 14.5), which the
+    engine keeps out of the room, is the common one).
+- Diagonal walls (`drawlist::diagonal_draws`; they were the largest of C1's leftovers): the face
+  of the tile's `wall_diagonal` model that turns to the eye. The model is turned 45 degrees in its
+  own frame, so the face's normal is taken from the 5 seen tiles (a "/" faces (-1, -1) at turn 0 and
+  (1, 1) at 180, a "\" (1, -1) at 90 and (-1, 1) at -90); its pattern is the tile's byte on the sides
+  opposite (the exterior siding of the corner). The forms that reach past an end
+  (`_left_extends` ...) are drawn plain (3 of the 5 tiles; the rule is still not found), the cap
+  forms at gaps in a wall are not made. The sink counters, the aquarium's fish and the pendulum are
+  as before.
+
+Figures, frame 2400 (2401 the same to 10 pixels), the pixels the engine's model draws cover last,
+within 4 in every channel:
+
+| | log's records | engine's state | engine's state with the log's light sets |
+|---|---|---|---|
+| rigid draws' pixels | 79,447: 97.63% | 81,608: 84.73% (12,464 beyond) | 86.62% (10,921 beyond) |
+| whole frame | 88.89% | 85.28% | 85.81% |
+
+The engine mode is **below** the aim of 91.82% for the rigid pixels. What the packet's steps gave:
+the draws alone (placeholder, patterns, extras left) 70.9% with the log's light sets (the engine's
+first walls and a destination alpha of 0 for all); the state rules 84.1%; the engine's light sets
+80.65% before the walls' two-ends rule and the doors' edge rule, 83.56% with them, 84.73% with
+the grid point; the diagonal walls (+5.5% of the covered area: they hid the rooms behind).
+
+What is left, in pixels of the 12,464 beyond (frame 2400):
+
+- 2,767 of the windows' objects (`_NEW_Single_Hung_Window`, 4,124 pixels): the frames' white lines
+  are two coplanar meshes (53 and 52 vertices, the same matrix) that the original's depth rounding
+  lets win in dashes; the engine's matrices differ from the logged ones in the last bits, and
+  the later draw wins all over (solid lines). In the log mode the logged matrices give the dashes
+  (466 pixels off). Not told apart without the game's own depth.
+- 2,147 + 851 + 1,228 + 459 of the walls, the windowed walls, the diagonals and the fence
+  (3 to 5 levels off): the light sets (14 of 35 differ in one light).
+- 1,319 + 678 + 78 pixels drawn for objects the original does not draw on this frame: the scooter
+  (object 251, parked at (23, 3.5)), the money trunk (248) and the cheat gnome (105). The lot's
+  objects list at the tick holds all three and nothing in their resources or fields tells them
+  apart from the drawn ones (checked: level, flags, the log's object list); the rule is not found.
+  Without them the figure is about 85.7%.
+- 946 of the walnut door (its light set at the room boundary), 723 of the outer lot's, 571 of the
+  lattice door (two layers, the log tests alpha), 269 of the book case, 207 of the aquarium, the
+  rest in small parts.
+
+Shared code changed: `drawlist::Draw` gained `origin`, `object`, `shader` and `edge`; `wall_draws`
+takes the wall patterns; `lot_draws_of` makes the lot's whole list (lockstep's `frame_draws` uses
+it: its figures are unchanged, 564 the same); `is_sims` and `is_held` moved to `drawlist`;
+`lot::pick_lot` moved to `lotpick`; `shader::index`; `Assets` (the renderer's) keeps the textures
+by name and archive id. The log mode's figures are unchanged (97.63/97.62%, whole 88.89%).

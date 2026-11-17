@@ -170,8 +170,9 @@ impl LotLights {
     }
 
     /// What lights an object at (x, y) on the lot: its room's ambient, the sun if the room is
-    /// outside, and its four lights (`light::cell_lights`: the room's own lights first, then
-    /// its windows', the strongest first).
+    /// outside, and its four lights (`light::cell_lights` at the light grid's point nearest to it,
+    /// whole tiles: the room's own lights first, then its windows', the strongest first; 72 of
+    /// the home lot's 98 object places give the log's four lights, `docs/assets.md`).
     pub fn at(&self, x: f32, y: f32) -> Lights {
         // an object on a tile's edge (a door's place: x or y a whole number) is in the tile before it
         let room = self.room(x.ceil() as i32 - 1, y.ceil() as i32 - 1);
@@ -179,7 +180,7 @@ impl LotLights {
         let points = self
             .ranges
             .get(room)
-            .and_then(|r| light::cell_lights([x, y, light::GRID_Z], (r[2], r[3]), (r[0], r[1]), &geometry))
+            .and_then(|r| light::cell_lights([x.round(), y.round(), light::GRID_Z], (r[2], r[3]), (r[0], r[1]), &geometry))
             .map_or(Vec::new(), |ids| ids.iter().filter(|&&i| i != 0xFFFF).map(|&i| self.sources[usize::from(i)]).collect());
         Lights { ambient: self.ambients.get(room).copied().unwrap_or([0.0; 3]), sun: (room == 0).then_some(self.sun), points }
     }
