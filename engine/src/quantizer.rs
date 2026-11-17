@@ -86,7 +86,10 @@ fn transform() -> [f32; 16] {
     m
 }
 
-/// The 4 x 4 inverse the original computes (801B2D34), step by step.
+/// The 4 x 4 inverse the original computes (801B2D34), step by step: the registers of its
+/// straight-line float code as `f`, each instruction a line, so a rounding differing from the
+/// original's cannot hide (hence the unfolded `f[a] = f[a] * f[b]`).
+#[allow(clippy::assign_op_pattern)]
 fn invert(m: &[f32; 16]) -> Option<[f32; 16]> {
     let mut f = [0.0f32; 14];
     let mut o = [0.0f32; 16];
@@ -279,28 +282,14 @@ fn invert(m: &[f32; 16]) -> Option<[f32; 16]> {
 fn to_space(m: &[f32; 16], rgb: [u8; 3]) -> [f32; 3] {
     let (r, g, b) = (f32::from(rgb[0]), f32::from(rgb[1]), f32::from(rgb[2]));
     std::array::from_fn(|c| {
-        let v = b.mul_add(m[8 + c], r.mul_add(m[c], g * m[4 + c])) + m[12 + c];
-        if v < 0.0 {
-            0.0
-        } else if v > 255.0 {
-            255.0
-        } else {
-            v
-        }
+        (b.mul_add(m[8 + c], r.mul_add(m[c], g * m[4 + c])) + m[12 + c]).clamp(0.0, 255.0)
     })
 }
 
 /// A point of the transform's space back to a colour: clamped and truncated.
 fn from_space(m: &[f32; 16], p: [f32; 3]) -> [u8; 3] {
     std::array::from_fn(|c| {
-        let v = p[2].mul_add(m[8 + c], p[0].mul_add(m[c], p[1] * m[4 + c])) + m[12 + c];
-        (if v < 0.0 {
-            0.0
-        } else if v > 255.0 {
-            255.0
-        } else {
-            v
-        }) as u8
+        (p[2].mul_add(m[8 + c], p[0].mul_add(m[c], p[1] * m[4 + c])) + m[12 + c]).clamp(0.0, 255.0) as u8
     })
 }
 
@@ -561,5 +550,54 @@ impl Quantizer {
                 *best = (d, n.palette);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_inverse_undoes_the_transform() {
+        let (m, inv) = (transform(), invert(&transform()).unwrap());
+        for rgb in [[0, 0, 0], [255, 255, 255], [200, 30, 90], [12, 140, 250]] {
+            let back = from_space(&inv, to_space(&m, rgb));
+            for c in 0..3 {
+                // the truncation to bytes may lose one level
+                assert!(back[c].abs_diff(rgb[c]) <= 1, "{rgb:?} came back {back:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_few_colours_are_kept_and_found() {
+        let colours = [[10u8, 20, 30], [200, 10, 10], [10, 200, 10], [250, 250, 240], [90, 90, 200]];
+        let mut q = Quantizer::new(256, 0x7F00);
+        for i in 0..1000 {
+            q.add(colours[i % colours.len()]);
+        }
+        q.finish();
+        assert_eq!(q.len(), colours.len());
+        for c in colours {
+            let k = usize::from(q.nearest(c));
+            let got = q.colour(k);
+            assert!((0..3).all(|i| got[i].abs_diff(c[i]) <= 1), "{c:?} is {got:?}");
+        }
+    }
+
+    #[test]
+    fn many_colours_reduce_to_the_palette_size() {
+        // a ramp of 4000 colours reduced to 64, twice the same
+        let run = || {
+            let mut q = Quantizer::new(64, 0x7F00);
+            for i in 0..4000u32 {
+                q.add([(i * 7 % 256) as u8, (i * 3 % 256) as u8, (i / 16) as u8]);
+            }
+            q.finish();
+            q
+        };
+        let (q, r) = (run(), run());
+        assert!(q.len() <= 64 && q.len() > 8, "{} colours", q.len());
+        assert!((0..q.len()).all(|i| q.colour(i) == r.colour(i)));
     }
 }

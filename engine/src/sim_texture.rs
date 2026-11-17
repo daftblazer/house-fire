@@ -183,13 +183,7 @@ fn turn(h: f32, d: f32) -> f32 {
 }
 
 fn clamp01(v: f32) -> f32 {
-    if v > 1.0 {
-        1.0
-    } else if v < 0.0 {
-        0.0
-    } else {
-        v
-    }
+    v.clamp(0.0, 1.0)
 }
 
 /// A palette tinted: each colour with alpha, by `tint` (the original's 8005DFF0, 8005DDA4 and
@@ -362,6 +356,18 @@ pub struct SimTexture {
     pub palette: Vec<u16>,
 }
 
+impl SimTexture {
+    /// The image as RGBA texels (red in the low byte), row after row, through the palette as the
+    /// console's decoder reads it.
+    pub fn decode(&self) -> Option<Vec<crate::texture::Rgba>> {
+        let mut palette = self.palette.clone();
+        palette.resize(256, 0);
+        let bytes: Vec<u8> = palette.iter().flat_map(|e| e.to_be_bytes()).collect();
+        // (the palette's entries are RGB5A3: the format 2 of a GXTlutObj)
+        crate::texture::decode_indexed(crate::texture::Kind::Palette8, SIDE as u32, SIDE as u32, &self.indices, &bytes, 2)
+    }
+}
+
 /// The octree parameter the composer builds its quantizer with.
 const QUANTIZER_MEMORY: u32 = 0x7F00;
 
@@ -387,4 +393,67 @@ pub fn reduce(pictures: &Pictures) -> SimTexture {
         indices[tile * 32 + (y % 4) * 8 + x % 8] = q.nearest(px);
     }
     SimTexture { indices, palette }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_layer_goes_over_by_its_alpha() {
+        let dst = 0x00_80_40_20;
+        // opaque (alpha 0x80 and over): the source's colour
+        assert_eq!(over(dst, 0xFF_01_02_03), 0x01_02_03);
+        // alpha 0x40 is a weight of 128 of 255
+        assert_eq!(over(dst, 0x40_FF_FF_FF) & 0xFF, (128 * 255 + 127 * 0x20) / 255);
+        // alpha 1 is a weight of 2
+        assert_eq!(over(dst, 0x01_00_00_00) & 0xFF, 0x20 * 253 / 255);
+    }
+
+    #[test]
+    fn tints_keep_what_they_should() {
+        let palette = [0u32, 0xFF_40_80_C0, 0xFF_10_10_10];
+        // a colour with no alpha is transparent black, whatever the tint
+        assert_eq!(tinted(&[0x00_12_34_56], Tint::Hair(3)), [0]);
+        // 1 is the layer's own colours
+        assert_eq!(tinted(&palette, Tint::Clothes(1)), palette);
+        assert_eq!(tinted(&palette, Tint::Hair(1)), palette);
+        // a grey stays through the skin tones; the alpha is always kept
+        assert_eq!(tinted(&[0xFF_80_80_80], Tint::Skin(2))[0], 0xFF_80_80_80);
+        assert_eq!(tinted(&[0xFF_40_80_C0], Tint::Clothes(5))[0] >> 24, 0xFF);
+    }
+
+    #[test]
+    fn hsl_round_trips() {
+        // (colours with red or blue the greatest: the original's conversion to a hue is not the
+        // inverse of its conversion back for a green, nor for a hue of exactly 1)
+        for rgb in [0x20_80_E0u32, 0xC0_40_10, 0x30_20_90] {
+            let back = hsl_to_rgb(rgb_to_hsl(rgb));
+            for shift in [0, 8, 16] {
+                assert!(((back >> shift) & 0xFF).abs_diff((rgb >> shift) & 0xFF) <= 1, "{rgb:06x} came back {back:06x}");
+            }
+        }
+    }
+
+    #[test]
+    fn halving_keeps_a_flat_picture_and_the_second_pass_its_odd_row() {
+        let flat = vec![0x00_33_66_99; FULL * FULL];
+        assert!(halve(&flat, false).iter().all(|&p| p == [0x99, 0x66, 0x33]));
+        // row 0 darker than the rest: the kernel's row before output row 1 is the picture's row 1,
+        // or in the second pass its row 0
+        let rows: Vec<u32> = (0..FULL * FULL).map(|i| if i < FULL { 100 } else { 200 }).collect();
+        let (a, b) = (halve(&rows, false), halve(&rows, true));
+        assert!(b[SIDE][0] < a[SIDE][0]);
+        assert!(a.iter().zip(&b).enumerate().all(|(i, (x, y))| i / SIDE == 1 || x == y));
+    }
+
+    #[test]
+    fn indices_go_in_console_tiles() {
+        // one colour: every index 0, the palette that colour in RGB5A3
+        let flat = vec![[200u8, 100, 50]; SIDE * SIDE];
+        let t = reduce(&Pictures { palette: flat.clone(), indexing: flat });
+        assert_eq!(t.palette.len(), 1);
+        assert_eq!(t.palette[0], 0x8000 + (25 << 10) + (12 << 5) + 6);
+        assert!(t.indices.iter().all(|&i| i == 0));
+    }
 }

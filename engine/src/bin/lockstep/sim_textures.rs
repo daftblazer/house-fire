@@ -56,7 +56,7 @@ const NEAR: f64 = 8.0;
 
 pub fn study(log: &Log, d: &Disc, ngh: &[u8]) {
     let logs = logged(log);
-    println!("sim textures: the log has {} 128 x 128 C8 images with their palettes", logs.len());
+    println!("sim textures: the log has {} texel records and {} palette loads, {} 128 x 128 C8 images with their palettes", log.texels.len(), log.tlut_loads.len(), logs.len());
     for (i, l) in logs.iter().enumerate() {
         println!("  log {i}: first set up at tick {}, {} palette entries of format {}", l.tick, l.palette.iter().rposition(|&e| e != 0).map_or(0, |p| p + 1), l.format);
     }

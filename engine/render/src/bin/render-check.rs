@@ -466,7 +466,7 @@ fn main() -> ExitCode {
             let ngh = engine_scene::save_file(&disc, card.as_deref()).expect("the save");
             let rigs = housefire::figure::Rigs::read(&disc).expect("the skeletons");
             let cast = housefire::figure::Cast::read(&disc, &ngh).expect("the part tables");
-            let skins = sims::SimSkins::from_scene(&scene);
+            let skins = sims::SimSkins::from_scene(&scene).with_disc(&disc);
             let wardrobe = sims::Wardrobe { rigs: &rigs, cast: &cast, catalog: &catalog, skins: &skins, models: &plan.models, shaders: &shaders };
             let plays = replay.sim_plays(tick);
             let mut figures = sims::figures_of(replay.world(), &cast, &plays, &Default::default());

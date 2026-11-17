@@ -319,7 +319,7 @@ fn run(args: Args) -> Result<(), String> {
     let cast = housefire::figure::Cast::read(&disc, &ngh).ok_or("the part tables")?;
     let drawn_ticks: std::collections::BTreeSet<u32> = log.strips.iter().map(|s| s.tick).collect();
     let log_scene = drawn_ticks.first().map(|&t| assets.scene(&log, t));
-    let skins = log_scene.as_ref().map_or_else(SimSkins::default, SimSkins::from_scene);
+    let skins = log_scene.as_ref().map_or_else(SimSkins::default, SimSkins::from_scene).with_disc(&disc);
     let wardrobe = Wardrobe { rigs: &rigs, cast: &cast, catalog: &catalog, skins: &skins, models: &lot.models, shaders: &lot.shaders };
     let portrait = log_scene.as_ref().and_then(|sc| sims::portrait_sim(sc, &wardrobe, &sims::figures_of(replay.world(), &cast, &[], &Default::default())));
     // (the engine keeps no heading for a Sim apart from its facing: where the log shows a frame,

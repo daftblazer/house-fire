@@ -94,12 +94,22 @@ pub fn portrait_view(place: [f32; 2], heading: u8) -> Mat3x4 {
     m
 }
 
-/// The Sims' run-time textures, as the log has them: the image of each outfit part name the log
-/// drew with one, its levels and how the draw sampled it.
+/// The Sims' run-time textures: made by the engine from the disc (`housefire::sim_texture`,
+/// which equals the log's byte for byte) or, with none of the disc's run-length textures
+/// attached, as the log has them: the image of each outfit part name the log drew with one, its
+/// levels and how the draw sampled it.
 #[derive(Default)]
 pub struct SimSkins {
     by_part: HashMap<String, Skin>,
+    /// `rletextu.arc`, when the engine makes the textures.
+    rle: Option<Vec<u8>>,
 }
+
+/// How a Sim's run-time texture is sampled: clamped, bilinear, one level (every logged draw's).
+const SKIN_SAMPLER: (Wrap, Wrap, bool, Mipmaps) = (Wrap::Clamp, Wrap::Clamp, true, Mipmaps::Off);
+
+/// A Sim's looks as a texture's key: gender, age and the saved looks.
+type LooksKey = (bool, bool, [u8; 18]);
 
 /// An image's levels (width, height, RGBA texels) and the sampler of its draw.
 type Skin = (Vec<(u32, u32, Vec<u32>)>, TextureRef);
@@ -116,7 +126,25 @@ impl SimSkins {
                 by_part.entry(info.model.clone()).or_insert_with(|| (scene.textures[t.texture.0 as usize].clone(), t));
             }
         }
-        SimSkins { by_part }
+        SimSkins { by_part, rle: None }
+    }
+
+    /// The engine makes the Sims' textures from the disc, unless HF_LOG_SKINS is set (the log's
+    /// stay, to compare).
+    pub fn with_disc(mut self, disc: &housefire::disc::Disc) -> SimSkins {
+        if std::env::var_os("HF_LOG_SKINS").is_none() {
+            self.rle = disc.read("rletextu.arc");
+        }
+        self
+    }
+
+    /// The engine's texture of a Sim of this description: its levels, `None` when a layer of it
+    /// is not on the disc or the engine makes none.
+    fn engine_levels(&self, tables: &housefire::outfit::PartTables, d: &Description) -> Option<Vec<(u32, u32, Vec<u32>)>> {
+        let arc = self.rle.as_deref()?;
+        let stack = housefire::sim_texture::layer_stack(tables, d, housefire::sim_texture::Conditions { tinted_clothes: true });
+        let texture = housefire::sim_texture::reduce(&housefire::sim_texture::pictures(arc, &stack)?);
+        Some(vec![(128, 128, texture.decode()?)])
     }
 }
 
@@ -149,6 +177,8 @@ pub struct Wardrobe<'a> {
 pub struct SimCaches {
     meshes: HashMap<usize, Option<MeshId>>,
     skins: HashMap<String, TextureRef>,
+    /// The engine's textures by the looks that make them (`None`: it made none).
+    engine_skins: HashMap<LooksKey, Option<TextureRef>>,
 }
 
 /// A skinned batch as a mesh: the model's own positions and normals with the blend weights it
@@ -186,11 +216,20 @@ impl Assets {
             let outfit = w.cast.tables.dress(&f.description);
             let records: Vec<(Slot, usize)> = Slot::ALL.iter().filter_map(|&s| Some((s, w.models.parts.record_by_id(outfit.part(s))?))).collect();
             let skin_names: Vec<String> = HOUSE_ORDER.iter().filter_map(|s| records.iter().find(|r| r.0 == *s)).map(|r| w.models.parts.record(r.1).name.clone()).collect();
-            let skin = skin_names.iter().find(|n| w.skins.by_part.contains_key(*n)).map(|n| {
-                let (levels, tex) = &w.skins.by_part[n];
-                *cache.skins.entry(n.clone()).or_insert_with(|| {
-                    scene.textures.push(levels.clone());
-                    TextureRef { texture: TextureId(scene.textures.len() as u32 - 1), ..*tex }
+            let looks: LooksKey = (f.description.male, f.description.adult, f.description.looks);
+            let engine_skin = *cache.engine_skins.entry(looks).or_insert_with(|| {
+                let levels = w.skins.engine_levels(&w.cast.tables, &f.description)?;                scene.textures.push(levels);
+                let (wrap_u, wrap_v, linear, mipmaps) = SKIN_SAMPLER;
+                Some(TextureRef { texture: TextureId(scene.textures.len() as u32 - 1), wrap: (wrap_u, wrap_v), linear, mipmaps })
+            });
+            // (the log's, for the part names it drew, when the engine makes none)
+            let skin = engine_skin.or_else(|| {
+                skin_names.iter().find(|n| w.skins.by_part.contains_key(*n)).map(|n| {
+                    let (levels, tex) = &w.skins.by_part[n];
+                    *cache.skins.entry(n.clone()).or_insert_with(|| {
+                        scene.textures.push(levels.clone());
+                        TextureRef { texture: TextureId(scene.textures.len() as u32 - 1), ..*tex }
+                    })
                 })
             });
             let room = lights.room_of_place(f.place[0], f.place[1]);

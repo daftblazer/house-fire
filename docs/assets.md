@@ -58,8 +58,60 @@ each its own, otherwise one index for `count` texels (a count of 0 still gives o
 compared after each texel). An index is a nibble with 16 colours, a byte with 256. With 16
 colours a literal run is always followed by a repeat, the next count's top bit not looked at.
 The entry keeps no size: the original takes the texels one at a time. Decoded natively, every
-entry gives exactly 65,536 texels, 256 by 256 (`assets ISO rle`). Where they go (the Sim's
-256 by 256 textures, one RGB5A3 image among those the home replay sets up) is to be checked.
+entry gives exactly 65,536 texels, 256 by 256 (`assets ISO rle`).
+
+### The Sim's run-time texture (T1)
+
+Where they go: a Sim's texture, the 128 x 128 C8 image and its 256-entry palette (RGB5A3) that the
+log has for each Sim ('`' and '{'), is made by the composer `Sim_SetModels` (800591CC) calls at
+8005D018 (`engine/src/sim_texture.rs`, `engine/src/quantizer.rs`):
+
+1. The layer stack, by the description (`layer_stack`; the original's 8005CA04 and the loads of
+   8005D018): up to 15 resource ids in the order they are laid. The skin by gender, age and the
+   description's byte 16 (the tone 0 to 2, any other the fourth: twelve ids); then the words 2
+   and 3 of the part table's entries (`PartTables::entry`: the table entries keep the part's name
+   hash, then these) of the upper body, shoes (word 2 only), lower body, eyes (3), nose (2), mouth
+   (2), the ninth table (the hair of an adult male) and the head, with two fixed ids (0xC9E921E7
+   and 0xD57882B9) among them. A layer with id 0 is left out. The layers' palettes are tinted
+   by the description's colour bytes, in place (the original restores them after): the skin tone
+   for the eyes, nose and mouth (4 offsets of hue, saturation and lightness, a grey kept);
+   byte 18 / 19 for the upper and lower body (only when the Sim object's word at 0x5A0 is set: true
+   for both logged Sims) and 20 for the shoes, a hue turn of a tenth for each three and darker, as
+   is or lighter by the remainder by 0.15 (1 is untouched, 30 to 32 grey and 0.2); byte 17 for the
+   hair (11 offsets, 1 untouched), byte 22 for the second fixed layer. The conversions are the
+   character creator's (`CASSkin.cpp` in the decompilation: 80022940 and 80022778 are 8005E784 and
+   8005E5BC), floats as the original's (fused multiply-add in the hue turn).
+2. The 256 x 256 picture: each texel the first layer's colour with no alpha, then every other layer
+   that has an alpha over it (8005FAC0): alpha 0x80 and over opaque, below it a weight of twice the
+   alpha in 255ths, integer division by 255.
+3. The blur to 128 x 128: the kernel 1 2 1 / 2 4 2 / 1 2 1 (sixteenths, +8) about texel (2x, 2y), the
+   edges repeating. The original blurs twice (once to collect the colours, once to index) and its
+   three row buffers are swapped by pointer: after the first pass's 127 swaps the second starts
+   with two exchanged, so in the second pass only output row 1 has the picture's row 0 (not 1)
+   before it. This one row is the whole difference between the two.
+4. The quantizer (the object at 801B7464, `Quantizer`; 801B7538 to 801B8664, 0x1CF8 bytes): colours
+   in an octree over a YIQ space (the NTSC matrix, the second and third axes scaled by a third,
+   offsets 0, 127.5, 127.5; the cell centred (256, 256, 256), side 512, up to 10 levels), fed through
+   a direct-mapped cache of 511 buckets (colour mod 511, counts; a colliding colour is flushed into
+   the octree with its count). The tree has 579 nodes (0x7F00 gives (0x7F00 >> 3) / 7 - 1) and
+   when 569 are used the deepest level is merged into its parents. At the end the cache is flushed
+   and the tree pruned by node weight (counts shifted by 8 minus the level) until at most 256 nodes
+   hold colours (the count of one pass includes what it merges); each colour-holding node's mean
+   is a palette entry (children first), turned back by the inverse matrix, truncated to bytes,
+   RGB5A3 (0x8000, five bits of each). A texel's entry is the nearest in the transform's space
+   (squared distance, the first two squares fused with the third): by the cell the colour falls in
+   and the entries below that cell's parent, or by a linear search for 16 entries or fewer. The
+   indices go in the console's C8 tiles (8 by 4).
+
+Checked against the log of home-a39.log (`LOCKSTEP_SIM_TEXTURES=1`, `lockstep`, the study
+`engine/src/bin/lockstep/sim_textures.rs`): the cook (7 layers) and the male (the made Sim:
+8 layers) are each the logged image and palette byte for byte: 0 of 16,384 texels and
+0 of 256 palette entries differ (141 and 192 colours; the log's entries past them are 0). The only
+other log with the records, home-a40.log, has the same two Sims (the same result); the club logs
+and the other home logs have no '`' or '{' records. Not checked, for no Sim shows it: the other skin tones, children,
+a Sim in a costume (the original's override record, `ESim` +0x598 and +0x59C), a Sim whose word at
+0x5A0 is clear (its upper and lower body's colours not applied), and the tints of colours with a
+green greatest and red least (the original's hue is not the inverse there: `rgb_to_hsl`).
 
 `datasets.arc` (the lots' and objects' data) keeps 5,636 more `LFXT` records inside its
 entries; each reads at its tag (`texture::read_prefix`), all 5,636. None is one of the home
@@ -2478,10 +2530,7 @@ T-1, `Replay::sim_plays(T)` for the plays):
   1,039 against render-check's engine mode (`ours_2400.png`): 99.99% within 4 (39 pixels beyond;
   98.89% before); the frames 100.00% within 33.3 +- 2 ms (1,170 frames; the whole frame 4.5 ms mean
   on the PC, 2.8 ms of it the build).
-Still from the log: the Sims' run-time textures (the male's and the cook's 128 x 128 C8 image and
-palette, by the part names of the log's own frame: `SimSkins`; `rletextu.arc` holds a 256 x 256
-run-length texture for many parts, `rle_texture`, but how the game puts a Sim's into one image
-with one palette is not read), the cook's heading, which Sim the portrait shows (the log's overlay
+Still from the log: the cook's heading, which Sim the portrait shows (the log's overlay
 draws name its parts: `portrait_sim`; the engine has no player), the frames' places (`k`
 records), and what the Sims hold (Prop_Spoon, Carry_Soup_in_Pan, Carry_Snack_Chips,
 Carry_Newspaper and the plumb bob: 5 draws, a few pixels). Left: the standing loop and the
@@ -2493,6 +2542,19 @@ copy), the new `figure` module, `engine_scene` (`save_file`, `Engine::sims`, `as
 `Builder::build_with`) and `sims.rs`. The replay figures, lockstep, cargo test and clippy hold
 (`runchecks` 10 of 10, the replay of home-a39.log the same with the catalog); the log mode is
 unchanged.
+
+T1, the Sims' textures from the disc: the engine mode and `view` now make each Sim's 128 x 128 C8
+image and palette themselves (`SimSkins::with_disc`; HF_LOG_SKINS=1 keeps the log's), by the
+description and the part tables (see "The Sim's run-time texture", under "Run-length textures"):
+the cook's and the male's are the log's byte for byte (0 of 16,384 texels and 0 of 256 palette
+entries differ for each). What is still the log's is the sampler, which is the same on every logged
+draw and a constant now (clamped, bilinear, one level), and, in the log mode, the textures. The
+figures of render-check's engine mode do not move: 2400 the Sims' own pixels 88.08%, the whole frame
+97.21%; 2401 88.36%, 97.20% (log mode 97.47%). Shared code changed in T1: `outfit.rs` (the part
+tables keep the first four words of each entry; `PartTables::entry`), `sims.rs` (the engine's
+textures in `engine_sims`), `view.rs` and `render-check.rs` (`with_disc`); the new `sim_texture` and
+`quantizer` modules and lockstep's `LOCKSTEP_SIM_TEXTURES=1` study. `runchecks` 10 of 10, both
+crates' tests and clippy hold.
 
 Shared code changed in W1: `drawlist` (`LotDraws::shadows`, `wall_shadows`, `diagonal_shadows`,
 `object_shadows`, `wall_record`, `VISIBLE` and `in_view` moved here from lockstep's
