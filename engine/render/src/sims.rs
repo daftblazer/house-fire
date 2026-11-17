@@ -363,7 +363,7 @@ fn skin_matrices(batch: &housefire::model::SubModel, bone: impl Fn(u16) -> Optio
 
 /// A study, not used to draw: the headings (eighths of a turn) that put each Sim's bones where
 /// the log's '$' records have them, for each of `figures` the eighth whose bones come closest to
-/// the logged matrices of `tick`. The engine's own heading (`Replay::sim_faces`) equals them for
+/// the logged matrices of `tick`. The engine's own heading (the world's direction) equalled them for
 /// both Sims at ticks 1,039 and 1,040.
 pub fn headings_from_log(log: &housefire::tree_log::Log, tick: u32, wardrobe: &Wardrobe, figures: &[Figure]) -> HashMap<i16, u8> {
     let mut logged: Vec<[f32; 12]> = Vec::new();
@@ -406,16 +406,16 @@ pub fn bones_matched(log: &housefire::tree_log::Log, tick: u32, wardrobe: &Wardr
 }
 
 /// The world's Sims on the lot as figures: their descriptions from the cast, their places, their
-/// plays (`Replay::sim_plays`) and headings (the way each turned at its last walk's end,
-/// `Replay::sim_faces`, else the facing the lot gave it).
-pub fn figures_of(world: &housefire::world::World, cast: &Cast, plays: &[(i16, u32, f32, bool)], faces: &[(i16, (i32, i32))]) -> Vec<Figure> {
+/// plays (`Replay::sim_plays`) and headings (the direction the world holds for each, object data 1,
+/// which the run turns as the original's route followers do).
+pub fn figures_of(world: &housefire::world::World, cast: &Cast, plays: &[(i16, u32, f32, bool)]) -> Vec<Figure> {
     world
         .objects()
         .filter(|o| o.person && o.on_lot())
         .filter_map(|o| {
             let description = *cast.description(o.person_data.get(31).copied()?)?;
             let play = plays.iter().find(|p| p.0 == o.id()).map(|p| (p.1, p.2, p.3));
-            let heading = faces.iter().find(|f| f.0 == o.id()).and_then(|f| figure::heading_along(f.1.0, f.1.1)).unwrap_or(figure::heading_of_facing(o.facing()));
+            let heading = figure::heading_of_facing(o.facing());
             let carrying = world.objects().any(|h| h.data.get(housefire::world::DATA_CONTAINER) == Some(&o.id()));
             let mood = o.motives.get(figure::FACE_MOTIVE).copied().unwrap_or(0.0);
             Some(Figure { id: o.id(), description, place: [o.x16 as f32 / 16.0, o.y16 as f32 / 16.0], heading, play, carrying, mood })

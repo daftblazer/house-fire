@@ -265,7 +265,7 @@ fn engine_frame(scene: &mut Scene, assets: &Assets, disc: &Disc, log: &housefire
         let skins = sims::SimSkins::from_scene(scene).with_disc(disc);
         let wardrobe = sims::Wardrobe { rigs: &rigs, cast: &cast, catalog: &catalog, skins: &skins, models: &plan.models, shaders: &shaders };
         let plays = replay.sim_plays(tick);
-        let mut figures = sims::figures_of(replay.world(), &cast, &plays, &replay.sim_faces());
+        let mut figures = sims::figures_of(replay.world(), &cast, &plays);
         if let Some(skip) = std::env::var("HF_SKIPSIM").ok().and_then(|v| v.parse::<i16>().ok()) {
             figures.retain(|f| f.id != skip);
         }

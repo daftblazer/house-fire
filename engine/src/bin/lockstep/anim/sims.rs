@@ -62,7 +62,6 @@ pub fn sims(log: &housefire::tree_log::Log, d: &Disc, lib: &Library, ngh: &[u8],
         let Some(mut replay) = Replay::new(log, lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, None, RunWith { card_lot: start.card_lot, cat: Some(catalog.clone()) }) else { return };
         while replay.tick() + 1 < tick && replay.step() {}
         let plays = replay.sim_plays(tick);
-        let faces = replay.sim_faces();
         // the logged matrices no Sim's bones equal, kept with the bones of every Sim
         let mut all_bones: Vec<(i16, usize, [f32; 12])> = Vec::new();
         for o in replay.world().objects().filter(|o| o.person && o.on_lot()) {
@@ -81,8 +80,8 @@ pub fn sims(log: &housefire::tree_log::Log, d: &Disc, lib: &Library, ngh: &[u8],
                 tracks.truncate(1);
             }
             let place = (o.x16 as f32 / 16.0, o.y16 as f32 / 16.0);
-            // the engine's heading: the way the Sim turned at its last walk's end, else its facing
-            let engine_heading = faces.iter().find(|f| f.0 == o.id()).and_then(|f| figure::heading_along(f.1.0, f.1.1)).unwrap_or(o.facing().rem_euclid(8) as u8);
+            // the engine's heading: from the direction the world holds for the Sim
+            let engine_heading = figure::heading_of_facing(o.facing());
             // the heading: the eighth whose bones come nearest the logged (the engine's own is
             // not found: `facing` is stale)
             let rows = |h: u8| -> Vec<[f32; 12]> {

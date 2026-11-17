@@ -3947,25 +3947,6 @@ impl<'l> Replay<'l> {
         m.iter().filter_map(|(sim, id, play)| Some((*self.ids.get(&sim)?, id, play.place(), play.backward()))).collect()
     }
 
-    /// Where each Sim on the lot faces, as the way it turned at its last walk's end: the step
-    /// from the plan's last point but one (the walk's end, where the Sim stands) to its last
-    /// point (what the walker turns to face, `routing::turn_frames`), in sixteenths. The plans
-    /// are the planner's, the native planner's as far as `planner` reproduces them; a Sim that
-    /// has not walked to such a plan has no entry (its facing is the lot's).
-    pub fn sim_faces(&self) -> Vec<(i16, (i32, i32))> {
-        self.h
-            .world
-            .objects()
-            .filter(|o| o.person && o.on_lot())
-            .filter_map(|o| {
-                let end = (o.x16, o.y16);
-                let plan = self.log.plans.iter().rev().filter(|p| p.tick <= self.t + 1 && p.points.len() >= 3).find(|p| p.points[p.points.len() - 2] == end)?;
-                let faced = plan.points[plan.points.len() - 1];
-                Some((o.id(), (faced.0 - end.0, faced.1 - end.1)))
-            })
-            .collect()
-    }
-
     /// The tick the run is at (the last one stepped).
     pub fn tick(&self) -> u32 {
         self.t

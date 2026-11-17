@@ -1009,6 +1009,54 @@ it. So a run-on walk heads for its list's last waypoint: (344, 407) at 4919 and 
 plan the replay finds (an older or longer one); 2035's stays at its corner. Which list a follower
 holds is not yet modelled (the replay matches a walk to the latest plan whose line it is on).
 
+**The direction** (`routing::facing_direction`, `direction_angle`, `turn_towards`;
+`Replay::turn_followers`). A person's direction (object data 1, eighths of a turn: 0 towards -x,
+2 towards +y, 4 towards +x, 6 towards -y) is written from its follower's facing angle (+56, a
+float, radians, 0 towards +y, growing towards -x) by fn_800B0FB0: floor((-angle x 57.2958 + 22.5) /
+45) + 2, mod 8 (the DOL's 57.2957763671875, 22.5 and 45.0 at 802A909C, 802A90A0 and 802A90A4;
+the floor is fn_8010E388; the multiply and add fused). It is written from two places only:
+800AD5C4, when a route starts (fn_800AD434), and 800AE634, at the end of Route_Follow's frame in
+states 1, 2 and 3 (not 4, not 5: state 5 turns the angle and writes nothing). The angle
+itself: at a route's start (fn_800AD1BC, +28 set to 1) it is made from the person's direction,
+-(d - 2) x 45 x 0.0174533, wrapped into (-pi, pi] (constants 802A8D20 to 802A8D30), unless the
+follower's last state was 5 (then it keeps the stale one, and the write at 800AD5C4 may change
+the direction). Each frame fn_800AE6FC, first, turns it towards where the follower goes: the
+target atan2(-dx, dy) (fn_8010DD60) of the leg it is on (the plan's points idx - 1 to idx; state 1
+the first leg, state 3 the last, the one into the faced object; in state 5 from its place to its
+point +116/+120), none (both under 0.001, 802A8D78/7C) staying as it is. The gap is wrapped into
+(-pi, pi] and the angle moves by sign x budget x rate, the budget the frame (0.033) times the
+speed factor (+124), the rate 2 pi a second walking (state 2) and pi / 2 otherwise (802A8D68,
+802A8D64), wrapped, and put on the target when it passes it (or at once when +124 is 2 or more,
+802A8D94: the fast mode). So an eighth takes about 15 frames of a standing turn, a frame and a
+quarter a tick: 12 ticks on the club, as logged (Sim 172: 1, 2, 3 at ticks 7, 19, 31). The state
+changes inside fn_800AE6FC (1 to 2, 3 to 4 when the angle is on the target) are the log's.
+Route_Run's own write at the primitive's end (8022081C, eight-way from the plan's last leg) is
+not made: nothing in the club's run needs it.
+
+Natively `Replay::turn_followers` reads the log's follower frames ('Z', with the person's id: -1
+in this log, so the person is the one standing where the follower does at its first frame) and
+the plans (the latest one that starts where the route starts; the leg from the place on the
+line), keeps an angle per follower, and writes data 1 of the person after each frame. The study
+`LOCKSTEP_DIRECTIONS=1` (lockstep, `directions.rs`; LOCKSTEP_DIRECTIONS_TRACE=id for one
+person's changes) compares every person's data 1 at the end of every tick with the log's latest
+'_' record. Club-live log (club-d3000c, 9,420 ticks, 9 persons): 41,494 person-ticks the same,
+43,286 DIFFERENT. Every change a planned walk makes is the log's, tick for tick (Sim 172 at 7,
+19, 31, 58, 65, 75, 78; Sim 171 at 30; Sim 177 at 7 and 19; Sim 178 at 3557): the walks'
+turns, the quantising and the restart from a stale angle all fit. The rest is one kind: six
+routes of the dancers that have no plan in the log ('G': Route_Plan's return; 172 at tick 86,
+177 at 73, 174 at 4, 171 at 41, 178 at 156 and 3584), turn-only routes (the Sim already at its
+goal: state 1 to 3 at once and 12 to 45 frames of turning in state 3; the final directions 0, 1,
+6, 1, 1, 0 are where the logged '_' ends). Their list is not logged, so the angle stays and the
+person keeps the direction it had (the persons' tails after the first such route, 5 of the 9,
+are the 43,286). Their last leg is the approach of a plan that starts at its goal: one tile
+(16) from the Sim in the direction of the request's +40 (`planner::point_after_goal`, kind -3,
+the 'h' record's third word: 0 or 1 for Sim 178's logged plans, (-16, +16) from (360, 312) and
+(-16, 0) from (360, 328) towards object 57 at (344, 328): the eight-way direction from the Sim
+to it), and the planner is not called for them, so there is no 'h' to read. To close them: log
+the follower's list (+12) in 'Z', or find what the dancers' routing step passes (tree 0x100d node
+1, GotoRoutingSlot on the dance floor, id 135, slots 5, 7, 9, 14) and compute the approach
+natively.
+
 **A routing primitive, natively** (`routing::walk_frames`, `routing_return_tick`). From its
 walker's start: the whole walk frame after frame, the turn, one frame more, and the return on the
 tick after that frame's (the frame clock as logged); each step before it a yield. On the home log
