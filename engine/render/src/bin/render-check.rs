@@ -4,15 +4,20 @@
 //! picture and a difference picture under `$HF_FRAMES/r1/` (`HF_OUT=name`: another folder).
 //!
 //! The engine mode (`HF_ENGINE=1`, with `--card CARD` for a save's lot): the lot's model draws
-//! (objects, walls, the lot's own model) are made from the engine's own world (`engine_scene`)
-//! in place of the log's rigid and display-list draws; floors, shadows, Sims and the portrait stay
-//! the log's, and so does the camera. Studies for it: `HF_ORACLE=1` takes the light sets from the
-//! log's draw at the same world matrix, `HF_MATDIFF=1` compares the materials and states with
-//! the log's, `HF_LIGHTSTUDY=1` prints both light sets in world space, `HF_DRAWS=prefix` the
-//! planned draws of a model, `HF_OBJECTS=1` the lot's objects, `HF_LISTMODEL=name` a model's
-//! draws in draw order, `HF_ORDER=1` the whole draw order (runs collapsed), `HF_SKIP=prefix` and
-//! `HF_SKIPTEX=name` leave a model's or a texture's engine draws out, `HF_HOUSE=n` the lot's house
-//! number (default 1).
+//! (objects, walls, the lot's own model), its floors (by room, lit from the light grid), the
+//! shadow pass and the camera (`scene::Camera` from the logged parameters) are made from the
+//! engine's own world (`engine_scene`) in place of the log's records, in the original's order
+//! (floors, the lot's ground, shadows, masks of each room's batch; then the models); the Sims
+//! (skinned parts, their shadows) and the portrait stay the log's. Studies for it:
+//! `HF_ORACLE=1` takes the light sets from the log's draw at the same world matrix,
+//! `HF_MATDIFF=1` compares the materials and states with the log's, `HF_LIGHTSTUDY=1` prints
+//! both light sets in world space, `HF_FLOORCMP=1` the engine's floor strips and their colours
+//! against the log's, `HF_SHADOWDUMP=1` (or `mat`, `view`) and `HF_FLOORDUMP=1` (or `mat`) the
+//! log's shadow and floor draws, `HF_LOGCAM=1` the logged view in place of the camera's,
+//! `HF_DRAWS=prefix` the planned draws of a model, `HF_OBJECTS=1` the lot's objects,
+//! `HF_LISTMODEL=name` a model's draws in draw order, `HF_ORDER=1` the whole draw order (runs
+//! collapsed), `HF_SKIP=prefix` and `HF_SKIPTEX=name` leave a model's or a texture's engine draws
+//! out, `HF_HOUSE=n` the lot's house number (default 1).
 //!
 //! Study aids (environment): `HF_WORST=n` lists the n models whose pixels are furthest off,
 //! `HF_PROBE="x,y;x,y"` explains the draw at those pixels, `HF_MODEL=name` samples a model's
@@ -144,7 +149,7 @@ fn main() -> ExitCode {
         // the camera: the engine's `scene::Camera` from the logged parameters (the lot's start has
         // no player input to run it from)
         let mut view = scene.frame.camera.view;
-        if let Some((v, pr)) = engine_scene::camera(&log, tick) {
+        if let Some((v, pr)) = engine_scene::camera(&log, tick).filter(|_| std::env::var_os("HF_LOGCAM").is_none()) {
             let dv = v.iter().zip(view.iter()).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
             let dp = pr.iter().zip(scene.frame.camera.projection.iter()).map(|(a, b)| (a - b).abs()).fold(0.0f32, f32::max);
             println!("camera from the logged parameters against the logged view: view {dv:.2e}, projection {dp:.2e}");
@@ -279,18 +284,45 @@ fn main() -> ExitCode {
         }
         // the floors by room, the shadow pass (the pieces' shadows lie on the outdoors' floors, an
         // object's on its room's) and the lot's own ground, then the order of the original
+        if std::env::var_os("HF_FLOORCMP").is_some() {
+            // (study aid: each engine strip against the log's floor strip with the same corners: the
+            // colours' differences, summed up, and the strips the log does not have)
+            let log_strips: Vec<&Vec<housefire::tree_log::StripVertex>> = log.strip_vertices.iter().filter(|(j, _)| log.other_draws[*j].0.tick == tick).map(|(_, v)| v).collect();
+            let (mut matched, mut missing, mut same, mut near, mut far, mut corners) = (0, 0, 0, 0, 0, 0);
+            let mut worst: Vec<(i32, String)> = Vec::new();
+            for st in &plan.floors {
+                let hit = log_strips.iter().find(|v| v.len() == st.corners.len() && v.iter().zip(&st.corners).all(|(a, b)| (a.0[0] - b.0[0]).abs() < 1e-3 && (a.0[1] - b.0[1]).abs() < 1e-3));
+                let Some(v) = hit else { missing += 1; continue };
+                matched += 1;
+                for (a, b) in v.iter().zip(&st.corners) {
+                    corners += 1;
+                    let d = (0..3).map(|k| (i32::from(a.2.to_be_bytes()[k]) - i32::from(b.2[k])).abs()).max().unwrap_or(0);
+                    if d == 0 { same += 1 } else if d <= 4 { near += 1 } else { far += 1 }
+                    if d > 4 { worst.push((d, format!("room {} shader {:08x} run {:?} corner ({}, {}) log {:08x} engine {:02x?}", st.room, st.shader, (st.run.x, st.run.y, st.run.n), a.0[0], a.0[1], a.2, b.2))); }
+                }
+            }
+            worst.sort_by_key(|w| -w.0);
+            println!("floor strips: engine {}, log {} in the tick; engine strips equal to a logged one {matched}, with no logged one {missing}; corners {corners}: colour exact {same}, within 4 {near}, beyond {far}", plan.floors.len(), log_strips.len());
+            for w in worst.iter().take(8) { println!("  {}", w.1); }
+        }
         let floors: Vec<(usize, engine_scene::FloorDraws)> = plan.floors.iter().zip(assets.engine_floors(&mut scene, &plan.floors, &shaders, view)).map(|(st, f)| (st.room, f)).collect();
         let sun = plan.lights.at(1.0, 1.0).sun.map_or([0.0; 3], |s| s.direction);
         let projection = scene.frame.camera.projection;
         let mut by_room: Vec<Vec<engine_scene::Made>> = Vec::new();
-        for (k, m) in assets.engine_shadows(&mut scene, &plan.models, &plan.shadows, engine_scene::shadow_view(&view, sun)) {
+        let room_of = |d: &housefire::drawlist::Draw| if d.kind == housefire::drawlist::Kind::WallPiece { 0 } else { plan.lights.room_of_place(d.origin[0], d.origin[1]) };
+        let view_of = |d: &housefire::drawlist::Draw| match (d.kind, room_of(d)) {
+            (housefire::drawlist::Kind::WallPiece, _) => engine_scene::shadow_view(&view, sun, engine_scene::SHADOW_SHEAR_WALL),
+            (_, 0) => engine_scene::shadow_view(&view, sun, engine_scene::SHADOW_SHEAR_OBJECT),
+            _ => engine_scene::shadow_view(&view, [0.0; 3], 1.0),
+        };
+        for (k, m) in assets.engine_shadows(&mut scene, &plan.models, &plan.shadows, &view_of) {
             let d = &plan.shadows[k];
             // (the original draws what its bounds put on the screen: a tall model's place can be
             // off it; the pieces' are not drawn off the screen)
             if d.kind == housefire::drawlist::Kind::WallPiece && !housefire::drawlist::in_view(&view, &projection, &d.world) {
                 continue;
             }
-            let room = if d.kind == housefire::drawlist::Kind::WallPiece { 0 } else { plan.lights.room_of_place(d.origin[0], d.origin[1]) };
+            let room = room_of(d);
             if by_room.len() <= room {
                 by_room.resize_with(room + 1, Vec::new);
             }
@@ -323,7 +355,7 @@ fn main() -> ExitCode {
                 if std::env::var_os("HF_SHADOWDUMP").is_some_and(|v| v == "mat") {
                     println!("SDM {:?} {:?}", d.material, d.lighting);
                 }
-                if std::env::var_os("HF_SHADOWDUMP").is_some_and(|v| v == "view") { println!("SDV {i} {:?} cam {:?}", d.view, scene.frame.camera.view); }
+                if std::env::var_os("HF_SHADOWDUMP").is_some_and(|v| v == "view") { println!("SDV {i} {} v{} {:?} at {:.2} {:.2} {:.2}", info.model, scene.meshes[d.mesh.0 as usize].vertices.len(), d.view.map(|v| [v[2], v[6], v[10]]), d.world[3], d.world[7], d.world[11]); }
                 println!("SD {i} {} v{} at {:.3} {:.3} {:.3} rot {:.1} scale {:.4} {:.4}", info.model, scene.meshes[d.mesh.0 as usize].vertices.len(), w[3], w[7], w[11], w[4].atan2(w[0]).to_degrees(), w[0].hypot(w[4]), w[10]);
             }
         }

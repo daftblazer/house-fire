@@ -55,6 +55,13 @@ pub struct Inputs<'a> {
     pub view: Mat3x4,
 }
 
+/// The texture a wall's small pieces (the 7-vertex ones at a wall's foot, a door's or window's)
+/// name in their shader, a junk image, and the plain image the original's draws of them have
+/// bound (`walls_down`, `wall_black`, `polyshadow` and `1st_final` share its pixels, `docs/assets.md`,
+/// "Wall patterns"; none of the log's draws names the placeholder).
+pub const PLACEHOLDER_TEXTURE: &str = "_garbage";
+pub const PLAIN_TEXTURE: &str = "polyshadow";
+
 /// The textures bound so far, by the layer's name hash: the texture and whether it has clear pixels.
 pub type TextureCache = HashMap<u32, Option<(TextureRef, bool)>>;
 
@@ -67,8 +74,10 @@ impl Assets {
         let mut cutout = false;
         if let Some(sh) = shader {
             for (slot, l) in sh.layers.iter().take(2).enumerate() {
-                let found = cache.entry(l.texture).or_insert_with(|| {
-                    let hash = *self.by_name.get(&l.texture)?;
+                // the walls' pieces that name the placeholder are drawn with the plain image
+                let texture = if l.texture == housefire::shader::name_hash(PLACEHOLDER_TEXTURE) { housefire::shader::name_hash(PLAIN_TEXTURE) } else { l.texture };
+                let found = cache.entry(texture).or_insert_with(|| {
+                    let hash = *self.by_name.get(&texture)?;
                     let levels = self.decode(hash)?;
                     let (wrap, linear, mipmaps) = sampler_of(self.by_hash[&hash].flags, levels.len() as u32);
                     let cutout = levels[0].2.iter().any(|&p| p >> 24 != 255);
@@ -80,7 +89,7 @@ impl Assets {
                     cutout = found.is_some_and(|f| f.1);
                 }
                 info.missing_texture |= found.is_none();
-                info.textures[slot] = self.by_name.get(&l.texture).and_then(|h| self.by_hash.get(h)).map(|s| s.name.clone());
+                info.textures[slot] = self.by_name.get(&texture).and_then(|h| self.by_hash.get(h)).map(|s| s.name.clone());
             }
         }
         (bound, cutout)
@@ -105,10 +114,6 @@ impl Assets {
             let shader = input.shaders.get(&d.shader.unwrap_or(part.batch.hash));
             let mut info = DrawInfo { class: if list { Class::DisplayList } else { Class::RigidStrip }, strip: 0, model: part.record.name.clone(), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None, skin: None };
             let (bound, cutout) = self.bind_shader(scene, &mut textures, shader, &mut info);
-            // the shadow sub-models (the walls' 5-vertex pieces) are drawn by the shadow pass alone
-            if info.textures[0].as_deref() == Some(SHADOW_TEXTURE) {
-                continue;
-            }
             let lighting = (input.lighting)(d);
             let lit = matches!(lighting, Lighting::Lit { .. } | Lighting::VertexColours);
             let (mut material, unsupported) = match shader {
@@ -127,21 +132,19 @@ impl Assets {
     }
 }
 
-/// The texture of the shadow sub-models: drawn by the shadow pass only (`shadow_material`).
-pub const SHADOW_TEXTURE: &str = "polyshadow";
-
-/// How far down a unit of the sun's horizontal direction a shadow falls: the shadow draws' view
-/// is the camera's with the lot's z sheared onto the ground, a point at height z moved by z times
-/// the sun's x and y over this (the logged shadow views of frame 2400 shear by (0.8855, -0.2271)
-/// where the sun's direction is (0.8223, -0.2109, -0.5285): the same 0.9286 for both axes, which
-/// is not the sun's own vertical part. Fitted at this one clock; whether it is a constant or the
-/// sun's plus 0.4 is not known.
-pub const SHADOW_SHEAR_Z: f32 = 0.9286;
+/// How far a shadow falls: the shadow draws' view is the camera's with the lot's z sheared onto the
+/// ground, a point at height z moved by z times the sun's x and y over a divisor. The logged views
+/// of frame 2400 (sun (0.8223, -0.2109, -0.5285)) shear by (0.7188, -0.1843) the outdoor objects'
+/// draws (a divisor of 1.144) and by (0.8855, -0.2271) the wall pieces' and fences' (0.9286), none
+/// of them the sun's own vertical part. Fitted at this one clock. The indoor objects' shears
+/// (each a different small vector, from their light sets) are not found: they are not sheared.
+pub const SHADOW_SHEAR_OBJECT: f32 = 1.144;
+pub const SHADOW_SHEAR_WALL: f32 = 0.9286;
 
 /// The view the shadows are drawn through: the camera's `view` after the shear that puts a point
-/// of height z on the ground along the sun's direction `sun` (`SHADOW_SHEAR_Z`).
-pub fn shadow_view(view: &Mat3x4, sun: [f32; 3]) -> Mat3x4 {
-    let (a, b) = (sun[0] / SHADOW_SHEAR_Z, sun[1] / SHADOW_SHEAR_Z);
+/// of height z on the ground along the sun's direction `sun`, over `divisor`.
+pub fn shadow_view(view: &Mat3x4, sun: [f32; 3], divisor: f32) -> Mat3x4 {
+    let (a, b) = (sun[0] / divisor, sun[1] / divisor);
     let mut v = *view;
     for r in 0..3 {
         v[r * 4 + 2] = a * view[r * 4] + b * view[r * 4 + 1];
@@ -174,7 +177,7 @@ pub fn shadow_material() -> Material {
 impl Assets {
     /// The shadow pass's draws of the planned parts (`drawlist::LotDraws::shadows`): each part's
     /// vertex strip (its display list is the lit pass's) in the shadow material and lighting off.
-    pub fn engine_shadows(&self, scene: &mut Scene, models: &Models, shadows: &[Planned], view: Mat3x4) -> Vec<(usize, Made)> {
+    pub fn engine_shadows(&self, scene: &mut Scene, models: &Models, shadows: &[Planned], view_of: &dyn Fn(&Planned) -> Mat3x4) -> Vec<(usize, Made)> {
         let mut mesh_of_batch: HashMap<usize, Option<MeshId>> = HashMap::new();
         let mut out = Vec::new();
         for (k, d) in shadows.iter().enumerate() {
@@ -187,7 +190,7 @@ impl Assets {
             });
             let Some(mesh) = mesh else { continue };
             let info = DrawInfo { class: Class::Shadow, strip: 0, model: part.record.name.clone(), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None, skin: None };
-            out.push((k, Made { from: k, draw: Draw { mesh, world: d.world, bones: None, projection: None, viewport: None, view: Some(view), material: shadow_material(), lighting: Lighting::Black, id: 0 }, info }));
+            out.push((k, Made { from: k, draw: Draw { mesh, world: d.world, bones: None, projection: None, viewport: None, view: Some(view_of(d)), material: shadow_material(), lighting: Lighting::Black, id: 0 }, info }));
         }
         out
     }
@@ -433,7 +436,7 @@ pub fn assemble(scene: &mut Scene, engine: Engine) -> usize {
         }
     }
     let mut out: Vec<Draw> = Vec::new();
-    let mut put = |scene: &mut Scene, out: &mut Vec<Draw>, mut m: Made| {
+    let put = |scene: &mut Scene, out: &mut Vec<Draw>, mut m: Made| {
         scene.drawn.push(m.info.clone());
         scene.all.push(m.info);
         m.draw.id = scene.drawn.len() as u32;
@@ -469,12 +472,18 @@ pub fn assemble(scene: &mut Scene, engine: Engine) -> usize {
         }
     }
     out.extend(sims.take().into_iter().flatten());
-    let (mut opaque, mut blended): (Vec<Made>, Vec<Made>) = engine.objects.into_iter().partition(|m| m.draw.material.blend == Blend::Opaque);
-    opaque.append(&mut blended);
+    let (opaque, blended): (Vec<Made>, Vec<Made>) = engine.objects.into_iter().partition(|m| m.draw.material.blend == Blend::Opaque);
+    // the Sims go between the opaque and the blended models (the original's order is spatial: a
+    // window's glass that writes depth must come after the Sim behind it), the interface's last
+    let (overlay, sims): (Vec<Draw>, Vec<Draw>) = kept.into_iter().partition(|d| d.projection.is_some());
     for m in opaque {
         put(scene, &mut out, m);
     }
-    out.extend(kept);
+    out.extend(sims);
+    for m in blended {
+        put(scene, &mut out, m);
+    }
+    out.extend(overlay);
     scene.frame.draws = out;
     removed
 }
