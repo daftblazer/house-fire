@@ -830,7 +830,28 @@ pub struct Log {
     pub states: Vec<StateRec>,
     pub gx_calls: Vec<GxCallRec>,
     pub texels: Vec<TexelsRec>,
+    pub tlut_loads: Vec<TlutLoadRec>,
     pub ticks: u32,
+}
+
+/// '{': a GXLoadTlut in the draw window (after its '}'): the hardware slot (a texture object's
+/// TLUT name refers to it), the GXTlutObj's words and the palette's entries as loaded.
+#[derive(Clone, Debug)]
+pub struct TlutLoadRec {
+    pub tick: u32,
+    pub slot: u32,
+    /// The GXTlutObj's 12 bytes (big-endian): format word, load word (address >> 5), count.
+    pub obj: [u8; 12],
+    pub entries: Vec<u16>,
+    pub strips_before: usize,
+    pub others_before: usize,
+}
+
+impl TlutLoadRec {
+    /// The palette's format (GX: 0 IA8, 1 RGB565, 2 RGB5A3), bits 10-11 of the format word.
+    pub fn format(&self) -> u8 {
+        ((u32::from_be_bytes(self.obj[0..4].try_into().unwrap()) >> 10) & 3) as u8
+    }
 }
 
 /// '`': a texture image's first level as it was when loaded for a draw in the draw window
@@ -914,10 +935,15 @@ pub struct StateRec {
     /// its value in the low byte), zmode, peCtrl (bits 0-2 the EFB's pixel format: 0 RGB8,
     /// 1 RGBA6, 2 RGB565).
     pub pe: [u32; 4],
+    /// GX_TEXMTX0 as applied (+0x674; from the model matrix for position texgens) and the
+    /// post-transform matrix loaded as GX_PTTEXMTX0 (+0x6A4), 3x4 by rows each.
+    pub tex_mtx: [[f32; 12]; 2],
+    /// The viewport (+0x6D4): left, top, width, height, near, far.
+    pub viewport: [f32; 6],
 }
 
 impl StateRec {
-    pub const LEN: usize = 12 + 32 + 24 + 4 + 16;
+    pub const LEN: usize = 12 + 32 + 24 + 4 + 16 + 96 + 24;
     fn parse(b: &[u8], strips_before: usize, others_before: usize) -> StateRec {
         // the observer's own words are little-endian, the guest's bytes big-endian
         let le = |at: usize| u32::from_le_bytes(b[at..at + 4].try_into().unwrap());
@@ -937,6 +963,8 @@ impl StateRec {
             blend_flags: w(s + 20),
             cull: w(s + 24),
             pe: [0, 1, 2, 3].map(|i| w(s + 28 + 4 * i)),
+            tex_mtx: [0, 1].map(|m| std::array::from_fn(|i| f32::from_bits(w(s + 44 + 48 * m + 4 * i)))),
+            viewport: std::array::from_fn(|i| f32::from_bits(w(s + 140 + 4 * i))),
         }
     }
 }
@@ -1081,6 +1109,22 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let bytes = r.b[r.p..r.p + LightsRec::LEN].to_vec();
                 r.p += LightsRec::LEN;
                 log.lights.push(LightsRec { tick, device, strips_before: log.strips.len(), bytes });
+            }
+            b'{' => {
+                if !r.has(4 + 12 + 2) {
+                    break;
+                }
+                let slot = r.u32();
+                let mut obj = [0u8; 12];
+                obj.copy_from_slice(&r.b[r.p..r.p + 12]);
+                r.p += 12;
+                let n = r.u16() as usize;
+                if !r.has(2 * n) {
+                    break;
+                }
+                let entries = (0..n).map(|_| r.u16()).collect();
+                let tick = log.gx_calls.last().map_or(0, |c| c.tick);
+                log.tlut_loads.push(TlutLoadRec { tick, slot, obj, entries, strips_before: log.strips.len(), others_before: log.other_draws.len() });
             }
             b'`' => {
                 if !r.has(4 + 4 + 2 + 2 + 1 + 4 + 8) {
