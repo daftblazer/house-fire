@@ -1753,6 +1753,14 @@ blend flag is left over in memory until its first window step sets it. With them
 states of the 39,999 poses on home-a28.log come out to the bit: 474,452 copies, 22,587 blends,
 1,354 layers and 120,662 at weight 0 (`LOCKSTEP_ANIM_POSES`). The weights come from the track's
 SetWeight (fn_80159D9C, clamped) and a mask's array (fn_80162F7C).
+A Sim's tracks from the engine's state (A1, `figure::tracks`; the numbers are in "The Sims from
+the engine's state"). The animator's tracks that pose a Sim at ticks 1,039 and 1,040 are its
+action (weight 1, the base), its carrying loop (weight 1, node weights 1 on nodes 47 to 51)
+and the face layer (weight the mood motive over 100, node weight 1 on node 16); the standing
+loop steps but is not posed. The node weights of the first 643 ticks' '=' records are two
+patterns only (happyFace 57 zeros and a 1; the carrying loop 53 zeros and five 1s); the
+face's weight is the Sim's motive 3 over 100 every tick (the '=' records stop at tick 643,
+so ticks 1,039 on are checked by the bones, not the weights).
 Parts on their bones (iterations 188-190, `draw.rs`, `LOCKSTEP_ANIM_DRAWS`, home-a29.log). Of
 18,809 world matrices drawn on ticks 1000-1014, 13,590 are a bone matrix of their tick to the
 bit. A strip's world matrix is the one logged after it (the strip is recorded when its command
@@ -2481,29 +2489,56 @@ The Sims from the engine's state (S1: `sims.rs`, `housefire::figure`; `HF_NO_SIM
 Frame 2400 (tick 1,039), the Sims' own pixels 88.08% (log mode 88.50, the log's Sims in engine
 mode 88.87), the portrait's square 93.96% (log mode 93.99), the whole frame 87.19% (36,739 pixels
 beyond, 36,729 with the log's Sims); frame 2401: 88.36% (the log's: 89.33), whole 87.18%. Log mode
-unchanged (rigid 97.63%, whole 88.89%). What the engine makes, from the run (`Replay` to tick
+unchanged (rigid 97.63%, whole 88.89%). With the layered pose and the engine's own heading (A1,
+below; the portrait's yaw refitted): the Sims' own pixels 92.50% (frame 2401: 92.97%), the
+portrait's square 96.10% (96.36%), and in the current engine mode the whole frame 97.23% (97.23%;
+before A1 97.21% and 97.20%, the Sims' 88.08% and 88.36%); log mode unchanged (whole 97.47%).
+What the engine makes, from the run (`Replay` to tick
 T-1, `Replay::sim_plays(T)` for the plays):
 - Who and where: the Sims on the lot (`world`'s persons), each one's description from the save
   through its neighbour (person data 31: `figure::Cast`), place from x16 and y16 (24.5, 19.0 and
-  24.5, 22.5, as the logged roots), facing its heading in eighths. The engine keeps no heading
-  but `facing`, the way it was last placed: the male's 4 is right, the cook at the stove has 0
-  and stands at 6. `sims::headings_from_log` takes, from the log's '$' matrices of the tick, the
-  eighth that puts a Sim's bones nearest them (still from the log: 1 Sim of 2; both `render-check`
-  and `view` do it, `view` where the log shows a frame, ticks 1,039 and 1,040).
+  24.5, 22.5, as the logged roots), facing its heading in eighths. The Sim's turn is the
+  walker's (Route_Follow's +56, not logged): at a walk's end it turns, 3 degrees a frame, to
+  face the plan's last point, the one after the walk's end (`routing::turn_frames` checks the
+  frames that takes). So the heading is the step from the last plan's last point but one (the
+  Sim's own place) to its last point (`Replay::sim_faces`, `figure::heading_along`: the eighth
+  of that step's turn), else the facing the lot gave it. The `facing` field is stale after a
+  walk (the cook at the stove has 0 and stands at 6; the male's 4 is right): both Sims'
+  headings are the ones that put their bones on the logged matrices at ticks 1,039 and 1,040
+  (`sims::headings_from_log` stays as the study that fits them).
 - Which picture: the animation frames of ticks before T and the first of T's own (a tick has one
   or two: 2398 at 1,039, 2399 and 2400 at 1,040; the pictures show the pose after 2398 and 2399;
   one frame more or less loses 28 points of the Sims' pixels); `Replay::sim_plays` runs them on a
   copy of the animator, the run is not moved.
-- The pose: the Sim's Animate play alone at weight 1 (`figure::node_states`: the local pose of
-  each node, `pose::TrackStreams`; backward plays from the last frame down, `pose_place`), under
-  the root and the controller's scale 2^-12 (`figure::BONE_SCALE`, the '<' records'), the bones
-  by `skeleton::bone_matrices`. Against the logged '$' matrices of tick 1,039: 23 of the male's
-  58 bones and 26 of the cook's equal a logged matrix to 1e-4. The game runs more tracks (a
-  standing loop under, the face's `happyFace` and the arm's `a2o-rarm-carry-loop` over, node
-  weights not read): the neck and head are 0.009 (male) and 0.014 to 0.023 (cook) tile off, the
-  male's right arm 0.34 (his carrying loop is not made), the face's bones 0.09 to 0.64 (cheeks,
-  eyes: the expression). Layering the face over all nodes made every bone worse (the track has
-  node weights).
+- The pose: the Sim's tracks in the animator's order (`figure::tracks`, `figure::node_states`:
+  each track's local pose per node, `pose::TrackStreams`, folded into the node states from the
+  default pose by `pose::fold`, a node's weight its track's times its own; backward plays from
+  the last frame down, `pose_place`), under the root and the controller's scale 2^-12
+  (`figure::BONE_SCALE`, the '<' records'), the bones by `skeleton::bone_matrices`. The tracks
+  (the log's '8' and '(' records at ticks 1,039 and 1,040 show 4 a Sim, 3 posed):
+  1. the Animate play (weight 1, the base: the first track that is not a layer);
+  2. the carrying loop (`a2o-rarm-carry-loop`, `c2o-` for a child) when the Sim holds an object
+     (another object's container is the Sim): weight 1, held at its last frame (end mode 1),
+     node weights 1 on nodes 47 to 51 (the right arm) and 0 on the rest, so it copies the arm;
+  3. the face (`happyFace`, a layer: the track's +8 has bit 0x100, held at frame 0 by its speed
+     0): the track weight is the Sim's mood motive (index 3) over 100 (the logged weight at each
+     of the 20 changes on home-a39.log's first 643 ticks, by eye, is the motive's value of the
+     tick over 100 to a few ulps; the other motives' weights are not tried), node weights 1 on node 16 only (the neck), 0 on the rest.
+  The standing loop runs but is not posed while an action plays (no '(' record for it: weight
+  0). Against the logged matrices of ticks 1,039 and 1,040 (the '$' skinned primitives' four
+  bones and the worlds of the parts on one bone; LOCKSTEP_ANIM_BONES, `anim/sims.rs`): the
+  action alone gave 23 of the male's 58 bones and 26 of the cook's equal to 1e-4 (37 of the 65
+  logged matrices of tick 1,039 equal some Sim's bone); with the carrying loop and the face,
+  53 and 47 (62 of 65: the 3 others are the identity matrix of another draw, the carried
+  plate's matrix on the hand, and the male's head: below). The bones left are none a logged
+  matrix is near: the root nodes 0, 1, 55 to 57 (the nearest logged matrix is another bone's,
+  0.04 to 0.3 tile), the cook's thumbs and their prop nodes 45, 46, 53, 54 and her hair nodes
+  37, 38 (0.06 or less: a neighbour's). A bone drawn with a wrong matrix would leave its
+  logged one unmatched. The one real difference: the male's head (the matrix of the parts that
+  hang from it, hair and glasses) at tick T equals the engine's head of tick T-1 (0.027 tile
+  off), the skinned head bones of tick T's own; the cook's heads equal the current one. Not
+  explained (drawing the portrait's rigid parts from the tick before's bones did not raise
+  the picture's figures).
 - Parts: the outfit's nine slots through `PartTables::dress` and the models' records
   (`models.arc` by the name's CRC), the draws in the log's order (hair, eyes, nose, mouth, upper,
   lower, shoes, accessory; the portrait: eyes, nose, mouth, hair, upper, the glasses). A batch on

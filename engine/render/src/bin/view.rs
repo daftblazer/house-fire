@@ -321,10 +321,7 @@ fn run(args: Args) -> Result<(), String> {
     let log_scene = drawn_ticks.first().map(|&t| assets.scene(&log, t));
     let skins = log_scene.as_ref().map_or_else(SimSkins::default, SimSkins::from_scene).with_disc(&disc);
     let wardrobe = Wardrobe { rigs: &rigs, cast: &cast, catalog: &catalog, skins: &skins, models: &lot.models, shaders: &lot.shaders };
-    let portrait = log_scene.as_ref().and_then(|sc| sims::portrait_sim(sc, &wardrobe, &sims::figures_of(replay.world(), &cast, &[], &Default::default())));
-    // (the engine keeps no heading for a Sim apart from its facing: where the log shows a frame,
-    // the heading that puts the bones where the log's are is taken, and kept)
-    let mut headings = std::collections::HashMap::new();
+    let portrait = log_scene.as_ref().and_then(|sc| sims::portrait_sim(sc, &wardrobe, &sims::figures_of(replay.world(), &cast, &[], &[])));
     let (mut mesh_ids, mut texture_ids) = (Vec::new(), Vec::new());
     let mut times = args.frame_times.as_ref().map(|p| std::io::BufWriter::new(std::fs::File::create(p).expect("the frame-times file")));
     let frame_length = Duration::from_secs_f64(1.0 / TICKS_PER_SECOND);
@@ -351,11 +348,7 @@ fn run(args: Args) -> Result<(), String> {
         // passes before it left it), then the tick runs
         let tick = replay.tick() + 1;
         let plays = replay.sim_plays(tick);
-        let mut figures = sims::figures_of(replay.world(), &cast, &plays, &headings);
-        if drawn_ticks.contains(&tick) {
-            headings.extend(sims::headings_from_log(&log, tick, &wardrobe, &figures));
-            figures = sims::figures_of(replay.world(), &cast, &plays, &headings);
-        }
+        let figures = sims::figures_of(replay.world(), &cast, &plays, &replay.sim_faces());
         let counts = builder.build_with(replay.world(), tick, camera_at(tick), Some((&wardrobe, &figures, portrait)));
         let built = Instant::now();
         let scene = &mut builder.scene;

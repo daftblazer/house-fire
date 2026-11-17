@@ -1,8 +1,11 @@
 //! The Sims' bones from the engine's own state (LOCKSTEP_ANIM_BONES, with the run's card):
 //! per Sim at the ticks the log drew them (`log.skins`), the bones (`figure::bones` through the
-//! tracks `figure::tracks` makes from the replay's plays) against the logged '$' matrices (the
-//! four bones of each skinned primitive, no bone index): how many of the Sim's bones equal a
-//! logged matrix, and the worst of the rest by name.
+//! tracks `figure::tracks` makes from the replay's plays) against the logged matrices (the four
+//! bones of each skinned primitive, '$', and the worlds of the parts on one bone, no bone index
+//! in either): how many of a Sim's bones equal a logged matrix, the others by their index and
+//! how far they are from the nearest logged one (translation, tiles), and the other way round:
+//! the logged matrices no bone of any Sim equals, and which of those the tick before's bones do
+//! (LOCKSTEP_ANIM_ACTION_ONLY=1: the action alone, the pose before the layers).
 
 use crate::*;
 use housefire::anim::Catalog;
@@ -15,9 +18,18 @@ use housefire::skeleton::Mat4;
 /// translation in tiles (the comparison `frame_draws` makes of a world matrix).
 const TOLERANCE: f32 = 1e-4;
 
-/// The logged matrices of a tick, each once.
+/// The logged matrices of a tick, each once: the skinned primitives' bones ('$') and the world
+/// matrices of the parts that hang from one bone ('m' records of the Sims' unit, 2^-12 a column:
+/// hair and glasses on the head).
 fn logged(log: &housefire::tree_log::Log, tick: u32) -> Vec<[f32; 12]> {
     let mut out: Vec<[f32; 12]> = Vec::new();
+    for m in log.matrices.iter().filter(|m| m.tick == tick && !m.projection && m.values.len() >= 12) {
+        let unit = (0..3).all(|c| ((0..3).map(|r| m.values[4 * r + c].powi(2)).sum::<f32>().sqrt() / figure::BONE_SCALE - 1.0).abs() < 0.01);
+        let v: [f32; 12] = std::array::from_fn(|i| m.values[i]);
+        if unit && !out.contains(&v) {
+            out.push(v);
+        }
+    }
     for k in log.skins.iter().filter(|k| k.tick == tick) {
         for m in k.bones {
             if !out.contains(&m) {
@@ -44,6 +56,7 @@ pub fn sims(log: &housefire::tree_log::Log, d: &Disc, lib: &Library, ngh: &[u8],
     let (Some(rigs), Some(cast)) = (Rigs::read(d), Cast::read(d, ngh)) else { return };
     let catalog = Catalog::read(d, house);
     let ticks: BTreeSet<u32> = log.skins.iter().map(|k| k.tick).collect();
+    let mut previous: Vec<(i16, usize, [f32; 12])> = Vec::new();
     for tick in ticks {
         let logged = logged(log, tick);
         let Some(mut replay) = Replay::new(log, lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, None, RunWith { card_lot: start.card_lot, cat: Some(catalog.clone()) }) else { return };
@@ -107,5 +120,9 @@ pub fn sims(log: &housefire::tree_log::Log, d: &Disc, lib: &Library, ngh: &[u8],
             })
             .collect();
         println!("LOGGED tick {tick}: {} distinct matrices, {} equal a bone of a Sim; the others, with the nearest bone: {}", logged.len(), logged.len() - unmatched.len(), unmatched.join(" "));
+        // the lag: of the others, the ones equal to a bone of the tick before's pose (the next tick, from the tick just done)
+        let lagged: Vec<String> = logged.iter().filter(|l| !all_bones.iter().any(|b| near(&b.2, l))).filter_map(|l| previous.iter().find(|b| near(&b.2, l)).map(|b| format!("(Sim {} bone {})", b.0, b.1))).collect();
+        println!("LAG tick {tick}: the logged matrices no bone of this tick equals but one of the tick {} equals: {}", tick - 1, lagged.join(" "));
+        previous = all_bones;
     }
 }

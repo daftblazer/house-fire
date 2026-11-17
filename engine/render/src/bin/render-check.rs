@@ -213,9 +213,7 @@ fn engine_frame(scene: &mut Scene, assets: &Assets, disc: &Disc, log: &housefire
         let skins = sims::SimSkins::from_scene(scene).with_disc(disc);
         let wardrobe = sims::Wardrobe { rigs: &rigs, cast: &cast, catalog: &catalog, skins: &skins, models: &plan.models, shaders: &shaders };
         let plays = replay.sim_plays(tick);
-        let mut figures = sims::figures_of(replay.world(), &cast, &plays, &Default::default());
-        let headings = sims::headings_from_log(log, tick, &wardrobe, &figures);
-        figures = sims::figures_of(replay.world(), &cast, &plays, &headings);
+        let figures = sims::figures_of(replay.world(), &cast, &plays, &replay.sim_faces());
         let portrait = sims::portrait_sim(scene, &wardrobe, &figures);
         for f in &figures {
             println!("Sim {} at {:?} heading {} (facing {}) play {:?}{}", f.id, f.place, f.heading, replay.world().find_object(f.id).map_or(0, |o| o.facing()), f.play, if portrait == Some(f.id) { ", the portrait's" } else { "" });

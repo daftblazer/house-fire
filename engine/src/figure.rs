@@ -3,11 +3,11 @@
 //! node states, `skeleton` for the matrices). Simulation-side and GPU-free: a server could pose
 //! the Sims too; the renderer takes the matrices and parts.
 //!
-//! The pose is the Sim's Animate play alone, at weight 1. The game runs more tracks over it (a
-//! standing loop under, a facial animation and an arm's carrying loop over, each with node
-//! weights that are not read) and the head looks about; `docs/assets.md`, "The Sims from the
-//! engine's state", counts what that leaves (home, tick 1,039: 23 and 26 of the 59 logged
-//! bone matrices equal to 1e-4 for the two Sims, the neck and head 0.01 to 0.02 tile off).
+//! The pose is the tracks the animator poses, folded in its order (`tracks`, `node_states`): the
+//! Animate play as the base, the arm's carrying loop when the Sim holds something and the face's
+//! layer by its mood, the last two with node weights. `docs/assets.md`, "The Sims from the
+//! engine's state", counts what that leaves (home, ticks 1,039 and 1,040: 53 of the male's 58
+//! bones and 47 of the cook's equal a logged matrix to 1e-4, the others none is logged for).
 
 use crate::anim::{Anim, Catalog};
 use crate::disc::Disc;

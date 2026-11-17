@@ -10,7 +10,7 @@
 use crate::engine_scene::{lighting_for, shader_material, shadow_material, shadow_view, Caches, Made, SHADOW_SHEAR_OBJECT};
 use crate::frame::*;
 use crate::scene::{mesh_of, Assets, Class, DrawInfo, Scene, PORTRAIT_BACKDROP, PORTRAIT_BACKDROP_COLOUR};
-use housefire::anim::{Anim, Catalog};
+use housefire::anim::Catalog;
 use housefire::drawlist::{Kind, Models};
 use housefire::figure::{self, Cast, Rigs};
 use housefire::lighting::LotLights;
@@ -29,6 +29,10 @@ pub struct Figure {
     pub heading: u8,
     /// Its animation's id, how far along it is (frames) and whether it plays backward.
     pub play: Option<(u32, f32, bool)>,
+    /// Whether it holds something in its hand (the carrying loop plays on its arm).
+    pub carrying: bool,
+    /// Its mood motive (`figure::FACE_MOTIVE`), the weight of its face track times 100.
+    pub mood: f32,
 }
 
 /// The parts of a Sim's outfit in the order the house's draws take them (the records of the
@@ -58,14 +62,14 @@ const PORTRAIT_LIGHTS: [([f32; 3], [f32; 3]); 2] = [([0.1764706, 0.1764706, 0.25
 /// The portrait's camera in the Sim's own frame (x right, y forward, z up), looking back at it:
 /// its distance in front, its height, the pitch up and a slight yaw. From the logged view of
 /// frame 2400 (eye (24.5010, 17.8027, 1.6014) for the Sim at (24.5, 19.0) facing -y, so 1.1973
-/// in front and 1.6014 up; pitch 0.0835 rad, yaw 0.0008), the pitch and yaw then refined
-/// against the portrait's own pixels (a coordinate descent on the count of Sims' pixels beyond
-/// 4: 412 to 207; the logged ones are the camera of the original's own head, which the engine's
-/// pose does not reach to within 0.01, so the picture wants a slightly lower look).
+/// in front and 1.6014 up; pitch 0.0835 rad, yaw 0.0008), the yaw then refined against the
+/// portrait's own pixels with the Sim's layered pose (a coordinate descent on the portrait's
+/// pixels beyond 4: 404 at the logged yaw, 120 at -0.000075; distance, height and pitch stay the
+/// logged ones; the logged eye is 0.001 aside of the Sim's own x, which the yaw absorbs).
 pub const PORTRAIT_DISTANCE: f32 = 1.1973;
 pub const PORTRAIT_HEIGHT: f32 = 1.6014;
-pub const PORTRAIT_PITCH: f32 = 0.0825;
-pub const PORTRAIT_YAW: f32 = -0.00015;
+pub const PORTRAIT_PITCH: f32 = 0.0835;
+pub const PORTRAIT_YAW: f32 = -0.000075;
 
 /// The portrait's view of a Sim at `place` facing `heading` (`figure::root`'s turn).
 pub fn portrait_view(place: [f32; 2], heading: u8) -> Mat3x4 {
@@ -224,15 +228,17 @@ fn portrait_lighting() -> Lighting {
 }
 
 impl Figure {
-    /// The animation the Sim plays and the place it is at, when the catalog has it.
-    fn pose<'a>(&self, w: &Wardrobe<'a>) -> Option<(&'a Anim, f32)> {
-        let (id, at, backward) = self.play?;
-        w.catalog.by_id.get(&id).map(|a| (a, figure::pose_place(a.frames, at, backward)))
+    /// What the Sim does, as far as its pose goes.
+    fn stance(&self) -> figure::Stance {
+        figure::Stance { action: self.play, carrying: self.carrying, mood: self.mood, adult: self.description.adult }
     }
 
     /// Its bones in the form the renderer takes, at `heading`.
-    fn bone_rows(&self, w: &Wardrobe, pose: Option<(&Anim, f32)>, heading: u8) -> Vec<Mat3x4> {
-        figure::bones(w.rigs.of(&self.description), pose, &figure::root(self.place[0], self.place[1], heading)).iter().map(figure::rows).collect()
+    fn bone_rows(&self, w: &Wardrobe, heading: u8) -> Vec<Mat3x4> {
+        let nodes = w.rigs.of(&self.description);
+        let masks = figure::Masks::new(nodes.len());
+        let tracks = figure::tracks(w.catalog, &self.stance(), &masks);
+        figure::bones(nodes, &tracks, &figure::root(self.place[0], self.place[1], heading)).iter().map(figure::rows).collect()
     }
 }
 
@@ -244,7 +250,7 @@ impl Assets {
     pub fn engine_sims(&self, scene: &mut Scene, caches: &mut Caches, cache: &mut SimCaches, w: &Wardrobe, figures: &[Figure], lights: &LotLights, sun: [f32; 3], view: Mat3x4, portrait: Option<i16>) -> SimDraws {
         let mut out = SimDraws::default();
         for f in figures {
-            let bones = f.bone_rows(w, f.pose(w), f.heading);
+            let bones = f.bone_rows(w, f.heading);
             let outfit = w.cast.tables.dress(&f.description);
             let records: Vec<(Slot, usize)> = Slot::ALL.iter().filter_map(|&s| Some((s, w.models.parts.record_by_id(outfit.part(s))?))).collect();
             let skin = Self::skin_of(scene, cache, w, f, &records);
@@ -354,10 +360,10 @@ fn skin_matrices(batch: &housefire::model::SubModel, bone: impl Fn(u16) -> Optio
     four
 }
 
-/// The headings (eighths of a turn) that put each Sim's bones where the log's '$' records have
-/// them: the engine does not keep a Sim's heading apart from its `facing` field, which is the
-/// way it was last placed, not the way it stands after it turned (the cook at the stove). For
-/// each of `figures`, the eighth whose bones come closest to the logged matrices of `tick`.
+/// A study, not used to draw: the headings (eighths of a turn) that put each Sim's bones where
+/// the log's '$' records have them, for each of `figures` the eighth whose bones come closest to
+/// the logged matrices of `tick`. The engine's own heading (`Replay::sim_faces`) equals them for
+/// both Sims at ticks 1,039 and 1,040.
 pub fn headings_from_log(log: &housefire::tree_log::Log, tick: u32, wardrobe: &Wardrobe, figures: &[Figure]) -> HashMap<i16, u8> {
     let mut logged: Vec<[f32; 12]> = Vec::new();
     for k in log.skins.iter().filter(|k| k.tick == tick) {
@@ -369,9 +375,8 @@ pub fn headings_from_log(log: &housefire::tree_log::Log, tick: u32, wardrobe: &W
     }
     let mut out = HashMap::new();
     for f in figures {
-        let pose = f.pose(wardrobe);
         let score = |h: u8| -> f32 {
-            let rows = f.bone_rows(wardrobe, pose, h);
+            let rows = f.bone_rows(wardrobe, h);
             logged.iter().map(|l| rows.iter().map(|r| (0..12).map(|i| (r[i] - l[i]).abs()).fold(0.0f32, f32::max)).fold(f32::MAX, f32::min).min(1.0)).sum()
         };
         if let Some(best) = (0..8u8).min_by(|&a, &b| score(a).total_cmp(&score(b))) {
@@ -382,16 +387,19 @@ pub fn headings_from_log(log: &housefire::tree_log::Log, tick: u32, wardrobe: &W
 }
 
 /// The world's Sims on the lot as figures: their descriptions from the cast, their places, their
-/// plays (`Replay::sim_plays`) and headings (`headings`, else their facing).
-pub fn figures_of(world: &housefire::world::World, cast: &Cast, plays: &[(i16, u32, f32, bool)], headings: &HashMap<i16, u8>) -> Vec<Figure> {
+/// plays (`Replay::sim_plays`) and headings (the way each turned at its last walk's end,
+/// `Replay::sim_faces`, else the facing the lot gave it).
+pub fn figures_of(world: &housefire::world::World, cast: &Cast, plays: &[(i16, u32, f32, bool)], faces: &[(i16, (i32, i32))]) -> Vec<Figure> {
     world
         .objects()
         .filter(|o| o.person && o.on_lot())
         .filter_map(|o| {
             let description = *cast.description(o.person_data.get(31).copied()?)?;
             let play = plays.iter().find(|p| p.0 == o.id()).map(|p| (p.1, p.2, p.3));
-            let heading = headings.get(&o.id()).copied().unwrap_or((o.facing().rem_euclid(8)) as u8);
-            Some(Figure { id: o.id(), description, place: [o.x16 as f32 / 16.0, o.y16 as f32 / 16.0], heading, play })
+            let heading = faces.iter().find(|f| f.0 == o.id()).and_then(|f| figure::heading_along(f.1.0, f.1.1)).unwrap_or(o.facing().rem_euclid(8) as u8);
+            let carrying = world.objects().any(|h| h.data.get(housefire::world::DATA_CONTAINER) == Some(&o.id()));
+            let mood = o.motives.get(figure::FACE_MOTIVE).copied().unwrap_or(0.0);
+            Some(Figure { id: o.id(), description, place: [o.x16 as f32 / 16.0, o.y16 as f32 / 16.0], heading, play, carrying, mood })
         })
         .collect()
 }
