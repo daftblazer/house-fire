@@ -289,11 +289,13 @@ fn wall_record(models: &Models, p: &WallPiece, window_of: &impl Fn([f32; 2]) -> 
     models.parts.record_by_id(crate::shader::name_hash(&format!("wall_straight{opening}{form}")))
 }
 
-/// The bits of an object's `ResData` flags that keep it from casting a shadow: hung on a wall
-/// (0x40000000), a floor covering or an opening (the rug, doors and windows: 0x01000000) and
-/// the counters' (0x20000000). Read off the home lot's objects against the original's shadow
-/// draws (`docs/assets.md`, "The frame from the engine's state").
-pub const NO_SHADOW_FLAGS: u32 = 0x4000_0000 | 0x2000_0000 | 0x0100_0000;
+/// The bits of an object's `ResData` flags that say it casts a shadow (0x02000000: furniture,
+/// plants, the beds; 0x10000000: the sinks) and those that keep it from it (0x40000000: hung on a
+/// wall; 0x20000000: the counters). Read off the home lot's 17 kinds of row against the original's
+/// shadow draws (rows 0x01000000, the rug and the doors and windows, have neither bit set):
+/// `docs/assets.md`, "The frame from the engine's state".
+pub const SHADOW_CASTER_FLAGS: u32 = 0x0200_0000 | 0x1000_0000;
+pub const NO_SHADOW_FLAGS: u32 = 0x4000_0000 | 0x2000_0000;
 
 /// The shadow pass's draws of the lot's pieces: each fence and each wall piece on an outdoor tile
 /// (`WallPiece::cap`: the outside of a wall casts on the ground, the inside of a house does not),
@@ -353,13 +355,13 @@ pub fn diagonal_shadows(models: &Models, walls: &crate::routing::Walls) -> Vec<D
 pub const SHADOW_LIFT: f32 = 0.1;
 
 /// The shadow pass's draws of the objects: every part an object is drawn with, unless one of its
-/// resource rows has a `NO_SHADOW_FLAGS` bit. `parts` are the object draws (`object_parts`).
+/// resource rows does not cast one (`SHADOW_CASTER_FLAGS`, `NO_SHADOW_FLAGS`). `parts` are the object draws (`object_parts`).
 fn object_shadows(parts: &[(Draw, bool)], guids_of: impl Fn(i16) -> Vec<u32>, resources: &BTreeMap<u32, ObjResources>) -> Vec<Draw> {
     let mut casts: BTreeMap<i16, bool> = BTreeMap::new();
     parts
         .iter()
         .filter(|(d, _)| matches!(d.kind, Kind::ObjectPart | Kind::ObjectList))
-        .filter(|(d, _)| *casts.entry(d.object).or_insert_with(|| guids_of(d.object).iter().filter_map(|g| resources.get(g)).all(|r| r.flags & NO_SHADOW_FLAGS == 0)))
+        .filter(|(d, _)| *casts.entry(d.object).or_insert_with(|| guids_of(d.object).iter().filter_map(|g| resources.get(g)).all(|r| r.flags & SHADOW_CASTER_FLAGS != 0 && r.flags & NO_SHADOW_FLAGS == 0)))
         .map(|&(mut d, rooted)| {
             if rooted {
                 d.world[11] += SHADOW_LIFT;
@@ -538,6 +540,32 @@ pub fn lot_draws_of(world: &crate::world::World, res: &BTreeMap<u32, ObjResource
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn draw(object: i16, z: f32) -> Draw {
+        let mut world = [0.0; 12];
+        world[11] = z;
+        Draw { kind: Kind::ObjectPart, part: (0, 0, 0), world, origin: [0.0; 2], object, shader: None, edge: None }
+    }
+
+    #[test]
+    fn an_object_casts_a_shadow_unless_hung_on_a_wall_or_a_floor_covering() {
+        let row = |flags| ObjResources { dataset: 1, model: 0, flags, key: 0, idle: 0 };
+        let resources: BTreeMap<u32, ObjResources> = [(1, row(0x0200_0000)), (2, row(0x4200_0000)), (3, row(0x0100_0000)), (4, row(0x1100_0000)), (5, row(0x2200_0000))].into();
+        // object n has the resource row n
+        let guids_of = |id: i16| vec![id as u32];
+        let parts: Vec<(Draw, bool)> = (1..=5).map(|o| (draw(o, 0.0), false)).collect();
+        let casters: Vec<i16> = object_shadows(&parts, guids_of, &resources).iter().map(|d| d.object).collect();
+        assert_eq!(casters, vec![1, 4]);
+    }
+
+    #[test]
+    fn a_part_on_its_objects_own_matrix_is_lifted_in_the_shadow_pass() {
+        let resources: BTreeMap<u32, ObjResources> = [(1, ObjResources { dataset: 1, model: 0, flags: 0x0200_0000, key: 0, idle: 0 })].into();
+        let parts = [(draw(1, 0.0), true), (draw(1, 0.075), false)];
+        let shadows = object_shadows(&parts, |id| vec![id as u32], &resources);
+        assert_eq!(shadows[0].world[11], SHADOW_LIFT);
+        assert_eq!(shadows[1].world[11], 0.075);
+    }
 
     #[test]
     fn a_dataset_lists_its_models_by_the_sections_sizes() {

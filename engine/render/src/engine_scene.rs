@@ -494,6 +494,17 @@ mod tests {
     use housefire::lighting::{Lights, Source, Sun};
 
     #[test]
+    fn the_shadow_view_shears_height_onto_the_ground_along_the_sun() {
+        // a view that is the identity: a point of height 1 (the z axis) lands at (a, b) on the
+        // ground, the sun's x and y over the divisor
+        let view: Mat3x4 = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        let v = shadow_view(&view, [0.8, -0.2, -0.5], 0.8);
+        assert_eq!([v[2], v[6], v[10]], [1.0, -0.25, 0.0]);
+        // the ground itself (x, y columns) and the translation are the camera's
+        assert_eq!([v[0], v[5], v[3]], [1.0, 1.0, 0.0]);
+    }
+
+    #[test]
     fn a_light_set_is_tinted_and_turned_into_the_view() {
         // a view turning x to -y (and y to x), moving by (0, 0, -10)
         let view: Mat3x4 = [0.0, 1.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, -10.0];

@@ -285,6 +285,18 @@ mod tests {
     }
 
     #[test]
+    fn a_floor_without_lights_is_the_groups_base_and_only_outdoors_has_the_suns_light() {
+        let l = lot();
+        // a material with a diffuse of 0.5 and no ambient: outdoors the sun's light (1, straight
+        // down) times 0.5 times the group's constant (128), indoors none
+        let material = ([0.5; 3], [0.0; 3]);
+        let outdoors = l.floor_group(0, material);
+        assert_eq!(l.floor_colours(0, &outdoors, &[(1, 1)]), vec![[64, 64, 64, 0x80]]);
+        let indoors = l.floor_group(1, material);
+        assert_eq!(l.floor_colours(1, &indoors, &[(1, 3), (2, 3)]), vec![[0, 0, 0, 0x80]; 2]);
+    }
+
+    #[test]
     fn a_tile_off_the_lot_is_outside() {
         let l = lot();
         assert_eq!(l.room(-1, 0), 0);
