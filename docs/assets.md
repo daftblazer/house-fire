@@ -2713,8 +2713,8 @@ order, with the whole frame after each:
   `Cast::complete_from` gives a Sim the save does not describe the logged description no Sim has (with no
   card, all 9 in the order of the world: the records come in the Sims' creation order, the same as the
   card's for 8 of 9; the ninth is the story Sim of open.md's "Fran", whom no file describes).
-Home: log mode identical; engine mode 97.23% to 97.24% (31 pixels: the objects now play their graphic's
-animation, the same for every object of home but one).
+Home: log mode identical; engine mode 97.23% to 97.24% (31 pixels, rigid 2,391 to 2,360 beyond; the cause is not isolated: the objects now
+play their graphic's animation, and the room ambient's colour is the one constant of home's 7:36).
 Left, club engine mode (pixels beyond 4 in every channel of 81,954): the objects whose textures
 a lot's dataset overrides (the pool table's felt is `game_pooltable_club_x-02` in the log, the sub-model's own
 shader in the engine, ~7,000), the DJ booth's parts (~15,000: z-fighting of coplanar faces and its parts'
