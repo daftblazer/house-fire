@@ -10,6 +10,8 @@ publish = false
 housefire = { path = ".." }
 ash = "0.38"
 png = "0.17"
+# the window (the `view` binary): Wayland and X11, no input extras
+winit = { version = "=0.30.13", default-features = false, features = ["rwh_06", "x11", "wayland"] }
 
 # Its own target directory and lock file: the simulation crate (`..`) has no GPU dependency.
 [workspace]

@@ -184,7 +184,8 @@ fn main() -> ExitCode {
                 None => Lighting::Lit { ambient: [0.5; 3], directionals: Vec::new(), points: Vec::new() },
             }
         };
-        let made = assets.engine_draws(&mut scene, &engine_scene::Inputs { draws: &plan.draws, models: &plan.models, shaders: &shaders, lighting: &lighting, view });
+        let mut caches = engine_scene::Caches::default();
+        let made = assets.engine_draws(&mut scene, &mut caches, &engine_scene::Inputs { draws: &plan.draws, models: &plan.models, shaders: &shaders, lighting: &lighting, view });
         // (HF_SKIP=prefix and HF_SKIPTEX=name, study aids: leave out the engine's draws of the
         // models with that name, or of the materials whose first layer has that texture)
         let mut made = made;
@@ -305,7 +306,7 @@ fn main() -> ExitCode {
             println!("floor strips: engine {}, log {} in the tick; engine strips equal to a logged one {matched}, with no logged one {missing}; corners {corners}: colour exact {same}, within 4 {near}, beyond {far}", plan.floors.len(), log_strips.len());
             for w in worst.iter().take(8) { println!("  {}", w.1); }
         }
-        let floors: Vec<(usize, engine_scene::FloorDraws)> = plan.floors.iter().zip(assets.engine_floors(&mut scene, &plan.floors, &shaders, view)).map(|(st, f)| (st.room, f)).collect();
+        let floors: Vec<(usize, engine_scene::FloorDraws)> = plan.floors.iter().zip(assets.engine_floors(&mut scene, &mut caches, &plan.floors, &shaders, view)).map(|(st, f)| (st.room, f)).collect();
         let sun = plan.lights.at(1.0, 1.0).sun.map_or([0.0; 3], |s| s.direction);
         let projection = scene.frame.camera.projection;
         let mut by_room: Vec<Vec<engine_scene::Made>> = Vec::new();
@@ -315,7 +316,7 @@ fn main() -> ExitCode {
             (_, 0) => engine_scene::shadow_view(&view, sun, engine_scene::SHADOW_SHEAR_OBJECT),
             _ => engine_scene::shadow_view(&view, [0.0; 3], 1.0),
         };
-        for (k, m) in assets.engine_shadows(&mut scene, &plan.models, &plan.shadows, &view_of) {
+        for (k, m) in assets.engine_shadows(&mut scene, &mut caches, &plan.models, &plan.shadows, &view_of) {
             let d = &plan.shadows[k];
             // (the original draws what its bounds put on the screen: a tall model's place can be
             // off it; the pieces' are not drawn off the screen)

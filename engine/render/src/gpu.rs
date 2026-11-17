@@ -5,8 +5,8 @@ use ash::vk;
 use std::ffi::{CStr, c_char};
 
 pub struct Gpu {
-    // keeps the loader alive for as long as the device
-    _entry: ash::Entry,
+    /// The loader, kept alive for as long as the device (and used for the window system's extensions).
+    pub entry: ash::Entry,
     pub instance: ash::Instance,
     pub phys: vk::PhysicalDevice,
     pub device: ash::Device,
@@ -47,6 +47,11 @@ impl Gpu {
     /// Opens the first device with a graphics queue (the discrete one if there is one). With
     /// `validate` the Khronos validation layer is on when installed.
     pub fn new(validate: bool) -> Result<Gpu, String> {
+        Gpu::open(validate, &[], &[])
+    }
+
+    /// As `new`, with instance and device extensions on (a window's surface and swapchain).
+    pub fn open(validate: bool, instance_extensions: &[*const c_char], device_extensions: &[*const c_char]) -> Result<Gpu, String> {
         let entry = unsafe { ash::Entry::load() }.map_err(|e| format!("no Vulkan loader: {e}"))?;
         let app = vk::ApplicationInfo::default().api_version(vk::make_api_version(0, 1, 1, 0));
         let layer = c"VK_LAYER_KHRONOS_validation";
@@ -56,7 +61,8 @@ impl Gpu {
                 .iter()
                 .any(|l| l.layer_name_as_c_str().is_ok_and(|n| n == layer));
         let layers: Vec<*const c_char> = if have_layer { vec![layer.as_ptr()] } else { vec![] };
-        let exts: Vec<*const c_char> = if have_layer { vec![ash::ext::debug_utils::NAME.as_ptr()] } else { vec![] };
+        let mut exts: Vec<*const c_char> = if have_layer { vec![ash::ext::debug_utils::NAME.as_ptr()] } else { vec![] };
+        exts.extend_from_slice(instance_extensions);
         let info = vk::InstanceCreateInfo::default().application_info(&app).enabled_layer_names(&layers).enabled_extension_names(&exts);
         let instance = unsafe { entry.create_instance(&info, None) }.map_err(|e| format!("create_instance: {e}"))?;
         let debug = have_layer.then(|| {
@@ -83,12 +89,12 @@ impl Gpu {
         let prio = [1.0f32];
         let qi = [vk::DeviceQueueCreateInfo::default().queue_family_index(family).queue_priorities(&prio)];
         let features = vk::PhysicalDeviceFeatures::default().independent_blend(true);
-        let device = unsafe { instance.create_device(phys, &vk::DeviceCreateInfo::default().queue_create_infos(&qi).enabled_features(&features), None) }.map_err(|e| format!("create_device: {e}"))?;
+        let device = unsafe { instance.create_device(phys, &vk::DeviceCreateInfo::default().queue_create_infos(&qi).enabled_features(&features).enabled_extension_names(device_extensions), None) }.map_err(|e| format!("create_device: {e}"))?;
         let queue = unsafe { device.get_device_queue(family, 0) };
         let pool = unsafe { device.create_command_pool(&vk::CommandPoolCreateInfo::default().queue_family_index(family).flags(vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER), None) }.map_err(|e| e.to_string())?;
         let memory = unsafe { instance.get_physical_device_memory_properties(phys) };
         let limits = unsafe { instance.get_physical_device_properties(phys) }.limits;
-        Ok(Gpu { _entry: entry, instance, phys, device, queue, family, pool, memory, limits, debug })
+        Ok(Gpu { entry, instance, phys, device, queue, family, pool, memory, limits, debug })
     }
 
     pub fn memory_type(&self, bits: u32, want: vk::MemoryPropertyFlags) -> u32 {

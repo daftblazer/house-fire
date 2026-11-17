@@ -63,6 +63,18 @@ pub const PLACEHOLDER_TEXTURE: &str = "_garbage";
 /// The textures bound so far, by the layer's name hash: the texture and whether it has clear pixels.
 pub type TextureCache = HashMap<u32, Option<(TextureRef, bool)>>;
 
+/// What the draws made so far added to a scene, to be found again instead of added again: a
+/// window that draws every tick keeps one for all its frames, so that the meshes and textures go
+/// to the GPU once.
+#[derive(Default)]
+pub struct Caches {
+    /// A model's batch (its address in the `Models`) as a mesh, as a display list or as strips.
+    meshes: HashMap<(usize, bool), Option<MeshId>>,
+    textures: TextureCache,
+    /// A floor strip's mesh by a hash of its corners.
+    floors: HashMap<u64, MeshId>,
+}
+
 impl Assets {
     /// The textures of a shader's first two layers (their names by hash in the archives), added to
     /// `scene`'s when not in `cache` yet, and whether the first one has clear pixels; `info` takes
@@ -93,14 +105,12 @@ impl Assets {
 
     /// The renderer's draws for the engine's list. Meshes and textures are added to `scene`'s
     /// (the draws' ids are left for the caller, who places them).
-    pub fn engine_draws(&self, scene: &mut Scene, input: &Inputs<'_>) -> Vec<Made> {
-        let mut mesh_of_batch: HashMap<(usize, bool), Option<MeshId>> = HashMap::new();
-        let mut textures = TextureCache::new();
+    pub fn engine_draws(&self, scene: &mut Scene, caches: &mut Caches, input: &Inputs<'_>) -> Vec<Made> {
         let mut out = Vec::new();
         for (from, d) in input.draws.iter().enumerate() {
             let Some(part) = input.models.parts.parts_of(d.part.0).find(|p| p.index == d.part) else { continue };
             let list = part.batch.list.is_some();
-            let mesh = *mesh_of_batch.entry((part.batch as *const _ as usize, list)).or_insert_with(|| {
+            let mesh = *caches.meshes.entry((part.batch as *const _ as usize, list)).or_insert_with(|| {
                 mesh_of(part.batch, list).map(|m| {
                     scene.meshes.push(m);
                     MeshId(scene.meshes.len() as u32 - 1)
@@ -109,7 +119,7 @@ impl Assets {
             let Some(mesh) = mesh else { continue };
             let shader = input.shaders.get(&d.shader.unwrap_or(part.batch.hash));
             let mut info = DrawInfo { class: if list { Class::DisplayList } else { Class::RigidStrip }, strip: 0, model: part.record.name.clone(), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None, skin: None };
-            let (bound, cutout) = self.bind_shader(scene, &mut textures, shader, &mut info);
+            let (bound, cutout) = self.bind_shader(scene, &mut caches.textures, shader, &mut info);
             if info.textures[0].as_deref() == Some(PLACEHOLDER_TEXTURE) {
                 continue;
             }
@@ -176,12 +186,11 @@ pub fn shadow_material() -> Material {
 impl Assets {
     /// The shadow pass's draws of the planned parts (`drawlist::LotDraws::shadows`): each part's
     /// vertex strip (its display list is the lit pass's) in the shadow material and lighting off.
-    pub fn engine_shadows(&self, scene: &mut Scene, models: &Models, shadows: &[Planned], view_of: &dyn Fn(&Planned) -> Mat3x4) -> Vec<(usize, Made)> {
-        let mut mesh_of_batch: HashMap<usize, Option<MeshId>> = HashMap::new();
+    pub fn engine_shadows(&self, scene: &mut Scene, caches: &mut Caches, models: &Models, shadows: &[Planned], view_of: &dyn Fn(&Planned) -> Mat3x4) -> Vec<(usize, Made)> {
         let mut out = Vec::new();
         for (k, d) in shadows.iter().enumerate() {
             let Some(part) = models.parts.parts_of(d.part.0).find(|p| p.index == d.part) else { continue };
-            let mesh = *mesh_of_batch.entry(part.batch as *const _ as usize).or_insert_with(|| {
+            let mesh = *caches.meshes.entry((part.batch as *const _ as usize, false)).or_insert_with(|| {
                 mesh_of(part.batch, false).map(|m| {
                     scene.meshes.push(m);
                     MeshId(scene.meshes.len() as u32 - 1)
@@ -227,13 +236,12 @@ pub struct FloorDraws {
 }
 
 impl Assets {
-    pub fn engine_floors(&self, scene: &mut Scene, strips: &[housefire::floors::Strip], shaders: &HashMap<u32, Shader>, view: Mat3x4) -> Vec<FloorDraws> {
-        let mut textures = TextureCache::new();
+    pub fn engine_floors(&self, scene: &mut Scene, caches: &mut Caches, strips: &[housefire::floors::Strip], shaders: &HashMap<u32, Shader>, view: Mat3x4) -> Vec<FloorDraws> {
         let mut out = Vec::new();
         for (k, st) in strips.iter().enumerate() {
             let shader = shaders.get(&st.shader);
             let mut info = DrawInfo { class: Class::Floor, strip: 0, model: format!("run{k}"), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None, skin: None };
-            let (bound, _) = self.bind_shader(scene, &mut textures, shader, &mut info);
+            let (bound, _) = self.bind_shader(scene, &mut caches.textures, shader, &mut info);
             let record = match shader {
                 Some(sh) => material_record(sh),
                 None => MaterialRec { tick: 0, layers: 1, layer: [[0; 0x18]; 2], textures: [(0, [0; 128]); 2], strips_before: 0 },
@@ -250,8 +258,18 @@ impl Assets {
             // (the logged floor draws test no alpha: the shader's flag would give the wood a test)
             material.alpha_test = None;
             let vertices: Vec<_> = st.corners.iter().map(|&(p, uv, c)| ([p[0], p[1], p[2], 1.0], uv, u32::from_be_bytes(c))).collect();
-            scene.meshes.push(crate::scene::floor_mesh(&vertices));
-            let mesh = MeshId(scene.meshes.len() as u32 - 1);
+            let key = {
+                use std::hash::{Hash, Hasher};
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                for (p, uv, c) in &st.corners {
+                    (p.map(f32::to_bits), uv.map(f32::to_bits), c).hash(&mut h);
+                }
+                h.finish()
+            };
+            let mesh = *caches.floors.entry(key).or_insert_with(|| {
+                scene.meshes.push(crate::scene::floor_mesh(&vertices));
+                MeshId(scene.meshes.len() as u32 - 1)
+            });
             let world = crate::scene::floor_world();
             let draw = |material: Material| Draw { mesh, world, bones: None, projection: None, viewport: None, view: Some(view), material, lighting: Lighting::VertexColours, id: 0 };
             let mask_info = DrawInfo { class: Class::FloorMask, ..info.clone() };
@@ -314,13 +332,13 @@ pub fn lighting_for(l: &housefire::lighting::Lights, view: &Mat3x4) -> Lighting 
 
 /// What the engine's own state gives for a frame: the lot's model draws.
 pub struct Plan {
-    pub models: Models,
+    pub models: std::rc::Rc<Models>,
     pub draws: Vec<Planned>,
     pub placements: Vec<housefire::scene::Placement>,
     /// The GUIDs of each placement's parts, by leader.
     pub guids: std::collections::BTreeMap<i16, Vec<u32>>,
     /// What the objects draw with, by GUID (`quickdata::object_resources`).
-    pub resources: std::collections::BTreeMap<u32, housefire::quickdata::ObjResources>,
+    pub resources: std::rc::Rc<std::collections::BTreeMap<u32, housefire::quickdata::ObjResources>>,
     /// The lot's wall and fence pieces.
     pub pieces: Vec<housefire::scene::WallPiece>,
     /// The shadow pass's draws (`drawlist::LotDraws::shadows`).
@@ -346,6 +364,46 @@ pub fn camera(log: &housefire::tree_log::Log, tick: u32) -> Option<(Mat3x4, [f32
     Some((cam.view(), Camera::projection(c.wanted[3])))
 }
 
+/// The disc's files the lot's draws are made from, read once: the models, what the objects draw
+/// with (`quickdata::object_resources`), the floors' patterns, the shaders.
+pub struct Lot<'d> {
+    disc: &'d housefire::disc::Disc,
+    house: usize,
+    pub models: std::rc::Rc<Models>,
+    pub resources: std::rc::Rc<std::collections::BTreeMap<u32, housefire::quickdata::ObjResources>>,
+    patterns: Vec<housefire::quickdata::FloorPattern>,
+    terrain: u32,
+    pub shaders: HashMap<u32, Shader>,
+}
+
+impl<'d> Lot<'d> {
+    /// `house` is the lot's house number (its `HouseData` row: the loaded lot does not keep it).
+    pub fn new(disc: &'d housefire::disc::Disc, house: usize) -> Option<Lot<'d>> {
+        let quick = disc.read("quickdat.arc")?;
+        let image = |name: &str| housefire::arc::entries(&quick).unwrap_or_default().into_iter().find(|e| e.name == name).and_then(|e| housefire::quickdata::Image::read(housefire::arc::bytes(&quick, &e)));
+        let resources = housefire::arc::entries(&quick)?.into_iter().find(|e| e.name == "SimsObjects").and_then(|e| housefire::quickdata::Image::read(housefire::arc::bytes(&quick, &e))).map(|img| housefire::quickdata::object_resources(&img))?;
+        let patterns = image("SimsTiles").map(|img| housefire::quickdata::floor_patterns(&img)).unwrap_or_default();
+        let terrain = image("SimsUI").map(|img| housefire::quickdata::houses(&img)).and_then(|h| h.get(house).map(|h| h.terrain)).unwrap_or(0);
+        Some(Lot { disc, house, models: std::rc::Rc::new(Models::read(disc)), resources: std::rc::Rc::new(resources), patterns, terrain, shaders: housefire::shader::index(disc) })
+    }
+
+    /// The draws of the lot as `world` has it at `tick`, seen from the eye of `view`. The clock the
+    /// light is made at is the world's own (globals 0, 5 and 6: the hour, minute and second).
+    pub fn plan(&self, world: &housefire::world::World, tick: u32, view: &Mat3x4) -> Plan {
+        // the eye: -R^T t of the view
+        let eye = [0, 1].map(|i| -(0..3).map(|r| view[4 * r + i] * view[4 * r + 3]).sum::<f32>());
+        let lot = housefire::drawlist::lot_draws_of(world, &self.resources, &self.models, self.disc, self.house, tick, Some(eye));
+        let guids_of = |id: i16| world.find_object(id).into_iter().chain(world.objects().filter(|o| o.leader == id)).map(|o| o.guid).collect::<Vec<u32>>();
+        let guids = lot.placements.iter().map(|p| (p.leader, guids_of(p.leader))).collect();
+        let lamps = housefire::lamps::on_lot(&lot.placements, guids_of, &self.resources, &self.models.sources);
+        let g = |i: usize| world.globals.get(i).copied().map_or(0, i32::from);
+        let clock = (g(0), g(5), g(6));
+        let lights = housefire::lighting::LotLights::build(world, &self.resources, &lamps, clock);
+        let floors = housefire::floors::strips(&world.walls, housefire::light::GRID_SIZE as i32, &self.patterns, self.terrain, &lights, |id| self.shaders.get(&id).and_then(|s| s.material()));
+        Plan { models: self.models.clone(), draws: lot.draws, placements: lot.placements, guids, resources: self.resources.clone(), pieces: lot.pieces, shadows: lot.shadows, floors, lamps, lights, clock }
+    }
+}
+
 /// The engine's lot (the disc's, or the card's save: `card` the memory card image; the lot the
 /// log ran on, `housefire::lotpick`) and its draws for `tick`, seen from the eye of `view`. The
 /// loaded lot is the world as the game starts the lot; the animation clock is the tick's.
@@ -365,36 +423,19 @@ pub fn plan(disc: &housefire::disc::Disc, card: Option<&std::path::Path>, log: &
     world.load_lot(&lots[best]).ok()?;
     // the lot's globals as saved (its SIMI chunk): the clock among them
     world.globals = save::read_lot_globals(&ngh).ok().and_then(|g| g.get(best).cloned()).unwrap_or_default();
-    let quick = disc.read("quickdat.arc")?;
-    let res = housefire::arc::entries(&quick)?.into_iter().find(|e| e.name == "SimsObjects").and_then(|e| housefire::quickdata::Image::read(housefire::arc::bytes(&quick, &e))).map(|img| housefire::quickdata::object_resources(&img))?;
-    let models = Models::read(disc);
-    // the eye: -R^T t of the view
-    let eye = [0, 1].map(|i| -(0..3).map(|r| view[4 * r + i] * view[4 * r + 3]).sum::<f32>());
-    let lot = housefire::drawlist::lot_draws_of(&world, &res, &models, disc, house, tick, Some(eye));
+    let lot = Lot::new(disc, house)?;
     if std::env::var_os("HF_OBJECTS").is_some() {
         let list = log.lists.iter().rfind(|l| l.tick <= tick);
         for o in world.objects().filter(|o| o.on_lot() && !o.person) {
             println!("  object {} guid {:08x} at ({}, {}) level {} leader {} flags {:?} in the log's list {:?} fields {:?}", o.id(), o.guid, o.x16, o.y16, o.level, o.leader, o.data.get(housefire::world::DATA_FLAGS), list.map(|l| l.ids.contains(&o.id())), world.definition(o).map(|d| d.fields.clone()));
         }
     }
-    let guids = lot.placements.iter().map(|p| (p.leader, world.find_object(p.leader).into_iter().chain(world.objects().filter(|o| o.leader == p.leader)).map(|o| o.guid).collect())).collect();
-    let guids_of = |id: i16| world.find_object(id).into_iter().chain(world.objects().filter(|o| o.leader == id)).map(|o| o.guid).collect::<Vec<u32>>();
-    let lamps = housefire::lamps::on_lot(&lot.placements, guids_of, &res, &models.sources);
-    // the clock: the lot's own (the original's globals 0, 5 and 6) as loaded, then one pass for
-    // each tick before this one, as `replay` counts them: a pass the player's dialog stopped (the
-    // log's `stopped_at`) does not count
+    // the clock: the lot's own as loaded, then one pass for each tick before this one, as `replay`
+    // counts them: a pass the player's dialog stopped (the log's `stopped_at`) does not count
     for t in 1..tick {
         world.clock_pass(log.passes.get(&t).is_some_and(|p| p.stopped_at != 0));
     }
-    let g = |i: usize| world.globals.get(i).copied().map_or(0, i32::from);
-    let clock = (g(0), g(5), g(6));
-    let lights = housefire::lighting::LotLights::build(&world, &res, &lamps, clock);
-    let image = |name: &str| housefire::arc::entries(&quick).unwrap_or_default().into_iter().find(|e| e.name == name).and_then(|e| housefire::quickdata::Image::read(housefire::arc::bytes(&quick, &e)));
-    let patterns = image("SimsTiles").map(|img| housefire::quickdata::floor_patterns(&img)).unwrap_or_default();
-    let terrain = image("SimsUI").map(|img| housefire::quickdata::houses(&img)).and_then(|h| h.get(house).map(|h| h.terrain)).unwrap_or(0);
-    let shaders = housefire::shader::index(disc);
-    let floors = housefire::floors::strips(&world.walls, housefire::light::GRID_SIZE as i32, &patterns, terrain, &lights, |id| shaders.get(&id).and_then(|s| s.material()));
-    Some(Plan { models, draws: lot.draws, placements: lot.placements, guids, resources: res, pieces: lot.pieces, shadows: lot.shadows, floors, lamps, lights, clock })
+    Some(lot.plan(&world, tick, view))
 }
 
 /// What the engine makes of a frame, to be put in the original's order (`assemble`).

@@ -95,6 +95,17 @@ struct Tex {
     image: Image,
 }
 
+/// Where a frame goes when it is presented instead of read back (`Renderer::draw`): a swapchain
+/// image (acquired, with the semaphore that says so), the one to signal when drawn, and a pool
+/// of two timestamp queries for the GPU's time.
+pub struct Present {
+    pub image: vk::Image,
+    pub extent: vk::Extent2D,
+    pub wait: vk::Semaphore,
+    pub signal: vk::Semaphore,
+    pub timestamps: vk::QueryPool,
+}
+
 pub struct Renderer<'g> {
     gpu: &'g Gpu,
     width: u32,
@@ -535,6 +546,25 @@ impl<'g> Renderer<'g> {
 
     /// Renders the frame and reads the picture back.
     pub fn render(&mut self, frame: &Frame) -> Picture {
+        self.draw(frame, None);
+        let (w, h) = (self.width, self.height);
+        let gpu = self.gpu;
+        let n = (w * h) as usize;
+        let rgba = gpu.read(&self.colour_out, n * 4);
+        let raw = gpu.read(&self.ids_out, n * 8);
+        let id_of = |c: &[u8]| match u32::from_le_bytes(c.try_into().unwrap()) {
+            0 => 0,
+            i => frame.draws[i as usize - 1].id,
+        };
+        let ids = raw.as_chunks::<8>().0.iter().map(|c| id_of(&c[..4])).collect();
+        let late_ids = raw.as_chunks::<8>().0.iter().map(|c| id_of(&c[4..])).collect();
+        Picture { width: w, height: h, rgba, ids, late_ids }
+    }
+
+    /// Records, submits and waits for the frame: its pictures are copied out to the readback
+    /// buffers, or (with `present`) the colour is blitted onto a swapchain image that is left
+    /// ready to present, and the frame's start and end are timestamped.
+    pub fn draw(&mut self, frame: &Frame, present: Option<&Present>) {
         let gpu = self.gpu;
         if frame.draws.len() > self.draw_capacity {
             let old = std::mem::replace(&mut self.draw_buffer, gpu.buffer(0, vk::BufferUsageFlags::STORAGE_BUFFER, vk::MemoryPropertyFlags::HOST_VISIBLE));
@@ -588,6 +618,10 @@ impl<'g> Renderer<'g> {
         let (w, h) = (self.width, self.height);
         unsafe {
             d.begin_command_buffer(cb, &vk::CommandBufferBeginInfo::default().flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT)).unwrap();
+            if let Some(p) = present {
+                d.cmd_reset_query_pool(cb, p.timestamps, 0, 2);
+                d.cmd_write_timestamp(cb, vk::PipelineStageFlags::TOP_OF_PIPE, p.timestamps, 0);
+            }
             if !jobs.is_empty() {
                 // the skinning pass: every skinned draw's vertices, before the render pass reads them
                 d.cmd_bind_pipeline(cb, vk::PipelineBindPoint::COMPUTE, self.skin_pipeline);
@@ -654,26 +688,34 @@ impl<'g> Renderer<'g> {
                 d.cmd_draw_indexed(cb, mesh.index_count, 1, mesh.first_index, mesh.vertex_offset, i as u32);
             }
             d.cmd_end_render_pass(cb);
-            let region = |_: ()| vk::BufferImageCopy::default().image_subresource(vk::ImageSubresourceLayers::default().aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1)).image_extent(vk::Extent3D { width: w, height: h, depth: 1 });
-            d.cmd_copy_image_to_buffer(cb, self.colour.image, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, self.colour_out.buffer, &[region(())]);
-            d.cmd_copy_image_to_buffer(cb, self.ids.image, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, self.ids_out.buffer, &[region(())]);
+            match present {
+                None => {
+                    let region = |_: ()| vk::BufferImageCopy::default().image_subresource(vk::ImageSubresourceLayers::default().aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1)).image_extent(vk::Extent3D { width: w, height: h, depth: 1 });
+                    d.cmd_copy_image_to_buffer(cb, self.colour.image, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, self.colour_out.buffer, &[region(())]);
+                    d.cmd_copy_image_to_buffer(cb, self.ids.image, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, self.ids_out.buffer, &[region(())]);
+                }
+                Some(p) => {
+                    let range = vk::ImageSubresourceRange::default().aspect_mask(vk::ImageAspectFlags::COLOR).level_count(1).layer_count(1);
+                    let barrier = |from: vk::ImageLayout, to: vk::ImageLayout, src: vk::AccessFlags, dst: vk::AccessFlags| vk::ImageMemoryBarrier::default().old_layout(from).new_layout(to).src_access_mask(src).dst_access_mask(dst).image(p.image).subresource_range(range);
+                    d.cmd_pipeline_barrier(cb, vk::PipelineStageFlags::TOP_OF_PIPE, vk::PipelineStageFlags::TRANSFER, vk::DependencyFlags::empty(), &[], &[], &[barrier(vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::AccessFlags::empty(), vk::AccessFlags::TRANSFER_WRITE)]);
+                    let layers = vk::ImageSubresourceLayers::default().aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1);
+                    let corner = |w: u32, h: u32| [vk::Offset3D::default(), vk::Offset3D { x: w as i32, y: h as i32, z: 1 }];
+                    let blit = vk::ImageBlit::default().src_subresource(layers).src_offsets(corner(w, h)).dst_subresource(layers).dst_offsets(corner(p.extent.width, p.extent.height));
+                    d.cmd_blit_image(cb, self.colour.image, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, p.image, vk::ImageLayout::TRANSFER_DST_OPTIMAL, &[blit], vk::Filter::NEAREST);
+                    d.cmd_pipeline_barrier(cb, vk::PipelineStageFlags::TRANSFER, vk::PipelineStageFlags::BOTTOM_OF_PIPE, vk::DependencyFlags::empty(), &[], &[], &[barrier(vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::PRESENT_SRC_KHR, vk::AccessFlags::TRANSFER_WRITE, vk::AccessFlags::empty())]);
+                    d.cmd_write_timestamp(cb, vk::PipelineStageFlags::BOTTOM_OF_PIPE, p.timestamps, 1);
+                }
+            }
             d.end_command_buffer(cb).unwrap();
             let fence = d.create_fence(&vk::FenceCreateInfo::default(), None).unwrap();
-            d.queue_submit(gpu.queue, &[vk::SubmitInfo::default().command_buffers(&[cb])], fence).unwrap();
+            let (wait, signal) = present.map_or((vec![], vec![]), |p| (vec![p.wait], vec![p.signal]));
+            let stages = [vk::PipelineStageFlags::TRANSFER];
+            let submit = vk::SubmitInfo::default().command_buffers(std::slice::from_ref(&cb)).wait_semaphores(&wait).wait_dst_stage_mask(&stages[..wait.len()]).signal_semaphores(&signal);
+            d.queue_submit(gpu.queue, &[submit], fence).unwrap();
             assert!(d.wait_for_fences(&[fence], true, 30_000_000_000).is_ok(), "the frame did not finish within 30 s");
             d.destroy_fence(fence, None);
             d.free_command_buffers(gpu.pool, &[cb]);
         }
-        let n = (w * h) as usize;
-        let rgba = gpu.read(&self.colour_out, n * 4);
-        let raw = gpu.read(&self.ids_out, n * 8);
-        let id_of = |c: &[u8]| match u32::from_le_bytes(c.try_into().unwrap()) {
-            0 => 0,
-            i => frame.draws[i as usize - 1].id,
-        };
-        let ids = raw.as_chunks::<8>().0.iter().map(|c| id_of(&c[..4])).collect();
-        let late_ids = raw.as_chunks::<8>().0.iter().map(|c| id_of(&c[4..])).collect();
-        Picture { width: w, height: h, rgba, ids, late_ids }
     }
 }
 
