@@ -144,6 +144,22 @@ fn main() -> ExitCode {
     let mut scene = assets.scene(&log, tick);
     // the engine mode (HF_ENGINE=1, with --card CARD for a save's lot): the lot's model draws from
     // the engine's own state in place of the log's rigid and display-list draws
+    if std::env::var_os("HF_SHEARS").is_some() {
+        // study aid: each logged shadow draw's shear (a, b) of the camera's x and y columns into
+        // its view's third column, the model, and its world matrix's translation
+        let cam = scene.frame.camera.view;
+        for d in &scene.frame.draws {
+            let info = &scene.drawn[d.id as usize - 1];
+            if info.class != Class::Shadow { continue }
+            let Some(v) = d.view else { continue };
+            // v[:,2] = a * cam[:,0] + b * cam[:,1] (least squares over the three rows)
+            let (mut s00, mut s01, mut s11, mut t0, mut t1) = (0.0, 0.0, 0.0, 0.0, 0.0);
+            for r in 0..3 { let (x, y, z) = (cam[r * 4], cam[r * 4 + 1], v[r * 4 + 2]); s00 += x * x; s01 += x * y; s11 += y * y; t0 += x * z; t1 += y * z; }
+            let det = s00 * s11 - s01 * s01;
+            let (a, b) = ((t0 * s11 - t1 * s01) / det, (s00 * t1 - s01 * t0) / det);
+            println!("SHEAR {:.4} {:.4} {} world ({:.2}, {:.2}, {:.2}) draw {}", a, b, info.model, d.world[3], d.world[7], d.world[11], d.id);
+        }
+    }
     let engine_mode = std::env::var_os("HF_ENGINE").is_some();
     if engine_mode {
         let card = args.iter().position(|a| a == "--card").and_then(|i| args.get(i + 1)).map(PathBuf::from);
@@ -362,6 +378,36 @@ fn main() -> ExitCode {
             (_, 0) => engine_scene::shadow_view(&view, sun, engine_scene::SHADOW_SHEAR_OBJECT),
             _ => engine_scene::shadow_view(&view, [0.0; 3], 1.0),
         };
+        if std::env::var_os("HF_PLACES").is_some() {
+            let proj = scene.frame.camera.projection;
+            let mut seen = std::collections::BTreeSet::new();
+            for d in plan.draws.iter().filter(|d| d.object != 0) {
+                if !seen.insert(d.object) { continue }
+                let twin = scene.frame.draws.iter().any(|l| (0..12).all(|i| (l.world[i] - d.world[i]).abs() < 1e-3));
+                let sc = housefire::scene::Camera::on_screen(&view, &proj, [d.origin[0], d.origin[1], 0.0]);
+                println!("PLACE object {} origin ({:.2},{:.2}) screen {:.3?} twin {}", d.object, d.origin[0], d.origin[1], sc, twin);
+            }
+        }
+        if std::env::var_os("HF_SHEARS").is_some() {
+            // study aid: each planned shadow with its logged twin's shear and the engine's light set
+            let cam = scene.frame.camera.view;
+            for d in &plan.shadows {
+                let twin = scene.frame.draws.iter().find(|l| scene.drawn[l.id as usize - 1].class == Class::Shadow && l.view.is_some() && (0..12).all(|i| (l.world[i] - d.world[i]).abs() < 1e-3));
+                let Some(l) = twin else { println!("SHEARE {} at {:?} no twin", d.object, d.origin); continue };
+                let v = l.view.unwrap();
+                let (mut s00, mut s01, mut s11, mut t0, mut t1) = (0.0, 0.0, 0.0, 0.0, 0.0);
+                for r in 0..3 { let (x, y, z) = (cam[r * 4], cam[r * 4 + 1], v[r * 4 + 2]); s00 += x * x; s01 += x * y; s11 += y * y; t0 += x * z; t1 += y * z; }
+                let det = s00 * s11 - s01 * s01;
+                let (a, b) = ((t0 * s11 - t1 * s01) / det, (s00 * t1 - s01 * t0) / det);
+                let ls = plan.lights.at_in(d.centre, d.origin);
+                let pts: Vec<String> = ls.points.iter().map(|p| format!("({:.2},{:.2},{:.2}) r{:.2} c{:.2?}", p.at[0], p.at[1], p.at[2], p.reach, p.colour)).collect();
+                let to_world = |p: [f32; 3]| -> [f32; 3] { let q = [p[0] - cam[3], p[1] - cam[7], p[2] - cam[11]]; [0, 1, 2].map(|c| (0..3).map(|r| cam[4 * r + c] * q[r]).sum::<f32>()) };
+                let lit = scene.frame.draws.iter().find(|l| scene.drawn[l.id as usize - 1].class != Class::Shadow && (0..12).all(|i| i == 11 || (l.world[i] - d.world[i]).abs() < 1e-3) && matches!(l.lighting, Lighting::Lit { .. }));
+                let logpts = match lit.map(|l| &l.lighting) { Some(Lighting::Lit { points, .. }) => points.iter().map(|p| format!("({:.2},{:.2},{:.2}) c{:?} k0 {} k1 {}", to_world(p.position)[0], to_world(p.position)[1], to_world(p.position)[2], p.colour, p.k0, p.k1)).collect::<Vec<_>>().join(" "), _ => "none".into() };
+                println!("SHEARL {:?} {:?} log lights {}", d.origin, (a, b), logpts);
+                println!("SHEARE {} {:?} kind {:?} origin ({:.2},{:.2}) shear ({:.4},{:.4}) room {} sun {} lights {}", scene.drawn[l.id as usize - 1].model, d.object, d.kind, d.origin[0], d.origin[1], a, b, plan.lights.room_of_place(d.origin[0], d.origin[1]), ls.sun.is_some(), pts.join(" "));
+            }
+        }
         for (k, m) in assets.engine_shadows(&mut scene, &mut caches, &plan.models, &plan.shadows, &view_of) {
             let d = &plan.shadows[k];
             // (the original draws what its bounds put on the screen: a tall model's place can be

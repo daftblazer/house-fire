@@ -250,9 +250,10 @@ pub fn lot_draws(models: &Models, outer_lot: u32) -> Vec<Draw> {
 /// 5-vertex pieces of each wall record: `docs/assets.md`, "The engine's draw list").
 const UNDRAWN_WALL_SUB: u32 = 0x0906_522f;
 
-/// The vertices of a wall part's face (18, 23 with a door's or window's hole) against its pieces
-/// beside it (5 and 6).
-const WALL_FACE_VERTICES: usize = 18;
+/// The fewest vertices of a wall part that takes the wall's pattern: its face (18, 23 with a
+/// door's or window's hole) and its foot (6; the log's 7-vertex draw, the same texture as the
+/// face's) against the 5-vertex piece that keeps its own shader (the polyshadow's).
+const WALL_FACE_VERTICES: usize = 6;
 
 /// The models of the fence styles the lots use (the style the lot's wall array keeps, as
 /// `SimsTiles`' `FenceData` rows number them): the home lot's picket fence (style 2). The other
