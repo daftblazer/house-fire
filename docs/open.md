@@ -75,17 +75,16 @@
   recomp copies the world at the first draw after the 2D layer's marker changes
   (render_vk.cpp, `g_world_taken`), and on the club the EFB is black then: likely an EFB copy
   with clear (the dance floor's or lasers' render-to-texture?) between the scene and the 2D
-  layer. Not read. render-check's club reference is the full frame (work/frames-club2: the
-  frame_ PNGs copied as world_), so the portrait and HUD count as misses in both modes.
-- **The club in engine mode at 72.41% whole** (K2, K3; frame 3001 of club-d3000.log; log mode
-  93.79%): rigid 69.37%, floors 85.80%, shadows 51.18%, Sims 37.26%. Left: shadows 42.7k px
-  (the indoor shears, above); the dance floor's draws 36k of 86k off (unexamined); the pool
-  table's felt ~8.7k (the log's texture `game_pooltable_club_x`, the engine's shader gives
-  `aristoscratch_pool_table`: a dataset texture override, where kept not found); the DJ
-  booth's parts ~7.5k; four Sims' headings (logged 1, 4, 1, 1; ours 2-5: turns the engine
-  doesn't keep; poses right, 48-55 of 58 bones at the best heading); a Sim the game doesn't
-  draw (the robe Sim, 0 of 58 bones; she alone has data field 34 set: a guess; +0.2%). Still
-  from the log in that mode (K2): a moving lamp's place (the 'e' light-grid positions, carried
-  by display copies at rate/30), the Sims' identities (the dressing records, by order).
-  ROOM_AMBIENT_COLOUR (0.8, 0.8, 1.0) fitted from the club's logged 25,25,31. Home's
-  engine-mode PNG changed by a few pixels in K2 (whole 97.23 -> 97.24%, cause not isolated).
+  layer. Not read. render-check's club reference is the full frame (work/frames-club3: the
+  frame_ PNGs copied as world_), so the portrait and HUD count as misses in both modes. (The
+  log's two frames in tick 964 were the 'two passes': split since 76f6c37.)
+- **The club in engine mode at 80.53% whole** (K2-K4; frame 3001 of club-d3000b.log, work/frames-club3;
+  log mode 97.62%, rigid 98.65%, floors 95.31%, shadows 99.31%): rigid 80.87%, floors 87.81%,
+  shadows 69.17%, Sims 38.06%. Left (55.8k px): the dance floor 23k (cones under the Sims, the
+  robe Sim), the DJ booth 9.2k (moving parts 0.03-0.05 off in x), four Sims' headings (logged
+  1, 4, 1, 1; ours 2-5: turns the engine doesn't keep), the bar 1.2k; a Sim the game doesn't
+  draw (the robe Sim, 0 of 58 bones; data field 34 = 1 alone: a guess); shadows (the indoor
+  shears, above). DISPLAY_COPIES_AFTER_TICK 1 fitted by scan. Still from the log in that mode
+  (K2): a moving lamp's place (the 'e' light-grid positions), the Sims' identities (the
+  dressing records, by order). ROOM_AMBIENT_COLOUR (0.8, 0.8, 1.0) fitted from the club's
+  logged 25,25,31. Home's engine-mode PNG changed by a few pixels in K2 (97.23 -> 97.24%).
