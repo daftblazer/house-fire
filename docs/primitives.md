@@ -73,6 +73,24 @@ read-only record of the +0x238 call's result per object per tick).
 The engine has it as `idle()` (`engine/src/primitives.rs`), the interpreter's `Sleep` and the
 simulator's pass. `engine/tests/primitives.rs` and `engine/tests/simulator.rs` test it.
 
+## LookTowards (opcode 22): a turn on the walker, not native yet
+
+The person switch's case 22 is `fn_8021F15C`. All 240 uses in the full sessions (51 home, 189
+club: the dance floor's 4126 and 4119, 4106, the person template's 8302) have operand
+`02 00 ...`, and 229 of them are false. Operand bytes 0-1 are the mode: 0 hands the stack object
+to the head's look (the router at person +0x470, vtable +0xA8; true); 1 turns by the Sim's own
+direction; 2 turns towards the stack object (none: error 21); 3 turns away from it; others are
+error 39. Modes 1 to 3, on the first call (frame +8 clear), check a person field at +8
+(vtable +0x110, `fn_8022A324`, the field is 0 in every probed tick: Castaway's place here is
+`IsIdling`) and, when it is set, return false. Otherwise they write a two-point route into the
+walker's waypoint vector (+0x474: my place and the target place, both from object +0xC8), start
+it (+0x60) and set frame +8. Every call, the first included, then takes the walker's result
+(+0x68): nothing means true; a yield, or another result while +0x70 says keep waiting, means
+yield; otherwise that result. No person or object data field separates the true results from
+the false ones, so the answer is the walker's, and the case belongs with the native walks
+(`simulation.md`, "Routing"). The probe reached it through the observer's person struct
+(object −0x640; its +4 is object −0x44, a base whose vtable is 802CBF48).
+
 ## Relationship2 (opcode 26): one value of a relationship
 
 Native for every use (`primitives::relationship`; 107 on home-full, 146 on club-full, 0
