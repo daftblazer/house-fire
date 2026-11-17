@@ -2134,7 +2134,7 @@ found (above), and the backdrop is fitted. The Sims' shadows are in the shadows'
 The last step of stage 5: `render-check` with `HF_ENGINE=1` (and `--card CARD` for the home lot) makes
 the lot's model draws, the rigid object parts, the objects' display lists, the walls and the lot's
 own model, from the engine's world instead of the log's records. (W1, at the end of the section,
-added the floors, the shadows and the camera; only the Sims and the portrait stay the log's.)
+added the floors, the shadows and the camera; S1, the last subsection, the Sims and the portrait.)
 The log serves for three more things the engine cannot run
 to: which lot of the card the log ran on (`lotpick::pick_lot`, as lockstep), the animation clock
 (`tick`) and the game clock (the passes the player's dialog stopped, `PassRec::stopped_at`).
@@ -2422,17 +2422,74 @@ What else the work found.
   the same with the black pieces, 85.93%).
 - The engine's polyshadow-textured wall pieces (73) are drawn in the lit pass as the log's 74.
 
-What the Sims need, and are not: the Sims' skinned parts come from the log's '$' (bones) and '+'
-(vertices) records and the portrait from the log. The engine has the pieces (poses and folds
-`pose`, bone matrices `skeleton::bone_matrices`, outfits `outfit`, the reference skinner, the
-GPU skinning) each checked against the log's own intermediate values by lockstep, but not the
-controller that runs a Sim's animation layers over the replay's ticks to the node states of
-tick 1,039 (`anim::Animator` only answers the Animate primitive's frames), nor the run-time
-texture a Sim's skin, face, hair and clothes make (one 128 x 128 C8 image, in no archive: the
-archive's textures do not stand in). What it costs: the Sims' own pixels are 1,551 (0.54% of the
-frame) at 88.5%, their shadows 34 draws of the 692 (the batch of room 1), the portrait 1,409 of
-the 1,551. Taking them from the log keeps the whole frame at 85.9%; a Sim all wrong would lose
-about 0.2%.
+The Sims from the engine's state (S1: `sims.rs`, `housefire::figure`; `HF_NO_SIMS=1` keeps the log's).
+Frame 2400 (tick 1,039), the Sims' own pixels 88.08% (log mode 88.50, the log's Sims in engine
+mode 88.87), the portrait's square 93.96% (log mode 93.99), the whole frame 87.19% (36,739 pixels
+beyond, 36,729 with the log's Sims); frame 2401: 88.36% (the log's: 89.33), whole 87.18%. Log mode
+unchanged (rigid 97.63%, whole 88.89%). What the engine makes, from the run (`Replay` to tick
+T-1, `Replay::sim_plays(T)` for the plays):
+- Who and where: the Sims on the lot (`world`'s persons), each one's description from the save
+  through its neighbour (person data 31: `figure::Cast`), place from x16 and y16 (24.5, 19.0 and
+  24.5, 22.5, as the logged roots), facing its heading in eighths. The engine keeps no heading
+  but `facing`, the way it was last placed: the male's 4 is right, the cook at the stove has 0
+  and stands at 6. `sims::headings_from_log` takes, from the log's '$' matrices of the tick, the
+  eighth that puts a Sim's bones nearest them (still from the log: 1 Sim of 2; both `render-check`
+  and `view` do it, `view` where the log shows a frame, ticks 1,039 and 1,040).
+- Which picture: the animation frames of ticks before T and the first of T's own (a tick has one
+  or two: 2398 at 1,039, 2399 and 2400 at 1,040; the pictures show the pose after 2398 and 2399;
+  one frame more or less loses 28 points of the Sims' pixels); `Replay::sim_plays` runs them on a
+  copy of the animator, the run is not moved.
+- The pose: the Sim's Animate play alone at weight 1 (`figure::node_states`: the local pose of
+  each node, `pose::TrackStreams`; backward plays from the last frame down, `pose_place`), under
+  the root and the controller's scale 2^-12 (`figure::BONE_SCALE`, the '<' records'), the bones
+  by `skeleton::bone_matrices`. Against the logged '$' matrices of tick 1,039: 23 of the male's
+  58 bones and 26 of the cook's equal a logged matrix to 1e-4. The game runs more tracks (a
+  standing loop under, the face's `happyFace` and the arm's `a2o-rarm-carry-loop` over, node
+  weights not read): the neck and head are 0.009 (male) and 0.014 to 0.023 (cook) tile off, the
+  male's right arm 0.34 (his carrying loop is not made), the face's bones 0.09 to 0.64 (cheeks,
+  eyes: the expression). Layering the face over all nodes made every bone worse (the track has
+  node weights).
+- Parts: the outfit's nine slots through `PartTables::dress` and the models' records
+  (`models.arc` by the name's CRC), the draws in the log's order (hair, eyes, nose, mouth, upper,
+  lower, shoes, accessory; the portrait: eyes, nose, mouth, hair, upper, the glasses). A batch on
+  one bone takes that bone's matrix as its world (3 x 4 rows of the 4 x 4, `figure::rows`), a
+  blended one (3 or 4 matrices, weights) the GPU skinning through its slots' bones
+  (`skinned_mesh_of`: the model's positions, normals and the batch's weights; the log's '+'
+  records differed only in the faces' few vertices). Materials from the shader (`_______BLANK`:
+  one layer; the jewellery's own texture and alpha test).
+- Lights: the room's ambient, the four lights of the light grid's point of the Sim's own tile
+  (floor of its place, not the round of an object: both logged sets, 4 lights each, equal), and
+  a white 0.4 directional that every logged Sim set has (`SIM_FILL`, world direction (-0.753,
+  -0.293, -0.589): measured in the one view, so fixed in the world here: unverified for another
+  camera). The portrait's lights are the log's constants (ambient 0.2, two directionals in its
+  own view), its projection and viewport the log's.
+- The portrait's camera: in front of the Sim, 1.1973 away at 1.6014 high, pitch 0.0825 and yaw
+  -0.00015 (`PORTRAIT_*`): the first three from the logged view (eye (24.5010, 17.8027, 1.6014),
+  pitch 0.0835), the pitch and yaw then refined on the picture (Sims' pixels beyond 4: 412 to 207).
+  The original's head-following is not read; at one heading and place only.
+- The accessory (glasses) is drawn in the portrait and, as the log's last strip, once more in the
+  lot's view with the portrait's light (the original's own repeat, kept).
+- Shadows: `shadow_adult` through the same bones, flat (indoors) or sheared (outdoors) like the
+  objects', in the Sim's room batch.
+- The window: `view` takes the wardrobe, the plays and the headings each tick; its shot of tick
+  1,039 against render-check's engine mode (`ours_2400.png`): 99.99% within 4 (39 pixels beyond;
+  98.89% before); the frames 100.00% within 33.3 +- 2 ms (1,170 frames; the whole frame 4.5 ms mean
+  on the PC, 2.8 ms of it the build).
+Still from the log: the Sims' run-time textures (the male's and the cook's 128 x 128 C8 image and
+palette, by the part names of the log's own frame: `SimSkins`; `rletextu.arc` holds a 256 x 256
+run-length texture for many parts, `rle_texture`, but how the game puts a Sim's into one image
+with one palette is not read), the cook's heading, which Sim the portrait shows (the log's overlay
+draws name its parts: `portrait_sim`; the engine has no player), the frames' places (`k`
+records), and what the Sims hold (Prop_Spoon, Carry_Soup_in_Pan, Carry_Snack_Chips,
+Carry_Newspaper and the plumb bob: 5 draws, a few pixels). Left: the standing loop and the
+masks, the face, the arms' carrying loops, the head's look; the held objects.
+
+Shared code changed in S1: `Replay::sim_plays` (and `anim::Animator::plays`, `Play::place`,
+`Play::backward`; the frames' loop of `AnimReplay` split into `run_frames`, which also runs on a
+copy), the new `figure` module, `engine_scene` (`save_file`, `Engine::sims`, `assemble`,
+`Builder::build_with`) and `sims.rs`. The replay figures, lockstep, cargo test and clippy hold
+(`runchecks` 10 of 10, the replay of home-a39.log the same with the catalog); the log mode is
+unchanged.
 
 Shared code changed in W1: `drawlist` (`LotDraws::shadows`, `wall_shadows`, `diagonal_shadows`,
 `object_shadows`, `wall_record`, `VISIBLE` and `in_view` moved here from lockstep's
@@ -2455,8 +2512,9 @@ as before and blits it onto the swapchain image (`Renderer::draw` with a `Presen
 The simulation is `housefire::replay::Replay` (the library's; the `replay` binary is its command
 line): `Replay::new` loads the lot and the log's inputs, `step` runs one tick, `world` reads it.
 `run` is `new`, `step` to the end, `finish`, so the replay's figures are as they were. `view`
-passes no animation catalog: the Sims' Animate steps are answered from the log, which the world
-does not need for the lot's objects.
+passes the animation catalog (the Animate primitive native, as `replay` does on a log with the
+frames), for the Sims' plays: the replay's own figures are the same with it (home-a39.log: the
+same 265 lines).
 
 Per frame (tick T, 30 a second on a fixed schedule from the first frame, a late one does not move
 the rest): the camera is the log's last 'c' record at or before T (`engine_scene::camera`); the
@@ -2466,8 +2524,8 @@ engine's draws, floors and shadows in the original's order); the meshes and text
 before go to the GPU (`Caches`: 243 meshes and 94 textures for the 1,200 ticks); the floors' strips
 are the frame's own meshes (`Renderer::set_transient_meshes`, one host-visible set rewritten each
 frame: the light moves their colours every tick, so as persistent meshes they grew by 36 a tick);
-then tick T runs. The Sims (their skinned parts, what they hold, their shadows) and the interface
-are not drawn.
+then tick T runs. The Sims (their parts, shadows and the portrait) are the engine's too, from
+the run (S1, "The frame from the engine's state"); what they hold and the interface are not drawn.
 
 Measured (home-a39.log, the answer-key run: gamescope headless 640x448 at 30, an RX 9070 XT, 1,200
 ticks, frames 31 to 1,200): the frames begin 33.33 ms apart (99.83% within 2 ms of it; the one
@@ -2477,11 +2535,10 @@ the frame 2.84 ms (p99 3.5), the GPU's own 0.15 ms (max 0.22). `HF_VALIDATE=1`: 
 messages (gamescope's window layer forces VK_EXT_swapchain_maintenance1 on, which asks for the
 instance extension VK_EXT_surface_maintenance1; `view` enables it when listed).
 
-The shot of tick 1,039 against render-check's engine mode of the same frame (`work/frames/w1/
-ours_2400.png`): 98.89% of the pixels within 4; 3,028 of the 3,175 beyond are in the portrait's
-square (the interface, not drawn), the other 147 are at the house's top right (x 480 to 560,
-y 0 to 80) and 13 at (200, 160); the cause is not separated (the engine-mode picture has the log's
-Sims there and the window none; the running world's object states differ too).
+The shot of tick 1,039 against render-check's engine mode of the same frame (`work/frames/s1/
+ours_2400.png`, both with the Sims and the portrait from the engine): 99.99% of the pixels within 4
+(39 beyond). Before the Sims (`work/frames/w1/ours_2400.png`) 98.89%, 3,028 of the 3,175 beyond in
+the portrait's square.
 The running world at tick 1,039 against the loaded save: the same 206 objects (none new or gone);
 204 non-Sim objects' places differ (the six listed by `HF_WORLD_DIFF=1` are each x16 and y16 +8:
 a tile's corner as the save keeps it, its centre as the run has it; the draws match, so the draw
@@ -2497,7 +2554,9 @@ radv, under headless gamescope): 1,549 draws (776 of the lot's models, 98 floor 
 shadows; the Sims not drawn yet), 97,363 triangles, 2.55 MB of textures (RGBA8, every level)
 and 1.50 MB of meshes resident. The GPU's time 0.14 ms a frame (p99 0.22); the CPU's: the tick
 0.22 ms (worst 3.7), building the frame from the world 2.66 ms, the whole frame 6.7 ms with the
-wait for the GPU.
+wait for the GPU. With the Sims (S1): 1,790 draws (the 1,549 and 241 of the Sims' parts and
+shadows), 113,518 triangles, 2.96 MB of textures and 1.87 MB of meshes; the frame's build 2.81 ms
+mean, the whole frame 4.5 ms.
 
 Against the RK3566 (Mali-G52 2EE, two cores at 800 MHz; four Cortex-A55), by the figures, not
 yet run there: 2.9 M triangles and, at an overdraw of about 3, under 30 M pixels a second are a

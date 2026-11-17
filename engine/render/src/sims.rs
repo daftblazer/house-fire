@@ -344,7 +344,6 @@ pub fn figures_of(world: &housefire::world::World, cast: &Cast, plays: &[(i16, u
         .filter_map(|o| {
             let description = *cast.description(o.person_data.get(31).copied()?)?;
             let play = plays.iter().find(|p| p.0 == o.id()).map(|p| (p.1, p.2, p.3));
-            // (a position is in sixteenths of a tile; the facing's eighths turn the other way round in the root)
             let heading = headings.get(&o.id()).copied().unwrap_or((o.facing().rem_euclid(8)) as u8);
             Some(Figure { id: o.id(), description, place: [o.x16 as f32 / 16.0, o.y16 as f32 / 16.0], heading, play })
         })
