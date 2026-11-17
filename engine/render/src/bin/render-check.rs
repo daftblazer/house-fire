@@ -292,7 +292,7 @@ fn main() -> ExitCode {
             let mut worst: Vec<(i32, String)> = Vec::new();
             for st in &plan.floors {
                 let hit = log_strips.iter().find(|v| v.len() == st.corners.len() && v.iter().zip(&st.corners).all(|(a, b)| (a.0[0] - b.0[0]).abs() < 1e-3 && (a.0[1] - b.0[1]).abs() < 1e-3));
-                let Some(v) = hit else { missing += 1; continue };
+                let Some(v) = hit else { missing += 1; println!("  no logged strip for room {} shader {:08x} run (x {}, y {}, n {}) value {}", st.room, st.shader, st.run.x, st.run.y, st.run.n, st.run.value); continue };
                 matched += 1;
                 for (a, b) in v.iter().zip(&st.corners) {
                     corners += 1;

@@ -2127,11 +2127,9 @@ found (above), and the backdrop is fitted. The Sims' shadows are in the shadows'
 
 The last step of stage 5: `render-check` with `HF_ENGINE=1` (and `--card CARD` for the home lot) makes
 the lot's model draws, the rigid object parts, the objects' display lists, the walls and the lot's
-own model, from the engine's world instead of the log's records. The floors, the shadows, the
-Sims and the portrait stay the log's (they have their own sections), and so does the camera: the
-engine's `scene::Camera` is the player's input (the eye, the zoom, the angle), which a lot loaded
-from a save does not have at tick 1,039, so the logged view and projection are used (the eye the
-walls face is read off that view). The log serves for three more things the engine cannot run
+own model, from the engine's world instead of the log's records. (W1, at the end of the section,
+added the floors, the shadows and the camera; only the Sims and the portrait stay the log's.)
+The log serves for three more things the engine cannot run
 to: which lot of the card the log ran on (`lotpick::pick_lot`, as lockstep), the animation clock
 (`tick`) and the game clock (the passes the player's dialog stopped, `PassRec::stopped_at`).
 
@@ -2269,3 +2267,130 @@ takes the wall patterns; `lot_draws_of` makes the lot's whole list (lockstep's `
 it: its figures are unchanged, 564 the same); `is_sims` and `is_held` moved to `drawlist`;
 `lot::pick_lot` moved to `lotpick`; `shader::index`; `Assets` (the renderer's) keeps the textures
 by name and archive id. The log mode's figures are unchanged (97.63/97.62%, whole 88.89%).
+
+### W1: the floors, the shadows and the camera from the engine
+
+`render-check` in the engine mode now makes everything of the frame but the Sims (the skinned
+parts and their shadows, 85 + 34 draws) and the portrait (57 draws) from the engine; the log is
+the replay's inputs, the lot choice, the clocks, and the camera's parameters. The order is the
+original's: for each room's batch (rooms 0 to 3 on frame 2400) its floors, in the first batch the
+lot's own opaque draws (the ground the shadows fall on), the batch's shadow draws, then the floors
+again as the mask (`engine_scene::assemble`); then the models, opaque, the Sims, blended, and the
+portrait.
+
+Figures, frames 2400 and 2401, within 4 in every channel (the base is C3's engine mode with the
+log's floors, Sims, shadows and camera):
+
+| | log mode | base | W1 (2400) | W1 (2401) |
+|---|---|---|---|---|
+| whole frame | 88.89% | 85.88% | 85.92% | 85.91% |
+| rigid draws' pixels | 97.63% | 86.64% | 89.17% | 89.15% |
+| floors' own pixels | 85.51% | 85.57% | 84.69% | 84.67% |
+| shadows' own pixels | 86.59% | 79.33% | 78.55% | 78.57% |
+| Sims' own pixels (log's draws) | 88.50% | 88.52% | 88.52% | 88.98% |
+
+(The floors' own pixels count what the last depth-tested draw is a floor: 207,268 now, 205,000
+before, since the porch's floor now shows at the walls' feet, below.)
+
+Camera. `engine_scene::camera`: the live parameters of the last 'c' record at or before the tick
+through `scene::Camera::view` and `Camera::projection` (the wanted distance): the logged view to
+3.8e-6 and the projection exactly. The engine has no parameters of its own at tick 1,039: a lot
+loaded from a save has no player input to ease the camera from (`Camera::ease`, `turn`, `zoom`
+and `centre_on` take it), so the parameters are the log's, through the engine's `Camera`, not the
+logged matrix. Taking them from a replayed run of the player's stick and cursor is not built.
+
+Floors (`housefire::floors`, `scene::terrain_runs`, `LotLights::floor_group`, `floor_colours`).
+The runs are `scene::floor_runs` and the terrain's (the tiles 1 to 37 each way with no floor,
+`TERRAIN_TILES`, the half tiles at a diagonal as the floors'); the strips of the lot's 39 points:
+98 on frame 2400, **all 98 the log's strips vertex for vertex** (position and texture
+coordinates; before the limit to the 39 points there were 18 more, the road's columns past the
+lot, which the original does not draw). A run's room is the room of its first tile (batches 0 to
+3: the outdoors 73 strips, 15, 5 and 5). Each corner's colour is `light::vertex_colour` of the
+light grid's sum there (`light::cell_lights` of the corner's point for the strip's room, then
+`point_light` of those lights) with the room's group base and scale (`light::group_colour` from
+the shader's diffuse and ambient and the room's ambient and, outdoors, the sun's light times its
+downward part): of the 2,934 corners the log holds, 2,440 exactly and 494 within 4, none beyond
+(`HF_FLOORCMP=1`), at the engine's clock of 7:36:32 (the original's relight was a few seconds
+before its own). The material is the shader's (the terrain's two layers cross-faded, the second
+read at the position by the fitted `TERRAIN_COLOUR_*`; an indoor floor's reflection), Z
+less-or-equal with writes, no alpha test (the shader's flag would give the wood one the logged
+draws do not have: +0.2% of the whole frame), a destination alpha of 0x7F. The mask draws (the floor
+again: alpha written 0, no colour, the floor's texture clamped and alpha tested at 5) come after
+each batch's shadows. The floors' pixels are as the log's (85.51%): the terrain's alignment.
+
+Shadows (`drawlist::wall_shadows`, `diagonal_shadows`, `object_shadows`; `engine_scene::
+shadow_material`, `shadow_view`, `Assets::engine_shadows`). What the 692 logged shadow draws are:
+every part of what casts, drawn again as its vertex strip (not the display list: `mesh_of(batch,
+false)`) at its lit draw's world matrix, in one material (flat black, blended by the destination
+alpha, Z off, alpha test at least 5: all 692 draws have it), through a view that shears the lot's
+z onto the ground. Found against the log's draws (world matrix and vertex count): 649 planned,
+of the log's 656 not the Sims' 641 the same (world matrix and vertex count); the 15 left are the 5
+diagonals' (below), the aquarium's 7 fish, a held tray and newspaper, a sink's second piece and
+the engine has 8 the log has not (the diagonals', the trunk's and the gnome's).
+
+- Casters: every wall piece on an outdoor tile (`WallPiece::cap`) and fence, seen or not, with
+  all parts of the plain wall model (not the opening's: a window or door piece has the plain
+  piece's four sub-models, 5, 6, 5 and 18 vertices); the diagonal tiles' outdoor face; the
+  objects whose resource row has the bit 0x02000000 or 0x10000000 and neither 0x40000000 (hung
+  on a wall) nor 0x20000000 (the counters): furniture, plants, the beds, the sinks; not the rug,
+  doors and windows (rows 0x01000000). Read off home's 17 kinds of row (`NO_SHADOW_FLAGS`,
+  `SHADOW_CASTER_FLAGS`).
+- Lift: a part drawn at its object's own matrix (no skeleton) is raised 0.1 (`SHADOW_LIFT`); a
+  part on a bone is where the bone is.
+- Batches: the pieces' and the outdoor objects' in room 0's (571 draws on frame 2400), an
+  object's in its room's (`LotLights::room_of_place`: 43, 26 and 9; the log's batches have 570,
+  87 less the Sims' 36, 26 and 9).
+- Culling: the pieces are drawn when their place is in the screen box (`drawlist::in_view`, moved
+  from lockstep's `frame_draws`: the fitted box of the lit draws); an object's are not culled (a
+  tree's crown reaches the screen from a place off it).
+- The view. Not the camera's: the third column of the logged 3 x 4 view is the camera's x column
+  times a plus its y column times b: a shear of the lot's z onto the ground, a point of height z
+  moved by z (a, b). Frame 2400's are (0.7188, -0.1843) for the 341 draws of the outdoor objects
+  (the trees, the bushes, the mailbox ...), (0.8855, -0.2271) for the wall pieces' and fences', and a small different vector for each
+  indoor object (a Sim's too). The sun there is (0.8223, -0.2109, -0.5285): the shears are its x
+  and y over 1.144 and over 0.9286, neither the sun's own vertical part (`SHADOW_SHEAR_OBJECT`,
+  `SHADOW_SHEAR_WALL`, fitted at this one clock). The indoor objects' shears, which should come
+  from their light sets, are not found: they are not sheared (their shadows are small and
+  indoors). Neither the 1.144 and 0.9286 nor the indoor rule is explained.
+- The pieces' meshes cover the ground in triangles with gaps; the reference's wall shadows on the
+  ground are whole: the log mode has the same (86.59% there with the log's own draws), the
+  polygon texture's alpha is not applied (`shadow_of`).
+- The diagonals' shadows are the plain `wall_diagonal` with an 8-vertex piece where the log has
+  a second 5-vertex one (the forms that reach past an end: `_both_extends` and the others, the
+  rule not found, 5 tiles).
+- The money trunk's and the gnome's shadows are drawn (the engine draws the objects, the original
+  does not).
+
+What else the work found.
+
+- The walls' 7-vertex pieces (a wall's foot; a door's 10, a window's 7) name the junk texture
+  `_garbage` in their shader, and the engine drew them opaque black over the walls' feet (a band
+  at the front of the house): none of the log's draws names it, and the log's probe at a pixel of
+  the band has the porch floor as the last draw. They are not drawn now (`PLACEHOLDER_TEXTURE`):
+  rigid 86.64 to 89.17%. The drawlist is untouched by it: lockstep's frame-draws figures are unchanged (570 the
+  same; the study matches by part, so which of its 26 missing draws are these is not checked). The floor shows at the wall's foot, where the
+  original has darker: what the original draws there is not found (the figure of the whole frame is
+  the same with the black pieces, 85.93%).
+- The engine's polyshadow-textured wall pieces (73) are drawn in the lit pass as the log's 74.
+
+What the Sims need, and are not: the Sims' skinned parts come from the log's '$' (bones) and '+'
+(vertices) records and the portrait from the log. The engine has the pieces (poses and folds
+`pose`, bone matrices `skeleton::bone_matrices`, outfits `outfit`, the reference skinner, the
+GPU skinning) each checked against the log's own intermediate values by lockstep, but not the
+controller that runs a Sim's animation layers over the replay's ticks to the node states of
+tick 1,039 (`anim::Animator` only answers the Animate primitive's frames), nor the run-time
+texture a Sim's skin, face, hair and clothes make (one 128 x 128 C8 image, in no archive: the
+archive's textures do not stand in). What it costs: the Sims' own pixels are 1,551 (0.54% of the
+frame) at 88.5%, their shadows 34 draws of the 692 (the batch of room 1), the portrait 1,409 of
+the 1,551. Taking them from the log keeps the whole frame at 85.9%; a Sim all wrong would lose
+about 0.2%.
+
+Shared code changed in W1: `drawlist` (`LotDraws::shadows`, `wall_shadows`, `diagonal_shadows`,
+`object_shadows`, `wall_record`, `VISIBLE` and `in_view` moved here from lockstep's
+`frame_draws`, which uses them), `lighting::LotLights` (`floor_group`, `floor_colours`,
+`room_of_place`), `scene::terrain_runs`, the new module `floors`; the renderer's `engine_scene`
+(`camera`, `assemble` in place of `splice`, `engine_floors`, `engine_shadows`, `bind_shader`),
+`scene.rs` (three items made `pub(crate)`). The simulation is untouched: replay and lockstep 8
+of 8 and cargo test and clippy hold (`runchecks` 10 of 10); lockstep's frame draws are unchanged
+(570 the same, 3 different, 26 missing); the log mode is unchanged (rigid 97.63%, whole 88.89%).
+

@@ -55,12 +55,10 @@ pub struct Inputs<'a> {
     pub view: Mat3x4,
 }
 
-/// The texture a wall's small pieces (the 7-vertex ones at a wall's foot, a door's or window's)
-/// name in their shader, a junk image, and the plain image the original's draws of them have
-/// bound (`walls_down`, `wall_black`, `polyshadow` and `1st_final` share its pixels, `docs/assets.md`,
-/// "Wall patterns"; none of the log's draws names the placeholder).
+/// The junk texture of the wall models' 7-vertex pieces (a wall's foot, a door's or window's): the
+/// original draws no part that names it (none of the log's draws does; the porch floor shows at
+/// the walls' feet where the engine had drawn them black).
 pub const PLACEHOLDER_TEXTURE: &str = "_garbage";
-pub const PLAIN_TEXTURE: &str = "polyshadow";
 
 /// The textures bound so far, by the layer's name hash: the texture and whether it has clear pixels.
 pub type TextureCache = HashMap<u32, Option<(TextureRef, bool)>>;
@@ -74,10 +72,8 @@ impl Assets {
         let mut cutout = false;
         if let Some(sh) = shader {
             for (slot, l) in sh.layers.iter().take(2).enumerate() {
-                // the walls' pieces that name the placeholder are drawn with the plain image
-                let texture = if l.texture == housefire::shader::name_hash(PLACEHOLDER_TEXTURE) { housefire::shader::name_hash(PLAIN_TEXTURE) } else { l.texture };
-                let found = cache.entry(texture).or_insert_with(|| {
-                    let hash = *self.by_name.get(&texture)?;
+                let found = cache.entry(l.texture).or_insert_with(|| {
+                    let hash = *self.by_name.get(&l.texture)?;
                     let levels = self.decode(hash)?;
                     let (wrap, linear, mipmaps) = sampler_of(self.by_hash[&hash].flags, levels.len() as u32);
                     let cutout = levels[0].2.iter().any(|&p| p >> 24 != 255);
@@ -89,7 +85,7 @@ impl Assets {
                     cutout = found.is_some_and(|f| f.1);
                 }
                 info.missing_texture |= found.is_none();
-                info.textures[slot] = self.by_name.get(&texture).and_then(|h| self.by_hash.get(h)).map(|s| s.name.clone());
+                info.textures[slot] = self.by_name.get(&l.texture).and_then(|h| self.by_hash.get(h)).map(|s| s.name.clone());
             }
         }
         (bound, cutout)
@@ -114,6 +110,9 @@ impl Assets {
             let shader = input.shaders.get(&d.shader.unwrap_or(part.batch.hash));
             let mut info = DrawInfo { class: if list { Class::DisplayList } else { Class::RigidStrip }, strip: 0, model: part.record.name.clone(), missing_texture: false, textures: [None, None], flags: [0; 2], unsupported: None, skin: None };
             let (bound, cutout) = self.bind_shader(scene, &mut textures, shader, &mut info);
+            if info.textures[0].as_deref() == Some(PLACEHOLDER_TEXTURE) {
+                continue;
+            }
             let lighting = (input.lighting)(d);
             let lit = matches!(lighting, Lighting::Lit { .. } | Lighting::VertexColours);
             let (mut material, unsupported) = match shader {
@@ -248,6 +247,8 @@ impl Assets {
             material.depth_write = true;
             material.cull = Cull::None;
             material.dst_alpha = Some(DST_ALPHA_FLOOR);
+            // (the logged floor draws test no alpha: the shader's flag would give the wood a test)
+            material.alpha_test = None;
             let vertices: Vec<_> = st.corners.iter().map(|&(p, uv, c)| ([p[0], p[1], p[2], 1.0], uv, u32::from_be_bytes(c))).collect();
             scene.meshes.push(crate::scene::floor_mesh(&vertices));
             let mesh = MeshId(scene.meshes.len() as u32 - 1);
@@ -392,7 +393,7 @@ pub fn plan(disc: &housefire::disc::Disc, card: Option<&std::path::Path>, log: &
     let patterns = image("SimsTiles").map(|img| housefire::quickdata::floor_patterns(&img)).unwrap_or_default();
     let terrain = image("SimsUI").map(|img| housefire::quickdata::houses(&img)).and_then(|h| h.get(house).map(|h| h.terrain)).unwrap_or(0);
     let shaders = housefire::shader::index(disc);
-    let floors = housefire::floors::strips(&world.walls, 64, &patterns, terrain, &lights, |id| shaders.get(&id).and_then(|s| s.material()));
+    let floors = housefire::floors::strips(&world.walls, housefire::light::GRID_SIZE as i32, &patterns, terrain, &lights, |id| shaders.get(&id).and_then(|s| s.material()));
     Some(Plan { models, draws: lot.draws, placements: lot.placements, guids, resources: res, pieces: lot.pieces, shadows: lot.shadows, floors, lamps, lights, clock })
 }
 

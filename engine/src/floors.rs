@@ -26,7 +26,8 @@ pub struct Strip {
 /// The lot's strips, rooms in order: the patterns' runs, then the terrain's, each in row order
 /// (the batches' order within a room is not the original's, which groups a room's runs by
 /// material: it does not show). `material` gives a shader's diffuse and ambient triples
-/// (`Shader::material`).
+/// (`Shader::material`); `size` the tiles across the lot to cover (the light grid's points: the
+/// original draws no floor past them).
 pub fn strips(walls: &Walls, size: i32, patterns: &[FloorPattern], terrain: u32, lights: &LotLights, material: impl Fn(u32) -> Option<([f32; 3], [f32; 3])>) -> Vec<Strip> {
     let runs = floor_runs(walls, size, patterns).into_iter().map(|r| (r, patterns[usize::from(r.value)].shader)).chain(terrain_runs(walls).into_iter().map(|r| (r, terrain)));
     let mut out: Vec<Strip> = runs

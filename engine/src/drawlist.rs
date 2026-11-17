@@ -233,9 +233,6 @@ const UNDRAWN_WALL_SUB: u32 = 0x0906_522f;
 /// beside it (5 and 6).
 const WALL_FACE_VERTICES: usize = 18;
 
-/// The vertices of a wall record's shadow pieces (the two 5-vertex ones).
-const WALL_SHADOW_VERTICES: usize = 5;
-
 /// The models of the fence styles the lots use (the style the lot's wall array keeps, as
 /// `SimsTiles`' `FenceData` rows number them): the home lot's picket fence (style 2). The other
 /// styles' models are not seen yet.
@@ -391,14 +388,10 @@ pub fn wall_draws(models: &Models, pieces: &[WallPiece], patterns: &[u32], eye: 
         let Some(record) = wall_record(models, p, &window_of) else { continue };
         let rec = models.parts.record(record);
         let world = world_of(&wall_matrix(p.x, p.y, p.angle), rec.scale);
-        let faces = p.faces(eye);
+        if !p.faces(eye) {
+            continue;
+        }
         for part in models.parts.parts_of(record).filter(|q| q.batch.hash != UNDRAWN_WALL_SUB) {
-            // the cap (the list of 6 to 10 vertices, with a door's) is drawn on an outdoor tile
-            // whichever way the piece faces (`WallPiece::cap`); the rest only when it faces the eye
-            let cap = part.batch.list.is_some() && part.batch.count > WALL_SHADOW_VERTICES && part.batch.count < WALL_FACE_VERTICES;
-            if if cap { !p.cap } else { !faces } {
-                continue;
-            }
             // the face (the 18 or 23 vertex list) is drawn with the pattern's shader, the pieces
             // beside it (caps, 5 and 6 vertices) with their own
             let face = part.batch.list.is_some() && part.batch.count >= WALL_FACE_VERTICES;
