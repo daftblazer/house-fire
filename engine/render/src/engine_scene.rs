@@ -128,7 +128,9 @@ pub(crate) fn shader_material(shader: Option<&Shader>, lit: bool, bound: [Option
         None => material_of(&blank_record(0), lit, bound),
     };
     info.unsupported = unsupported;
-    state_of(&mut material, kind, cutout, shader.and_then(|sh| sh.layers.first()).map(|l| l.value));
+    // the layer word's bit 4 (0x1c against 0x18) is the alpha test: the club's wood has clear pixels and none, a tree or a fence has both
+    let tested = cutout && shader.and_then(|sh| sh.layers.first()).is_some_and(|l| l.word & LAYER_ALPHA_TEST != 0);
+    state_of(&mut material, kind, tested, shader.and_then(|sh| sh.layers.first()).map(|l| l.value));
     material
 }
 
@@ -393,6 +395,9 @@ impl Assets {
 /// blended ones': what the records show (`docs/assets.md`, "The frame from the engine's state").
 pub const ALPHA_TEST_OPAQUE: u8 = 127;
 pub const ALPHA_TEST_BLENDED: u8 = 5;
+/// The bit of a shader layer's word that has an opaque draw test its texture's alpha (the words
+/// 0x1c of the trees', the fences' and the glass' shaders; 0x18 for the club's black wood, which the log draws untested).
+const LAYER_ALPHA_TEST: u32 = 4;
 /// The destination alpha a draw writes (GXSetDstAlpha: what the shadows' blend reads back): 0 for
 /// the objects, which the shadow passes leave as they are, the ground's for the lot's own model.
 pub const DST_ALPHA_OBJECT: u8 = 0;

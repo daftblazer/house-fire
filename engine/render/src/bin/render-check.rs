@@ -460,18 +460,33 @@ fn main() -> ExitCode {
             }
         }
     }
-    // HF_BLENDORDER=1: the blended model draws in draw order with their view depth
-    if std::env::var("HF_BLENDORDER").is_ok() {
-        let v = scene.frame.camera.view;
-        for d in scene.frame.draws.iter().filter(|d| d.material.blend != housefire_render::frame::Blend::Opaque && d.projection.is_none()) {
+    // HF_STATES=1: the model draws counted by (model, texture, blend, alpha test, depth write),
+    // to set against the other mode's
+    if std::env::var_os("HF_STATES").is_some() {
+        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+        for d in scene.frame.draws.iter().filter(|d| d.projection.is_none()) {
             let info = &scene.drawn[d.id as usize - 1];
-            if !matches!(info.class, Class::RigidStrip | Class::DisplayList) {
+            if matches!(info.class, Class::RigidStrip | Class::DisplayList) {
+                let m = &d.material;
+                *counts.entry(format!("{} {:?} {:?} {:?} dw{}", info.model, info.textures[0], m.blend, m.alpha_test.map(|a| a.refs[0]), m.depth_write)).or_default() += 1;
+            }
+        }
+        for (k, n) in counts {
+            println!("states {n} {k}");
+        }
+    }
+    // HF_MATS=name: that model's draws in draw order, with their view depth and world matrices
+    if let Ok(only) = std::env::var("HF_MATS") {
+        let v = scene.frame.camera.view;
+        for d in scene.frame.draws.iter().filter(|d| d.projection.is_none()) {
+            let info = &scene.drawn[d.id as usize - 1];
+            if !matches!(info.class, Class::RigidStrip | Class::DisplayList) || info.model[..] != only {
                 continue;
             }
             let (x, y, z) = (d.world[3], d.world[7], d.world[11]);
             let depth = v[8] * x + v[9] * y + v[10] * z + v[11];
             let dist = ((v[0] * x + v[1] * y + v[2] * z + v[3]).powi(2) + (v[4] * x + v[5] * y + v[6] * z + v[7]).powi(2) + depth * depth).sqrt();
-            println!("blend {:5} depth {depth:8.3} dist {dist:8.3} {} {:?} {}", d.id, info.model, info.textures[0], d.world.map(|v| format!("{v:.3e}")).join(" "));
+            println!("mats {:5} depth {depth:8.3} dist {dist:8.3} {} {:?} {}", d.id, info.model, info.textures[0], d.world.map(|v| format!("{v:.3e}")).join(" "));
         }
     }
     // HF_MODELMAP=name: the pixels of that model's draws, off ones in red, the rest in grey
