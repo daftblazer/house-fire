@@ -9,10 +9,10 @@ use housefire::iff::Order;
 use housefire::interp::{Frame, PrimResult, Sleep};
 use housefire::library::Library;
 use housefire::goals::Goals;
-use housefire::primitives::{complete_goal, dialog, idle, idle_for_input_waiting, present, random, relationship, set_to_next, test_object_type};
+use housefire::primitives::{complete_goal, dialog, idle, idle_for_input_waiting, may_sleep, notify_stack_object, present, random, relationship, set_to_next, test_object_type};
 use housefire::save::{Neighbour, NeighbourRelationship, SavedRelationship};
 use housefire::expression::Variables;
-use housefire::world::{DATA_OBJECT_ID, Object, ObjectKey, PERSON_NEIGHBOUR_ID, ScriptVariables, World};
+use housefire::world::{DATA_LOCKOUT, DATA_OBJECT_ID, Object, ObjectKey, PERSON_NEIGHBOUR_ID, ScriptVariables, Wake, World};
 
 fn node(op: u16, operand: [u8; 8]) -> Node {
     Node { opcode: op, true_target: 1, false_target: 2, operand, order: Order::Little }
@@ -188,16 +188,23 @@ fn the_primitives_rules() {
     let mut s = Sleep::default();
     let mut g = Frame { params: vec![30], ..Default::default() };
     let sleep = node(0, [0, 0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
-    assert_eq!(idle(&mut s, &mut g, &sleep), PrimResult::Yield);
+    assert_eq!(idle(&mut s, &mut g, &sleep, true), PrimResult::Yield);
     let mut passed = 0;
     while s.asleep() {
         s.pass_over();
         passed += 1;
     }
     assert_eq!(passed, 29);
-    assert!(idle(&mut s, &mut g, &sleep) == PrimResult::True && g.params[0] == 0);
+    assert!(idle(&mut s, &mut g, &sleep, true) == PrimResult::True && g.params[0] == 0);
     g.params = vec![0];
-    assert_eq!(idle(&mut s, &mut g, &sleep), PrimResult::True);
+    assert_eq!(idle(&mut s, &mut g, &sleep, true), PrimResult::True);
+    // a stack that may not sleep (a person's, say): stepped each pass, the parameter counting
+    // down; at 0 true
+    g.params = vec![3];
+    for left in [2, 1, 0] {
+        assert!(idle(&mut s, &mut g, &sleep, false) == PrimResult::Yield && g.params[0] == left && !s.asleep());
+    }
+    assert_eq!(idle(&mut s, &mut g, &sleep, false), PrimResult::True);
 }
 
 #[test]
@@ -283,4 +290,51 @@ fn relationship_reads_writes_and_creates() {
     assert_eq!(w.neighbours[1].relationships[0].values, vec![9]);
     // a write does not create: false
     assert_eq!(run([3, 1, 5, 0, 7, 0, 9, 0], 14, &mut w, &mut f), PrimResult::False);
+}
+
+#[test]
+fn the_lockout_keeps_an_idle_awake_and_wakes_it() {
+    let lib = Library::default();
+    let mut w = World::new(&lib);
+    let mut o = Object::new();
+    o.data.resize(72, 0);
+    o.data[DATA_OBJECT_ID] = 4;
+    // a person never sleeps; an object not while its lockout is set (or an animation is on it)
+    assert!(may_sleep(&o, false) && !may_sleep(&o, true));
+    o.data[DATA_LOCKOUT] = 3;
+    assert!(!may_sleep(&o, false));
+    o.data[DATA_LOCKOUT] = 0;
+    o.person = true;
+    assert!(!may_sleep(&o, false));
+    o.person = false;
+    let me = w.add(o, false);
+    // an expression that touches an object's lockout asks for it to be woken
+    let mut f = Frame::default();
+    {
+        let mut v = ScriptVariables::new(&mut w, me, &mut f);
+        assert_eq!(v.get(3, DATA_LOCKOUT as i16).map(|x| x.value), Some(0));
+    }
+    assert_eq!(w.wakes, vec![(4, Wake::Lockout)]);
+    // NotifyStackObject asks for the stack object's to end; no such object: an error
+    w.wakes.clear();
+    f.stack_object = 4;
+    assert_eq!(notify_stack_object(&mut ScriptVariables::new(&mut w, me, &mut f)), PrimResult::True);
+    assert_eq!(w.wakes, vec![(4, Wake::Ended)]);
+    f.stack_object = 9;
+    assert_eq!(notify_stack_object(&mut ScriptVariables::new(&mut w, me, &mut f)), PrimResult::Stop);
+    // woken early, the sleep's parameter is what was left, and the Idle goes on with it
+    let sleep = node(0, [0, 0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
+    let mut s = Sleep::default();
+    let mut g = Frame { params: vec![10], ..Default::default() };
+    assert_eq!(idle(&mut s, &mut g, &sleep, true), PrimResult::Yield);
+    s.pass_over();
+    s.pass_over();
+    s.wake_early(&mut g);
+    assert!(!s.asleep() && g.params[0] == 7);
+    assert_eq!(idle(&mut s, &mut g, &sleep, false), PrimResult::Yield);
+    assert_eq!(g.params[0], 6);
+    // ended (NotifyStackObject): true when next stepped
+    assert_eq!(idle(&mut s, &mut g, &sleep, true), PrimResult::Yield);
+    s.end();
+    assert!(idle(&mut s, &mut g, &sleep, true) == PrimResult::True && g.params[0] == 0);
 }

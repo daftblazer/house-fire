@@ -7,7 +7,7 @@ use crate::expression::{ExpressionOperand, Variables, expression};
 use crate::interp::{Error, Host, Interpreter, Mode, PrimResult, Trees};
 use crate::library::Library;
 use crate::primitives::{
-    call_named_tree, complete_goal, create_object, drop_onto, grab, place_made, remove_object, snap, dialog, idle, idle_for_input, idle_for_input_waiting, present, push_action, random, relationship, run_functional_tree, set_motive_delta, set_to_next, test_object_type,
+    call_named_tree, complete_goal, create_object, drop_onto, grab, place_made, remove_object, snap, dialog, idle, idle_for_input, idle_for_input_waiting, may_sleep, present, push_action, random, relationship, run_functional_tree, set_motive_delta, set_to_next, test_object_type, notify_stack_object,
 };
 use crate::routing::slot_places;
 use crate::simulator::SimHost;
@@ -628,6 +628,18 @@ impl Host for ReplayHost<'_> {
             }
             self.counts.note("primitives: SetMotiveDelta: an influence, the log's taken");
         }
+        if n.opcode == 49 {
+            // NotifyStackObject: the stack object's Idle or IdleForInput ends
+            self.sync(interp, s);
+            let got = notify_stack_object(&mut ScriptVariables::new(&mut self.world, me, interp.top()));
+            let want = self.logged(s, n);
+            if got == want {
+                self.counts.note("primitives: NotifyStackObject: the same natively");
+                return got;
+            }
+            self.counts.note("primitives: NotifyStackObject: DIFFERENT (the log's taken)");
+            return want;
+        }
         if n.opcode == 26 {
             // Relationship2: the saved relationships, the objects' and the neighbours'
             self.sync(interp, s);
@@ -973,9 +985,14 @@ impl Host for ReplayHost<'_> {
             let was = interp.sleep().woke();
             let t0 = Instant::now();
             // (a stack saved at an Idle wakes there: the simulator's `stack_of` marks it)
+            let may = may_sleep(self.world.get(me), false);
+            if has("REPLAY_SHOW_IDLES") {
+                let o = self.world.get(me);
+                println!("idle t {} id {me_id} {}:{} d25 {:?} person {} params {:?} woke {was} may {may} log result {} after {}", s.tick, s.tree, s.node, o.data.get(25), o.person, interp.top().params, s.result, s.after);
+            }
             let got = {
                 let (sleep, f) = interp.sleep_and_top();
-                idle(sleep, f, n)
+                idle(sleep, f, n, may)
             };
             if let Some(b) = &mut self.bench {
                 b.idle_us += us(t0);

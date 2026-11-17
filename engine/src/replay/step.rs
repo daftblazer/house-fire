@@ -129,7 +129,8 @@ impl<'l> Replay<'l> {
             }
             let mut native_turns: Vec<i16> = Vec::new();
             // The persons reached, in id order, and whether their turn ends with the motive update.
-            let mut motives_due: Vec<(ObjectKey, bool)> = Vec::new();
+            // (every object reached: an object that ran counts its lockout down at its turn's end)
+            let mut motives_due: Vec<(ObjectKey, bool, bool)> = Vec::new();
             let mut motives_done = 0;
             let p0 = Instant::now();
             for (k, asleep) in sim.pass_order(&h.world) {
@@ -137,10 +138,9 @@ impl<'l> Replay<'l> {
                 if pass.stopped_at != 0 && id > pass.stopped_at as i16 {
                     break;
                 }
-                if h.world.get(k).person {
-                    let due = sim.begin_turn(&mut h.world, k);
-                    motives_due.push((k, due));
-                }
+                let due = h.world.get(k).person && sim.begin_turn(&mut h.world, k);
+                // (ran: stepped natively, or by the log, which can wake a stack the native has asleep)
+                motives_due.push((k, due, !asleep || logged_turns.contains(&id)));
                 if asleep {
                     sim.pass_over(&h.world, k);
                 } else {
@@ -164,7 +164,7 @@ impl<'l> Replay<'l> {
                     if o.id() >= id {
                         break;
                     }
-                    sim.end_turn(world, motives_due[*done].0, motives_due[*done].1);
+                    sim.end_turn(world, motives_due[*done].0, motives_due[*done].1, motives_due[*done].2);
                     *done += 1;
                 }
             };
@@ -727,6 +727,13 @@ impl<'l> Replay<'l> {
                         }
                     }
                 }
+                // the wakes the steps before asked for (an expression touched an object's lockout)
+                if has("REPLAY_SHOW_WAKES") && !h.world.wakes.is_empty() {
+                    let prev = i.checked_sub(1).map(|k| &log.steps[k]);
+                    let asleep: Vec<bool> = h.world.wakes.iter().map(|&(w, _)| h.world.find(w).is_some_and(|k| sim.stack_of(&h.world, k).asleep())).collect();
+                    println!("wakes t {} {:?} asleep {:?} after the step {:?}", s.tick, h.world.wakes, asleep, prev.map(|p| (p.tree, p.node, p.sim)));
+                }
+                sim.apply_wakes(&mut h.world);
                 let interp = sim.stack_of(&h.world, ok);
                 let st_len = interp.stack().len();
                 let st_top = interp.stack().last().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.file));
@@ -1050,6 +1057,12 @@ impl<'l> Replay<'l> {
                     // The frame's own state as the native kept it, against the log's at the step.
                     let f = interp.top();
                     h.counts.note(if f.params == s.params { "frames: parameters the same natively" } else { "frames: parameters different (set to the log's)" });
+                    if f.params != s.params && has("REPLAY_SHOW_PARAMS") {
+                        // study: the step before (the one that left the frame so) and the two
+                        let prev = i.checked_sub(1).map(|k| &log.steps[k]);
+                        let op = prev.and_then(|p| lib.tree(o_file, p.tree).and_then(|t| lib.tree_at(t).nodes.get(p.node as usize).map(|n| (n.opcode, n.operand))));
+                        println!("params t {} {}:{} sim {:x}: native {:?} log {:?}; before {:?} op {:?}", s.tick, s.tree, s.node, s.sim, f.params, s.params, prev.map(|p| (p.tree, p.node, p.frame == s.frame, p.sim == s.sim)), op);
+                    }
                     // A local the frame has not written is zero here and whatever the stack's
                     // memory held in the original (docs/interpreter.md, "Locals are not
                     // cleared"): a difference by design, not one the engine owes.

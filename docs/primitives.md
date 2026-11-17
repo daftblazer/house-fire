@@ -58,20 +58,25 @@ Measured on the recompiled game:
   exactly N − 1 passes, the late ones included: the passes in between stopped at a dialog and
   did not reach the object. 23 others ended early, woken by something else.
 
-A second form, seen only with a parameter of 1800 (the global tree 0x118's, five stacks on the
-home log: the made chips at 692 and meal at 1765, and three lot objects at 843): the node is
-stepped on every tick for a stretch, each step yielding with the parameter one less (1800, 1799,
-...), for 49, 26, 200, 25 and 49 ticks; then the stack is passed over like any sleep (the chips
-from 742 until something else wakes them at 1381, the parameter left at 1750). What ends the
-stepped stretch is not in the log. Natively the sleep is the passed-over one from the first step,
-so replay counts those stepped ticks as "the log ran a stack the native has asleep". The pass
-(`Simulator_RunObjects`, 80238150) reaches each object's sleep through virtual calls (its vtable's
-+0x90, +0xA8, +0x228, +0x238; a decrement at 80238368 before the +0x218 call, the pass-over
-count): which of those checks lets a sleeping stack be stepped is the place to observe next (a
-read-only record of the +0x238 call's result per object per tick).
+Who may sleep, read from the original's fn_80210024 (Idle) and fn_80204594: an object that is
+not a person, whose lockout (object data 25) is 0, and that has no animation playing on it. Any
+other stack takes the stepped form: each step yields with the parameter one less (1800, 1799,
+...), true when it reaches 0. This is the second form seen on the logs (the global tree 0x118's
+1800, while a person's or an animating object's stack waits); natively both forms are the
+original's (`primitives::idle`, `may_sleep`).
 
-The engine has it as `idle()` (`engine/src/primitives.rs`), the interpreter's `Sleep` and the
-simulator's pass. `engine/tests/primitives.rs` and `engine/tests/simulator.rs` test it.
+The lockout (object data 25, `world::DATA_LOCKOUT`) counts down by one at the end of each turn
+the object ran (`Simulator::end_turn`). A sleep ends early when:
+- an expression reads or writes data 25 of me or of the stack object (Castaway's
+  `cXObject::InterpValue`): the object is woken, the sleep's parameter set to the passes that
+  were left, and the Idle goes on from there (`Wake::Lockout`);
+- NotifyStackObject (opcode 49, fn_80211F34) names it: at an Idle the parameter is 0 and the
+  sleep ends (true when next stepped); at an IdleForInput (17) its count is 0 (`Wake::Ended`).
+  No stack object: the script error 21.
+The wakes are applied after the waking turn (`Simulator::apply_wakes`).
+
+Left on the home log: two waits at the 1800 parameter (1482, 5084) woken at a different count,
+and three stacks the log ran while native has them asleep (ticks 2, 1455, 5083).
 
 ## LookTowards (opcode 22): a turn on the walker, not native yet
 

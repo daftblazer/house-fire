@@ -111,20 +111,26 @@ pub enum Mode {
 
 /// A stack's sleep (Idle): passed over by the next `left` passes of the tick that reach it,
 /// then stepped again. A pass that stops early does not reach the objects after it, so their
-/// sleep does not count down (`docs/simulation.md`).
+/// sleep does not count down (`docs/simulation.md`). Woken early (`wake_early`: an expression
+/// touched the object's lockout), it is stepped at once with what was left.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Sleep {
     left: u32,
     sleeping: bool,
+    early: bool,
+    /// The Idle's parameter (its index in the frame), which an early wake sets to what is left.
+    param: usize,
 }
 
 impl Sleep {
-    pub fn sleep(&mut self, visits: u32) {
+    pub fn sleep(&mut self, visits: u32, param: usize) {
         self.left = visits;
         self.sleeping = true;
+        self.early = false;
+        self.param = param;
     }
     pub fn asleep(&self) -> bool {
-        self.sleeping && self.left > 0
+        self.sleeping && self.left > 0 && !self.early
     }
     /// A pass reached the sleeping stack.
     pub fn pass_over(&mut self) {
@@ -134,8 +140,29 @@ impl Sleep {
     pub fn woke(&self) -> bool {
         self.sleeping
     }
+    /// Woken before its time.
+    pub fn early(&self) -> bool {
+        self.early
+    }
+    /// Woken before its time (an expression touched the object's lockout): the frame's
+    /// parameter is set to the passes left, and the next pass steps it.
+    pub fn wake_early(&mut self, f: &mut Frame) {
+        if self.asleep() {
+            self.early = true;
+            if let Some(p) = f.params.get_mut(self.param) {
+                *p = self.left.min(i16::MAX as u32) as i16;
+            }
+        }
+    }
+    /// Its sleep ended now (NotifyStackObject): the next step finds it run out.
+    pub fn end(&mut self) {
+        self.sleeping = true;
+        self.early = false;
+        self.left = 0;
+    }
     pub fn wake(&mut self) {
         self.sleeping = false;
+        self.early = false;
         self.left = 0;
     }
 }

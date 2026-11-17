@@ -10,7 +10,7 @@ engineering of the original's code, not more fitting. The list below this sectio
    simulator.rs 288). The 0-difference figures therefore say "each step agrees given the log's
    state before it", not "the engine plays the game". What the log still supplies (home / club
    replay): primitives answered from the log 24,516 / 31,648 (Animate 44: 4,032 / 27,666;
-   CompleteGoal 56: native since 2026-11-17, primitives.md; IdleForInput 17: native since 2026-11-17; Relationship2 26: native since 2026-11-17; 22: 51 /
+   CompleteGoal 56: native since 2026-11-17, primitives.md; IdleForInput 17: native since 2026-11-17; Relationship2 26: native since 2026-11-17; Idle 0 (both forms, the lockout) and NotifyStackObject 49: native since 2026-11-17; 22: 51 /
    189; change suit 6: 13 / 70; 12, 24, 41 on home), locals set to the log's 20,615 / 12,491,
    parameters 423 / 110, places with no native walk 224 / 196, route runs not modelled 1 / 26,
    routing slots from a stack variable 81 / 200, the club's autonomy candidates different 82,

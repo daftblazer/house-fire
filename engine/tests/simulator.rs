@@ -60,7 +60,7 @@ impl Host for TestHost<'_> {
                     s.wake();
                     return PrimResult::True;
                 }
-                s.sleep(1); // passed over once, stepped on the next pass
+                s.sleep(1, 0); // passed over once, stepped on the next pass
                 PrimResult::Yield
             }
             3 => {

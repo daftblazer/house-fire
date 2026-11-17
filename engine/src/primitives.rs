@@ -6,7 +6,7 @@ use crate::iff::Order;
 use crate::interp::{Frame, Interpreter, PrimResult, Sleep};
 use crate::save::{MotiveDelta, NeighbourRelationship, SavedQueueEntry, SavedRelationship};
 use crate::simulator::SimHost;
-use crate::world::{Object, ObjectKey, PERSON_NEIGHBOUR_ID, PresentationEvent, ScriptVariables, World, scope};
+use crate::world::{DATA_LOCKOUT, Object, ObjectKey, PERSON_NEIGHBOUR_ID, PresentationEvent, ScriptVariables, Wake, World, scope};
 
 /// A 16-bit field of a node's operand at byte `i`, in the file's byte order.
 fn field(n: &Node, i: usize) -> i16 {
@@ -481,25 +481,58 @@ pub fn set_to_next(n: &Node, vars: &mut ScriptVariables) -> PrimResult {
     }
 }
 
-/// Idle (opcode 0, the PC's Sleep): the stack sleeps for as many of the tick's passes as the
-/// frame's parameter (operand: its index) holds, yielding: passed over by the next N - 1 that
-/// reach it, stepped on the N-th. Then the parameter is 0 and the node goes to its true target.
-/// A missing parameter, or one of 0 or less: no sleep. Measured: all 2,810 regular sleeps of a
-/// log with the pass's cursor (`docs/primitives.md`, "Idle").
-pub fn idle(sleep: &mut Sleep, f: &mut Frame, n: &Node) -> PrimResult {
+/// Idle (opcode 0, the PC's Sleep), read from the original's fn_80210024: the frame's parameter
+/// (operand: its index) is a count of the tick's passes. If the stack may sleep (`may_sleep`,
+/// below) it sleeps: yielding, passed over by the next N - 1 passes that reach it, stepped on
+/// the N-th, the parameter kept. If not, each step takes one off the parameter and yields, and
+/// the stack is stepped again by the next pass. Its sleep run out, or the parameter 0 or less,
+/// the parameter is 0 and the node goes to its true target. Woken early (`Sleep::wake_early`),
+/// the parameter holds the passes left and the Idle goes on with them. A missing parameter: true.
+/// Measured: all 2,810 regular sleeps of a log with the pass's cursor (`docs/primitives.md`,
+/// "Idle").
+pub fn idle(sleep: &mut Sleep, f: &mut Frame, n: &Node, may_sleep: bool) -> PrimResult {
     let index = n.operand16(0) as i16;
     let Some(p) = usize::try_from(index).ok().filter(|&i| i < f.params.len()) else { return PrimResult::True };
     if sleep.woke() {
+        // run out: true; woken early (`Sleep::wake_early`, the parameter set to what was
+        // left): on with it
+        let early = sleep.early();
         sleep.wake();
-        f.params[p] = 0;
-        return PrimResult::True;
+        if !early {
+            f.params[p] = 0;
+            return PrimResult::True;
+        }
     }
     let ticks = f.params[p];
     if ticks <= 0 {
+        f.params[p] = 0;
         return PrimResult::True;
     }
-    sleep.sleep(ticks as u32 - 1);
+    if may_sleep {
+        sleep.sleep(ticks as u32 - 1, p);
+    } else {
+        f.params[p] = ticks - 1;
+    }
     PrimResult::Yield
+}
+
+/// NotifyStackObject (opcode 49), read from the original's fn_80211F34: the stack object's stack
+/// is woken (`World::wakes`, `Wake::Ended`: at an Idle its sleep ends, at an IdleForInput its
+/// count is 0). True; no such object: the original's script error (21: `Stop`).
+pub fn notify_stack_object(vars: &mut ScriptVariables) -> PrimResult {
+    let id = vars.frame.stack_object;
+    if vars.world.find(id).is_none() {
+        return PrimResult::Stop;
+    }
+    vars.world.wakes.push((id, Wake::Ended));
+    PrimResult::True
+}
+
+/// Whether an Idle may put the object's stack to sleep (the original's fn_80204594, Castaway's
+/// `cXObject::AllowIdleOptimization`): not a person's, not while its object data field 25 is
+/// set, not while one of its sprite slots is active (an animation on it, `animating`).
+pub fn may_sleep(o: &Object, animating: bool) -> bool {
+    !o.person && o.data.get(DATA_LOCKOUT).is_none_or(|&v| v == 0) && !animating
 }
 
 /// CallNamedTree (opcode 28): the tree whose name is a string (operand bytes 0-1 its STR#, byte 4

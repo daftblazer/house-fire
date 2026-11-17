@@ -6,7 +6,7 @@ use crate::interp::{Host, Interpreter};
 use crate::library::Library;
 use crate::motives::{MotiveRates, update_motives};
 use crate::primitives::apply_motive_deltas;
-use crate::world::{Object, ObjectKey, World};
+use crate::world::{DATA_LOCKOUT, Object, ObjectKey, Wake, World};
 
 /// The host the objects' scripts run with: their primitives and the trees they name, and the
 /// world they run on (which the host holds, so that a primitive can reach it).
@@ -60,12 +60,17 @@ fn begin_turn(rates: &Option<MotiveRates>, o: &mut Object) -> bool {
     o.data.len() <= 34 || o.data[34] == 0 // the gate's object +106 (data field 34)
 }
 
-/// A turn's end: a person's running motive changes (SetMotiveDelta's) apply at the end of each
-/// of its turns, before the update (the log's first change is in the turn that set it), then
-/// the update if due.
-fn end_turn(rates: &Option<MotiveRates>, world: &mut World, k: ObjectKey, update_due: bool) {
+/// A turn's end. An object whose stack ran (not passed over asleep) counts its lockout down
+/// (object data 25, which keeps its Idle from sleeping: `primitives::may_sleep`; Castaway's
+/// `cXObject::Simulate`). A person's running motive changes (SetMotiveDelta's) apply at the end
+/// of each of its turns, before the update (the log's first change is in the turn that set it),
+/// then the update if due.
+fn end_turn(rates: &Option<MotiveRates>, world: &mut World, k: ObjectKey, update_due: bool, ran: bool) {
     let (run, hour) = (world.motives_run, world.hour);
     let o = world.get_mut(k);
+    if ran && let Some(v) = o.data.get_mut(DATA_LOCKOUT).filter(|v| **v != 0) {
+        *v -= 1;
+    }
     if !o.person || !run {
         return;
     }
@@ -92,6 +97,34 @@ impl Simulator {
 
     /// An object's running stack, made on first need from the frames the object has, its own
     /// parameters the object's temps as they are then.
+    /// The wakes the turns asked for (`World::wakes`), in order.
+    pub fn apply_wakes(&mut self, world: &mut World) {
+        let lib = world.library();
+        for (id, how) in std::mem::take(&mut world.wakes) {
+            let Some(k) = world.find(id) else { continue };
+            let Some(Some(i)) = self.runs.get_mut(k.0 as usize) else { continue };
+            if i.stack().is_empty() {
+                continue;
+            }
+            let (sleep, f) = i.sleep_and_top();
+            match how {
+                Wake::Lockout => sleep.wake_early(f),
+                Wake::Ended => {
+                    // the stack's node: an Idle's sleep ends; an IdleForInput's count is 0
+                    let op = f.tree.and_then(|t| lib.tree_at(t).nodes.get(f.node as usize)).map(|n| n.opcode);
+                    if matches!(op, Some(0) | Some(17)) {
+                        if let Some(p) = f.params.first_mut() {
+                            *p = 0;
+                        }
+                        if op == Some(0) {
+                            sleep.end();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub fn stack_of(&mut self, world: &World, k: ObjectKey) -> &mut Interpreter {
         let at = k.0 as usize;
         if at >= self.runs.len() {
@@ -141,7 +174,7 @@ impl Simulator {
             // save keeps no sleep): its first Idle step wakes, true whatever its parameter
             // (docs/simulation.md, "A saved stack asleep at its Idle").
             if frames.last().and_then(|f| f.tree.and_then(|t| lib.get_tree(t)?.nodes.get(f.node as usize))).is_some_and(|n| n.opcode == 0) {
-                i.sleep().sleep(0);
+                i.sleep().sleep(0, usize::MAX);
             }
             i
         })
@@ -220,8 +253,8 @@ impl Simulator {
         begin_turn(&self.rates, world.get_mut(k))
     }
     /// A turn ends (by hand).
-    pub fn end_turn(&self, world: &mut World, k: ObjectKey, update_due: bool) {
-        end_turn(&self.rates, world, k, update_due)
+    pub fn end_turn(&self, world: &mut World, k: ObjectKey, update_due: bool, ran: bool) {
+        end_turn(&self.rates, world, k, update_due, ran)
     }
 
     /// The pass's end: at an id, or 0 for through.
@@ -259,7 +292,7 @@ impl Simulator {
             let motives_due = begin_turn(&self.rates, host.world().get_mut(e.key));
             if interp.asleep() {
                 interp.pass_over();
-                end_turn(&self.rates, host.world(), e.key, motives_due);
+                end_turn(&self.rates, host.world(), e.key, motives_due, false);
                 i += 1;
                 continue;
             }
@@ -269,7 +302,8 @@ impl Simulator {
             // original's interpreter keeps a pointer to them, +44)
             interp.copy_defaults(&host.world().get(e.key).temps);
             let steps = interp.run(host, 1 << 20);
-            end_turn(&self.rates, host.world(), e.key, motives_due);
+            end_turn(&self.rates, host.world(), e.key, motives_due, true);
+            self.apply_wakes(host.world());
             host.on_turn(e.key, steps);
             if host.world().stop_pass {
                 stopped_at = e.id;

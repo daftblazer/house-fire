@@ -48,7 +48,22 @@ pub mod scope {
 }
 
 /// The object data field the engine relies on: the object's id.
+/// How a stack is woken (`World::wakes`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Wake {
+    /// An expression touched the object's lockout (object data 25; Castaway's
+    /// `cXObject::InterpValue`): a sleep ends early, its parameter what was left.
+    Lockout,
+    /// NotifyStackObject (opcode 49): an Idle's sleep ends (its first parameter 0, the Idle true
+    /// when next stepped), an IdleForInput's count (its first parameter) is 0.
+    Ended,
+}
+
 pub const DATA_OBJECT_ID: usize = 11;
+/// The object data field of its lockout: while set, its Idle does not sleep, it counts down a
+/// tick at each turn its stack runs, and an expression that touches it wakes the object
+/// (`primitives::may_sleep`, `simulator.rs`'s `end_turn`; `docs/primitives.md`, "Idle").
+pub const DATA_LOCKOUT: usize = 25;
 /// The function table's (OBJf) entry a door runs when a route goes through it (The Sims' "portal").
 pub const PORTAL_FUNCTION: usize = 15;
 /// The entry a seat runs when a Sim routes to a slot to sit at it (The Sims' "sit").
@@ -224,6 +239,8 @@ pub struct World<'lib> {
     pub ad_range: Vec<i16>,
     /// The houses' goals and the player's progress (CompleteGoal).
     pub goals: crate::goals::Goals,
+    /// The objects woken this turn, for the simulator to wake (`Simulator::apply_wakes`).
+    pub wakes: Vec<(i16, Wake)>,
 }
 
 impl<'lib> World<'lib> {
@@ -248,6 +265,7 @@ impl<'lib> World<'lib> {
             neighbours: Vec::new(),
             ad_range: Vec::new(),
             goals: Default::default(),
+            wakes: Vec::new(),
         }
     }
 
@@ -747,8 +765,21 @@ impl<'a, 'lib> ScriptVariables<'a, 'lib> {
         match scope {
             MY_ATTRIBUTE => at(&mut self.world.get_mut(me).attributes, di),
             STACK_ATTRIBUTE => at(&mut self.world.get_mut(self.stack_object()?).attributes, di),
-            MY_DATA => at(&mut self.world.get_mut(me).data, di),
-            STACK_DATA => at(&mut self.world.get_mut(self.stack_object()?).data, di),
+            MY_DATA => {
+                if d as usize == DATA_LOCKOUT {
+                    let id = self.world.get(me).id();
+                    self.world.wakes.push((id, Wake::Lockout));
+                }
+                at(&mut self.world.get_mut(me).data, di)
+            }
+            STACK_DATA => {
+                let k = self.stack_object()?;
+                if d as usize == DATA_LOCKOUT {
+                    let id = self.world.get(k).id();
+                    self.world.wakes.push((id, Wake::Lockout));
+                }
+                at(&mut self.world.get_mut(k).data, di)
+            }
             GLOBAL => at(&mut self.world.globals, di),
             TEMP => self.world.get_mut(me).temps.get_mut(usize::try_from(d).ok()?),
             PARAMETER => self.frame.params.get_mut(usize::try_from(d).ok()?),
