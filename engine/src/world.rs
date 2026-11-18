@@ -260,10 +260,11 @@ impl<'lib> World<'lib> {
     /// The original's copy of a neighbour's saved motives into its Sim at the load
     /// (`fn_801DBAC0`, its loop at 0x801DBCFC): both sets of 16, motive 11 of each 0.0 (the
     /// constant at 0x802C7B70), the floats as the original reads them (`Neighbour::motives`).
-    /// Done when the neighbour has them; the original's two conditions (0x801DBCA4) are not read
-    /// yet (a study: REPLAY_NEIGHBOUR_MOTIVES).
+    /// Done for the neighbours of a family with no house (the player's: a housed family's motives
+    /// are its lot's): the original's condition (0x801DBCA4, two of the manager's lists) is not
+    /// read; this rule fits both logs (REPLAY_NO_NEIGHBOUR_MOTIVES leaves it out).
     pub fn take_neighbour_motives(&mut self) {
-        let sets: Vec<(i16, Vec<f32>, Vec<f32>)> = self.neighbours.iter().filter(|n| n.motives.len() == 16 && n.motives_b.len() == 16).map(|n| (n.id, n.motives.clone(), n.motives_b.clone())).collect();
+        let sets: Vec<(i16, Vec<f32>, Vec<f32>)> = self.neighbours.iter().filter(|n| n.motives.len() == 16 && n.motives_b.len() == 16 && n.house == Some(0)).map(|n| (n.id, n.motives.clone(), n.motives_b.clone())).collect();
         for k in self.order().to_vec() {
             let o = self.get_mut(k);
             if !o.person || o.motives.len() < 16 || o.motives_b.len() < 16 {

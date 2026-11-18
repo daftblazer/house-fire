@@ -1928,4 +1928,10 @@ of the manager's lists (vcall +368 with 1 and 2; unread). `World::take_neighbour
 copy with no condition behind REPLAY_NEIGHBOUR_MOTIVES (a lead, not on): driven club then passes 57
 and parts at 164's person data 32 (1 in the log, 0 natively: the visitors' flag, set elsewhere);
 but the plain replays' debt rises (home-full 515 -> 523, club-full 778 -> 785), so the condition is
-needed first. NBRS's 128 bytes are these two sets (`Neighbour::motives`, `motives_b`).
+needed first. NBRS's 128 bytes are these two sets (`Neighbour::motives`, `motives_b`). The condition (2026-11-18, inferred, the
+lists unread): the copy is for the neighbours of a family with no house (section 1's `FAMI`
+chunks, `save::read_families`: house, id, members' GUIDs; the player's family has house 0): a
+housed family's motives are its lot's. It fits both logs (club 57 copied; home 12 the same either
+way, 237 and 197 not copied), lowers club's debt (778 -> 777, club 28443 -> 28442) and is on by
+default (REPLAY_NO_NEIGHBOUR_MOTIVES leaves it out). Club's driven run then parts at tick 2, 164's
+8193:2: person data 32 is 1 in the log, 0 natively (164 a visitor, neighbour 17).

@@ -404,6 +404,8 @@ pub struct Neighbour {
     /// The neighbour's motives and their second set as saved (`read_neighbours`).
     pub motives: Vec<f32>,
     pub motives_b: Vec<f32>,
+    /// The house of the neighbour's family (`read_families`; 0: none, the player's family's).
+    pub house: Option<i32>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -511,6 +513,44 @@ pub fn read_neighbours(file: &[u8]) -> Result<Vec<Neighbour>> {
     let described = table.as_ref().map(read_descriptions).unwrap_or_default();
     for n in &mut out {
         n.female = described.iter().find(|d| d.0 == n.guid).map(|d| d.1);
+    }
+    for f in read_families(file)? {
+        for n in out.iter_mut().filter(|n| f.members.contains(&n.guid)) {
+            n.house = Some(f.house);
+        }
+    }
+    Ok(out)
+}
+
+/// A family of the neighbourhood (section 1's `FAMI` chunks): its house number (0: none), its id
+/// and its members' GUIDs (the neighbours'). A chunk: 0, 8, the mark "FAMI", the house, the id,
+/// three words, a word, the count, the GUIDs.
+#[derive(Clone, Debug, Default)]
+pub struct Family {
+    pub house: i32,
+    pub id: i32,
+    pub members: Vec<u32>,
+}
+
+pub fn read_families(file: &[u8]) -> Result<Vec<Family>> {
+    let mut table = None;
+    for b in read_neighbourhood(file)? {
+        if b.section == 1 {
+            table = Some(chunk_table(&b)?);
+            break;
+        }
+    }
+    let mut out = Vec::new();
+    for (_, c) in table.iter().flat_map(|t| t.chunks.iter()).filter(|(tag, _)| tag == "FAMI") {
+        if c.len() < 40 || &c[8..12] != b"IMAF" {
+            continue;
+        }
+        let w = |k: usize| le32(c, 4 * k) as i32;
+        let count = w(9).clamp(0, 16) as usize;
+        if c.len() < 40 + 4 * count {
+            continue;
+        }
+        out.push(Family { house: w(3), id: w(4), members: (0..count).map(|k| le32(c, 40 + 4 * k)).collect() });
     }
     Ok(out)
 }

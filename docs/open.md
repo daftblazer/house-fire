@@ -59,8 +59,8 @@ engineering of the original's code, not more fitting. The list below this sectio
    **Started 2026-11-18: the engine's own tick as the driver** (`replay --drive`, simulation.md "The
    driven run"): home-full runs the native load pass and tick 1 the log's and parts at tick 2 (the
    engine's frame over 251's Idle); club-full (`--hood` the session's card) runs the load and tick
-   1 the log's and parts at tick 2 (57's motive 5: the neighbour's motives copied at the load
-   under a condition not read, simulation.md "The driven run"; REPLAY_NEIGHBOUR_MOTIVES the lead).
+   1 the log's and parts at tick 2 (164's person data 32, 1 in the log: a visitor's, set elsewhere;
+   the neighbours' motive copy before it is native, its condition inferred: simulation.md "The driven run").
 2. **The original's loop of frames and ticks**: THE RULE FOUND 2026-11-17 (simulation.md
    "Frames and ticks"; `routing::FrameClock`): a clock in milliseconds, 33 a frame times the
    speed's factor, a tick for every 42.0 (802CEBFC), held to 840, afresh after the speed's

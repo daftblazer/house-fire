@@ -92,6 +92,14 @@ fn main() -> ExitCode {
         println!("{e}");
         return ExitCode::from(1);
     }
+    if has("REPLAY_SHOW_FAMILIES") {
+        // study: the families (house, id) and their members' neighbour ids
+        let ngh = hood_path.as_deref().or(card_path.as_deref()).map(|p| housefire::save::memory_card_file(&std::fs::read(p).unwrap_or_default(), "G4ME69").unwrap_or_default());
+        for f in ngh.and_then(|n| housefire::save::read_families(&n).ok()).unwrap_or_default() {
+            let ids: Vec<i16> = f.members.iter().map(|g| start.neighbours.iter().find(|n| n.guid == *g).map_or(-1, |n| n.id)).collect();
+            println!("family house {} id {} neighbours {ids:?}", f.house, f.id);
+        }
+    }
     let (the_lot, the_globals, neighbours, lot_globals, card_lot) = (start.lot(), start.globals(), &start.neighbours, &start.lot_globals, start.card_lot);
     if has("REPLAY_SHOW_LOT_CLOCKS") {
         // study: each lot's clock (globals 0, 5, 6: the hour, minute and second)
