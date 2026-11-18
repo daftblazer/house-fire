@@ -482,6 +482,15 @@ pub fn drive<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l Lo
             println!("person {} neighbour {nid} ({:?}) data {:?}; differs from the neighbour's at {diff:?}", o.id(), n.map(|n| n.name.clone()), o.person_data);
         }
     }
+    if let Some(id) = super::study::env("REPLAY_DRIVE_SHOW_MOTIVES").map(|v| super::study::atoi(&v) as i16) {
+        // study: a person's motives as loaded, and the log's 'N' records of it to tick 3
+        if let Some(o) = host.world.find_object(id) {
+            println!("motives loaded {id}: {:?} / b {:?}", o.motives, o.motives_b);
+        }
+        for m in log.motives.iter().filter(|m| m.id == id && m.tick <= 3) {
+            println!("motives log tick {} {id}: {:?}", m.tick, m.motives);
+        }
+    }
     if let Some(v) = super::study::env("REPLAY_DRIVE_SHOW_LOG") {
         // study: the log's steps of one object in a tick range, "id:from:to"
         let p: Vec<i64> = v.split(':').map(super::study::atoi).collect();
@@ -523,7 +532,7 @@ pub fn drive<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l Lo
                         }
                     }
                     let at = |id: i16| host.world.find_object(id).map(|o| (id, o.x16 >> 4, o.y16 >> 4, o.level, host.world.walls.room(o.x16 >> 4, o.y16 >> 4), o.file.map(|f| lib.file(f).path.rsplit('/').next().unwrap_or("").to_string())));
-                    println!("read: tick {} {}:{} me {:?} so {} value {} flags {}; me {:?}; so {:?}", s.tick, s.tree, s.node, ids.get(&s.sim), s.stack_object, l.value, l.flags, ids.get(&s.sim).and_then(|&i| at(i)), at(s.stack_object));
+                    println!("read: tick {} {}:{} me {:?} so {} value {} flags {} obj {:x} ptr {:x}; me {:?}; so {:?}", s.tick, s.tree, s.node, ids.get(&s.sim), s.stack_object, l.value, l.flags, l.object, l.ptr, ids.get(&s.sim).and_then(|&i| at(i)), at(s.stack_object));
                 }
             }
         }
@@ -698,6 +707,7 @@ fn load_init(host: &mut DriveHost, log: &Log, ids: &BTreeMap<u32, i16>, finder: 
         // tick-0 call of 8218 on Sim 12 with the paper girl 197 is NPC_SG's, not person_sg's)
         let file = host.world.find_object(c.stack_object).and_then(|o| o.file).or(host.world.get(k).file);
         let temps = host.world.get(k).temps.to_vec();
+        let temps_before = temps.clone();
         host.me = k;
         let Some(t) = lib.tree(file, c.tree) else {
             host.part(c.me, c.tree as i32, 0, format!("the load's call: tree {} not found in the object's files", c.tree));
@@ -719,6 +729,18 @@ fn load_init(host: &mut DriveHost, log: &Log, ids: &BTreeMap<u32, i16>, finder: 
         }
         if host.parting.is_some() {
             return;
+        }
+        // A run that is not one of the object's OBJf functions is a check: the original saves the
+        // object's 8 temps before it and writes them back after (fn_8021944C, from the context's
+        // +12 to the object at its +28; the club's 57: 8344 sets temp 1 to 57, the store at
+        // 0x801F5CDC puts back 0)
+        let is_function = host.world.get(k).file.and_then(|f| lib.file(f).functions.values().next()).is_some_and(|fs| fs.iter().any(|e| e.1 == c.tree));
+        if !is_function {
+            let saved = &temps_before;
+            let o = host.world.get_mut(k);
+            for (t, &v) in o.temps.iter_mut().zip(saved.iter()) {
+                *t = v;
+            }
         }
     }
 }

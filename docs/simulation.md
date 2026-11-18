@@ -1905,3 +1905,17 @@ probe on the club session (the player's Pat Newbie 0 / Peter Tutti 1 at +0x20) a
 build's store. `save::read_descriptions`, `World::describe_persons`. With both, the club's load
 and tick 1 are the log's (1 of 9419); it parts at tick 2, object 57, tree 8216 node 0: the frame's
 parameters [1, 57, 0, 0] natively against the log's [1, 0, 0, 0] (the call 8227:4 passes them).
+
+A check keeps the object's temps (2026-11-18): the original saves the 8 temps in the check's
+context and writes them back after it (`fn_8021944C`: from the context's +12 to the object at its
++28, then clears +28; the store 0x801F5CDC, seen with the watch build on 57's temp 1, which
+8344:1 sets to 57 at the load and the restore puts back to 0). In the driven load pass a tick-0 run
+whose tree is not one of the object's OBJf functions is such a check. Club then parts at tick 2,
+57's 8222:3: its motive 5 (scope 15) is 0 in the log (a float 0x0000A041), 100 natively. **The
+player's Sim's motives on the club come from another record**: after the load, `fn_801DBAC0`
+copies 16 floats from its object's +260 to the person's motives and 16 from +324 to the second set
+(motive 11 a constant from 0x802C7B70), under two virtual calls' conditions (0x801DBCA4) not read
+yet; the floats are little-endian 20.0 read unswapped (the original's own byte-order slip, to keep:
+it is visible). Likely the neighbour's 128 NBRS bytes (`save::read_neighbours`, "to be named":
+32 floats). The watch: 0x80F794A4 (57's motive 5), the constructor's 0, the load's 100.0
+(0x8023090C), then 0x801DBD14's 0x0000A041.
