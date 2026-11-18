@@ -94,6 +94,8 @@ pub const DATA_SLOT: usize = 3;
 pub const DATA_FLAGS: usize = 8;
 /// The person data field the engine relies on: a Sim's neighbour id (its NBRS id).
 pub const PERSON_NEIGHBOUR_ID: usize = 31;
+/// Person data 65: 1 for a female Sim (set at the load from the description: `World::describe_persons`).
+pub const PERSON_FEMALE: usize = 65;
 
 #[derive(Clone, Debug, Default)]
 pub struct Object {
@@ -252,6 +254,25 @@ pub struct World<'lib> {
 }
 
 impl<'lib> World<'lib> {
+    /// Each person's person data 65, whether it is female, from its neighbour's description
+    /// (`Neighbour::female`; the person's neighbour id is its data 31), as the original's load of
+    /// a Sim sets it (`save::read_descriptions`). A person with no description keeps its own.
+    pub fn describe_persons(&mut self) {
+        let female: Vec<(i16, bool)> = self.neighbours.iter().filter_map(|n| n.female.map(|f| (n.id, f))).collect();
+        for k in self.order().to_vec() {
+            let o = self.get_mut(k);
+            if !o.person {
+                continue;
+            }
+            let Some(&nid) = o.person_data.get(PERSON_NEIGHBOUR_ID) else { continue };
+            if let Some(&(_, f)) = female.iter().find(|(id, _)| *id == nid && nid != 0)
+                && let Some(d) = o.person_data.get_mut(PERSON_FEMALE)
+            {
+                *d = i16::from(f);
+            }
+        }
+    }
+
     pub fn new(lib: &'lib Library) -> Self {
         World {
             lib,

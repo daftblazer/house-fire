@@ -1891,3 +1891,17 @@ data (scope 34) datum 1 is 1 in the log, 0 natively: the disc's default neighbou
 value, the session's save (`work/inputs/club-live`) has the club's; `--card` takes the card's lot
 list, not the disc's lot 15 with the card's neighbourhood, so a `--lot 15` run with the save's
 NGBH needs that option first. To run the club further, that is the next step.
+
+Since (2026-11-18, orchestrator): `--hood CARD` takes the neighbourhood (scope 34's data and the
+neighbours) from a memory card's save for a disc lot: the club's session is `--lot 15 --hood
+work/inputs/club-live/memcard_replay.raw`. A Random into a temp or an attribute takes the
+original's number from its next read, as `replay` does (primitives.md, Random). **Person data 65
+is the Sim's gender, 1 female**: the original's load of a Sim (`fn_80224C88`, the store at
+0x80224E0C) sets it from the Sim's description (`fn_802283A0`: the description's +0x20, 1 male,
+inverted; when the description has none, the negation of another field, not met), and the
+description is the character's `User` chunk in the neighbourhood's section 1 (by the neighbour's
+GUID: 0, 4, "User", the id, two 0xFFFE big-endian names, then the gender byte). Found with the
+probe on the club session (the player's Pat Newbie 0 / Peter Tutti 1 at +0x20) and the watch
+build's store. `save::read_descriptions`, `World::describe_persons`. With both, the club's load
+and tick 1 are the log's (1 of 9419); it parts at tick 2, object 57, tree 8216 node 0: the frame's
+parameters [1, 57, 0, 0] natively against the log's [1, 0, 0, 0] (the call 8227:4 passes them).

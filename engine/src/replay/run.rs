@@ -322,6 +322,7 @@ impl<'l> Replay<'l> {
         // The disc's club: its motives do not move by themselves (measured; World::motives_run).
         world.motives_run = card_lot || has("REPLAY_MOTIVES_RUN");
         world.neighbours = neighbours.to_vec();
+        world.describe_persons();
         world.goals = goals;
         world.neighbourhood = neighbourhood;
         if has("REPLAY_SHOW_RELS") {

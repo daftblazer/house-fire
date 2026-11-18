@@ -399,6 +399,8 @@ pub struct Neighbour {
     pub guid: u32,
     pub person_data: Vec<i16>,
     pub relationships: Vec<NeighbourRelationship>,
+    /// The character's description (its `User` chunk, by the GUID): female, if it has one.
+    pub female: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -495,7 +497,46 @@ pub fn read_neighbours(file: &[u8]) -> Result<Vec<Neighbour>> {
     if r.p != c.len() {
         return err("NBRS does not end at its chunk's end");
     }
+    let described = table.as_ref().map(read_descriptions).unwrap_or_default();
+    for n in &mut out {
+        n.female = described.iter().find(|d| d.0 == n.guid).map(|d| d.1);
+    }
     Ok(out)
+}
+
+/// The characters' descriptions (section 1's `User` chunks, one a character): its id (the
+/// neighbour's GUID) and whether it is female. A chunk: 0, a version (4), the mark "User", the
+/// id; the first and last names, each 0xFFFE and big-endian 16-bit characters to a 0; then the
+/// gender, 1 male (and the rest of the description, to be named). The original's Sim keeps the
+/// description and its load (`fn_80224C88`, 0x80224E0C) sets person data 65 to whether it is
+/// female (`fn_802283A0`: the description's +0x20); measured on the club save's Pat Newbie
+/// (female, 65 = 1) and Peter Tutti (male, 0). A chunk not of that shape is left out.
+fn read_descriptions(t: &LotChunks) -> Vec<(u32, bool)> {
+    let mut out = Vec::new();
+    for (tag, c) in t.chunks.iter().filter(|(tag, _)| tag == "User") {
+        let _ = tag;
+        if c.len() < 16 || &c[8..12] != b"resU" {
+            continue;
+        }
+        let id = le32(c, 12);
+        let mut p = 16;
+        let mut ok = true;
+        for _ in 0..2 {
+            if c.get(p..p + 2) != Some(&[0xFF, 0xFE][..]) {
+                ok = false;
+                break;
+            }
+            p += 2;
+            while p + 2 <= c.len() && (c[p], c[p + 1]) != (0, 0) {
+                p += 2;
+            }
+            p += 2;
+        }
+        if ok && let Some(&g) = c.get(p) {
+            out.push((id, g == 0));
+        }
+    }
+    out
 }
 
 /// A Sim of the neighbourhood made by its description (a "User" chunk of the neighbourhood's

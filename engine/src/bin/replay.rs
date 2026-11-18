@@ -1,7 +1,7 @@
 //! The club run natively, tick after tick, against a log of the recompiled Bustin' Out's
 //! interpreter (its `src/tree_log.cpp`, BUSTIN_TREE_LOG) and the disc it ran.
 //!
-//! Usage: replay LOG ISO [--card CARD] [--lot N] [--bench] [--free] [--drive]
+//! Usage: replay LOG ISO [--card CARD] [--lot N] [--bench] [--free] [--drive] [--hood CARD]
 //!
 //! --card: the lot from a save on a memory card image (its first lot, Mom's house in the user's
 //! save, unless --lot says), not the disc's club; the neighbours are the save's too.
@@ -36,7 +36,7 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 3 {
-        println!("usage: replay LOG ISO [--card CARD] [--lot N] [--bench] [--free] [--drive]");
+        println!("usage: replay LOG ISO [--card CARD] [--lot N] [--bench] [--free] [--drive] [--hood CARD]");
         return ExitCode::from(2);
     }
     let Some(log) = read_log(&args[1]) else {
@@ -52,6 +52,7 @@ fn main() -> ExitCode {
     let mut free = false;
     let mut driven = false;
     let mut card_path: Option<String> = None;
+    let mut hood_path: Option<String> = None;
     let mut lot_index: i64 = -1;
     let mut i = 3;
     while i < args.len() {
@@ -63,6 +64,10 @@ fn main() -> ExitCode {
             }
             "--free" => free = true,
             "--drive" => driven = true,
+            "--hood" if i + 1 < args.len() => {
+                i += 1;
+                hood_path = Some(args[i].clone());
+            }
             "--lot" if i + 1 < args.len() => {
                 i += 1;
                 lot_index = atoi(&args[i]);
@@ -74,13 +79,19 @@ fn main() -> ExitCode {
         }
         i += 1;
     }
-    let start = match Start::read(&d, card_path.as_deref(), lot_index) {
+    let mut start = match Start::read(&d, card_path.as_deref(), lot_index) {
         Ok(s) => s,
         Err(e) => {
             println!("{e}");
             return ExitCode::from(1);
         }
     };
+    if let Some(p) = &hood_path
+        && let Err(e) = start.hood_from(p)
+    {
+        println!("{e}");
+        return ExitCode::from(1);
+    }
     let (the_lot, the_globals, neighbours, lot_globals, card_lot) = (start.lot(), start.globals(), &start.neighbours, &start.lot_globals, start.card_lot);
     if has("REPLAY_SHOW_LOT_CLOCKS") {
         // study: each lot's clock (globals 0, 5, 6: the hour, minute and second)

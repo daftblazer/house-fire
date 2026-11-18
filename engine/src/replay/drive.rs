@@ -332,19 +332,35 @@ impl Host for DriveHost<'_> {
                 let mut vars = ScriptVariables::new(&mut self.world, me, interp.top());
                 let got = random(n, &mut vars);
                 let (dscope, datum) = (n.operand[2], n.operand[0] as usize | (n.operand[1] as usize) << 8);
-                let given = self.front.map(|i| &self.log.steps[i]).filter(|s| s.node == interp.top().node).and_then(|s| match dscope {
-                    25 => s.locals_after.get(datum).copied(),
-                    9 => s.params_after.get(datum).copied(),
-                    _ => None,
+                let node = vars.frame.node;
+                let at = self.front.filter(|&i| self.log.steps[i].node == node);
+                let given = at.and_then(|i| {
+                    let s = &self.log.steps[i];
+                    match dscope {
+                        25 => s.locals_after.get(datum).copied(),
+                        9 => s.params_after.get(datum).copied(),
+                        // a temp or an attribute of mine (not in the step record): its first read
+                        // by this stack after the step, as `replay` takes it (primitives.md)
+                        8 | 0 => self.log.steps[i + 1..]
+                            .iter()
+                            .filter(|t| t.sim == s.sim)
+                            .take(64)
+                            .find_map(|t| t.lookups.iter().find(|v| v.scope as u8 == dscope && v.data as usize == datum && v.flags & 1 != 0).map(|v| v.value)),
+                        _ => None,
+                    }
                 });
                 if let Some(v) = given {
-                    let f = interp.top();
-                    let slot = if dscope == 25 { f.locals.get_mut(datum) } else { f.params.get_mut(datum) };
-                    if let Some(x) = slot {
-                        *x = v;
-                    }
-                    if dscope == 25 && datum < 64 {
-                        f.unset &= !(1u64 << datum);
+                    if matches!(dscope, 8 | 0) {
+                        vars.set(dscope, datum as i16, v);
+                    } else {
+                        let f = interp.top();
+                        let slot = if dscope == 25 { f.locals.get_mut(datum) } else { f.params.get_mut(datum) };
+                        if let Some(x) = slot {
+                            *x = v;
+                        }
+                        if dscope == 25 && datum < 64 {
+                            f.unset &= !(1u64 << datum);
+                        }
                     }
                 }
                 got
@@ -455,6 +471,15 @@ pub fn drive<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l Lo
         for o in host.world.objects() {
             let top = o.stack.last().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.params.clone()));
             println!("firsts: object {} person {} saved top {top:?} first step {:?}", o.id(), o.person, first.get(&o.id()));
+        }
+    }
+    if super::study::has("REPLAY_DRIVE_SHOW_PERSONS") {
+        // study: each person's data as loaded, and its neighbour's (data 31) where differing
+        for o in host.world.objects().filter(|o| o.person) {
+            let nid = o.person_data.get(crate::world::PERSON_NEIGHBOUR_ID).copied().unwrap_or(0);
+            let n = host.world.neighbours.iter().find(|n| n.id == nid);
+            let diff: Vec<(usize, i16, i16)> = n.map(|n| o.person_data.iter().zip(&n.person_data).enumerate().filter(|(_, (a, b))| a != b).map(|(i, (a, b))| (i, *a, *b)).collect()).unwrap_or_default();
+            println!("person {} neighbour {nid} ({:?}) data {:?}; differs from the neighbour's at {diff:?}", o.id(), n.map(|n| n.name.clone()), o.person_data);
         }
     }
     if let Some(v) = super::study::env("REPLAY_DRIVE_SHOW_LOG") {

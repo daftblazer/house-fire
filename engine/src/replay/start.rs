@@ -65,6 +65,20 @@ impl Start {
         Ok(Start { lots, lot_globals, neighbours, index, card_lot, house, goals: Goals { houses, met }, neighbourhood })
     }
 
+    /// The neighbourhood (its data, scope 34, and the neighbours) from another save, a memory card's: a disc lot (the
+    /// club, `--lot 15`) visited from that save's neighbourhood.
+    pub fn hood_from(&mut self, card: &str) -> Result<(), String> {
+        let mut bytes = std::fs::read(card).map_err(|e| format!("{card}: {e}"))?;
+        bytes.truncate(1 << 22);
+        let ngh = memory_card_file(&bytes, "G4ME69").unwrap_or_default();
+        if ngh.is_empty() {
+            return Err(format!("no Bustin' Out save on {card}"));
+        }
+        self.neighbourhood = read_neighbourhood_data(&ngh).map_err(|e| format!("the neighbourhood's data: {e:?}"))?;
+        self.neighbours = read_neighbours(&ngh).map_err(|e| format!("the neighbours: {e:?}"))?;
+        Ok(())
+    }
+
     pub fn lot(&self) -> &LotChunks {
         &self.lots[self.index]
     }
