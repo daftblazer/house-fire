@@ -1935,3 +1935,12 @@ housed family's motives are its lot's. It fits both logs (club 57 copied; home 1
 way, 237 and 197 not copied), lowers club's debt (778 -> 777, club 28443 -> 28442) and is on by
 default (REPLAY_NO_NEIGHBOUR_MOTIVES leaves it out). Club's driven run then parts at tick 2, 164's
 8193:2: person data 32 is 1 in the log, 0 natively (164 a visitor, neighbour 17).
+
+The visitors' mark (2026-11-18; the watch build on 164's person data 32, `work/watch.sh`): at the
+load `fn_801DF844` goes over the Sims and sets person data 32 (the store `fn_8022A30C`) to 1 where
+it was 0, and to 0 where a virtual test (manager +64, unread) passes. Native as
+`World::mark_visitors`: the test taken as "of the household": the player's family (house 0) and
+the lot's own (its house number, global 10): home's 237 (Mom, family of house 1) is 0 in the log
+at tick 186. Debt club-full 777 -> 769, club 28442 -> 28434, home unchanged
+(REPLAY_NO_VISITOR_MARK leaves it out). Club's driven run then parts at tick 2, 164's 281:2.
+Study REPLAY_SHOW_VAR_DIFFS=scopes prints each differing variable taken from the log.

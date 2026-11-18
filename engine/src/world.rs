@@ -96,6 +96,10 @@ pub const DATA_FLAGS: usize = 8;
 pub const PERSON_NEIGHBOUR_ID: usize = 31;
 /// Person data 65: 1 for a female Sim (set at the load from the description: `World::describe_persons`).
 pub const PERSON_FEMALE: usize = 65;
+/// Person data 32: 1 for a Sim not of the player's family (`World::mark_visitors`).
+pub const PERSON_VISITOR: usize = 32;
+/// Global 10: the lot's house number (16 the club, 1 the home save's).
+pub const GLOBAL_HOUSE: usize = 10;
 
 #[derive(Clone, Debug, Default)]
 pub struct Object {
@@ -276,6 +280,24 @@ impl<'lib> World<'lib> {
                 o.motives[i] = if i == 11 { 0.0 } else { a[i] };
                 o.motives_b[i] = if i == 11 { 0.0 } else { b[i] };
             }
+        }
+    }
+
+    /// The visitors' mark at the load (`fn_801DF844`, its store via 0x8022A30C): each Sim's
+    /// person data 32 becomes 1 where it was 0, and 0 for the household (the original's test is
+    /// a virtual call, unread; taken as the neighbours of the player's family, with no house, and
+    /// of the lot's own, its house number global 10: both logs agree, home's 237 of house 1).
+    pub fn mark_visitors(&mut self) {
+        let lot_house = self.globals.get(GLOBAL_HOUSE).map(|&h| h as i32);
+        let household: Vec<i16> = self.neighbours.iter().filter(|n| n.house == Some(0) || (n.house.is_some() && n.house == lot_house)).map(|n| n.id).collect();
+        for k in self.order().to_vec() {
+            let o = self.get_mut(k);
+            if !o.person || o.person_data.len() <= PERSON_VISITOR {
+                continue;
+            }
+            let nid = o.person_data.get(PERSON_NEIGHBOUR_ID).copied().unwrap_or(0);
+            let v = &mut o.person_data[PERSON_VISITOR];
+            *v = if nid != 0 && household.contains(&nid) { 0 } else if *v == 0 { 1 } else { *v };
         }
     }
 

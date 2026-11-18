@@ -91,6 +91,10 @@ pub(super) fn sync_variables(world: &mut World, counts: &mut Counts, shown: &mut
             continue;
         }
         note!(counts, "variables: scope {}: different (set to the log's)", v.scope);
+        if super::study::env("REPLAY_SHOW_VAR_DIFFS").is_some_and(|w| w.split(',').any(|x| super::study::atoi(x) == v.scope as i64)) {
+            // study: each differing variable of the listed scopes
+            println!("var diff: scope {} data {} native {} log {} tick {} stack object {}", v.scope, v.data, got.value, v.value, s.tick, vars.frame.stack_object);
+        }
         vars.set(v.scope as u8, v.data, v.value);
     }
 }
