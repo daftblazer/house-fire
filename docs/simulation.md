@@ -1918,4 +1918,14 @@ copies 16 floats from its object's +260 to the person's motives and 16 from +324
 yet; the floats are little-endian 20.0 read unswapped (the original's own byte-order slip, to keep:
 it is visible). Likely the neighbour's 128 NBRS bytes (`save::read_neighbours`, "to be named":
 32 floats). The watch: 0x80F794A4 (57's motive 5), the constructor's 0, the load's 100.0
-(0x8023090C), then 0x801DBD14's 0x0000A041.
+(0x8023090C), then 0x801DBD14's 0x0000A041. Read further: `fn_801DBAC0(manager, person)` finds the record by
+the person's key (`fn_801DB790`: the manager's +900..+904 vector, the record whose +8 is the key)
+and is the neighbour's: +0 its id, +100 its 80 person data, +260 and +324 the two motive sets,
++392 a version. Found: the person data of the fields whose table entry (`fn_801D9300`, count
+`fn_801D4F00`) is not newer than +392 are copied, but 58 and 65 (age, gender: set from the
+description); then the motives (both sets, motive 11 0.0) if the record's +4 is in either of two
+of the manager's lists (vcall +368 with 1 and 2; unread). `World::take_neighbour_motives` does the
+copy with no condition behind REPLAY_NEIGHBOUR_MOTIVES (a lead, not on): driven club then passes 57
+and parts at 164's person data 32 (1 in the log, 0 natively: the visitors' flag, set elsewhere);
+but the plain replays' debt rises (home-full 515 -> 523, club-full 778 -> 785), so the condition is
+needed first. NBRS's 128 bytes are these two sets (`Neighbour::motives`, `motives_b`).

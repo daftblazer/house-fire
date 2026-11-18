@@ -323,6 +323,9 @@ impl<'l> Replay<'l> {
         world.motives_run = card_lot || has("REPLAY_MOTIVES_RUN");
         world.neighbours = neighbours.to_vec();
         world.describe_persons();
+        if has("REPLAY_NEIGHBOUR_MOTIVES") {
+            world.take_neighbour_motives();
+        }
         world.goals = goals;
         world.neighbourhood = neighbourhood;
         if has("REPLAY_SHOW_RELS") {

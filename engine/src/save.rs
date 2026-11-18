@@ -401,6 +401,9 @@ pub struct Neighbour {
     pub relationships: Vec<NeighbourRelationship>,
     /// The character's description (its `User` chunk, by the GUID): female, if it has one.
     pub female: Option<bool>,
+    /// The neighbour's motives and their second set as saved (`read_neighbours`).
+    pub motives: Vec<f32>,
+    pub motives_b: Vec<f32>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -473,7 +476,15 @@ pub fn read_neighbours(file: &[u8]) -> Result<Vec<Neighbour>> {
             }
         }
         r.need(128)?;
-        r.p += 128; // to be named (floats among them)
+        // the motives and their second set, 16 floats each, as the original reads them: each
+        // word's bytes as they are stored, big-endian (the chunk is little-endian: the
+        // original's load does not swap them; `World::take_neighbour_motives`)
+        for k in 0..32 {
+            let at = r.p + 4 * k;
+            let v = f32::from_bits(u32::from_be_bytes([c[at], c[at + 1], c[at + 2], c[at + 3]]));
+            if k < 16 { n.motives.push(v) } else { n.motives_b.push(v) }
+        }
+        r.p += 128;
         n.id = r.i16()?;
         n.guid = r.i32()? as u32;
         r.i32()?;

@@ -257,6 +257,27 @@ impl<'lib> World<'lib> {
     /// Each person's person data 65, whether it is female, from its neighbour's description
     /// (`Neighbour::female`; the person's neighbour id is its data 31), as the original's load of
     /// a Sim sets it (`save::read_descriptions`). A person with no description keeps its own.
+    /// The original's copy of a neighbour's saved motives into its Sim at the load
+    /// (`fn_801DBAC0`, its loop at 0x801DBCFC): both sets of 16, motive 11 of each 0.0 (the
+    /// constant at 0x802C7B70), the floats as the original reads them (`Neighbour::motives`).
+    /// Done when the neighbour has them; the original's two conditions (0x801DBCA4) are not read
+    /// yet (a study: REPLAY_NEIGHBOUR_MOTIVES).
+    pub fn take_neighbour_motives(&mut self) {
+        let sets: Vec<(i16, Vec<f32>, Vec<f32>)> = self.neighbours.iter().filter(|n| n.motives.len() == 16 && n.motives_b.len() == 16).map(|n| (n.id, n.motives.clone(), n.motives_b.clone())).collect();
+        for k in self.order().to_vec() {
+            let o = self.get_mut(k);
+            if !o.person || o.motives.len() < 16 || o.motives_b.len() < 16 {
+                continue;
+            }
+            let Some(&nid) = o.person_data.get(PERSON_NEIGHBOUR_ID) else { continue };
+            let Some((_, a, b)) = sets.iter().find(|(id, _, _)| *id == nid && nid != 0) else { continue };
+            for i in 0..16 {
+                o.motives[i] = if i == 11 { 0.0 } else { a[i] };
+                o.motives_b[i] = if i == 11 { 0.0 } else { b[i] };
+            }
+        }
+    }
+
     pub fn describe_persons(&mut self) {
         let female: Vec<(i16, bool)> = self.neighbours.iter().filter_map(|n| n.female.map(|f| (n.id, f))).collect();
         for k in self.order().to_vec() {

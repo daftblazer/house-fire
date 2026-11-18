@@ -486,6 +486,10 @@ pub fn drive<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l Lo
         // study: a person's motives as loaded, and the log's 'N' records of it to tick 3
         if let Some(o) = host.world.find_object(id) {
             println!("motives loaded {id}: {:?} / b {:?}", o.motives, o.motives_b);
+            let nid = o.person_data.get(crate::world::PERSON_NEIGHBOUR_ID).copied().unwrap_or(0);
+            if let Some(n) = host.world.neighbours.iter().find(|n| n.id == nid) {
+                println!("motives neighbour {nid}: {:?} / b {:?}", n.motives.iter().map(|m| format!("{:08x}", m.to_bits())).collect::<Vec<_>>(), n.motives_b.iter().map(|m| format!("{:08x}", m.to_bits())).collect::<Vec<_>>());
+            }
         }
         for m in log.motives.iter().filter(|m| m.id == id && m.tick <= 3) {
             println!("motives log tick {} {id}: {:?}", m.tick, m.motives);
