@@ -16,6 +16,11 @@ pub trait SimHost<'lib>: Host {
     fn set_me(&mut self, me: ObjectKey);
     /// After each object's turn (for checks): the object, the steps it ran.
     fn on_turn(&mut self, _me: ObjectKey, _steps: u32) {}
+    /// An object's stack run for its turn, until it yields or stops: its steps (a host that
+    /// watches each step overrides this).
+    fn run_turn(&mut self, interp: &mut Interpreter) -> u32 {
+        interp.run(self, 1 << 20)
+    }
 }
 
 /// An object that has a stack, with its id.
@@ -311,7 +316,7 @@ impl Simulator {
             // a call that gives no parameters passes the object's temps as they are now (the
             // original's interpreter keeps a pointer to them, +44)
             interp.copy_defaults(&host.world().get(e.key).temps);
-            let steps = interp.run(host, 1 << 20);
+            let steps = host.run_turn(interp);
             end_turn(&self.rates, host.world(), e.key, motives_due, true);
             self.apply_wakes(host.world());
             host.on_turn(e.key, steps);

@@ -1849,3 +1849,45 @@ visitors' are (their person data 32 is 1), the player's Sim 57's is not (its 32 
 4117 on the dream controller is never delivered, and at 6593 its IdleForInput delivers the player's
 "go here", 4096 on the marker 181 the click made). `World::requeue_current_on_community_lot`.
 
+
+## The driven run (`replay --drive`, 2026-11-18)
+
+`replay LOG ISO [--card CARD | --lot N] --drive` (`engine/src/replay/drive.rs`): the engine decides
+what runs. The load pass first (below), then `Simulator::tick` each tick, through a host
+(`DriveHost`) whose primitives are the native ones (`crate::primitives`, as `ReplayHost`'s native
+arms) and whose `SimHost::run_turn` takes each step in turn and compares it, online, with the log's
+next step of that object in that tick: the node's tree and number, where it goes, whether it
+yields, the frame's parameters and locals after (a never-written local is not owed) and its stack
+object after. A primitive not native yet is answered neutrally (true, the frame as it is; a yield
+for Animate 44, GotoRelativePosition 27, GotoRoutingSlot 45), never from the log, and is named in
+the parting. The first difference stops the run and prints
+`drive: ticks the log's N of M` and `drive: first parting tick T object ID tree X node Y: ...`
+(the opcode and operand, both ways, the log's variable reads against the native ones for an
+expression, the last native steps).
+
+What the log supplies, as inputs the engine cannot compute: which ticks are paused (no pass); the
+player's commands (an interaction on another object queued before the Sim's IdleForInput, read as
+`Replay::step` does); a Dialog's answer and the number a Random drew (read from the log's step of
+the object at that node); and two things of the load that are not derived yet. (1) The load
+pass, the log's tick 0: the engine calls a function of each object (OBJf Load, entry 2, for most;
+RoomChanged, entry 7, for the lamps; the call, its object, its parameters and its stack object
+from the log's runs, the object found by the object address of the run's variable reads, a tree
+named from the stack object's file when the call has one), and everything inside is native and
+compared: this sets what the scripts' load leaves (attributes, person data, temps). (2) The sleeps
+the save lacks: a stack saved at an Idle sleeps until its first step in the log (ticks 1, 2, 90, ...
+whatever its count), none for ever if the log never runs it.
+
+Found on the way (native since): scope 23 datum 1 (the room by temp 0 is the outside, room 0: the
+doors' room-changed tree 8218 and 301, 12 reads); CallNamedTree gives the object's temps as the
+parameters it gives none of (the log's 4099 frame [1, 0, 0, 0]); `Simulator` runs a turn through
+`SimHost::run_turn` (the default is `Interpreter::run`).
+
+First partings (master 217163a plus this): **home-full: the whole load pass and tick 1 the log's
+(1 of 6869), parting at tick 2, object 251, tree 8266 node 0**: the engine pushes a tree over an
+object's Idle (the "engine frames over an Idle" of open.md item 1, 7 cases; 251's 8266 at tick 2,
+the counters' 8215 at 165 and 844): when and what the engine pushes is not derived. **club-full
+(`--lot 15`, no card): parting in the load, tick 0, object 14, tree 467 node 0**: the neighbourhood
+data (scope 34) datum 1 is 1 in the log, 0 natively: the disc's default neighbourhood has no such
+value, the session's save (`work/inputs/club-live`) has the club's; `--card` takes the card's lot
+list, not the disc's lot 15 with the card's neighbourhood, so a `--lot 15` run with the save's
+NGBH needs that option first. To run the club further, that is the next step.

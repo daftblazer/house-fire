@@ -1,7 +1,7 @@
 //! The club run natively, tick after tick, against a log of the recompiled Bustin' Out's
 //! interpreter (its `src/tree_log.cpp`, BUSTIN_TREE_LOG) and the disc it ran.
 //!
-//! Usage: replay LOG ISO [--card CARD] [--lot N] [--bench] [--free]
+//! Usage: replay LOG ISO [--card CARD] [--lot N] [--bench] [--free] [--drive]
 //!
 //! --card: the lot from a save on a memory card image (its first lot, Mom's house in the user's
 //! save, unless --lot says), not the disc's club; the neighbours are the save's too.
@@ -28,7 +28,7 @@
 
 use housefire::disc::Disc;
 use housefire::library::Library;
-use housefire::replay::{Bench, RunWith, Start, atoi, env, has, run};
+use housefire::replay::{Bench, RunWith, Start, atoi, drive, env, has, run};
 use housefire::save::read_lot_arrays;
 use housefire::tree_log::read_log;
 use std::process::ExitCode;
@@ -36,7 +36,7 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 3 {
-        println!("usage: replay LOG ISO [--card CARD] [--lot N] [--bench] [--free]");
+        println!("usage: replay LOG ISO [--card CARD] [--lot N] [--bench] [--free] [--drive]");
         return ExitCode::from(2);
     }
     let Some(log) = read_log(&args[1]) else {
@@ -50,6 +50,7 @@ fn main() -> ExitCode {
     let lib = Library::bustin_out(&d);
     let mut bench = false;
     let mut free = false;
+    let mut driven = false;
     let mut card_path: Option<String> = None;
     let mut lot_index: i64 = -1;
     let mut i = 3;
@@ -61,6 +62,7 @@ fn main() -> ExitCode {
                 card_path = Some(args[i].clone());
             }
             "--free" => free = true,
+            "--drive" => driven = true,
             "--lot" if i + 1 < args.len() => {
                 i += 1;
                 lot_index = atoi(&args[i]);
@@ -105,6 +107,15 @@ fn main() -> ExitCode {
             }
             Err(e) => println!("lot arrays: error {e:?}"),
         }
+    }
+    if driven {
+        let with = RunWith { card_lot, goals: start.goals.clone(), neighbourhood: start.neighbourhood.clone(), cat: (!log.tracks.is_empty()).then(|| housefire::anim::Catalog::read(&d, house_number)) };
+        let Some(r) = drive(&log, &lib, (the_lot, house), the_globals, neighbours, with) else { return ExitCode::from(1) };
+        println!("drive: ticks the log's {} of {}", r.same, r.of);
+        if let Some(p) = r.parting {
+            println!("drive: first parting tick {} object {} tree {} node {}: {}", p.tick, p.object, p.tree, p.node, p.text);
+        }
+        return ExitCode::SUCCESS;
     }
     if !bench {
         let Some((counts, _)) = run(&log, &lib, (the_lot, house), the_globals, neighbours, None, RunWith { card_lot, goals: start.goals.clone(), neighbourhood: start.neighbourhood.clone(), cat: (!log.tracks.is_empty()).then(|| housefire::anim::Catalog::read(&d, house_number)) }) else { return ExitCode::from(1) };

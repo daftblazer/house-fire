@@ -38,6 +38,7 @@ pub mod scope {
     pub const STACK_RELATIONSHIP: u8 = 41;
     pub const STACK_DEFINITION: u8 = 21;
     pub const STACK_ATTRIBUTE_BY_PARAMETER: u8 = 22;
+    pub const ROOM_BY_TEMP0: u8 = 23;
     pub const NEIGHBOUR_IN_STACK_OBJECT: u8 = 24;
     pub const NEIGHBOUR_DATA_OF_STACK_OBJECT: u8 = 32;
     pub const LOCAL: u8 = 25;
@@ -877,6 +878,18 @@ impl Variables for ScriptVariables<'_, '_> {
         let int = |value| Some(Variable { value, f: None });
         match scope {
             scope::LITERAL => return int(d),
+            scope::ROOM_BY_TEMP0 => {
+                // A room's datum d, the room my temp 0 names (the PC game's "Room by temp 0").
+                // Datum 1 is whether it is the outside, room 0: the 12 reads of the home log
+                // (tree 301 node 1, the doors' room-changed tree 8218 and the newspaper), where
+                // temp 0 is the stack object's room (data 29): 1 for room 0, 0 for rooms 1 to 3.
+                // The other data are not read by any script of the logs: not modelled.
+                if d != 1 {
+                    return None;
+                }
+                let room = *self.world.get(self.me).temps.first()?;
+                return int(i16::from(room == 0));
+            }
             scope::NEIGHBOUR_IN_STACK_OBJECT => {
                 // The stack object holds a neighbour id; field 0 is the id of the person on the
                 // lot with that neighbour id (person data 31), 0 if none is here. Measured: all

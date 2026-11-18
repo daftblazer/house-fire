@@ -77,6 +77,7 @@ macro_rules! note {
 mod animate;
 mod clock;
 mod counts;
+mod drive;
 mod evaluation;
 mod finder;
 mod finish;
@@ -91,6 +92,7 @@ mod variables;
 mod walks;
 
 pub use counts::{Bench, Counts};
+pub use drive::{DriveReport, Parting, drive};
 pub use run::{Replay, run};
 pub use start::{RunWith, Start};
 pub use study::{atoi, env, has, switches};

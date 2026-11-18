@@ -699,7 +699,9 @@ pub fn call_named_tree(interp: &mut Interpreter, n: &Node, world: &World) -> Pri
     for where_ in [so_file, so_file.and_then(|s| lib.file(s).semi), lib.global()].into_iter().flatten() {
         let wf = lib.file(where_);
         let Some(t) = wf.tree_by_name.get(name).and_then(|id| wf.trees.get(id)).copied() else { continue };
-        if !interp.push(lib, t, &[]) {
+        // (it gives no parameters: the interpreter's own, the object's temps, as a call with none does)
+        let defaults = interp.defaults().to_vec();
+        if !interp.push(lib, t, &defaults) {
             return PrimResult::Stop;
         }
         interp.top().file = Some(where_);

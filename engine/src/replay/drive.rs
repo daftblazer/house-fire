@@ -1,0 +1,700 @@
+//! The driven run (`replay --drive`): the engine decides what runs, the log is only the input
+//! the engine cannot compute and the answer key.
+//!
+//! `Simulator::tick` runs every object's stack natively, each tick, through `DriveHost`, whose
+//! primitives are the engine's own (the ones `ReplayHost` takes natively too, `crate::primitives`).
+//! Where a primitive is not native yet, the host takes a documented neutral answer (`True`, the
+//! frame unchanged), never the log's value, and the parting shows it.
+//!
+//! What is read from the log (the inputs the engine cannot compute, docs/plan.md "Built for
+//! multiplayer"): which ticks are paused ones (no pass), the player's commands to a Sim (an
+//! interaction on another object queued before the tick), a dialog's answer and the number a
+//! Random drew (read from the log's step of the object at that node, only while the run agrees
+//! with the log up to it).
+//!
+//! The answer key: each native step (the node's tree and number, where it goes, its result, the
+//! frame's parameters and locals after it, its stack object) is compared online with the log's
+//! next step of that object in that tick; the first difference is the parting and the run stops.
+
+use std::collections::{BTreeMap, VecDeque};
+use std::rc::Rc;
+
+use crate::bhav::Node;
+use crate::interp::{Error, Host, Interpreter, Mode, PrimResult, Step, Trees};
+use crate::library::Library;
+use crate::primitives::{
+    balloon_or_string, call_named_tree, change_suit, complete_goal, create_object, dialog, direction_to, distance_to, drop_onto, grab, idle, idle_for_input,
+    idle_for_input_waiting, may_sleep, notify_stack_object, present, push_action, random, relationship, relationship_old, remove_object, run_functional_tree, set_motive_delta,
+    set_to_next, snap, test_object_type,
+};
+use crate::expression::{ExpressionOperand, Variables, expression};
+use crate::save::{LotChunks, Neighbour};
+use crate::simulator::{SimHost, Simulator};
+use crate::tree_log::{Log, StepRec};
+use crate::world::{ObjectKey, ScriptVariables, World};
+use crate::{FileId, TreeId};
+use super::run::Replay;
+use super::start::RunWith;
+
+/// What a driven run found.
+pub struct DriveReport {
+    /// The ticks of the log the run was the log's on, from tick 1.
+    pub same: u32,
+    /// The log's ticks.
+    pub of: u32,
+    pub parting: Option<Parting>,
+}
+
+/// The first step the native run and the log differ at.
+pub struct Parting {
+    pub tick: u32,
+    pub object: i16,
+    pub tree: i32,
+    pub node: u16,
+    pub text: String,
+}
+
+/// A native step, as the log records a step of its own kind.
+struct Native {
+    tree: i32,
+    node: u16,
+    after: u16,
+    /// The node's opcode and operand.
+    op: i32,
+    operand: [u8; 8],
+    /// 1: the node yielded.
+    yielded: bool,
+    params: Vec<i16>,
+    locals: Vec<i16>,
+    unset: u64,
+    stack_object: i16,
+    /// The stack object and the parameters before the step.
+    so_before: i16,
+    params_before: Vec<i16>,
+}
+
+/// The host a driven run's scripts run with.
+struct DriveHost<'l> {
+    lib: &'l Library,
+    world: World<'l>,
+    log: Rc<Log>,
+    me: ObjectKey,
+    file_of_top: Option<FileId>,
+    tick: u32,
+    /// The log's steps of each object this tick still to be matched, by object id.
+    expected: BTreeMap<i16, VecDeque<usize>>,
+    /// The log's step the native step now being taken should match (the inputs read from it).
+    front: Option<usize>,
+    parting: Option<Parting>,
+    /// A turn asked the pass to stop (a dialog waiting).
+    stopped: bool,
+    /// The last native steps (tree:node, opcode, where it went), for the parting.
+    trail: VecDeque<String>,
+    /// The last expression's reads, natively: (scope, datum, value) of its two sides.
+    last_expr: [(u8, i16, Option<i16>); 2],
+    /// Primitives answered with the neutral default, by opcode (printed with the parting).
+    neutral: BTreeMap<u16, u32>,
+}
+
+impl Trees for DriveHost<'_> {
+    fn tree_at(&self, t: TreeId) -> &crate::bhav::Tree {
+        self.lib.tree_at(t)
+    }
+}
+
+impl<'l> SimHost<'l> for DriveHost<'l> {
+    fn world(&mut self) -> &mut World<'l> {
+        &mut self.world
+    }
+    fn set_me(&mut self, me: ObjectKey) {
+        self.me = me;
+    }
+
+    /// The turn, a step at a time, each compared with the log's. A Sim that spent money shows it
+    /// when its turn ends: the engine's "display money balloon" over the yielding frame, run in
+    /// the same turn (docs/simulation.md, "The money balloon").
+    fn run_turn(&mut self, interp: &mut Interpreter) -> u32 {
+        let mut steps = 0;
+        let me = self.me;
+        loop {
+            if self.parting.is_some() {
+                break;
+            }
+            let r = self.step_checked(interp);
+            steps += 1;
+            match r {
+                Step::Go => {}
+                Step::Yield => {
+                    if self.world.get_live(me).is_some_and(|o| o.spent)
+                        && std::mem::take(&mut self.world.get_mut(me).spent)
+                        && let Some(t) = self.world.money_balloon_tree(me)
+                        && interp.push(self.lib, t, &[])
+                    {
+                        let f = interp.top();
+                        f.engine = true;
+                        f.stack_object = 0;
+                        f.file = self.world.get(me).file;
+                        continue;
+                    }
+                    break;
+                }
+                Step::Stop => break,
+            }
+        }
+        self.stopped |= self.world.stop_pass;
+        if self.parting.is_none() {
+            let id = self.world.get_live(me).map(|o| o.id());
+            if let Some(id) = id
+                && let Some(&i) = self.expected.get(&id).and_then(|q| q.front())
+            {
+                let s = &self.log.steps[i];
+                let text = format!("the native turn ended (yield or stop) with {} of the log's steps left", self.expected[&id].len());
+                self.part(id, s.tree as i32, s.node, text);
+            }
+        }
+        steps
+    }
+}
+
+impl DriveHost<'_> {
+    fn part(&mut self, object: i16, tree: i32, node: u16, text: String) {
+        if self.parting.is_none() {
+            self.parting = Some(Parting { tick: self.tick, object, tree, node, text });
+        }
+    }
+
+    fn me_id(&self) -> i16 {
+        self.world.get(self.me).id()
+    }
+
+    /// One native step of `interp` (the object's stack or one of its checks), compared with the
+    /// log's next step of the object.
+    fn step_checked(&mut self, interp: &mut Interpreter) -> Step {
+        let lib = self.lib;
+        let id = self.me_id();
+        let depth = interp.stack().len();
+        let top = interp.stack().last();
+        let (tree, node, file) = top.map_or((-1, 0, None), |f| (f.tree.map_or(-1, |t| lib.tree_at(t).id as i32), f.node, f.file));
+        self.front = self.expected.get(&id).and_then(|q| q.front()).copied();
+        self.file_of_top = file;
+        let op = top.and_then(|f| f.tree.and_then(|t| lib.tree_at(t).nodes.get(f.node as usize))).map_or(-1, |x| x.opcode as i32);
+        let operand = top.and_then(|f| f.tree.and_then(|t| lib.tree_at(t).nodes.get(f.node as usize))).map_or([0; 8], |x| x.operand);
+        let before = top.map(|f| (f.params.clone(), f.locals.clone(), f.unset, f.stack_object));
+        let r = interp.step(self);
+        let after = interp.stack().get(depth.wrapping_sub(1)).map(|f| (f.node, f.params.clone(), f.locals.clone(), f.unset, f.stack_object));
+        // (a frame that returned: its node, parameters and locals as it left them)
+        let so_before = before.as_ref().map_or(0, |b| b.3);
+        let params_before = before.as_ref().map(|b| b.0.clone()).unwrap_or_default();
+        let (anode, params, locals, unset, so) = match (after, before) {
+            (Some(a), _) => a,
+            (None, Some(b)) => (node, b.0, b.1, b.2, b.3),
+            _ => (node, vec![], vec![], 0, 0),
+        };
+        let n = Native { tree, node, after: anode, op, operand, yielded: r == Step::Yield, params, locals, unset, stack_object: so, so_before, params_before };
+        if self.trail.len() >= 6 {
+            self.trail.pop_front();
+        }
+        self.trail.push_back(format!("{}:{} op {} -> {}", n.tree, n.node, n.op, n.after));
+        self.compare(id, &n, r);
+        r
+    }
+
+    fn compare(&mut self, id: i16, n: &Native, r: Step) {
+        if self.parting.is_some() {
+            return;
+        }
+        let Some(i) = self.expected.get_mut(&id).and_then(|q| q.pop_front()) else {
+            let text = format!("native step {}:{} -> {} ({r:?}), the log has no more steps of it this tick", n.tree, n.node, n.after);
+            self.part(id, n.tree, n.node, text);
+            return;
+        };
+        let s: &StepRec = &self.log.steps[i];
+        let mut diffs: Vec<String> = Vec::new();
+        if n.tree != s.tree as i32 || n.node != s.node {
+            diffs.push(format!("step: native {}:{}, log {}:{}", n.tree, n.node, s.tree, s.node));
+        } else {
+            if n.after != s.after {
+                diffs.push(format!("goes to: native {}, log {}", n.after, s.after));
+            }
+            if n.yielded != (s.result != 0) {
+                diffs.push(format!("result: native {}, log {}", if n.yielded { "yield" } else { "no yield" }, s.result));
+            }
+            if n.params != s.params_after {
+                diffs.push(format!("params after: native {:?}, log {:?}", n.params, s.params_after));
+            }
+            // (a local never written is zero here and whatever the stack's memory held in the
+            // original: not owed, docs/interpreter.md "Locals are not cleared")
+            let locals_same = n.locals.len() == s.locals_after.len() && n.locals.iter().zip(&s.locals_after).enumerate().all(|(k, (a, b))| a == b || (k < 64 && n.unset >> k & 1 != 0));
+            if !locals_same {
+                diffs.push(format!("locals after: native {:?}, log {:?}", n.locals, s.locals_after));
+            }
+            if n.stack_object != s.stack_object_after {
+                diffs.push(format!("stack object after: native {}, log {}", n.stack_object, s.stack_object_after));
+            }
+        }
+        if diffs.is_empty() {
+            return;
+        }
+        let op = n.op;
+        let expr = if op == 2 { format!(" native reads (scope/datum=value) {:?}", self.last_expr) } else { String::new() };
+        let neutral: Vec<_> = self.neutral.iter().map(|(o, c)| format!("{o}x{c}")).collect();
+        let reads: Vec<String> = s.lookups.iter().map(|v| format!("{}/{}={} fl{} obj{:x} off{:#x}", v.scope, v.data, v.value, v.flags, v.object, v.ptr.wrapping_sub(v.object) as i32)).collect();
+        let sos = format!("stack object before: native {}, log {}; params before: native {:?}, log {:?};", n.so_before, s.stack_object, n.params_before, s.params);
+        let text = format!("opcode {op} {sos} operand {:02x?}: {}; the log's reads {reads:?};{expr} log step {i}, tick {}; native trail {:?}; neutral answers so far (opcode x count): {}", n.operand, diffs.join("; "), s.tick, self.trail, neutral.join(" "));
+        self.part(id, s.tree as i32, s.node, text);
+    }
+
+    /// The log's step the native step now taken is, if it is the one at the node.
+    fn log_step_here(&self, n: &Node, interp: &mut Interpreter) -> Option<&StepRec> {
+        let s = &self.log.steps[self.front?];
+        let f = interp.top();
+        let here = f.tree.map(|t| (self.lib.tree_at(t).id as u16, f.node));
+        let _ = n;
+        (here == Some((s.tree, s.node))).then_some(s)
+    }
+
+    /// A primitive the engine cannot answer yet, the frame as it is (named in the parting):
+    /// an animation or a walk (Animate 44, GotoRelativePosition 27, GotoRoutingSlot 45) is still
+    /// going on, a yield; any other is true.
+    fn neutral(&mut self, n: &Node) -> PrimResult {
+        *self.neutral.entry(n.opcode).or_default() += 1;
+        match n.opcode {
+            44 | 27 | 45 => PrimResult::Yield,
+            _ => PrimResult::True,
+        }
+    }
+}
+
+impl Host for DriveHost<'_> {
+    fn tree(&mut self, id: u16) -> Option<TreeId> {
+        let f = self.file_of_top.or(self.world.get(self.me).file);
+        self.lib.tree(f, id)
+    }
+
+    fn ad_range_mut(&mut self) -> Option<&mut Vec<i16>> {
+        Some(&mut self.world.ad_range)
+    }
+
+    fn default_params(&mut self) -> Option<[i16; 8]> {
+        Some(self.world.get(self.me).temps)
+    }
+
+    /// A check tree the engine runs, stepped natively and compared with the log's steps of it
+    /// like any other.
+    fn run_check(&mut self, t: TreeId, file: Option<FileId>, stack_object: i16, defaults: &[i16]) -> Option<bool> {
+        if let Some(v) = self.world.get_mut(self.me).data.get_mut(crate::world::DATA_HIDE_INTERACTION) {
+            *v = 0;
+        }
+        let mut chk = Interpreter::new(Mode::Check, 10000);
+        chk.set_defaults(defaults.to_vec());
+        // (a check tree starts with parameter 0 = 1)
+        chk.start(self.lib, Some(t), &[1], file);
+        if chk.done() {
+            return None;
+        }
+        chk.top().stack_object = stack_object;
+        let outer = self.file_of_top;
+        while !chk.done() && self.parting.is_none() {
+            chk.reset_iterations();
+            self.step_checked(&mut chk);
+        }
+        self.file_of_top = outer;
+        (chk.done() && chk.error() == Error::None && self.parting.is_none()).then(|| chk.result())
+    }
+
+    fn primitive(&mut self, interp: &mut Interpreter, n: &Node) -> PrimResult {
+        let lib = self.lib;
+        let me = self.me;
+        let me_id = self.me_id();
+        let person = self.world.get(me).person;
+        match n.opcode {
+            // Idle
+            0 => {
+                let may = may_sleep(self.world.get(me), false);
+                let (sleep, f) = interp.sleep_and_top();
+                idle(sleep, f, n, may)
+            }
+            // the expression, SetToNext
+            2 => {
+                let e = ExpressionOperand::of(n);
+                if (e.lhs_scope == 23 || e.rhs_scope == 23) && super::study::has("REPLAY_DRIVE_SHOW_ROOM") {
+                    let at = |id: i16| self.world.find_object(id).map(|o| (id, o.x16 >> 4, o.y16 >> 4, o.level, self.world.walls.room(o.x16 >> 4, o.y16 >> 4), o.file.map(|f| self.lib.file(f).path.rsplit('/').next().unwrap_or("").to_string())));
+                    println!("room read: me {:?} temps {:?}; so {:?}; rooms {}", at(me_id), self.world.get(me).temps, at(interp.top().stack_object), self.world.walls.rooms());
+                }
+                let mut vars = ScriptVariables::new(&mut self.world, me, interp.top());
+                self.last_expr = [(e.lhs_scope, e.lhs_data, vars.get(e.lhs_scope, e.lhs_data).map(|v| v.value)), (e.rhs_scope, e.rhs_data, vars.get(e.rhs_scope, e.rhs_data).map(|v| v.value))];
+                expression(&e, &mut vars).result
+            }
+            31 => set_to_next(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())),
+            // Random: the engine's own draw; the original's number is the input, read from its
+            // step where it is in a parameter or a local
+            8 => {
+                let mut vars = ScriptVariables::new(&mut self.world, me, interp.top());
+                let got = random(n, &mut vars);
+                let (dscope, datum) = (n.operand[2], n.operand[0] as usize | (n.operand[1] as usize) << 8);
+                let given = self.front.map(|i| &self.log.steps[i]).filter(|s| s.node == interp.top().node).and_then(|s| match dscope {
+                    25 => s.locals_after.get(datum).copied(),
+                    9 => s.params_after.get(datum).copied(),
+                    _ => None,
+                });
+                if let Some(v) = given {
+                    let f = interp.top();
+                    let slot = if dscope == 25 { f.locals.get_mut(datum) } else { f.params.get_mut(datum) };
+                    if let Some(x) = slot {
+                        *x = v;
+                    }
+                    if dscope == 25 && datum < 64 {
+                        f.unset &= !(1u64 << datum);
+                    }
+                }
+                got
+            }
+            // RunFunctionalTree, PushAction
+            20 => run_functional_tree(interp, self, n),
+            13 => push_action(interp, self, n),
+            29 => set_motive_delta(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())).unwrap_or_else(|| self.neutral(n)),
+            49 => notify_stack_object(&mut ScriptVariables::new(&mut self.world, me, interp.top())),
+            11 => distance_to(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())),
+            12 => direction_to(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())),
+            24 => relationship_old(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())),
+            26 => relationship(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())),
+            56 => complete_goal(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())).unwrap_or_else(|| self.neutral(n)),
+            32 => test_object_type(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())),
+            // IdleForInput: a Sim waits, or delivers what is queued for it
+            17 if person && (self.world.get(me).queue.is_empty() || n.operand16(1) == 0) => idle_for_input_waiting(n, interp.top()),
+            17 if person => idle_for_input(interp, self, me),
+            // Dialog: the player's answer is the input (the log's, where its step is this one);
+            // 1 a wait the pass goes on after, 2 a wait that stops it
+            36 => {
+                let s = self.log_step_here(n, interp).map(|s| (s.result, s.after == n.true_target as u16));
+                if let Some((0, yes)) = s {
+                    self.world.dialog_answer = Some(yes);
+                }
+                let stop_before = self.world.stop_pass;
+                let got = dialog(n, &mut self.world, me_id);
+                if matches!(s, Some((1, _))) {
+                    self.world.stop_pass = stop_before;
+                }
+                self.world.presentation.clear();
+                got
+            }
+            18 => {
+                let so = interp.top().stack_object;
+                remove_object(n, &mut self.world, me_id, so);
+                PrimResult::True
+            }
+            42 => {
+                let so = interp.top().stack_object;
+                let made = create_object(n, &mut self.world, me_id, so).map(|k| self.world.get(k).id());
+                if let Some(id) = made {
+                    interp.top().stack_object = id;
+                }
+                PrimResult::True
+            }
+            4 | 43 | 46 => {
+                let so = interp.top().stack_object;
+                match n.opcode {
+                    4 => grab(&mut self.world, me_id, so).is_some(),
+                    43 => drop_onto(&mut self.world, me_id, so).is_some(),
+                    _ => snap(n, &mut self.world, me_id, so).is_some(),
+                };
+                PrimResult::True
+            }
+            6 | 41 | 50 => {
+                let so = interp.top().stack_object;
+                let got = if n.opcode == 6 { change_suit(n, &mut self.world, me_id) } else { Some(balloon_or_string(n, &mut self.world, me_id, so)) };
+                self.world.presentation.clear();
+                got.unwrap_or_else(|| self.neutral(n))
+            }
+            23 | 7 | 48 => {
+                let got = present(n, &mut self.world, me_id);
+                self.world.presentation.clear();
+                got
+            }
+            28 => {
+                // (the object's temps as they are now are the parameters it gives none of)
+                interp.copy_defaults(&self.world.get(me).temps);
+                call_named_tree(interp, n, &self.world)
+            }
+            _ => {
+                let _ = lib;
+                self.neutral(n)
+            }
+        }
+    }
+}
+
+/// The run driven by the engine over the log's inputs, to its end or the first parting. With
+/// `on`, the run goes on past the parting (the later steps are then not compared).
+pub fn drive<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l LotChunks>), globals: &[i16], neighbours: &[Neighbour], with: RunWith) -> Option<DriveReport> {
+    let rep = Replay::new(log, lib, lot, globals, neighbours, None, with)?;
+    let Replay { log, h, ids, by_tick, engine_run, have_passes, mut sim, mut finder, .. } = rep;
+    let ticks = log.ticks;
+    let mut host = DriveHost {
+        lib,
+        world: h.world,
+        log: Rc::clone(&log),
+        me: ObjectKey(0),
+        file_of_top: None,
+        tick: 0,
+        expected: BTreeMap::new(),
+        front: None,
+        parting: None,
+        stopped: false,
+        last_expr: [(0, 0, None); 2],
+        trail: VecDeque::new(),
+        neutral: BTreeMap::new(),
+    };
+    if super::study::has("REPLAY_DRIVE_SHOW_FIRSTS") {
+        let mut first: BTreeMap<i16, (u32, u16, u16)> = BTreeMap::new();
+        for s in &log.steps {
+            if let Some(&id) = ids.get(&s.sim) {
+                first.entry(id).or_insert((s.tick, s.tree, s.node));
+            }
+        }
+        for o in host.world.objects() {
+            let top = o.stack.last().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.params.clone()));
+            println!("firsts: object {} person {} saved top {top:?} first step {:?}", o.id(), o.person, first.get(&o.id()));
+        }
+    }
+    if let Some(v) = super::study::env("REPLAY_DRIVE_SHOW_LOG") {
+        // study: the log's steps of one object in a tick range, "id:from:to"
+        let p: Vec<i64> = v.split(':').map(super::study::atoi).collect();
+        for (k, s) in log.steps.iter().enumerate() {
+            if ids.get(&s.sim).is_some_and(|&id| id as i64 == p[0]) && (p[1]..=p[2]).contains(&(s.tick as i64)) {
+                println!("log {k}: tick {} {}:{} -> {} look {} res {} frame {:x} so {} params {:?}->{:?} in_pass {} expr {:?}", s.tick, s.tree, s.node, s.after, if s.look != 0 { s.look as char } else { '-' }, s.result, s.frame & 0xFFFF, s.stack_object, s.params, s.params_after, s.in_pass, s.expr.as_ref().map(|e| (e.lhs_scope, e.lhs_data, e.lhs, e.lhs_after, e.rhs_scope, e.rhs_data, e.rhs, e.op)));
+            }
+        }
+    }
+    if super::study::has("REPLAY_DRIVE_SHOW_TICK0") {
+        // study: the log's tick-0 steps (the load's), a line each time the stack changes
+        let mut last = None;
+        let mut n = 0;
+        for s in log.steps.iter().filter(|s| s.tick == 0) {
+            if last != Some(s.sim) {
+                if let Some(l) = last {
+                    println!("  ({n} steps)");
+                    let _ = l;
+                }
+                n = 0;
+                last = Some(s.sim);
+                let entry = ids.get(&s.sim).and_then(|&id| host.world.find_object(id)).and_then(|o| o.file).and_then(|f| lib.file(f).functions.values().next()).and_then(|t| t.iter().position(|e| e.1 == s.tree));
+                println!("tick 0: stack {:?} first {}:{} in_pass {} frame {:x} function entry {entry:?}", ids.get(&s.sim), s.tree, s.node, s.in_pass, s.frame & 0xFFFF);
+            }
+            n += 1;
+        }
+    }
+    if let Some(v) = super::study::env("REPLAY_DRIVE_SHOW_LOOKUPS") {
+        // study: the log's reads of one variable, "scope:datum:count"
+        let p: Vec<i64> = v.split(':').map(super::study::atoi).collect();
+        let mut shown = 0;
+        for (si, s) in log.steps.iter().enumerate() {
+            for l in s.lookups.iter().filter(|l| l.scope as i64 == p[0] && l.data as i64 == p[1]) {
+                if shown < p[2] {
+                    shown += 1;
+                    if super::study::has("REPLAY_DRIVE_SHOW_BEFORE") {
+                        for b in log.steps[..si].iter().rev().filter(|b| b.sim == s.sim).take(8).collect::<Vec<_>>().into_iter().rev() {
+                            println!("   before: {}:{} -> {} reads {:?}", b.tree, b.node, b.after, b.lookups.iter().map(|v| (v.scope, v.data, v.value)).collect::<Vec<_>>());
+                        }
+                    }
+                    let at = |id: i16| host.world.find_object(id).map(|o| (id, o.x16 >> 4, o.y16 >> 4, o.level, host.world.walls.room(o.x16 >> 4, o.y16 >> 4), o.file.map(|f| lib.file(f).path.rsplit('/').next().unwrap_or("").to_string())));
+                    println!("read: tick {} {}:{} me {:?} so {} value {} flags {}; me {:?}; so {:?}", s.tick, s.tree, s.node, ids.get(&s.sim), s.stack_object, l.value, l.flags, ids.get(&s.sim).and_then(|&i| at(i)), at(s.stack_object));
+                }
+            }
+        }
+        for o in host.world.objects().filter(|o| o.person) {
+            println!("person {}: data[{}] {:?}", o.id(), p[1], o.person_data.get(p[1] as usize));
+        }
+    }
+    // The load: what the engine calls on every object before the first tick (the log's tick 0).
+    host.tick = 0;
+    load_init(&mut host, &log, &ids, &mut finder);
+    if host.parting.is_none()
+        && let Some((&id, q)) = host.expected.iter().find(|(_, q)| !q.is_empty())
+    {
+        let s = &log.steps[q[0]];
+        let text = format!("the load's native init did not run it; {} log steps", q.len());
+        host.part(id, s.tree as i32, s.node, text);
+    }
+    if host.parting.is_some() {
+        return Some(DriveReport { same: 0, of: ticks, parting: host.parting });
+    }
+    load_sleeps(&mut host, &mut sim, &log, &ids, &engine_run);
+    let mut same = 0;
+    for t in 1..=ticks {
+        host.tick = t;
+        // A tick without a pass is a paused one: nothing runs and the clock does not move.
+        if have_passes && !log.passes.contains_key(&t) {
+            same = t;
+            continue;
+        }
+        host.expected.clear();
+        for &i in &by_tick[t as usize] {
+            if engine_run[i] {
+                continue;
+            }
+            let Some(&id) = ids.get(&log.steps[i].sim) else { continue };
+            if host.world.find(id).is_some() {
+                host.expected.entry(id).or_default().push_back(i);
+            }
+        }
+        if let Some(id) = super::study::env("REPLAY_DRIVE_TEMPS").map(|v| super::study::atoi(&v) as i16)
+            && let Some(o) = host.world.find_object(id)
+        {
+            println!("tick {t} start: object {id} temps {:?}", o.temps);
+        }
+        player_commands(&mut host, &mut sim, &log, t);
+        host.stopped = false;
+        host.world.stop_pass = false;
+        host.neutral.clear();
+        sim.tick(&mut host);
+        if host.parting.is_none()
+            && let Some((&id, q)) = host.expected.iter().find(|(_, q)| !q.is_empty())
+        {
+            let s = &log.steps[q[0]];
+            let text = format!("the native turn did not run it (asleep, done or not reached); {} log steps", q.len());
+            host.part(id, s.tree as i32, s.node, text);
+        }
+        if host.parting.is_some() {
+            break;
+        }
+        host.world.clock_pass(host.stopped);
+        same = t;
+    }
+    Some(DriveReport { same, of: ticks, parting: host.parting })
+}
+
+/// The player's command (input the log does not record as such): a Sim waiting at its
+/// IdleForInput with nothing queued, whose log runs the checks of an interaction on another
+/// object and then, from 281 node 4, that interaction's tree a frame up: the interaction is
+/// queued as the player's, for the native IdleForInput to deliver with its checks (the same
+/// reading as `Replay::step`'s).
+fn player_commands(host: &mut DriveHost, sim: &mut Simulator, log: &Log, t: u32) {
+    let ids: Vec<i16> = host.expected.keys().copied().collect();
+    for id in ids {
+        let Some(w) = host.world.find(id).filter(|&w| host.world.get(w).person && host.world.get(w).queue.is_empty()) else { continue };
+        let q = &host.expected[&id];
+        let Some(&i) = q.front() else { continue };
+        let s = &log.steps[i];
+        if s.node != 0 || s.stack_object == id {
+            continue;
+        }
+        let win = sim.stack_of(&host.world, w);
+        let lib = host.lib;
+        let at_idle = !win.done() && win.stack().last().and_then(|f| f.tree.and_then(|t| lib.tree_at(t).nodes.get(f.node as usize))).is_some_and(|n| n.opcode == 17);
+        if !at_idle {
+            continue;
+        }
+        let idle = q.iter().copied().find(|&j| j > i && log.steps[j].tree == 281 && log.steps[j].node == 4);
+        let action = idle.and_then(|k| q.iter().copied().find(|&j| j > k)).map(|j| &log.steps[j]).filter(|x| x.node == 0 && idle.is_some_and(|k| x.frame > log.steps[k].frame));
+        if let Some(a) = action
+            && a.stack_object == s.stack_object
+        {
+            host.world.queue_player_command(w, a.stack_object, a.tree);
+        }
+    }
+    let _ = t;
+}
+
+/// The sleeps the save lacks (docs/simulation.md, "A saved stack asleep at its Idle"): a stack
+/// saved at an Idle was asleep there, for how long the save does not say (the log's first runs
+/// of such stacks are at ticks 1, 2, 90, 1744, ... whatever their count). That is a load input
+/// the engine cannot compute yet: each such stack is asleep until the tick of its first step in
+/// the log's passes, none for ever if the log never runs it.
+fn load_sleeps(host: &mut DriveHost, sim: &mut Simulator, log: &Log, ids: &BTreeMap<u32, i16>, engine_run: &[bool]) {
+    let mut first: BTreeMap<i16, u32> = BTreeMap::new();
+    for (i, s) in log.steps.iter().enumerate() {
+        if s.tick >= 1
+            && !engine_run[i]
+            && let Some(&id) = ids.get(&s.sim)
+        {
+            first.entry(id).or_insert(s.tick);
+        }
+    }
+    let lib = host.lib;
+    let keys: Vec<ObjectKey> = host.world.objects().map(|o| host.world.find(o.id()).unwrap()).collect();
+    for k in keys {
+        let id = host.world.get(k).id();
+        let i = sim.stack_of(&host.world, k);
+        let at_idle = i.stack().last().and_then(|f| f.tree.and_then(|t| lib.tree_at(t).nodes.get(f.node as usize))).is_some_and(|n| n.opcode == 0);
+        if at_idle && !i.done() {
+            i.sleep_and_top().0.sleep(first.get(&id).map_or(u32::MAX, |&t| t - 1), usize::MAX);
+        }
+    }
+}
+
+/// One call the engine made at the load: a function of an object run to its end.
+struct LoadCall {
+    /// The object it runs on, the tree, its parameters and its stack object (the call's own).
+    me: i16,
+    tree: u16,
+    params: Vec<i16>,
+    stack_object: i16,
+    /// The log's steps of it, in order (the answer key).
+    steps: Vec<usize>,
+}
+
+/// The load pass: what the engine calls on each object before the first tick (the log's tick 0,
+/// not in a pass): an OBJf function of the object (Load, entry 2, for most; RoomChanged, entry 7,
+/// for the lamps), run to its end, no stack object unless the call gives one. Which call is made
+/// on which object, in what order and with what, is read from the log's runs (a load input: the
+/// rule is not derived yet); everything that runs inside them is native and compared. A run's
+/// object is the one its variable reads were made on (their object pointer against the log's
+/// object list: the engine's temporary stacks are not an object's).
+fn load_init(host: &mut DriveHost, log: &Log, ids: &BTreeMap<u32, i16>, finder: &mut super::finder::TreeFinder) {
+    let lib = host.lib;
+    let by_address: BTreeMap<u32, i16> = log.lists.first().map(|l| l.objects.iter().copied().zip(l.ids.iter().copied()).collect()).unwrap_or_default();
+    let mut calls: Vec<LoadCall> = Vec::new();
+    let mut open: BTreeMap<u32, (u32, usize)> = BTreeMap::new();
+    for (i, s) in log.steps.iter().enumerate().filter(|(_, s)| s.tick == 0) {
+        let Some(&sim_id) = ids.get(&s.sim) else { continue };
+        if let std::collections::btree_map::Entry::Vacant(e) = open.entry(s.sim) {
+            calls.push(LoadCall { me: sim_id, tree: s.tree, params: s.params.clone(), stack_object: s.stack_object, steps: Vec::new() });
+            e.insert((s.frame, calls.len() - 1));
+        }
+        let (bottom, c) = open[&s.sim];
+        let call = &mut calls[c];
+        call.steps.push(i);
+        if let Some(&id) = s.lookups.first().and_then(|l| by_address.get(&l.object))
+            && call.steps.len() <= 2
+        {
+            call.me = id;
+        }
+        if bottom == s.frame && s.node > 250 {
+            open.remove(&s.sim);
+        }
+    }
+    for c in &calls {
+        host.expected.entry(c.me).or_default().extend(c.steps.iter().copied());
+    }
+    for c in calls {
+        let Some(k) = host.world.find(c.me) else { continue };
+        // (a call with a stack object names its trees from that object's file: the home log's
+        // tick-0 call of 8218 on Sim 12 with the paper girl 197 is NPC_SG's, not person_sg's)
+        let file = host.world.find_object(c.stack_object).and_then(|o| o.file).or(host.world.get(k).file);
+        let temps = host.world.get(k).temps.to_vec();
+        host.me = k;
+        let Some(t) = lib.tree(file, c.tree) else {
+            host.part(c.me, c.tree as i32, 0, format!("the load's call: tree {} not found in the object's files", c.tree));
+            return;
+        };
+        if super::study::has("REPLAY_DRIVE_SHOW_LOAD")
+            && let Some((lt, lf)) = c.steps.first().and_then(|&i| finder.find(log, &log.steps[i]))
+            && lt != t
+        {
+            println!("load call {} on {}: native tree in {:?} ({} args), the log's in {} ({} args); object's file {:?}, stack object {}", c.tree, c.me, file.map(|f| &lib.file(f).path), lib.tree_at(t).args, lib.file(lf).path, lib.tree_at(lt).args, file.map(|f| &lib.file(f).path), c.stack_object);
+        }
+        let mut chk = Interpreter::new(Mode::Check, 1 << 20);
+        chk.set_defaults(temps);
+        chk.start(lib, Some(t), &c.params, file);
+        chk.top().stack_object = c.stack_object;
+        while !chk.done() && host.parting.is_none() {
+            chk.reset_iterations();
+            host.step_checked(&mut chk);
+        }
+        if host.parting.is_some() {
+            return;
+        }
+    }
+}
+

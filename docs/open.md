@@ -56,9 +56,10 @@ engineering of the original's code, not more fitting. The list below this sectio
      (the person's list at +0x49C), GenericSimCall 1 3 / 3, FindGoodLocation 16 1;
    - the motives after tick 1 (the paper girl's hunger) 1 / 1, engine frames over an Idle 7,
      TestObjectType 5, the expression 10 / 1, Animate 5 / 1 different.
-   **Not started: the engine's own tick as the driver** (loop.md 5e e2's second half): the
-   step loop still follows the log's steps; `--free` only reports where the log is first taken
-   from. With the debt this small the next step is that driver, on home first.
+   **Started 2026-11-18: the engine's own tick as the driver** (`replay --drive`, simulation.md "The
+   driven run"): home-full runs the native load pass and tick 1 the log's and parts at tick 2 (the
+   engine's frame over 251's Idle); club-full parts in the load (the neighbourhood's data, scope 34,
+   from the session's save).
 2. **The original's loop of frames and ticks**: THE RULE FOUND 2026-11-17 (simulation.md
    "Frames and ticks"; `routing::FrameClock`): a clock in milliseconds, 33 a frame times the
    speed's factor, a tick for every 42.0 (802CEBFC), held to 840, afresh after the speed's
