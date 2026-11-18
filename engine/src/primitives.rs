@@ -710,17 +710,21 @@ pub fn call_named_tree(interp: &mut Interpreter, n: &Node, world: &World) -> Pri
     PrimResult::False
 }
 
+/// The flag (of object data 8) IdleForInput sets on a Sim as it delivers an interaction and
+/// clears when a wait runs out (the original's 80226378); its scripts read it (Global 281).
+pub const IDLE_DELIVERED: i16 = 0x40;
+
 /// IdleForInput (opcode 17) with nothing queued for the Sim: a count of the ticks to wait, in the
 /// parameter that operand bytes 0-1 name. Above zero, it goes down by one and the node waits
 /// (Yield); at zero, true. A parameter the frame does not have is the original's script error 8
 /// (Stop). Read from the original's 80226378: this is its branch for a Sim with nothing to break
 /// its wait (the vtable +0x240 test, Castaway's `cXPerson::ShouldInterrupt`, whose last test is
-/// the queue's count); with something queued it delivers it (`idle_for_input`). Not modelled: the
-/// flag the original sets and clears with it (bit 0x40 of +0x36 of the stack's owner), which
-/// nothing in the logs reads.
-pub fn idle_for_input_waiting(n: &Node, f: &mut Frame) -> PrimResult {
+/// the queue's count); with something queued it delivers it (`idle_for_input`). The wait run out
+/// clears the Sim's flag 0x40 (object data 8, `IDLE_DELIVERED`; 0x80226448), which a delivery sets.
+pub fn idle_for_input_waiting(n: &Node, f: &mut Frame, flags: &mut i16) -> PrimResult {
     let Some(count) = usize::try_from(field(n, 0)).ok().and_then(|p| f.params.get_mut(p)) else { return PrimResult::Stop };
     if *count == 0 {
+        *flags &= !IDLE_DELIVERED;
         return PrimResult::True;
     }
     *count -= 1;
@@ -739,6 +743,10 @@ pub fn idle_for_input<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &mut H
     let world = host.world();
     let lib = world.library();
     let Some(&entry) = world.get(me).queue.first() else { return PrimResult::Stop };
+    // the original marks the Sim before it delivers (0x80226470: flag 0x40 of object data 8)
+    if let Some(fl) = world.get_mut(me).data.get_mut(crate::world::DATA_FLAGS) {
+        *fl |= IDLE_DELIVERED;
+    }
     let Some(target) = world.find(entry.objects[1]) else { return PrimResult::Stop };
     if lib.global().is_none() {
         return PrimResult::Stop;

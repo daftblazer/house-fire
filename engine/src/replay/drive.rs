@@ -377,7 +377,7 @@ impl Host for DriveHost<'_> {
             56 => complete_goal(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())).unwrap_or_else(|| self.neutral(n)),
             32 => test_object_type(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())),
             // IdleForInput: a Sim waits, or delivers what is queued for it
-            17 if person && (self.world.get(me).queue.is_empty() || n.operand16(1) == 0) => idle_for_input_waiting(n, interp.top()),
+            17 if person && (self.world.get(me).queue.is_empty() || n.operand16(1) == 0) => { let mut fl = self.world.get(me).data.get(crate::world::DATA_FLAGS).copied().unwrap_or(0); let r = idle_for_input_waiting(n, interp.top(), &mut fl); if let Some(d) = self.world.get_mut(me).data.get_mut(crate::world::DATA_FLAGS) { *d = fl; } r },
             17 if person => idle_for_input(interp, self, me),
             // Dialog: the player's answer is the input (the log's, where its step is this one);
             // 1 a wait the pass goes on after, 2 a wait that stops it

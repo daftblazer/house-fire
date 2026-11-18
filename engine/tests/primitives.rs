@@ -236,12 +236,15 @@ fn idle_for_input_counts_its_wait_down() {
     // the count in the parameter operand bytes 0-1 name: down by one a tick, then true
     let n = node(17, [1, 0, 0, 0, 0, 0, 0, 0]);
     let mut f = Frame { params: vec![9, 2], ..Frame::default() };
-    assert_eq!(idle_for_input_waiting(&n, &mut f), PrimResult::Yield);
-    assert_eq!(idle_for_input_waiting(&n, &mut f), PrimResult::Yield);
-    assert_eq!(idle_for_input_waiting(&n, &mut f), PrimResult::True);
+    let mut flags = 0x48;
+    assert_eq!(idle_for_input_waiting(&n, &mut f, &mut flags), PrimResult::Yield);
+    assert_eq!(idle_for_input_waiting(&n, &mut f, &mut flags), PrimResult::Yield);
+    assert_eq!(flags, 0x48);
+    assert_eq!(idle_for_input_waiting(&n, &mut f, &mut flags), PrimResult::True);
+    assert_eq!(flags, 0x08);
     assert_eq!(f.params, vec![9, 0]);
     // a parameter the frame does not have: the original's script error
-    assert_eq!(idle_for_input_waiting(&node(17, [2, 0, 0, 0, 0, 0, 0, 0]), &mut f), PrimResult::Stop);
+    assert_eq!(idle_for_input_waiting(&node(17, [2, 0, 0, 0, 0, 0, 0, 0]), &mut f, &mut flags), PrimResult::Stop);
 }
 
 #[test]

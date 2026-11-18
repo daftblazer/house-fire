@@ -1944,3 +1944,12 @@ the lot's own (its house number, global 10): home's 237 (Mom, family of house 1)
 at tick 186. Debt club-full 777 -> 769, club 28442 -> 28434, home unchanged
 (REPLAY_NO_VISITOR_MARK leaves it out). Club's driven run then parts at tick 2, 164's 281:2.
 Study REPLAY_SHOW_VAR_DIFFS=scopes prints each differing variable taken from the log.
+
+IdleForInput's flag (2026-11-18; the watch on 164's object data 8, 0x80F6F18E): the original's
+80226378 sets flag 0x40 of the Sim's object data 8 as it delivers a queued interaction
+(0x80226470) and clears it when a wait runs out (0x80226448); Global 281:2 reads it. Native
+(`primitives::IDLE_DELIVERED`). Debt club-full 769 -> 761, home-full 515 -> 514, home 4540 ->
+4539, club 28434 -> 28426. Still to find: the driven club run parts at 164's 281:2 all the same
+(no 0x40 natively at tick 2): the original sets it at the load (164's saved interaction delivered;
+the driven load pass takes the log's calls, not that delivery), then `fn_80213890` (0x80213FC8)
+clears it and a delivery sets it again.
