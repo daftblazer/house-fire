@@ -3,7 +3,7 @@ name = "housefire-render"
 version = "0.1.0"
 edition = "2024"
 description = "House Fire's own Vulkan renderer: draws a frame's records offscreen"
-license = "MIT"
+license = "GPL-3.0-or-later"
 publish = false
 
 [dependencies]
