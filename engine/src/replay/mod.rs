@@ -62,6 +62,8 @@
 //! - `routing`: the routing pass (`routing`): the original's plans and walks against the native
 //!   planner and walker, and the native returns and places the host uses. Mixed; the calls into
 //!   `crate::routing` and `crate::planner` are kind (a), the pass itself is one function.
+//! - `sound`: which sound each PlaySound request starts, against the log's plays. Kind (b), with
+//!   the native `ask`.
 //! - `clock`: `check_time_of_day`, the light's clock and sun against the '3' records. Kind (b).
 
 
@@ -84,6 +86,7 @@ mod finish;
 mod host;
 mod routing;
 mod run;
+pub mod sound;
 mod stacks;
 mod start;
 mod step;

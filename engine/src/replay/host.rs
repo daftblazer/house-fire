@@ -898,6 +898,10 @@ impl Host for ReplayHost<'_> {
         if matches!(n.opcode, 23 | 7 | 48) {
             // the presentation's requests
             let got = present(n, &mut self.world, me_id);
+            if n.opcode == 23 && !self.counts.quiet {
+                let ask = super::sound::ask(self.lib, &self.world, self.file_of_top, me_id, interp.top().stack_object, n.operand, self.counts.tick);
+                self.counts.sound_asks.push(ask);
+            }
             self.world.presentation.clear(); // no front end here
             let want = self.logged(s, n);
             self.counts.note(if got == want {

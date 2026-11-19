@@ -206,3 +206,26 @@ fn sounds_decode_as_the_answer_key() {
         assert_eq!(s.decode(s.channel_count() - 1).count(), s.samples as usize, "{}", e.entry.name);
     }
 }
+
+/// The sound events of the disc's quick data resolve to their samples.
+#[test]
+fn sound_events_resolve_to_their_samples() {
+    let Some(iso) = std::env::var_os("HOUSEFIRE_BUSTIN_ISO").filter(|s| !s.is_empty()) else {
+        println!("sound events: skipped (HOUSEFIRE_BUSTIN_ISO not set)");
+        return;
+    };
+    let d = Disc::open(&iso).expect("the disc");
+    let bank = SoundBank::open(&d).expect("the sound archives");
+    let events = housefire::sound_events::SoundEvents::open(&d).expect("the sound events");
+    let names = |ids: Vec<u32>| -> Vec<String> {
+        ids.into_iter().map(|id| bank.entries()[bank.find_id(id).expect("a sample of the bank")].entry.name.to_ascii_uppercase()).collect()
+    };
+    let voice = housefire::sound_events::Voice::default();
+    let chop = events.event("counter_chop").expect("counter_chop").choice.samples(voice);
+    assert_eq!(names(chop), (1..=7).map(|k| format!("COUNTER_SCHOP{k}")).collect::<Vec<_>>());
+    let put = events.event("counter_put_all").expect("counter_put_all").choice.samples(voice);
+    assert_eq!(names(put), ["COUNTER_PUT_ALL"]);
+    // a vox event's lists differ by the Sim's voice; a command has no sample
+    assert!(events.event("counter_voxchop").expect("counter_voxchop").choice.by_voice());
+    assert!(events.event("radio_next_song").is_some_and(|e| e.choice.samples(voice).is_empty()));
+}

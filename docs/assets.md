@@ -2955,18 +2955,24 @@ them, `tools/quickdata.py`). The scripts and animations never name a sample: the
   leading space), then a kind byte and a pointer. Kind 1 (1,900 rows) points to its
   `snd::Track`; kind 30 (49, the DJ booth's music) also has a track; kinds 0, 19, 23, 43 and 101
   (19 rows: `radio_next_song`, `tv_turn_off`, `piano_play`, ...) have none (commands).
-- `snd::Track` (1,884 rows of 20 bytes): flags (`0800828A`, `0800829A`: bit 0x10 differs),
-  parameters (`64001040`, ...; 0x64 = 100, likely the volume), then the choice: word 2 a pointer
-  to a hit list (random), or word 3 a pointer to one `snd::Patch` (or for vox to a
-  `snd::VoxHitlist` row); word 4 a `snd::TrackData` row (not read yet).
+- `snd::Track` (1,884 rows of 20 bytes): flags (`0800828A`; `0800829A` for the voices), parameters
+  (`64001040`, ...), then the choice: word 2 a pointer to a hit table by voice (below), or word 3
+  a pointer to one of: a `snd::Patch` row (one sample), a `snd::GlobalHitlist` row (a random
+  list), a `snd::VoxHitlist` row (male, female), a `snd::HitPatchList` row (11 tracks; not
+  read); word 4 a `snd::TrackData` row: a script of the sound's behaviour (73 rows: ops such as
+  `05 05 2710`, `05 06 01F4`: a chance of 500 in 10,000 for `counter_voxchop`; not decoded).
 - `snd::Patch` (6,897 rows of 4 bytes): a sample's id (the CRC-32 of its name in capitals, which
   is `samples.arc`'s entry id).
 - `snd::GlobalHitlist` (2,789 rows of 4 bytes): a pointer to the first of `count` Patch pointers,
   the count in the word before. Row 100 is {7: COUNTER_SCHOP1..7}.
-- A hit list (word 2 of a track) is a pair (a GlobalHitlist row, 1) for a plain random choice
-  (`counter_chop`), or a table of GlobalHitlist rows by the Sim's voice (`counter_voxchop`:
-  0, 0, then rows 372, 361, 361, 362, ...). `snd::VoxHitlist` (619 rows of 12 bytes: two
-  pointers and a zero) is the vox form of a single patch.
+- A hit table (word 2 of a track): a count in the word before it, then that many pointers to
+  `snd::GlobalHitlist` rows, indexed by the Sim's voice; a null is no sound. A plain random
+  event has a count of 1 (`counter_chop`: row 100). A voice event has 3 or 11 entries
+  (`counter_voxchop`: 0, 0, then rows 372, 361, 361, 362, ...: two nulls, then groups of three,
+  male, female, female). The tables are packed one after another (so the words after a table
+  are the next one's count and entries). `snd::VoxHitlist` (619 rows of 12 bytes: the male
+  list, the female list, a zero) is the vox form of a single patch. `sound_events.rs` reads all
+  of this.
 - `snd::NamedEventMapping` (17 named rows): the engine's own events by name (`Nite`,
   `PlayPiano`, `Reaper`, `footstep_ash`, `footstep_hard`, `footstep_hard_noshoe`, ...).
 - Of the objects' FWAV chunks (6,345 in the disc's 744 IFF files, 961 distinct names), 951

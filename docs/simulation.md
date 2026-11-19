@@ -2042,3 +2042,57 @@ How a sound starts in the original, from the watch build's entries and backtrace
   requests, 12 the UI's (fn_8006186C). By event: 31 counter_chop, 31 footsteps (21 medium, 6
   hard, 4 soft; the 31 animation posts), the rest one or three each (the fridge, the stove, a
   door, the dog, three vox).
+
+**What the engine works out natively (2026-11-19; `sound_events.rs`, `replay/sound.rs`).** The
+figure on the home log (`replay`, the lines `sounds: ...`): the log's 138 event plays, **57
+started natively** (the event, the tick and a sample of the event's list as the log's), 74
+footsteps and 7 others not.
+- **Which object, which event.** PlaySound's post is for the stack object if bit 1 of operand
+  byte 4 is set, else for the asking object (all 147 requests of the log that have one; the
+  post's `kind` is that object's id). The operand's first short (little-endian) is the FWAV
+  chunk's id; the chunk, in the emitter's file (then the file the script runs from, the asking
+  object's, their semi-global files, Global), holds the event's name as a string. Every one of
+  the 171 posts after the load is asked natively at its tick, object and place in the tick, and
+  names its event (`sound_events::SoundEvents`: 1,969 events).
+- **Which samples.** `Choice`: a track's word 2 is a table by voice (a count in the word
+  before, that many GlobalHitlist row pointers, a null for none; one entry is the plain random
+  event, `counter_chop` -> row 100), word 3 a Patch, a GlobalHitlist row or a VoxHitlist row (the
+  male list, the female list). The tables hold no 8-byte pairs: a plain event's list is one
+  count-prefixed table of one. Unit tests: `counter_chop` is COUNTER_SCHOP1..7,
+  `counter_put_all` is COUNTER_PUT_ALL.
+- **The voice.** A VoxHitlist is male then female: a Sim's gender (person data 65, 1 female)
+  picks it, and the plays agree (every vox play of the log is a sample of its Sim's list). A
+  table by voice has 3 or 11 entries (the entries come in threes: 0, 0, then 2 + 3 x a class,
+  and in the class a male, a female, a female); which class a Sim is was not found: of the two
+  matched plays the female Sim 237 plays entry 4 (and entry 3 of `counter_voxchop`), a male Sim
+  entry 0, and their person data differ in more than one field (58 is 20 in both; 61 is 8 and
+  1). The figure takes the union of the table (41 starts, counted).
+- **A play is the frame after the post.** The sound update runs once a frame: a post of frame
+  F plays in frame F or F + 1 (the tick of the play is the post's, or the next, or, when the
+  game runs three or four ticks a frame, up to three later: post tick 564 plays at 567). The
+  figure matches by the tick or by the frame.
+- **Which requests play, as found.** Of the 171 posts after the load, 60 play (the log's 64
+  non-footstep event plays less the dog's 4); 57 are matched. What the log shows, none of it
+  derivable from the disc's tables so far:
+  - The message's word 3 (`28000088`, `...84`, `...82`, `...44`, `...42`) is state kept per
+    sound handle, and mostly the event's: counter_chop 88, the easel's, the utensils', the
+    snack's 82, the voices' 84. With 82 (51 of the 63 re-posts), **only the first post of a
+    handle plays**: of 9 firsts 9 play, of 63 re-posts none (easel_brushstroke 1 of 30,
+    meal_utinsels 1 of 18, easel_get_paint 1 of 12, food_snack_eat 1 of 8); the sound of such a
+    handle never gets its stop (`EASEL_BRUSHSTROKE3` has none, 0.29 s long), so it plays on and
+    the handle is taken. With 88 (counter_chop) every post plays (22 of 28 re-posts, the other 6
+    in the fast window below). The handle is the emitter's definition's and the FWAV id, not
+    the object's: the five lamps' posts at tick 1 (one handle, `7E82EC48`) play once.
+  - The voices play rarely: counter_voxchop 0 of 36, one in about 20 of the other vox events.
+    The track's script (`snd::TrackData`, ops like `05 05 2710 ... 05 06 01F4`) holds the
+    chance (500 of 10,000 for counter_voxchop); the roll is the sound layer's own random number,
+    so it is not the simulation's to predict.
+  - In a fast window (ticks 470 to 505, about four ticks a frame) 9 chops post and 4 play; some
+    of the posts are dropped, which was not worked out.
+  The figure names these: `a handle that already played` 72, `a voice event` 38, `other` 5
+  (the fast window's chops).
+- **Left over.** The 74 footsteps (the walk's animation notes and the floor's event are not
+  made natively: the posts are the walk's, at the route follower's own clock, 78 posts for 74
+  plays, `r6` the foot, the message the event and a second name `footstep_plant`...); 4 of the
+  dog's (no request of the simulation); 3 others (the original played them late).
+

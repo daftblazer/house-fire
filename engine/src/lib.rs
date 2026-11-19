@@ -31,6 +31,7 @@ pub mod scene;
 pub mod shader;
 pub mod skeleton;
 pub mod sound;
+pub mod sound_events;
 pub mod skin;
 pub mod routing;
 pub mod interp;

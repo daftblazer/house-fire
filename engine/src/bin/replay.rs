@@ -138,6 +138,10 @@ fn main() -> ExitCode {
     }
     if !bench {
         let Some((counts, _)) = run(&log, &lib, (the_lot, house), the_globals, neighbours, None, RunWith { card_lot, goals: start.goals.clone(), neighbourhood: start.neighbourhood.clone(), cat: (!log.tracks.is_empty()).then(|| housefire::anim::Catalog::read(&d, house_number)) }) else { return ExitCode::from(1) };
+        let mut counts = counts;
+        if let (Some(events), Some(bank)) = (housefire::sound_events::SoundEvents::open(&d), housefire::sound::SoundBank::open(&d)) {
+            counts.map.extend(housefire::replay::sound::figure(&counts.sound_asks, &log, &events, &bank));
+        }
         for (k, n) in &counts.map {
             println!("  {k:<66} {n}");
         }

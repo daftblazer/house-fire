@@ -11,6 +11,8 @@ pub struct Counts {
     pub tick: u32,
     /// The tick each kind was first counted in (`replay --free`).
     pub first: BTreeMap<String, u32>,
+    /// The PlaySound requests made (`sound::figure` compares them with the log's plays).
+    pub sound_asks: Vec<super::sound::SoundAsk>,
 }
 
 impl Counts {
