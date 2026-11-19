@@ -663,6 +663,36 @@ pub struct LoadedRec {
     pub caller: u32,
 }
 
+/// A sound message posted from outside the sound code ('.'): `post` 0 Snd_Post (the
+/// animations' sound events), 1 Snd_PostObject (PlaySound's); its kind, r6, the caller, the
+/// game's frame counter, the message's first 8 words, and the tick.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SoundPostRec {
+    pub tick: u32,
+    pub post: u8,
+    pub kind: u32,
+    pub r6: u32,
+    pub caller: u32,
+    pub frame: u32,
+    pub message: [u32; 8],
+}
+
+/// A call of the sound manager ('/'): 0 acquire (Snd_Acquire: `a` the kind, `b` the handle it
+/// returned), 1 play (Snd_Play: the handle, `a` the sample's id, the CRC-32 of its name in
+/// capitals), 2 stop (Snd_Stop), 3 params (Snd_Params: `a` their address, `params` their first 8
+/// words, raw floats); its caller, the game's frame counter, and the tick.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SoundRec {
+    pub tick: u32,
+    pub call: u8,
+    pub handle: u32,
+    pub a: u32,
+    pub b: u32,
+    pub caller: u32,
+    pub frame: u32,
+    pub params: [u32; 8],
+}
+
 /// A resource asked for ('0'): kind 0 a load in the background (Res_AddRefAsync 801776C0, EA's
 /// EResourceManager::AddRefAsync), 1 its loaded copy (Res_GetRef 801770C0); the id, the result,
 /// the caller, and its place among the steps.
@@ -820,6 +850,10 @@ pub struct Log {
     pub follows: Vec<FollowRec>,
     pub tracks: Vec<TrackRec>,
     pub loaded: Vec<LoadedRec>,
+    /// The sound manager's calls ('/'), in order.
+    pub sounds: Vec<SoundRec>,
+    /// The sound messages posted ('.'), in order.
+    pub sound_posts: Vec<SoundPostRec>,
     /// The animators' speed updates ('#'), in order.
     pub speeds: Vec<SpeedRec>,
     /// The scale and translation streams read ('%', in newer logs, at most 300,000).
@@ -1960,6 +1994,31 @@ pub fn read_log(path: &str) -> Option<Log> {
                 if let Some(v) = log.vec_streams.last_mut() {
                     v.header = Some((h, b));
                 }
+            }
+            b'.' => {
+                if !r.has(17 + 32) {
+                    break;
+                }
+                let mut p = SoundPostRec { tick: log.ticks, post: r.u8(), kind: r.u32(), r6: r.u32(), caller: r.u32(), frame: r.u32(), message: [0; 8] };
+                for w in &mut p.message {
+                    *w = r.u32();
+                }
+                log.sound_posts.push(p);
+            }
+            b'/' => {
+                if !r.has(21) {
+                    break;
+                }
+                let mut s = SoundRec { tick: log.ticks, call: r.u8(), handle: r.u32(), a: r.u32(), b: r.u32(), caller: r.u32(), frame: r.u32(), params: [0; 8] };
+                if s.call == 3 {
+                    if !r.has(32) {
+                        break;
+                    }
+                    for w in &mut s.params {
+                        *w = r.u32();
+                    }
+                }
+                log.sounds.push(s);
             }
             b'9' => {
                 if !r.has(12) {

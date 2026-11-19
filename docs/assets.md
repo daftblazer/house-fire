@@ -2947,3 +2947,28 @@ count other than its header's; 1,178,788,465 channel samples in all (about 3.7 s
 the lot). By rate and channels: 1 at 8,000 Hz; 124 at 11,025; 9 at 22,000; 6,523 at 22,050; 31 at
 24,000; 3 at 44,100 (all mono); 11 at 48,000 (all stereo, streams). Of the 39 streams, 11 are
 stereo at 48,000 and 28 mono at 24,000 (derived: the 3 other 24,000 Hz entries are in samples.arc).
+
+**The sound events** (`snd::` tables of quick data's `SimsObjects`; found 2026-11-19 by reading
+them, `tools/quickdata.py`). The scripts and animations never name a sample: they name an
+*event*, and EA's sound layer resolves it through these tables.
+- `snd::EventMapping` (1,969 named rows of 8 bytes): an event's name (mixed case, some with a
+  leading space), then a kind byte and a pointer. Kind 1 (1,900 rows) points to its
+  `snd::Track`; kind 30 (49, the DJ booth's music) also has a track; kinds 0, 19, 23, 43 and 101
+  (19 rows: `radio_next_song`, `tv_turn_off`, `piano_play`, ...) have none (commands).
+- `snd::Track` (1,884 rows of 20 bytes): flags (`0800828A`, `0800829A`: bit 0x10 differs),
+  parameters (`64001040`, ...; 0x64 = 100, likely the volume), then the choice: word 2 a pointer
+  to a hit list (random), or word 3 a pointer to one `snd::Patch` (or for vox to a
+  `snd::VoxHitlist` row); word 4 a `snd::TrackData` row (not read yet).
+- `snd::Patch` (6,897 rows of 4 bytes): a sample's id (the CRC-32 of its name in capitals, which
+  is `samples.arc`'s entry id).
+- `snd::GlobalHitlist` (2,789 rows of 4 bytes): a pointer to the first of `count` Patch pointers,
+  the count in the word before. Row 100 is {7: COUNTER_SCHOP1..7}.
+- A hit list (word 2 of a track) is a pair (a GlobalHitlist row, 1) for a plain random choice
+  (`counter_chop`), or a table of GlobalHitlist rows by the Sim's voice (`counter_voxchop`:
+  0, 0, then rows 372, 361, 361, 362, ...). `snd::VoxHitlist` (619 rows of 12 bytes: two
+  pointers and a zero) is the vox form of a single patch.
+- `snd::NamedEventMapping` (17 named rows): the engine's own events by name (`Nite`,
+  `PlayPiano`, `Reaper`, `footstep_ash`, `footstep_hard`, `footstep_hard_noshoe`, ...).
+- Of the objects' FWAV chunks (6,345 in the disc's 744 IFF files, 961 distinct names), 951
+  names are events (case-insensitive); none is a sample's name only; 10 are neither (an empty
+  name, `genie_disappear`, `monkey_hut_open`/`close`, and six `vox_..._robot`).

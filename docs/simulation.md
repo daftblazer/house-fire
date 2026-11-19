@@ -2009,3 +2009,36 @@ loop (fn_8024C5DC, from 8024C8D0) of each object as the walker plans. For an obj
 walker as stack object (vtable +888, then +344's call with 5) and leaves the object out where it
 is true; for a person (kind 2) the person rule (below, "Persons among the obstacles"). Both
 partings need the planner and the walk natively in the driven run.
+
+## Sound starts (2026-11-19)
+
+How a sound starts in the original, from the watch build's entries and backtraces
+(`GCN_WATCH_FN`) on the home replay, and the observer's '.' and '/' records:
+- The simulation posts a message to the sound code; nothing plays in the tick itself. Two posts
+  come from outside it: **Snd_PostObject** (80255C88), PlaySound's (opcode 23's case at 80213250,
+  through fn_802135D0 from 80213740: r5 the object's id; the key looked up is the operand's first
+  short, the FWAV id, in a sorted table of {key, value} pairs at the object definition's
+  (+12)->+24 (fn_8025F394, fn_8025F400)), and **Snd_Post** (80255C28), the animations' sound
+  events (from 800AF4DC, Route_Follow's walk at 800ABDE8): the message names the event as a
+  string (`footstep_medium`, `footstep_hard`, `footstep_soft`: a static table of 0x28-byte
+  entries at 802A8E80, by the floor), r6 0 or 1 (the foot, likely). A third path (80089568,
+  from 800F163C) is the UI's.
+- Each frame the sound update (from the main loop at 800042D0, 80255AB4 -> fn_80250BB8, the
+  queue) dispatches the messages to the sound objects (a message handler fn_8025ACE0: r4 the
+  message, 50 start). A start makes a node (fn_8025C4E8, from fn_8025D35C) whose +220 is the
+  sample's id from the track's patch; its update (fn_8025C7CC) makes a 0x3C request
+  (fn_80256290, the id at +20), and the request's update (fn_802573A4, from fn_80256AD0 each
+  frame) asks the sound manager (r13 - 29416) for a handle (Snd_Acquire, 8016A794) and plays
+  the sample on it (Snd_Play, 8016A84C: the id is the CRC-32 of the sample's name in capitals).
+  AX voices are all taken at start-up (AXAcquireVoice only from fn_801A8C2C and fn_801A9FAC);
+  a play starts one through the voice state setter (8027E590, the voice's +326).
+- **The random choice** among an event's samples (COUNTER_SCHOP1..7) draws from the game's one
+  random number (Sim_Random 8023C254: the sound code calls it at 80253C30, 80253DF4, 80254164,
+  80254E88, 8025532C, 80255358 and six places in fn_8025AEE8), in the frame's sound update, so
+  in the original the sounds' draws move the simulation's later ones. The engine keeps the
+  simulation apart: its sound choices draw from the presentation's own random numbers
+  (a deliberate difference, plan.md).
+- In the session (home, 6,000 ticks): 95 plays, all samples of the bank; 83 from the event
+  requests, 12 the UI's (fn_8006186C). By event: 31 counter_chop, 31 footsteps (21 medium, 6
+  hard, 4 soft; the 31 animation posts), the rest one or three each (the fridge, the stove, a
+  door, the dog, three vox).

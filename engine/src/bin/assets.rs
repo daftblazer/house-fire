@@ -141,6 +141,7 @@ fn main() -> ExitCode {
             println!("archives read {read}, not {not}");
         }
         "sounds" => return sounds(&d, &args[3..]),
+        "sound-calls" => return sound_calls(&d, &args[3..]),
         "textures" => {
             let data = d.read("textures.arc").unwrap_or_default();
             let Some(entries) = arc::entries(&data) else {
@@ -4190,4 +4191,36 @@ fn sounds(d: &Disc, args: &[String]) -> ExitCode {
 fn snap_word(m: &[u8], a: u32) -> Option<u32> {
     let o = a.checked_sub(0x8000_0000)? as usize;
     Some(u32::from_be_bytes(m.get(o..o + 4)?.try_into().ok()?))
+}
+
+/// `sound-calls LOG`: the sound manager's calls a log has ('/'), one a line: the tick, the frame
+/// counter, the call, the handle, the sample (a play's name), the caller; a play's sample not in
+/// the bank is counted.
+fn sound_calls(d: &Disc, args: &[String]) -> ExitCode {
+    let (Some(bank), Some(log)) = (SoundBank::open(d), args.first().and_then(|p| read_log(p))) else {
+        println!("usage: assets ISO sound-calls LOG (both sound archives and the log must read)");
+        return ExitCode::FAILURE;
+    };
+    let mut unknown = 0;
+    for s in &log.sounds {
+        let what = match s.call {
+            0 => format!("acquire kind {} -> {:08X}", s.a, s.b),
+            1 => match bank.find_id(s.a) {
+                Some(i) => format!("play {}", bank.entries()[i].entry.name),
+                None => {
+                    unknown += 1;
+                    format!("play {:08X} (not in the bank)", s.a)
+                }
+            },
+            2 => format!("stop {} {}", s.a as i32, s.b as i32),
+            _ => format!("params {:08X} {:?}", s.params[0], s.params[1..].iter().map(|&w| f32::from_bits(w)).collect::<Vec<_>>()),
+        };
+        println!("{} {} {:08X} {} lr {:08X}", s.tick, s.frame, s.handle, what, s.caller);
+    }
+    for p in &log.sound_posts {
+        println!("{} {} post {} kind {:X} r6 {:08X} lr {:08X} {:08X?}", p.tick, p.frame, p.post, p.kind, p.r6, p.caller, p.message);
+    }
+    let plays = log.sounds.iter().filter(|s| s.call == 1).count();
+    println!("sound calls {}, plays {}, plays not in the bank {}", log.sounds.len(), plays, unknown);
+    ExitCode::SUCCESS
 }
