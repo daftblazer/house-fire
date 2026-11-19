@@ -98,7 +98,7 @@ the stack at the Idle's depth). When an earlier turn of the pass ran it (the tab
 
 The person switch's case 22 is `fn_8021F15C`. All 240 uses in the full sessions (51 home, 189
 club: the dance floor's 4126 and 4119, 4106, the person template's 8302) have operand
-`02 00 ...`, and 229 of them are false. Operand bytes 0-1 are the mode: 0 hands the stack object
+`02 00 ...`: 229 yields, 11 returns (true). Operand bytes 0-1 are the mode: 0 hands the stack object
 to the head's look (the router at person +0x470, vtable +0xA8; true); 1 turns by the Sim's own
 direction; 2 turns towards the stack object (none: error 21); 3 turns away from it; others are
 error 39. Modes 1 to 3, on the first call (frame +8 clear), check a person field at +8
@@ -118,8 +118,8 @@ turns from the person's direction (`direction_angle`) towards the object's place
 time (`turn_towards`, state 3, the logged frames as the clock); done on the frame it faces it,
 and the primitive returns as a routing one does, the tick after the follower's next frame
 (the routing pass, `replay/routing.rs`). Until then each step yields; then it is true (the
-walker's result none), on all 11 (the "229 false" above counted the log's result byte, 0 for a
-step that ends, not the branch taken). Sim 12 at home: 61 frames, ticks 1503 to 1553.
+walker's result none), on all 11 (the "229 false" above are the yields: 229 + 11 = 240).
+Sim 12 at home: 61 frames, ticks 1503 to 1553.
 
 ## Relationship2 (opcode 26): one value of a relationship
 
