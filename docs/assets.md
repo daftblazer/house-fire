@@ -2978,3 +2978,27 @@ them, `tools/quickdata.py`). The scripts and animations never name a sample: the
 - Of the objects' FWAV chunks (6,345 in the disc's 744 IFF files, 961 distinct names), 951
   names are events (case-insensitive); none is a sample's name only; 10 are neither (an empty
   name, `genie_disappear`, `monkey_hut_open`/`close`, and six `vox_..._robot`).
+
+### The mix
+
+`mixer.rs` is the engine's own mixer, built to give the recompiled game's mixer
+(`hw/ax.cpp`) its results to the bit. It mixes in frames of 5 ms (160 samples at 32 kHz), a
+millisecond (32 samples) at a time: each running voice takes its next samples from sample memory
+(DSP-ADPCM in nibble addresses, PCM16 or PCM8; the end, the loop and the loop's restored history),
+converts them to the output rate (linear interpolation on a 16.16 ratio and a carried fraction, or
+a hold), scales them by its own level and ramp, and adds them to the main, surround and auxiliary
+buses through nine send levels (each with its own ramp), the clamp of each product at 32767 and the
+two layouts of the mixer-control word (the plain one and Pro Logic II). Parameter updates
+(per millisecond, by field) change a voice between milliseconds. The output clamps main L and R to
+32767 and passes the surround as mixed. The voices are the engine's own structs; only the check's
+adaptor (`bin/mixcheck.rs`) knows the game's 93-word parameter block.
+
+Check: `mixcheck DUMP` runs the 17,646 frames of the home lot's recorded mixer inputs (the voice
+blocks with their updates, the sample memory's uploads, the setup and buffer records) and compares
+each frame's left, right and surround with the dump's output: `mix: frames 17646, the same 17646`.
+It also compares each voice's state after its frame with the dump's next block of it: 454 of the
+14,936 blocks differ, in words the game writes itself between frames (a started voice's addresses,
+coefficients and header, mixer control and level changes), and the output does not depend on them,
+since each frame reads its voices from the dump. One surprise in the reference: the interpolation's
+product `(last[3] - last[2]) * frac` can overflow 32 bits, so the engine wraps it as the original
+does. The run takes 0.08 s for 88 s of audio, 0.02 s of it reading the file.

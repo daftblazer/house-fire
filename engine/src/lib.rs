@@ -16,6 +16,7 @@ pub mod floors;
 pub mod goals;
 pub mod iff;
 pub mod library;
+pub mod mixer;
 pub mod model;
 pub mod outfit;
 pub mod motives;
