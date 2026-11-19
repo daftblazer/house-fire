@@ -82,6 +82,9 @@ pub trait Host: Trees {
     /// (`tools/locals_check.py` finds the scripts that can do this; on the disc they read zero
     /// in the original too).
     fn unset_local(&mut self, _interp: &Interpreter, _frame: usize, _k: usize) {}
+    /// The interaction IdleForInput delivered has returned to it: the Sim is on none now (the
+    /// original clears its current entry, as the club's probe of Sim 178 shows at tick 888).
+    fn interaction_returned(&mut self) {}
     /// The check tree ad range (scope 12), if the host keeps one: a candidate's guard starts
     /// with it as its interaction's advertisement and may change it (autonomy's evaluation).
     fn ad_range_mut(&mut self) -> Option<&mut Vec<i16>> {
@@ -324,7 +327,11 @@ impl Interpreter {
             // 27, GotoRoutingSlot 45: the home log's 8215 returning to 8210 node 0 at tick 521),
             // which plans again from the door's far side.
             let caller = self.stack.last().unwrap();
-            if caller.tree.and_then(|t| host.tree_at(t).nodes.get(caller.node as usize)).is_some_and(|n| matches!(n.opcode, 17 | 27 | 45)) {
+            let op = caller.tree.and_then(|t| host.tree_at(t).nodes.get(caller.node as usize)).map(|n| n.opcode);
+            if matches!(op, Some(17 | 27 | 45)) {
+                if op == Some(17) {
+                    host.interaction_returned();
+                }
                 return Step::Go;
             }
             return self.transition(host, value);

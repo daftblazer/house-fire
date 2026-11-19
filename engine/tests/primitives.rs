@@ -237,14 +237,18 @@ fn idle_for_input_counts_its_wait_down() {
     let n = node(17, [1, 0, 0, 0, 0, 0, 0, 0]);
     let mut f = Frame { params: vec![9, 2], ..Frame::default() };
     let mut flags = 0x48;
-    assert_eq!(idle_for_input_waiting(&n, &mut f, &mut flags), PrimResult::Yield);
-    assert_eq!(idle_for_input_waiting(&n, &mut f, &mut flags), PrimResult::Yield);
+    assert_eq!(idle_for_input_waiting(&n, &mut f, &mut flags, false), PrimResult::Yield);
+    assert_eq!(idle_for_input_waiting(&n, &mut f, &mut flags, false), PrimResult::Yield);
     assert_eq!(flags, 0x48);
-    assert_eq!(idle_for_input_waiting(&n, &mut f, &mut flags), PrimResult::True);
+    assert_eq!(idle_for_input_waiting(&n, &mut f, &mut flags, false), PrimResult::True);
     assert_eq!(flags, 0x08);
     assert_eq!(f.params, vec![9, 0]);
     // a parameter the frame does not have: the original's script error
-    assert_eq!(idle_for_input_waiting(&node(17, [2, 0, 0, 0, 0, 0, 0, 0]), &mut f, &mut flags), PrimResult::Stop);
+    assert_eq!(idle_for_input_waiting(&node(17, [2, 0, 0, 0, 0, 0, 0, 0]), &mut f, &mut flags, false), PrimResult::Stop);
+    // something queued, a wait that does not deliver: the flag set, true at once, the count kept
+    let mut f = Frame { params: vec![9, 2], ..Frame::default() };
+    assert_eq!(idle_for_input_waiting(&n, &mut f, &mut flags, true), PrimResult::True);
+    assert_eq!((flags, f.params[1]), (0x48, 2));
 }
 
 #[test]

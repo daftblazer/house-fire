@@ -1949,7 +1949,21 @@ IdleForInput's flag (2026-11-18; the watch on 164's object data 8, 0x80F6F18E): 
 80226378 sets flag 0x40 of the Sim's object data 8 as it delivers a queued interaction
 (0x80226470) and clears it when a wait runs out (0x80226448); Global 281:2 reads it. Native
 (`primitives::IDLE_DELIVERED`). Debt club-full 769 -> 761, home-full 515 -> 514, home 4540 ->
-4539, club 28434 -> 28426. Still to find: the driven club run parts at 164's 281:2 all the same
-(no 0x40 natively at tick 2): the original sets it at the load (164's saved interaction delivered;
-the driven load pass takes the log's calls, not that delivery), then `fn_80213890` (0x80213FC8)
-clears it and a delivery sets it again.
+4539, club 28434 -> 28426. The flag at 164's 281:2 (2026-11-19): not a delivery at the load (0x80213FC8 is
+the expression primitive, `fn_80213890`, 281 node 3 clearing it): 281 node 1 is an IdleForInput
+whose bytes 2-3 are 0, and the original sets the flag there too when the Sim's +0x240 test says
+yes (164 has its re-queued entry), true at once. The test is `fn_80225D98` (ShouldInterrupt; the
+person's vtable at 0x802CBF48, +0x240): no if the s16 at the person's +150 is set; yes if its
+flags at +1100 have 0x100 without 0x400; yes if the queue's front entry's priority (+40) is above
+the current one's (+74, s16), or the entry has flag 2 (+68); yes if any of the motives at +188,
++196, +204 is below -99.0 (0x802CBDCC). The engine takes "something queued" for it (the rest in
+open.md item 1). For that to hold, two more of the original's rules: **a push the Sim refuses**
+(its push method `fn_80225228`, 0x8022539C): an interaction without its table flag 0x8 that
+repeats the last queued entry, or with an empty queue the current one (the same target, +16, and
+the same table place, +20), is not queued and PushAction is false (the club's dance floor's 4108
+onto Sims already dancing at tick 130: the probe shows their queues unchanged); and **the current
+entry ends** when the delivered interaction returns to its IdleForInput (the probe of 178's +1032
+entry: cleared at tick 888 as its 4106 returns to 281 node 4; `Host::interaction_returned`).
+Debt club-full 761 -> 746, home-full 514 -> 512, club 28426 -> 28411, home 4539 -> 4537. The
+driven club run then parts at tick 2, 164's 4106 node 0: Animate (44), not native in the driven
+run yet.

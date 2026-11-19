@@ -112,6 +112,10 @@ impl<'l> SimHost<'l> for ReplayHost<'l> {
 }
 
 impl Host for ReplayHost<'_> {
+    fn interaction_returned(&mut self) {
+        let me = self.me;
+        self.world.end_interaction(me);
+    }
     fn tree(&mut self, id: u16) -> Option<TreeId> {
         let f = self.file_of_top.or(self.world.get(self.me).file);
         self.lib.tree(f, id)
@@ -581,7 +585,7 @@ impl Host for ReplayHost<'_> {
         }
         if n.opcode == 17 && self.world.get(me).person && (self.world.get(me).queue.is_empty() || n.operand16(1) == 0) {
             // IdleForInput with nothing queued, or a wait that does not deliver: the wait's count
-            let got = { let mut fl = self.world.get(me).data.get(crate::world::DATA_FLAGS).copied().unwrap_or(0); let r = idle_for_input_waiting(n, interp.top(), &mut fl); if let Some(d) = self.world.get_mut(me).data.get_mut(crate::world::DATA_FLAGS) { *d = fl; } r };
+            let got = { let mut fl = self.world.get(me).data.get(crate::world::DATA_FLAGS).copied().unwrap_or(0); let r = idle_for_input_waiting(n, interp.top(), &mut fl, !self.world.get(me).queue.is_empty()); if let Some(d) = self.world.get_mut(me).data.get_mut(crate::world::DATA_FLAGS) { *d = fl; } r };
             let want = self.logged(s, n);
             if got == want {
                 note!(self.counts, "primitives: IdleForInput waiting: the same natively, {}", if got == PrimResult::True { "true" } else { "a tick more" });

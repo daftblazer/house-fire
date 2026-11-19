@@ -721,7 +721,13 @@ pub const IDLE_DELIVERED: i16 = 0x40;
 /// its wait (the vtable +0x240 test, Castaway's `cXPerson::ShouldInterrupt`, whose last test is
 /// the queue's count); with something queued it delivers it (`idle_for_input`). The wait run out
 /// clears the Sim's flag 0x40 (object data 8, `IDLE_DELIVERED`; 0x80226448), which a delivery sets.
-pub fn idle_for_input_waiting(n: &Node, f: &mut Frame, flags: &mut i16) -> PrimResult {
+/// With something queued (`queued`) but operand bytes 2-3 zero (a wait that does not deliver),
+/// the original sets the flag all the same and goes on, true (0x80226470, then 0x80226478's test).
+pub fn idle_for_input_waiting(n: &Node, f: &mut Frame, flags: &mut i16, queued: bool) -> PrimResult {
+    if queued {
+        *flags |= IDLE_DELIVERED;
+        return PrimResult::True;
+    }
     let Some(count) = usize::try_from(field(n, 0)).ok().and_then(|p| f.params.get_mut(p)) else { return PrimResult::Stop };
     if *count == 0 {
         *flags &= !IDLE_DELIVERED;
@@ -844,7 +850,7 @@ pub fn run_functional_tree<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &
 /// pushes onto the club's Sims are the ones IdleForInput then delivers (`docs/simulation.md`).
 /// Operand byte 2 the priority (1 maximum: ahead of everything queued; 2 ahead of saved
 /// entries only; `SavedQueueEntry::rank`). Not modelled yet:
-/// byte 3 (0x0a), a target whose file has several TTABs: Stop.
+/// byte 3 (0x0a), a target whose file has several TTABs: Stop. A repeat the Sim refuses: false.
 pub fn push_action<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &mut H, n: &Node) -> PrimResult {
     let top = interp.top_index();
     let target_id = interp.local(host, top, n.operand[1] as usize);
@@ -857,6 +863,21 @@ pub fn push_action<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &mut H, n
     let tab = lib.table_of(t.file, t.person, world.definition(t));
     let (Some(f), Some(id)) = (tab.file, tab.table) else { return PrimResult::Stop };
     let Some(e) = lib.table(f, id).get(n.operand[0] as usize) else { return PrimResult::Stop };
+    // The Sim refuses the push (false) when it repeats the last entry queued, or with nothing
+    // queued the interaction it is on: the same target and the same interaction of its table;
+    // an interaction with flag 0x8 may repeat (the Sim's push method fn_80225228, 0x8022539C;
+    // the club's dance floor pushes its dance again onto Sims already dancing).
+    if e.flags & 0x8 == 0 {
+        let o = world.get(sim);
+        let last = o.queue.last().unwrap_or(&o.current);
+        let same = match last.interaction {
+            Some(i) => i == n.operand[0] as usize,
+            None => last.tree == e.action as i16,
+        };
+        if last.objects[1] == t.id() && same {
+            return PrimResult::False;
+        }
+    }
     let entry = SavedQueueEntry {
         objects: [world.get(sim).id(), t.id(), 0],
         tree: e.action as i16,

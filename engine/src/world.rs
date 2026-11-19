@@ -496,6 +496,14 @@ impl<'lib> World<'lib> {
             }
         }
     }
+    /// A Sim's interaction has returned to its IdleForInput: no current entry (the original's
+    /// is cleared to no target and no table place).
+    pub fn end_interaction(&mut self, k: ObjectKey) {
+        let o = self.get_mut(k);
+        if o.person {
+            o.current = crate::save::SavedQueueEntry::default();
+        }
+    }
     pub fn is_empty(&self) -> bool {
         self.order.is_empty()
     }

@@ -49,7 +49,9 @@ engineering of the original's code, not more fitting. The list below this sectio
      its own 50. Tried and dropped: not restoring the range after an evaluation's guard (no
      change), the delivered interaction's advertisement made the range in IdleForInput (9 more
      differ: the dancers' own reads at tick 2 are 50);
-   - IdleForInput's flag 0x40 (object data 8) 4 / 25: needs the +0x240 test (`ShouldInterrupt`);
+   - IdleForInput's +0x240 test (`fn_80225D98`, read 2026-11-19): the engine has only its
+     queue part ("something queued"); the priorities (entry +40 against the person's +74), the
+     entry's flag 2, the +150 and +1100 fields and the motives below -99 are not modelled;
    - person data 22, 23, 32, 33 at the club 24 (the routing states' and the load's), 27 for
      one dancer (178) 6;
    - Budget 25 9 (the family's funds are not read from the save), TestInteractingWith 37 6

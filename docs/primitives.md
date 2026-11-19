@@ -288,7 +288,7 @@ parameter's number (the wait's count), bytes 2-3 whether the wait may deliver.
    queued.
 3. If that is no: a count in the parameter. Above zero, it goes down by one and the node waits
    (the log's result 1). At zero, true.
-4. If yes: a wait whose bytes 2-3 are 0 is true at once. Otherwise, with nothing queued, true;
+4. If yes: flag 0x40 of object data 8 set; a wait whose bytes 2-3 are 0 is true at once. Otherwise, with nothing queued, true;
    with an entry queued, the target's checks and then the entry's tree (`idle_for_input`,
    simulation.md "Where a Sim's interactions come in").
 
@@ -307,6 +307,9 @@ the +0x240 test says yes, and clears it when the test says no and the count is 0
 does say yes in the logs (about 25 reads on club-full and 4 on home-full have the flag set
 where the engine has not): the test itself (`ShouldInterrupt`: the action cancelled, a pending
 one of higher priority, a low motive, the queue) is the next thing to read for it.
+Read since (2026-11-19, simulation.md, end of "The driven run"): `fn_80225D98`; the engine
+takes it as "something queued", with the Sim refusing a repeated push and its current entry
+ending on the interaction's return.
 
 ## Random (opcode 8)
 
