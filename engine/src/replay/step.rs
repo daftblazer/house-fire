@@ -619,6 +619,7 @@ impl<'l> Replay<'l> {
                         i.top().file = Some(file);
                         i.top().stack_object = s.stack_object;
                         h.counts.note("frames: an engine frame pushed over an object's Idle (the log's tree)");
+                        if has("REPLAY_SHOW_ENGINE_FRAMES") { println!("engine frame: tick {t} object {o_id} tree {} stack object {} frame {:08x}", s.tree, s.stack_object, s.frame); }
                     }
                 }
                 // A stand-in the engine made (no file yet: the club's "go here" markers) takes the

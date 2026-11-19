@@ -265,8 +265,10 @@ impl Host for ReplayHost<'_> {
             use crate::anim::Poll;
             let (file, table, native) = super::animate::animate(ar, lib, &self.world, me, interp, n, (s.sim, s.tick));
             let logged_true = s.result != 1 && s.after == n.true_target as u16;
-            if env("REPLAY_TRACE_ANIM_SIM").is_some_and(|v| u32::from_str_radix(&v, 16).ok() == Some(s.sim)) && s.tick <= env("REPLAY_TRACE_ANIM_TO").and_then(|v| v.parse().ok()).unwrap_or(u32::MAX) {
+            if env("REPLAY_TRACE_ANIM_SIM").is_some_and(|v| v == "all" || u32::from_str_radix(&v, 16).ok() == Some(s.sim)) && s.tick <= env("REPLAY_TRACE_ANIM_TO").and_then(|v| v.parse().ok()).unwrap_or(u32::MAX) {
                 let st = ar.m.play(s.sim).map(|(id, p)| format!("{id:x} {p:?}"));
+                let name = file.and_then(|f| lib.file(f).strings.get(&table)).and_then(|t| t.get(n.operand16(0) as usize)).cloned();
+                println!("  anim trace name: {:?} table {table} {name:?}; tree file {:?}", file.map(|f| &lib.file(f).path), interp.top().tree.and_then(|t| ar.tree_file.get(&t)).map(|f| (&lib.file(*f).path, lib.file(*f).strings.get(&129).map(|v| v.len()))));
                 println!("  anim trace t {} step {} tree {} node {} op {:02x?} result {} after {} (t {} f {}): native {native:?}; play {}", s.tick, self.step, s.tree, s.node, n.operand, s.result, s.after, n.true_target, n.false_target, st.map(|x| x.chars().take(200).collect::<String>()).unwrap_or_default());
             }
             if native.is_none() && has("REPLAY_SHOW_ANIMATE_UNKNOWN") {
