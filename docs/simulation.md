@@ -1982,3 +1982,19 @@ frames (`held`: a speed change in a frame that ran no tick), and the frames the 
 overrides. The frames of a tick are all run at its start (the plain replay runs them at the first
 Animate step after the boundary; the frames the log places inside a tick are run at the next
 boundary here). Measured on master 59d3cba plus this below.
+
+The driven partings after that (2026-11-19, master 47a383b). **Club**: tick 2, 164's 4106 node 0,
+its first Animate after the load: the DJ booth's `a2o-dance-inplace-twiststop` (STR# 129 index 0
+of electronics_stereo_djbooth.iff, found in the catalog) is true at once in the original and
+starts natively (the plain replay's one "Animate: DIFFERENT" on the club, animd-club). The
+original asks no load for it (no AddRefAsync or GetRef on the log), so TryAnimate (`fn_800AC854`,
+through the Sim's +1136 animator, vtable +72) returns before its load ask; not the name
+resolution (`fn_800AC5B4`: -1, -1 only for a script error or a name its table lacks) and not the
+"is it loaded" mode (operand byte 5 flag 0x80). Its other early answers (the paths to
+0x800AD188, after `fn_8005FC80` on the Sim's +8 and `fn_801B5CE8`) are still to read. **Home**:
+tick 2, the scooter 251's tree 8266 ("Allow Intersection - Stuck Sims", its OBJf entry 5) run as
+an engine frame over its Idle, the paper girl 197 its stack object; she is saved mid-walk (her
+engine frame 4100 node 2). All the scooter's four runs of it on home-full have a walker as stack
+object (197 at tick 2, 12 at 260 and 497, 237 at 4922): the route follower asks it. The frame's
+push is the interpreter's (0x8023FD0C, the frame at 0x8101E8BC, the watch build); its caller is
+the route follower's, not read yet. Both need the walk natively in the driven run (stage 5f c).
