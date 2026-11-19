@@ -340,6 +340,7 @@ impl Host for ReplayHost<'_> {
             // GotoRelativePosition, GotoRoutingSlot: natively a yield until its run's return tick
             // (its walker's walk, turn and frames: `routing_return_tick`), where the run is
             // modelled; the log's result taken
+            let params = interp.top().params.clone();
             let run = self.routing_returns.get(&(s.sim, s.tree, s.node)).and_then(|v| v.iter().filter(|r| r.0 <= s.tick).max_by_key(|r| r.0)).copied();
             if let Some((_, ret)) = run.filter(|r| s.tick <= r.1) {
                 let native_yield = s.tick < ret;
@@ -382,7 +383,7 @@ impl Host for ReplayHost<'_> {
                     let w = &self.world;
                     let places: Vec<(i32, i32)> = w
                         .find_object(s.stack_object)
-                        .and_then(|o| Some((o, lib.routing_slot(o.file?, w.definition(o), n.operand16(1), n.operand16(0))?)))
+                        .and_then(|o| Some((o, lib.routing_slot(o.file?, w.definition(o), n.operand16(1), n.operand16(0), &params)?)))
                         .map(|(o, slot)| slot_places(slot, o.x16, o.y16, o.facing()).into_iter().map(|p| p.1).collect())
                         .unwrap_or_default();
                     if let Some(p) = w.person_on_places(me, &places)
@@ -405,7 +406,7 @@ impl Host for ReplayHost<'_> {
                     }
                 }
                 if n.opcode == 45
-                    && let Some(chair) = self.world.seat_at_routing_slot(n, s.stack_object, &pl.points)
+                    && let Some(chair) = self.world.seat_at_routing_slot(n, &params, s.stack_object, &pl.points)
                     && let Some(tree) = self.world.function_tree(chair, SIT_FUNCTION)
                 {
                     let (cid, cfile) = (self.world.get(chair).id(), self.world.get(chair).file);
@@ -441,7 +442,7 @@ impl Host for ReplayHost<'_> {
                     let w = &self.world;
                     let places: Vec<(i32, i32)> = w
                         .find_object(s.stack_object)
-                        .and_then(|o| Some((o, lib.routing_slot(o.file?, w.definition(o), n.operand16(1), n.operand16(0))?)))
+                        .and_then(|o| Some((o, lib.routing_slot(o.file?, w.definition(o), n.operand16(1), n.operand16(0), &params)?)))
                         .map(|(o, slot)| slot_places(slot, o.x16, o.y16, o.facing()).into_iter().map(|p| p.1).collect())
                         .unwrap_or_default();
                     if let Some(p) = w.person_on_places(me, &places)
@@ -468,7 +469,7 @@ impl Host for ReplayHost<'_> {
                     let w = &self.world;
                     let places: Vec<(i32, i32)> = w
                         .find_object(s.stack_object)
-                        .and_then(|o| Some((o, lib.routing_slot(o.file?, w.definition(o), n.operand16(1), n.operand16(0))?)))
+                        .and_then(|o| Some((o, lib.routing_slot(o.file?, w.definition(o), n.operand16(1), n.operand16(0), &params)?)))
                         .map(|(o, slot)| slot_places(slot, o.x16, o.y16, o.facing()).into_iter().map(|p| p.1).collect())
                         .unwrap_or_default();
                     let by = w.person_on_places(me, &places).map(|p| w.get(p).id());

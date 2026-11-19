@@ -409,10 +409,10 @@ impl<'lib> World<'lib> {
     /// is one to sit at (its sitting field set) and an object with a sit function (`SIT_FUNCTION`)
     /// stands on its route's last tile (the home log's one, tick 1791: the dining table 47's slot
     /// 3, the chair 49; docs/simulation.md, "A seat at a routing slot").
-    pub fn seat_at_routing_slot(&self, n: &crate::bhav::Node, stack_object: i16, points: &[(i32, i32)]) -> Option<ObjectKey> {
+    pub fn seat_at_routing_slot(&self, n: &crate::bhav::Node, params: &[i16], stack_object: i16, points: &[(i32, i32)]) -> Option<ObjectKey> {
         let lib = self.library();
         let o = self.find_object(stack_object)?;
-        let slot = lib.routing_slot(o.file?, self.definition(o), n.operand16(1), n.operand16(0))?;
+        let slot = lib.routing_slot(o.file?, self.definition(o), n.operand16(1), n.operand16(0), params)?;
         if slot.sitting <= 0 {
             return None;
         }

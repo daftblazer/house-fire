@@ -675,8 +675,12 @@ impl Library {
 
     /// A slot a GotoRoutingSlot (opcode 45) names: its operand's first two 16-bit fields, the
     /// number and where it is from (1 the stack object's own SLOT, 2 the global file's); the
-    /// number counts the routing slots (type 3) alone. 0 (a stack variable) is not modelled.
-    pub fn routing_slot(&self, file: FileId, def: Option<&Definition>, scope: u16, number: u16) -> Option<&Slot> {
+    /// number counts the routing slots (type 3) alone. 0 (a stack variable): the number is that
+    /// of the frame's parameter whose value counts the stack object's own routing slots (the
+    /// original's 8021FEF8: the parameter past the frame's count a script error 8, a value below
+    /// 0 or past the slots error 0x25; none here).
+    pub fn routing_slot(&self, file: FileId, def: Option<&Definition>, scope: u16, number: u16, params: &[i16]) -> Option<&Slot> {
+        let (scope, number) = if scope == 0 { (1, u16::try_from(*params.get(number as usize)?).ok()?) } else { (scope, number) };
         let table = match scope {
             1 => self.file(file).slots.get(&def?.slot_table())?,
             2 => {

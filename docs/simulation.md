@@ -623,8 +623,12 @@ the front, then round by eighths to 128; 0x55 the four sides), the snap slot, th
 maximum and optimal proximity (sixteenths), a size, a gradient (3/16 nearly always: the
 waypoints' 3/16 clearance), a height, the facing and a resolution. All 764 on the disc read
 to their end. Checked on the home log's routing steps: 448 slots found natively (193 the
-object's own, 255 the global ones), none missing; 81 name a stack variable (not modelled)
-and 116 an object not on the lot natively. Measured towards the goal: plan ends are mostly a
+object's own, 255 the global ones), none missing; 81 name a stack variable and 116 an object
+not on the lot natively. A stack variable (scope 0, the original's 8021FEF8) is a parameter:
+the operand's number names the frame's parameter (past the frame's count a script error 8),
+whose value counts the stack object's own routing slots as scope 1 does (below 0 or past them
+error 0x25); all 81 on home-full found so (2026-11-19: debt home-full 512 -> 431, club-full
+746 -> 546). Measured towards the goal: plan ends are mostly a
 target object's place (the counter, the meal, the chair being sat on) or a tile beside it
 (the chair's global slot 1, the side nearest the Sim), and a door's crossing ends a sixteenth
 short of the far tile's middle.

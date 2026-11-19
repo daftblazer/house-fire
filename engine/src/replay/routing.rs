@@ -176,18 +176,15 @@ pub(super) fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, c
         let number = u16::from_be_bytes([raw[4], raw[5]]);
         let scope = u16::from_be_bytes([raw[6], raw[7]]);
         let o = world.find_object(s.stack_object);
-        if scope == 0 {
-            counts.note("routing: a routing step's slot from a stack variable (not modelled)");
-            continue;
-        }
         let Some((o, file)) = o.and_then(|o| o.file.map(|f| (o, f))) else {
             counts.note("routing: a routing step's stack object not on the lot natively");
             continue;
         };
-        let slot = lib.routing_slot(file, world.definition(o), scope, number);
-        counts.note(match (slot.is_some(), scope == 1) {
-            (true, true) => "routing: a routing step's slot found natively (the object's own)",
-            (true, false) => "routing: a routing step's slot found natively (the global one)",
+        let slot = lib.routing_slot(file, world.definition(o), scope, number, &s.params);
+        counts.note(match (slot.is_some(), scope) {
+            (true, 0) => "routing: a routing step's slot found natively (the object's own, its number a parameter's)",
+            (true, 1) => "routing: a routing step's slot found natively (the object's own)",
+            (true, _) => "routing: a routing step's slot found natively (the global one)",
             _ => "routing: a routing step's slot NOT found natively",
         });
     }
@@ -274,7 +271,7 @@ pub(super) fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, c
             continue;
         };
         let Some(file) = o.file else { continue };
-        let Some(slot) = lib.routing_slot(file, world.definition(o), scope, number) else { continue };
+        let Some(slot) = lib.routing_slot(file, world.definition(o), scope, number, &s.params) else { continue };
         let target = place_at(o.id(), s.tick).unwrap_or((o.x16, o.y16));
         let end = pl.points[pl.points.len() - 1];
         let want = if end == target { pl.points[pl.points.len() - 2] } else { end };
