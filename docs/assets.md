@@ -2900,3 +2900,50 @@ Sims (0.13). On the A55 at 6.7x the PC that is about 8.3 ms of the frame, no lon
 unmeasured there. Not done: the models' arrays as plain vertex arrays (only the mean position is
 made at load: the meshes are made once per batch, not each frame, so they are not in the frame's
 cost), and one stepper for `Stream` and `RotStream`.
+
+## Sound
+
+Code: `engine/src/sound.rs`; the check: `assets ISO sounds [NAME [--wav OUT]]` and
+`sounds_decode_as_the_answer_key` in `engine/tests/disc.rs`.
+
+**Where.** Two ordinary archives (`arc::entries`): `samples.arc` (6,663 entries, each one mono
+sample) and `audiostr.arc` (39 music streams). `sounds.arc` and `scripts.arc` are 4 bytes each
+(empty). The scripts name samples in mixed case, so the bank (`SoundBank`) finds names without
+regard to case, and by the archives' resource ids (the word before the offset, as for every
+archive).
+
+**The format.** Nintendo DSP-ADPCM, one channel per block: a 0x60-byte big-endian header, then the
+data in 8-byte frames (a predictor/scale byte, then 14 samples of 4 bits). Header: +0 sample count,
++4 nibble count (frames' header nibbles included), +8 rate, +0xC loop flag (u16), +0xE format (0 =
+ADPCM; every entry is), +0x10 loop start and +0x14 loop end (nibble addresses), +0x18 current
+address (2), +0x1C 16 coefficients (i16), +0x3C gain, +0x3E the first frame's predictor/scale, +0x40
+and +0x42 the history, +0x44 the loop's predictor/scale, +0x46 and +0x48 the loop's history. The data
+is `ceil(nibbles / 2)` bytes after the header.
+
+**The decode** is the DSP accelerator as `gcn-recomp`'s `ax.cpp` models it (`Accel::sample`, format
+0), in integers. At each 16-nibble frame start the frame's first byte is the predictor/scale (low 4
+bits the shift, bits 4 to 6 the coefficient pair) and the address skips the two header nibbles; a
+sample is `(1 << shift) * t + ((0x400 + c1 * yn1 + c2 * yn2) >> 11)`, `t` the signed nibble, clamped
+to [-0x7FFF, 0x7FFF] (not -0x8000); then `yn2 = yn1`, `yn1 = sample`. Decoding starts at nibble 2
+with the header's history. A one-shot decode yields the header's sample count. Loop playback:
+past the loop end the address goes back to the loop start with the loop's predictor/scale and
+history (for the streams the accelerator keeps the history, for samples it reloads it). Checked
+against the answer key `work/sound/ref.txt` (made by an independent Python decoder: every 200th
+sample entry, and 1,000,000 samples of channel 1 of `sbo_pop4` and `loadloop`): all 36 hashes,
+rates and counts match.
+
+**Streams.** 24,000 Hz mono, or 48,000 Hz stereo stored as two whole channel blocks one after the
+other, the second with its own header: it starts at the first block's end (0x60 plus the data)
+rounded up to 32 bytes (`sbo_bb4`: 8,202,528; `sbo_bb8`: 8,630,784, as found). The reader takes
+the second block only if its header has the same sample count, nibble count and rate.
+
+**Found.** No entry has its loop flag set. Every header does carry a loop span of the whole sound
+(start 2, end the last nibble), as the DSP tools write it, so loop playback is the game's voice
+deciding (the sound's name says `loop` where it is meant to); `Sound::looped` therefore jumps back
+over the header's span whatever the flag.
+
+**Counts** (`assets ISO sounds`): 6,702 sounds (6,663 + 39), none failing to parse or decoding a
+count other than its header's; 1,178,788,465 channel samples in all (about 3.7 s in release for
+the lot). By rate and channels: 1 at 8,000 Hz; 124 at 11,025; 9 at 22,000; 6,523 at 22,050; 31 at
+24,000; 3 at 44,100 (all mono); 11 at 48,000 (all stereo, streams). Of the 39 streams, 11 are
+stereo at 48,000 and 28 mono at 24,000 (derived: the 3 other 24,000 Hz entries are in samples.arc).

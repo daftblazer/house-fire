@@ -2,7 +2,11 @@
 //!
 //! Usage: assets ISO arcs [LIST]  every .arc on the disc: its layout read, its entry count; with
 //!                                LIST, each entry ("archive<TAB>name<TAB>offset<TAB>size") into it
-//!        assets ISO textures         textures.arc's entries read: by kind and size, any that do not
+//!        assets ISO sounds [NAME [--wav OUT]]  every sound of samples.arc and audiostr.arc
+//!                                    decoded: a summary; with NAME that sound's header and
+//!                                    decoded hash (the form of work/sound/ref.txt), with
+//!                                    --wav its WAV file
+//!        assets ISO textures        textures.arc's entries read: by kind and size, any that do not
 //!        assets ISO rle              rletextu.arc's entries decoded: their texel counts
 //!        assets ISO texbatch IN OUT  every texture (textures.arc's and
 //!                                    datasets.arc's), its first level: IN the GX format, width,
@@ -30,6 +34,7 @@ use housefire::quickdata;
 use housefire::scene;
 use housefire::shader;
 use housefire::skeleton;
+use housefire::sound::{self, SoundBank, Source};
 use housefire::tree_log::read_log;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -135,6 +140,7 @@ fn main() -> ExitCode {
             }
             println!("archives read {read}, not {not}");
         }
+        "sounds" => return sounds(&d, &args[3..]),
         "textures" => {
             let data = d.read("textures.arc").unwrap_or_default();
             let Some(entries) = arc::entries(&data) else {
@@ -4075,6 +4081,106 @@ fn main() -> ExitCode {
         a => {
             println!("unknown command {a}");
             return ExitCode::from(2);
+        }
+    }
+    ExitCode::SUCCESS
+}
+
+/// How many samples of a stream's first channel the sound answer key hashes.
+const STREAM_KEY_SAMPLES: usize = 1_000_000;
+
+/// `assets ISO sounds [NAME [--wav OUT]]`: see the usage at the top.
+fn sounds(d: &Disc, args: &[String]) -> ExitCode {
+    let Some(bank) = SoundBank::open(d) else {
+        println!("samples.arc or audiostr.arc not read");
+        return ExitCode::from(1);
+    };
+    let Some(name) = args.first() else {
+        let mut by_rate = BTreeMap::<(u32, usize), usize>::new();
+        let (mut failed, mut looping, mut total) = (0usize, 0usize, 0u64);
+        for (i, e) in bank.entries().iter().enumerate() {
+            let Some(s) = bank.sound(i) else {
+                println!("{:?} {}: does not parse", e.source, e.entry.name);
+                failed += 1;
+                continue;
+            };
+            *by_rate.entry((s.rate, s.channel_count())).or_default() += 1;
+            looping += s.looping.is_some() as usize;
+            for c in 0..s.channel_count() {
+                let n = s.decode(c).count();
+                total += n as u64;
+                if n != s.samples as usize {
+                    println!("{:?} {}: decodes {n}, header {}", e.source, e.entry.name, s.samples);
+                    failed += 1;
+                }
+            }
+        }
+        for ((rate, ch), n) in &by_rate {
+            println!("{n} sounds at {rate} Hz, {ch} channel(s)");
+        }
+        let count = |s| bank.entries().iter().filter(|e| e.source == s).count();
+        println!(
+            "sounds {} (samples.arc {}, audiostr.arc {}), looping {looping}, channel samples {total}, failures {failed}",
+            bank.entries().len(),
+            count(Source::Samples),
+            count(Source::Stream)
+        );
+        return if failed == 0 { ExitCode::SUCCESS } else { ExitCode::from(1) };
+    };
+    let Some(i) = bank.find(name) else {
+        println!("no sound called {name}");
+        return ExitCode::from(1);
+    };
+    let (e, Some(s)) = (&bank.entries()[i], bank.sound(i)) else {
+        println!("{name} does not parse");
+        return ExitCode::from(1);
+    };
+    println!(
+        "{:?} {} id {:08x} size {} rate {} samples {} nibbles {} channels {} loop {:?} loop nibbles {:?} header loop {:?}",
+        e.source, e.entry.name, e.entry.id, e.entry.size, s.rate, s.samples, s.nibbles, s.channel_count(), s.looping, s.loop_nibbles, s.header_loop
+    );
+    let all: Vec<Vec<i16>> = (0..s.channel_count()).map(|c| s.decode_all(c)).collect();
+    // the key hashes a stream's first million samples of its first channel
+    let (file, keyed) = match e.source {
+        Source::Samples => ("samples.arc", &all[0][..]),
+        Source::Stream => ("audiostr.arc", &all[0][..all[0].len().min(STREAM_KEY_SAMPLES)]),
+    };
+    println!(
+        "{file} {} rate {} samples {} sha256-le16 {} first {:?}",
+        e.entry.name,
+        s.rate,
+        keyed.len(),
+        sound::hash16(keyed),
+        &keyed[..keyed.len().min(4)]
+    );
+    if let Some(at) = args.iter().position(|a| a == "--wav") {
+        let Some(out) = args.get(at + 1) else {
+            println!("--wav needs OUT");
+            return ExitCode::from(2);
+        };
+        let (ch, n) = (all.len() as u16, all[0].len());
+        let data = (n * ch as usize * 2) as u32;
+        let mut w = Vec::with_capacity(44 + data as usize);
+        w.extend_from_slice(b"RIFF");
+        w.extend_from_slice(&(36 + data).to_le_bytes());
+        w.extend_from_slice(b"WAVEfmt ");
+        w.extend_from_slice(&16u32.to_le_bytes());
+        w.extend_from_slice(&1u16.to_le_bytes());
+        w.extend_from_slice(&ch.to_le_bytes());
+        w.extend_from_slice(&s.rate.to_le_bytes());
+        w.extend_from_slice(&(s.rate * ch as u32 * 2).to_le_bytes());
+        w.extend_from_slice(&(ch * 2).to_le_bytes());
+        w.extend_from_slice(&16u16.to_le_bytes());
+        w.extend_from_slice(b"data");
+        w.extend_from_slice(&data.to_le_bytes());
+        for k in 0..n {
+            for c in &all {
+                w.extend_from_slice(&c[k].to_le_bytes());
+            }
+        }
+        if std::fs::write(out, w).is_err() {
+            println!("cannot write {out}");
+            return ExitCode::from(1);
         }
     }
     ExitCode::SUCCESS
