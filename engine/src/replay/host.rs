@@ -1064,6 +1064,19 @@ impl Host for ReplayHost<'_> {
             if let Some(o) = self.world.find_object(interp.top().stack_object) {
                 self.looks.insert(me_id, (s.tick, (o.x16, o.y16)));
             }
+            // its turn-only route natively (the routing pass's return: its follower turned to the
+            // object's place): a yield until then, and then true (the walker's result none: done)
+            let run = self.routing_returns.get(&(s.sim, s.tree, s.node)).and_then(|v| v.iter().filter(|r| r.0 <= s.tick).max_by_key(|r| r.0)).copied();
+            if let Some((_, ret)) = run.filter(|r| s.tick <= r.1) {
+                let native = if s.tick < ret { PrimResult::Yield } else { PrimResult::True };
+                let logged = self.logged(s, n);
+                self.counts.note(if native == logged {
+                    "primitives: LookTowards: its turn's yield or true natively as the log's"
+                } else {
+                    "primitives: LookTowards: its turn's yield or true DIFFERENT (the log's taken)"
+                });
+                return logged;
+            }
         }
         if n.opcode == 0 {
             // Idle

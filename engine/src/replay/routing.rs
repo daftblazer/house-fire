@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::cfmt::g;
 use crate::library::Library;
-use crate::routing::{BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, slot_pick, run_on_point, walk_frames, routing_return_tick, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
+use crate::routing::{direction_angle, turn_towards, BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, slot_pick, run_on_point, walk_frames, routing_return_tick, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
 use crate::planner::{choose_goal, coarse_way, point_after_goal, refine, Growth, MapRect};
 use crate::library::Slot;
 use crate::tree_log::{Log, StepRec};
@@ -1430,7 +1430,7 @@ pub(super) fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, c
         for s in &log.steps {
             let Some(t) = log.tree_of(s) else { continue };
             let at = s.node as usize * 12;
-            if t.tree != s.tree || at + 12 > t.raw.len() || !matches!(u16::from_be_bytes([t.raw[at], t.raw[at + 1]]) & 0x7FFF, 27 | 45) {
+            if t.tree != s.tree || at + 12 > t.raw.len() || !matches!(u16::from_be_bytes([t.raw[at], t.raw[at + 1]]) & 0x7FFF, 22 | 27 | 45) {
                 continue;
             }
             let key = (s.sim, s.tree, s.node);
@@ -1442,6 +1442,55 @@ pub(super) fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, c
         }
         out
     };
+    // LookTowards' turn-only routes (opcode 22, towards the stack object): the follower that
+    // starts (state 1) at the run's first tick where its person stands turns from the person's
+    // direction (`direction_angle`) towards the object's place a frame at a time (`turn_towards`
+    // in state 3), with no walk; the primitive returns as a routing one does, the tick after the
+    // follower's frame after the one it is done in
+    for r in &routing_runs {
+        let Some(s) = log.steps.iter().find(|s| (s.sim, s.tree, s.node, s.tick) == (r.0, r.1, r.2, r.3)) else { continue };
+        let Some(t) = log.tree_of(s) else { continue };
+        let at = s.node as usize * 12;
+        if u16::from_be_bytes([t.raw[at], t.raw[at + 1]]) & 0x7FFF != 22 {
+            continue;
+        }
+        let Some(&id) = ids.get(&r.0) else { continue };
+        let place = |who: i16| log.places.iter().rfind(|p| p.id == who && p.tick <= r.3).map(|p| (p.x, p.y));
+        let direction = log.directions.iter().rfind(|d| d.1 == id && d.0 < r.3).map(|d| d.2);
+        let (Some(me), Some(target), Some(direction)) = (place(id), place(s.stack_object), direction) else {
+            counts.note("routing: a LookTowards' turn without its person's place, its object's or its direction");
+            continue;
+        };
+        let Some(k) = log.follows.iter().position(|f| f.tick >= r.3 && f.before.state == 1 && (f.before.x - me.0 as f32).abs() < 1.0 && (f.before.y - me.1 as f32).abs() < 1.0) else {
+            counts.note("routing: a LookTowards' turn with no follower starting where its person stands");
+            continue;
+        };
+        let follower = log.follows[k].follower;
+        let frames: Vec<_> = log.follows[k..].iter().filter(|g| g.follower == follower).collect();
+        let way = ((target.0 - me.0) as f32, (target.1 - me.1) as f32);
+        let mut angle = direction_angle(direction);
+        let mut done = None;
+        for (j, g) in frames.iter().enumerate().skip(1) {
+            angle = turn_towards(angle, way, false, WALK_FRAME * g.before.factor, g.before.factor);
+            if angle == (-way.0).atan2(way.1) {
+                done = Some(j);
+                break;
+            }
+        }
+        let logged_done = frames.iter().position(|g| g.before.state == 3 && g.after.state == 4);
+        let ret = done.and_then(|j| frames.get(j + 1)).map(|g| g.tick + 1);
+        if show_walks {
+            println!("look turn: sim {id} tick {}..{} direction {direction} way {way:?}: done frame {done:?} (logged {logged_done:?}), return {ret:?}; frames {:?}", r.3, r.4, frames.iter().take(4).map(|g| (g.tick, g.before.state, g.after.state)).collect::<Vec<_>>());
+        }
+        if let Some(ret) = ret {
+            returns.entry((r.0, r.1, r.2)).or_default().push((r.3, ret));
+        }
+        counts.note(if ret == Some(r.4) {
+            "routing: a LookTowards' turn natively returning on the original's tick"
+        } else {
+            "routing: a LookTowards' turn natively NOT returning on the original's tick"
+        });
+    }
     if show_walks {
         for r in &routing_runs {
             println!("routing run: sim {:x} tree {} node {} yields from tick {} to its return at {} (result {}) ({} steps)", r.0, r.1, r.2, r.3, r.4, r.5,

@@ -94,7 +94,7 @@ the stack at the Idle's depth). When an earlier turn of the pass ran it (the tab
 426 left, one more than a counted pass. (Seen once; the reverse order, the counter before Sim
 237, counts as usual.) With these every Idle parameter on both full logs is the original's.
 
-## LookTowards (opcode 22): a turn on the walker, not native yet
+## LookTowards (opcode 22): a turn on the walker
 
 The person switch's case 22 is `fn_8021F15C`. All 240 uses in the full sessions (51 home, 189
 club: the dance floor's 4126 and 4119, 4106, the person template's 8302) have operand
@@ -111,6 +111,15 @@ yield; otherwise that result. No person or object data field separates the true 
 the false ones, so the answer is the walker's, and the case belongs with the native walks
 (`simulation.md`, "Routing"). The probe reached it through the observer's person struct
 (object −0x640; its +4 is object −0x44, a base whose vtable is 802CBF48).
+
+Native since 2026-11-19 for mode 2 (all 240 steps, 11 runs: home 1, club 10). The turn-only
+route's follower (the one starting in state 1 at the run's first tick where the person stands)
+turns from the person's direction (`direction_angle`) towards the object's place a frame at a
+time (`turn_towards`, state 3, the logged frames as the clock); done on the frame it faces it,
+and the primitive returns as a routing one does, the tick after the follower's next frame
+(the routing pass, `replay/routing.rs`). Until then each step yields; then it is true (the
+walker's result none), on all 11 (the "229 false" above counted the log's result byte, 0 for a
+step that ends, not the branch taken). Sim 12 at home: 61 frames, ticks 1503 to 1553.
 
 ## Relationship2 (opcode 26): one value of a relationship
 
