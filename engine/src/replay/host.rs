@@ -464,8 +464,27 @@ impl Host for ReplayHost<'_> {
                         }
                     }
                 }
+                // A slot route whose Sim stands on one of the slot's places already: true at once,
+                // with no plan (home-full tick 5066, Sim 12 at the dining table's slot)
+                if n.opcode == 45 {
+                    let w = &self.world;
+                    let at = (w.get(me).x16, w.get(me).y16);
+                    let on_slot = w
+                        .find_object(s.stack_object)
+                        .and_then(|o| Some((o, lib.routing_slot(o.file?, w.definition(o), n.operand16(1), n.operand16(0), &params)?)))
+                        .is_some_and(|(o, slot)| slot_places(slot, o.x16, o.y16, o.facing()).iter().any(|p| p.1 == at));
+                    if on_slot {
+                        let logged = self.logged(s, n);
+                        self.counts.note(if logged == PrimResult::True {
+                            "primitives: GotoRoutingSlot: its Sim on the slot's place already, true at once natively as the log's"
+                        } else {
+                            "primitives: GotoRoutingSlot: its Sim on the slot's place already, true at once natively, NOT the log's (the log's taken)"
+                        });
+                        return logged;
+                    }
+                }
                 self.counts.note("primitives: GotoRoutingSlot/GotoRelativePosition: its run not modelled (the log's taken)");
-                if has("REPLAY_SHOW_NO_WAY") && n.opcode == 45 {
+                if has("REPLAY_SHOW_NO_WAY") {
                     let w = &self.world;
                     let places: Vec<(i32, i32)> = w
                         .find_object(s.stack_object)

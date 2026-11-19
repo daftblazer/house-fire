@@ -39,6 +39,13 @@ impl<'l> Replay<'l> {
                 let p = log.places[place_at];
                 // a walking Sim's place from the native walk where the routing pass has one
                 let (x, y) = if use_native_places { native_places.get(&(p.id, p.tick)).copied().unwrap_or((p.x, p.y)) } else { (p.x, p.y) };
+                // an object (not a person) the scripts moved: there natively already where the
+                // world has it at the logged place (a slot's snap, a pick-up)
+                let moved_there = p.tick > 0
+                    && h.world.find(p.id).is_some_and(|k| {
+                        let o = h.world.get(k);
+                        !o.person && (o.x16, o.y16, o.level) == (p.x, p.y, p.level)
+                    });
                 // a tick-0 placement natively: the centre of the tile the lot loads the object on,
                 // (-16, -16) for one off the lot (all 206 on home-full); the log's where it differs
                 let tick0 = (p.tick == 0)
@@ -50,7 +57,7 @@ impl<'l> Replay<'l> {
                     })
                     .filter(|&q| q == (p.x, p.y, p.level));
                 if use_native_places {
-                    if tick0.is_none() && !native_places.contains_key(&(p.id, p.tick)) {
+                    if tick0.is_none() && !moved_there && !native_places.contains_key(&(p.id, p.tick)) {
                         let person = h.world.find(p.id).is_some_and(|k| h.world.get(k).person);
                         if p.tick == 0 {
                             let loaded = h.world.find(p.id).map(|k| { let o = h.world.get(k); (o.x16, o.y16, o.level) });
@@ -84,7 +91,9 @@ impl<'l> Replay<'l> {
                             format!("places: the log's, no native walk: person {}", p.id)
                         });
                     }
-                    h.counts.note(if tick0.is_some() {
+                    h.counts.note(if moved_there {
+                        "places: an object the scripts moved, there natively already"
+                    } else if tick0.is_some() {
                         "places: a tick-0 placement natively (the loaded tile's centre, or off the lot)"
                     } else if !native_places.contains_key(&(p.id, p.tick)) {
                         "places: the log's (no native walk there)"
