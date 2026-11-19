@@ -2001,6 +2001,11 @@ resolution (`fn_800AC5B4`: -1, -1 only for a script error or a name its table la
 tick 2, the scooter 251's tree 8266 ("Allow Intersection - Stuck Sims", its OBJf entry 5) run as
 an engine frame over its Idle, the paper girl 197 its stack object; she is saved mid-walk (her
 engine frame 4100 node 2). All the scooter's four runs of it on home-full have a walker as stack
-object (197 at tick 2, 12 at 260 and 497, 237 at 4922): the route follower asks it. The frame's
-push is the interpreter's (0x8023FD0C, the frame at 0x8101E8BC, the watch build); its caller is
-the route follower's, not read yet. Both need the walk natively in the driven run (stage 5f c).
+object (197 at tick 2, 12 at 260 and 497, 237 at 4922). The frame's push is the interpreter's
+(0x8023FD0C, the frame at 0x8101E8BC); the watch build's backtrace (GCN_WATCH_BT=1, work/watch.sh)
+gives its caller: `Route_SkipObstacle` (802499DC, from 80249AC0), asked by the planner's obstacle
+loop (fn_8024C5DC, from 8024C8D0) of each object as the walker plans. For an object whose kind
+(vtable +872) is not 2 it runs the object's OBJf entry 5 (Allow Intersection) at once with the
+walker as stack object (vtable +888, then +344's call with 5) and leaves the object out where it
+is true; for a person (kind 2) the person rule (below, "Persons among the obstacles"). Both
+partings need the planner and the walk natively in the driven run.

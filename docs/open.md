@@ -56,7 +56,9 @@ engineering of the original's code, not more fitting. The list below this sectio
      differ: the dancers' own reads at tick 2 are 50);
    - the driven run's first partings (simulation.md, end of "The driven run"): club 164's first
      Animate true at once in the original (TryAnimate's early answer, unread); home the scooter's
-     Allow Intersection (OBJf 5) pushed by the route follower for a stuck walker (unread);
+     Allow Intersection (OBJf 5), run by the planner's obstacle loop (fn_8024C5DC from 8024C8D0,
+     `Route_SkipObstacle` 802499DC, the watch build's backtrace) for the walker planning; needs
+     the planner run natively in the driven run, with that ask;
    - IdleForInput's +0x240 test (`fn_80225D98`, read 2026-11-19): the engine has only its
      queue part ("something queued"); the priorities (entry +40 against the person's +74), the
      entry's flag 2, the +150 and +1100 fields and the motives below -99 are not modelled;
