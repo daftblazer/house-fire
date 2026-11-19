@@ -262,30 +262,8 @@ impl Host for ReplayHost<'_> {
             // with an event in local 0); the log's result taken
             ar.frames_to(self.step);
             ar.animating.entry(s.tick).or_default().insert(s.sim);
-            // source 0 in a tree whose file has no names (a semi-global's): the stack object's
-            // own file
-            let stack_file = self.world.by_id().get(&interp.top().stack_object).and_then(|k| self.world.get(*k).file);
-            let tree_file = interp.top().tree.and_then(|t| ar.tree_file.get(&t).copied());
-            // the table (operand byte 4): 0 the tree's file's STR# 129 (the stack object's, for
-            // a semi-global's tree), 1 Global's STR# 128, 2 the Sim's,
-            // 3 Global's STR# 156 (the adult list; 157 the child's)
-            let (file, table) = match n.operand[4] {
-                0 if tree_file.is_some_and(|f| lib.file(f).strings.get(&129).is_none_or(|t| t.iter().all(|x| x.is_empty()))) => (stack_file, 129),
-                0 => (tree_file, 129),
-                1 => (lib.global(), 128),
-                2 => (self.world.get(me).file, 129),
-                3 => (lib.global(), 156),
-                _ => (None, 129),
-            };
-            use crate::anim::{Lookup, Poll};
-            let native = match ar.cat.lookup(lib, file, table, &n.operand) {
-                Lookup::Found(id) => {
-                    let a = &ar.cat.by_id[&id];
-                    Some(ar.m.animate(s.sim, id, a, n.operand[5] & 2 != 0, n.operand[6] as i8 as i32, s.tick))
-                }
-                Lookup::NotFound => Some(Poll::Done),
-                Lookup::Unknown => None,
-            };
+            use crate::anim::Poll;
+            let (file, table, native) = super::animate::animate(ar, lib, &self.world, me, interp, n, (s.sim, s.tick));
             let logged_true = s.result != 1 && s.after == n.true_target as u16;
             if env("REPLAY_TRACE_ANIM_SIM").is_some_and(|v| u32::from_str_radix(&v, 16).ok() == Some(s.sim)) && s.tick <= env("REPLAY_TRACE_ANIM_TO").and_then(|v| v.parse().ok()).unwrap_or(u32::MAX) {
                 let st = ar.m.play(s.sim).map(|(id, p)| format!("{id:x} {p:?}"));
@@ -299,6 +277,8 @@ impl Host for ReplayHost<'_> {
                     // study: every string table of the files around that has the index
                     let index = n.operand16(0) as usize;
                     let semi = self.world.get(me).file.and_then(|f| lib.file(f).semi);
+                    let stack_file = self.world.by_id().get(&interp.top().stack_object).and_then(|k| self.world.get(*k).file);
+                    let tree_file = interp.top().tree.and_then(|t| ar.tree_file.get(&t).copied());
                     for (k, f) in [("global", lib.global()), ("me", self.world.get(me).file), ("my semi-global", semi), ("tree", tree_file), ("stack object", stack_file)] {
                         if let Some(f) = f {
                             let t: Vec<_> = lib.file(f).strings.iter().filter_map(|(id, v)| v.get(index).map(|x| (*id, v.len(), x.clone()))).collect();
@@ -334,10 +314,7 @@ impl Host for ReplayHost<'_> {
             if s.result != 1 && !logged_true {
                 let f = interp.top();
                 if let Some(Poll::Event(v)) = native {
-                    let to = if n.operand[5] & 0x20 != 0 { f.unset &= !(1u64 << (n.operand[2] & 63)); f.locals.get_mut(n.operand[2] as usize) } else { f.params.get_mut(0) };
-                    if let Some(to) = to {
-                        *to = v as i16;
-                    }
+                    super::animate::write_event(f, n, v);
                 }
                 let same = f.locals == s.locals_after && f.params == s.params_after;
                 self.counts.note(if same { "primitives: Animate: the event's value in the frame as the log's" } else { "primitives: Animate: the event's value DIFFERENT (the log's taken)" });

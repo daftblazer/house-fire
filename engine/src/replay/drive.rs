@@ -19,6 +19,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::rc::Rc;
 
+use crate::anim::Poll;
 use crate::bhav::Node;
 use crate::interp::{Error, Host, Interpreter, Mode, PrimResult, Step, Trees};
 use crate::library::Library;
@@ -33,6 +34,7 @@ use crate::simulator::{SimHost, Simulator};
 use crate::tree_log::{Log, StepRec};
 use crate::world::{ObjectKey, ScriptVariables, World};
 use crate::{FileId, TreeId};
+use super::animate::{AnimReplay, animate, write_event};
 use super::run::Replay;
 use super::start::RunWith;
 
@@ -94,6 +96,11 @@ struct DriveHost<'l> {
     last_expr: [(u8, i16, Option<i16>); 2],
     /// Primitives answered with the neutral default, by opcode (printed with the parting).
     neutral: BTreeMap<u16, u32>,
+    /// The animator (Animate 44) and the frames it is stepped by; none where the log has no
+    /// animation records.
+    anim: Option<AnimReplay>,
+    /// Each object's animator key (the Sim's address in the log), by object id.
+    sim_of: BTreeMap<i16, u32>,
 }
 
 impl Trees for DriveHost<'_> {
@@ -312,6 +319,22 @@ impl Host for DriveHost<'_> {
         let me_id = self.me_id();
         let person = self.world.get(me).person;
         match n.opcode {
+            // Animate: natively, the answer the animator gives (yield, true, false with an event);
+            // where the archive lacks the animation, neutral
+            44 if self.anim.is_some() => {
+                let sim = self.sim_of.get(&me_id).copied().unwrap_or(0);
+                let ar = self.anim.as_mut().expect("checked");
+                ar.animating.entry(self.tick).or_default().insert(sim);
+                match animate(ar, lib, &self.world, me, interp, n, (sim, self.tick)).2 {
+                    Some(Poll::Pending) => PrimResult::Yield,
+                    Some(Poll::Done) => PrimResult::True,
+                    Some(Poll::Event(v)) => {
+                        write_event(interp.top(), n, v);
+                        PrimResult::False
+                    }
+                    None => self.neutral(n),
+                }
+            }
             // Idle
             0 => {
                 let may = may_sleep(self.world.get(me), false);
@@ -464,6 +487,8 @@ pub fn drive<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l Lo
         last_expr: [(0, 0, None); 2],
         trail: VecDeque::new(),
         neutral: BTreeMap::new(),
+        anim: h.anim,
+        sim_of: ids.iter().map(|(&sim, &id)| (id, sim)).collect(),
     };
     if super::study::has("REPLAY_DRIVE_SHOW_FIRSTS") {
         let mut first: BTreeMap<i16, (u32, u16, u16)> = BTreeMap::new();
@@ -563,6 +588,13 @@ pub fn drive<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l Lo
     }
     load_sleeps(&mut host, &mut sim, &log, &ids, &engine_run);
     let mut same = 0;
+    // The animation frames due before a tick's first step (its place in the log, `tick_steps`):
+    // the native frame clock's, or the log's track records before its first tick.
+    let frames_before = |host: &mut DriveHost, t: u32| {
+        if let Some(ar) = &mut host.anim {
+            ar.frames_to(log.tick_steps.get(t as usize - 1).copied().unwrap_or(log.steps.len()));
+        }
+    };
     for t in 1..=ticks {
         host.tick = t;
         // A tick without a pass is a paused one: nothing runs and the clock does not move.
@@ -585,6 +617,7 @@ pub fn drive<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l Lo
         {
             println!("tick {t} start: object {id} temps {:?}", o.temps);
         }
+        frames_before(&mut host, t);
         player_commands(&mut host, &mut sim, &log, t);
         host.stopped = false;
         host.world.stop_pass = false;

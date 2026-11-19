@@ -1,7 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use crate::bhav::Node;
+use crate::interp::{Frame, Interpreter};
 use crate::library::Library;
 use crate::tree_log::{Log, StepRec};
+use crate::world::{ObjectKey, World};
 use crate::{FileId, TreeId};
 use super::study::{env, has};
 use super::atoi;
@@ -268,4 +271,49 @@ pub(super) fn native_clock(log: &Log) -> Vec<ClockTick> {
             t
         })
         .collect()
+}
+
+/// An Animate step (opcode 44) answered natively: the animation table and file by the operand's
+/// byte 4, the lookup in the catalog and the animator's answer for the Sim `sim` at `tick` (`(sim, tick)`). The
+/// file and the table come back too (for the studies); no answer where the archive lacks the
+/// animation (`Lookup::Unknown`). Shared by the plain replay and the driven run.
+pub(super) fn animate(ar: &mut AnimReplay, lib: &Library, world: &World, me: ObjectKey, interp: &mut Interpreter, n: &Node, (sim, tick): (u32, u32)) -> (Option<FileId>, u16, Option<crate::anim::Poll>) {
+    use crate::anim::{Lookup, Poll};
+    // source 0 in a tree whose file has no names (a semi-global's): the stack object's own file
+    let stack_file = world.by_id().get(&interp.top().stack_object).and_then(|k| world.get(*k).file);
+    let tree_file = interp.top().tree.and_then(|t| ar.tree_file.get(&t).copied());
+    // the table (operand byte 4): 0 the tree's file's STR# 129 (the stack object's, for a
+    // semi-global's tree), 1 Global's STR# 128, 2 the Sim's, 3 Global's STR# 156 (the adult
+    // list; 157 the child's)
+    let (file, table) = match n.operand[4] {
+        0 if tree_file.is_some_and(|f| lib.file(f).strings.get(&129).is_none_or(|t| t.iter().all(|x| x.is_empty()))) => (stack_file, 129),
+        0 => (tree_file, 129),
+        1 => (lib.global(), 128),
+        2 => (world.get(me).file, 129),
+        3 => (lib.global(), 156),
+        _ => (None, 129),
+    };
+    let native = match ar.cat.lookup(lib, file, table, &n.operand) {
+        Lookup::Found(id) => {
+            let a = &ar.cat.by_id[&id];
+            Some(ar.m.animate(sim, id, a, n.operand[5] & 2 != 0, n.operand[6] as i8 as i32, tick))
+        }
+        Lookup::NotFound => Some(Poll::Done),
+        Lookup::Unknown => None,
+    };
+    (file, table, native)
+}
+
+/// An Animate event's value goes to the frame: the local operand byte 2 names with flag 0x20,
+/// else parameter 0 (primitives.md, "counted events").
+pub(super) fn write_event(f: &mut Frame, n: &Node, value: i32) {
+    let to = if n.operand[5] & 0x20 != 0 {
+        f.unset &= !(1u64 << (n.operand[2] & 63));
+        f.locals.get_mut(n.operand[2] as usize)
+    } else {
+        f.params.get_mut(0)
+    };
+    if let Some(to) = to {
+        *to = value as i16;
+    }
 }

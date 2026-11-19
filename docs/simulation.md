@@ -1859,7 +1859,7 @@ arms) and whose `SimHost::run_turn` takes each step in turn and compares it, onl
 next step of that object in that tick: the node's tree and number, where it goes, whether it
 yields, the frame's parameters and locals after (a never-written local is not owed) and its stack
 object after. A primitive not native yet is answered neutrally (true, the frame as it is; a yield
-for Animate 44, GotoRelativePosition 27, GotoRoutingSlot 45), never from the log, and is named in
+for GotoRelativePosition 27, GotoRoutingSlot 45; Animate 44 only where the archive lacks the animation), never from the log, and is named in
 the parting. The first difference stops the run and prints
 `drive: ticks the log's N of M` and `drive: first parting tick T object ID tree X node Y: ...`
 (the opcode and operand, both ways, the log's variable reads against the native ones for an
@@ -1967,3 +1967,18 @@ entry: cleared at tick 888 as its 4106 returns to 281 node 4; `Host::interaction
 Debt club-full 761 -> 746, home-full 514 -> 512, club 28426 -> 28411, home 4539 -> 4537. The
 driven club run then parts at tick 2, 164's 4106 node 0: Animate (44), not native in the driven
 run yet.
+
+Animate native (2026-11-19): `DriveHost` holds the plain replay's `AnimReplay` (`replay/animate.rs`,
+the same catalog and animator). Its frames run at each tick's start, before the tick's steps
+(`tick_steps`): the native frame clock's count (`native_clock`; where it differs from the log's
+the log's is taken, counted, as in the plain replay), the log's track records before the first
+clocked tick. The table/file choice, the catalog lookup and the animator's answer are
+`animate::animate`, the event's write into the frame `animate::write_event`, both shared with
+`ReplayHost`, so the plain replay's figures are as they were. Animate's result is the animator's
+(yield, true, false with an event), never the log's. What the log still supplies to the animator,
+as in the plain replay: the archive load misses (`misses`: which Sims a miss stops), the paused
+ticks (`paused`) and the fast-forward's ticks (`fast`) from the speed and track records, the held
+frames (`held`: a speed change in a frame that ran no tick), and the frames the log's count
+overrides. The frames of a tick are all run at its start (the plain replay runs them at the first
+Animate step after the boundary; the frames the log places inside a tick are run at the next
+boundary here). Measured on master 59d3cba plus this below.
