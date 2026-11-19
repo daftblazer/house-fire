@@ -1492,7 +1492,9 @@ walk's start) did not take those two up either (still 897), so it is not only th
 and the walk gives all of them (24 of 24 each, 8 of 8): two Sims logged moving as one. The place
 check now takes every Sim whose places the walk gives at least half the time: native 1,161 (25
 a sixteenth off), and the places no native walk gives fall to 224: the 206 tick-0 placements
-(native too), 9 of objects that are not persons, and 3 each of Sims 12, 197 and 237 (walks' ends).
+(native too, and since 2026-11-19 taken so: the replay places each by that rule and takes the
+log's only where it differs, none on home-full; debt home-full 431 -> 225, club-full 546 -> 368),
+9 of objects that are not persons, and 3 each of Sims 12, 197 and 237 (walks' ends).
 The walkers 202 and 198 were such companions too. Every other count as before. The 18 left: 13 are jumps to a tile's centre (both coordinates 8 past a tile:
 the meal 198 five times, the paper girl twice and once at 1503, 202 three times, 201 once, Sim 12
 once), a Sim or object snapped into place by an interaction, not walked; 5 are not on a centre

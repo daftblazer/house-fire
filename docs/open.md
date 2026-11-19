@@ -12,7 +12,7 @@ engineering of the original's code, not more fitting. The list below this sectio
    replay): primitives answered from the log 24,516 / 31,648 (Animate 44: 4,032 / 27,666;
    CompleteGoal 56: native since 2026-11-17, primitives.md; IdleForInput 17: native since 2026-11-17; Relationship2 26: native since 2026-11-17; Idle 0 (both forms, the lockout) and NotifyStackObject 49: native since 2026-11-17; 22: 51 /
    189; change suit 6: 13 / 70; 12, 24, 41 on home), locals set to the log's 20,615 / 12,491,
-   parameters 423 / 110, places with no native walk 224 / 196, route runs not modelled 1 / 26,
+   parameters 423 / 110, places with no native walk 18 / 18 (the tick-0 placements native since 2026-11-19), route runs not modelled 1 / 26,
    routing slots from a stack variable (native since 2026-11-19), the club's autonomy candidates different 82,
    trees not found on the disc 13 / 82 steps (367, 8217, 8233, 8235, 8236, 8312, 8330), the
    household and later-made objects not run, the funds, the random numbers. Longest run of
@@ -38,7 +38,7 @@ engineering of the original's code, not more fitting. The list below this sectio
    STR# 128) and its event's value in the frame; the neighbourhood's data (scope 34) from the
    save; write-only lookups (the observer logs 0 for them); a step whose tree record is
    another tree's. **Left over, by kind (home / club):**
-   - places with no native walk 224 / 196, route
+   - places with no native walk 18 / 18 (jumps to a tile's centre, walks' ends), route
      runs not modelled 1 / 26, LookTowards 22 51 / 189: all the routing work (item 3);
    - frames' parameters 46 / 2: 9 are stacks saved at an Idle of 15000 or 20000 whose count is
      0 at their first step (other saved Idles keep theirs: something ends those sleeps at the
