@@ -3580,6 +3580,66 @@ box); (4) the 686 `over` pixels of 930 (not looked into).
 Not drawn: line fills (`Fill::Lines`), clip layers (`clip_depth`), the movies' own text
 characters (2, in `buildSim`).
 
+### The game's feed (U3)
+
+`engine/src/hud.rs` (`Hud`, one per player; `PlayerView` the player's Sim, clock and funds) makes
+what the game gives the HUD's and the dialog's movies each presentation frame; the study is
+`LOCKSTEP_HUD=1 lockstep LOG ISO --card CARD` (`bin/lockstep/hud.rs`: the replay's world frame by
+frame against the log's calls, reads and text records; the log gives it only the frames' ticks,
+the movies' commands and the speed setting, which the tracks' speeds stand for). On ui-play.log
+(1,317 frames in play): calls 0 differences, read answers 3, text strings 0, text places 564.
+
+Where the game computes each value:
+
+- **Calls.** `showHUD` (0x80087F08) and `setPlayerMode("1p")` (0x8008800C) when play begins;
+  `showDialog` / `hideDialog` with the Dialog node opening and being answered; the speed buttons
+  in `fn_80088890` (0x80088E78 and its neighbours): on a change of the setting (the manager's
+  +76: -2 fast, -3 fastest; its pause tests) the other two buttons are hidden and the new one
+  shown (normal: all three hidden), a frame after the animations take the setting;
+  `updateHUD("1", "updateMoodMeter")` at 0x8008893C when the player's mood as a whole number
+  differs from the one the HUD last showed (every frame; the HUD keeps the one it began with).
+  The layer calls come in the draw (`fn_80089B44`): `hideDialogLayer showContentLayer
+  showDialogLayer` (0x80089D7C) every frame once the movie has sent `hud_ready`, `hideContentLayer
+  showDialogLayer showContentLayer` (0x8008A28C) every frame a dialog is up.
+- **Reads** (`Screen_Read`, 0x8008BFDC the HUD, 0x800445EC the dialog; a name the handler does
+  not own answers ""). `om`: entry 3 of the player's Sim's motive table (a float, cut to an
+  integer; the engine's own motives give 19, 18, 17, ... as the log has them). `ma`: "true" when
+  one of eight motives (the table's entries 7, 8, 5, 14, 6, 9, 15, 13: hunger, hygiene, energy,
+  social, comfort, bladder, fun, room) as a share of -100..100 (`fn_800B5350`) is at most 0.05
+  (a float at 0x802A4298), else "false". `ra`: relationship alert, true when a relationship of
+  the player's Sim has a value below -50 (the scan over the lot's persons, `fn_800B830C` and
+  `fn_800B80CC`; not native, always "false", as the log). `ct`: skill gain, true when one of the
+  six skills (the Sim's entries 10 to 15 divided by 100) rose since the last read (not native,
+  "false"). `two_player` "0"; the dialog's `dialog_x`, `dialog_y`, `dialog_box_width` are doubles at
+  0x80298FF0, 0x80298FF8, 0x80298FE0 (0.2, 0.18, 0.6), `number_of_buttons` and
+  `is_critical_dialog` the dialog's own. Read but not made: `dialog_box_height` (the text block's
+  size from `fn_80044174` plus 0.1), `dialog_title_bar_width` (`ERFont::DoGetStringSize` of the
+  title at `SetSize(20, 1)`) and `UI_button_width` (`fn_800441C0`), all of the font's own
+  measure.
+- **Text.** The funds "$ 1,030": the lot's global 13 less what the Sims spent (AlterBudget,
+  `World::funds_spent`; the home lot's global 13 is 1,030 and the log's text turns to 1,025 at the
+  fridge's 5, tick 931; unverified that the game reads this global: its getter, the manager's
+  slot 200, was not followed); the clock "H:MM" in 12 hours (`fn_802066F4`: hour % 12, 12 for 0,
+  PM from 12) and "AM"/"PM": the clock is the world's (hour global 0, minute global 5), shown as
+  it stands after the tick. Their places: the aligned point is the movies' bar (`money_bar_x/y`,
+  `time_bar_x/y`), the clock 0.048 left of the time bar and "AM" 0.016 right of it (floats at
+  0x802AABC0 and 0x802AABC4), left aligned; the money centred on its bar; all centred on y by the
+  text height 0.0355 (0x802A3764, within 4e-5 of what the log's lines give; unverified). The width
+  of a HUD line is 13/24 (`SetSize(13, 1)`, a float at 0x802AABB0, over the font's size 24) times
+  the glyph columns less 2 texels a character (fitted to the two funds strings, 0.03 pixels).
+  Each line comes twice, the black pass 2 pixels down and right first. The dialog: its title is
+  the Dialog node's operand byte 6 (counted from 1) of the object's STR# 301, its text byte 2, the
+  tokens (`$NameLocal:1` the name of the Sim with the frame's local 1) filled as `Alone::dialog_text`
+  does; the text is broken into lines by a width (not the game's), centred on the window's middle
+  and a pixel (a fit), the line widths by a three-number model solved from Mom's three lines.
+  The dialog's texts are drawn from the frame its movie sends `dialog_ready`, the button's label
+  ("OK") from `dialog_button_accept_ready`.
+
+What does not reach the log's places: the dialog's title and button label (the font's width at
+other `SetSize` sizes) and its second and third lines (the game's line pitch is 19.26 pixels
+after the first line and 20.0 after the second: the line's height is not in the font records
+read); the first line matches to 1e-4.
+
 ### Left over
 
 Read but not placed: the font's second size word and tail, the glyph row, the last record's

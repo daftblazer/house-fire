@@ -95,7 +95,7 @@ mod study;
 mod variables;
 mod walks;
 
-pub use alone::{Alone, AloneReport, AloneRun, DialogAsk, MenuEntry, Motion, alone};
+pub use alone::{Alone, AloneReport, AloneRun, DialogAsk, MenuEntry, Motion, alone, dialog_tokens};
 pub use counts::{Bench, Counts};
 pub use drive::{DriveReport, Parting, drive};
 pub use run::{Replay, run};

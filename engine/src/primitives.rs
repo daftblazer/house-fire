@@ -202,6 +202,7 @@ pub fn dialog(n: &Node, world: &mut World, me: i16) -> PrimResult {
     if world.dialog_object != me {
         // opening it
         world.dialog_object = me;
+        world.dialog_operand = n.operand;
         world.dialog_answer = None;
         world.presentation.push(PresentationEvent { opcode: n.opcode, object: me, operand: n.operand });
     }

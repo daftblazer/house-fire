@@ -285,6 +285,14 @@ pub struct World<'lib> {
     /// and the player's answer once given (the front end sets it). While it waits, the tick's
     /// pass stops after that object's turn (stop_pass, which the simulator takes and clears).
     pub dialog_object: i16,
+    /// The node's operand of the dialog that waits (the HUD's text: `hud`).
+    pub dialog_operand: [u8; 8],
+    /// What the household's Sims have spent since the lot loaded (AlterBudget's, a gain
+    /// negative): the HUD shows the lot's funds less this. Nothing else reads it; the scripts'
+    /// own tests of the funds are the log's.
+    pub funds_spent: i32,
+    /// The locals of the frame that opened it (the text's tokens read them).
+    pub dialog_locals: Vec<i16>,
     pub dialog_answer: Option<bool>,
     pub stop_pass: bool,
     /// The clock's hour (the motive update reads it only for a sleeping person; the clock is
@@ -385,6 +393,9 @@ impl<'lib> World<'lib> {
             walls: Walls::default(),
             presentation: Vec::new(),
             dialog_object: 0,
+            dialog_operand: [0; 8],
+            funds_spent: 0,
+            dialog_locals: Vec::new(),
             dialog_answer: None,
             stop_pass: false,
             hour: 12,

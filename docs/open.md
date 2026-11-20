@@ -330,6 +330,27 @@ The walk is the planner's and the walker's now (simulation.md, "The planner's re
 - The log-driven club run's Sim 57 has person data 65 = 1 (the log's variable) where the
   description sets 0 at the load.
 
+### The HUD's feed (stage 9, packet U3, 2026-11-20)
+
+`LOCKSTEP_HUD=1` on ui-play.log: calls, text strings and the HUD's own text places (funds, clock,
+AM) are the log's; 567 differences are left (3 reads, 564 text places of the dialog), all of the
+game's font measure (`ERFont::DoDraw`, 0x8003CB10, with `SetSize` 0x8003C95C choosing a size
+variant of the font by the requested size):
+
+- the dialog's `dialog_box_height`, `dialog_title_bar_width`, `UI_button_width` reads (once each);
+- the dialog's title, button label and body lines 2 and 3 (142, 142 and 138 records each of
+  shadow and face): the widths come from the font's own advances (the records give columns only;
+  the three-number model of `Measure::dialog_width` is solved from Mom's lines, the title and the
+  button need their own `SetSize` sizes) and the line pitch (19.26 pixels then 20.0 in Mom's
+  dialog, 19.4 in the autosave's) from the lines' heights;
+- the dialog's box centre is a pixel right of the window's middle in Mom's dialog and elsewhere
+  in others (0.4981, 0.495, 0.5): not found;
+- not native: `ra` (the relationship alert, a scan of the lot's relationships, `fn_800B830C`) and
+  `ct` (skill gains), "false" as the log has them; the funds' source (global 13 by value, the
+  manager's getter at slot 200 not followed), the player's Sim (the household's lowest-id
+  resident), the speed setting (taken from the tracks' speeds in the study), when the HUD is
+  first shown (the first frame with calls).
+
 ## A run resumed from the engine's save (stage 8, `eng-2000`)
 
 The game loads a card the engine wrote at tick 2000 of the home run and plays it; replaying its

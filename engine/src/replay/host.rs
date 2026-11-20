@@ -522,6 +522,29 @@ impl Host for ReplayHost<'_> {
             // funds themselves the log's for now)
             self.world.get_mut(me).spent = true;
         }
+        if n.opcode == 25 && has("REPLAY_SHOW_BUDGET") {
+            let f = interp.top();
+            println!("budget: tick {} node {} operand {:02x?} true {} false {} after {} result {} params {:?} locals {:?}", s.tick, s.node, n.operand, n.true_target, n.false_target, s.after, s.result, f.params, f.locals);
+        }
+        if n.opcode == 25 && n.operand[4] & 5 == 0 && s.after == n.true_target as u16 {
+            // AlterBudget that took effect on the household's funds: the HUD's money shows it
+            // (only the HUD reads `funds_spent`; the primitive's answer is the log's)
+            // the amount: by scope (0 literal, 1 parameter, 2 local, else byte 1's) and datum
+            let scope = match n.operand[0] {
+                0 => crate::world::scope::LITERAL,
+                1 => crate::world::scope::PARAMETER,
+                2 => crate::world::scope::LOCAL,
+                _ => n.operand[1],
+            };
+            let datum = i16::from_le_bytes([n.operand[2], n.operand[3]]);
+            let amount = crate::expression::Variables::get(&mut ScriptVariables::new(&mut self.world, me, interp.top()), scope, datum);
+            if has("REPLAY_SHOW_BUDGET") {
+                println!("budget: tick {} amount {:?}", s.tick, amount.map(|a| a.value));
+            }
+            if let Some(a) = amount {
+                self.world.funds_spent += i32::from(if n.operand[4] & 2 != 0 { -a.value } else { a.value });
+            }
+        }
         if n.opcode == 20 {
             // RunFunctionalTree: natively (primitives::run_functional_tree), against the log's next
             // step (that tree's node 0, a frame up, on the same stack object, with these parameters)
@@ -770,6 +793,9 @@ impl Host for ReplayHost<'_> {
                 self.world.dialog_answer = Some(s.after == n.true_target as u16);
             }
             let stop_before = self.world.stop_pass;
+            if self.world.dialog_object != me_id {
+                self.world.dialog_locals = interp.top().locals.clone();
+            }
             let got = dialog(n, &mut self.world, me_id);
             if s.result == 1 {
                 self.world.stop_pass = stop_before;
