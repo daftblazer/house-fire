@@ -3,8 +3,9 @@
 //! (`$HF_FRAMES/ui/world_NNNNN.png`), and compares with the game's own picture
 //! (`frame_NNNNN.png`) on the 2D layer: the pixels where the game's two pictures differ by more
 //! than 4 in a channel. The portrait square (the game's own 3D draw, not the movies') is left
-//! out. Writes ours and a difference picture under `$HF_FRAMES/ui-out/`.
-//!
+//! out. Also counts `over`: the pixels we draw where the game's frame is its world picture. The
+//! game's own text comes from the log's text records (`game_text`). Writes ours and a difference
+//! picture under `$HF_UI_OUT` (default `$HF_FRAMES/ui-out/`).
 
 use housefire::apt::play;
 use housefire::disc::Disc;
