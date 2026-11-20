@@ -51,6 +51,26 @@ fn main() -> ExitCode {
         println!("cannot read {}", args[1]);
         return ExitCode::from(1);
     };
+    if std::env::var_os("REPLAY_SHOW_MOVIES").is_some() {
+        // The game and its Apt movies (']' calls in, '"' commands out), one line each.
+        let (mut c, mut m) = (log.movie_calls.iter().peekable(), log.movie_commands.iter().peekable());
+        loop {
+            let take_call = match (c.peek(), m.peek()) {
+                (Some(x), Some(y)) => (x.tick, x.frame) <= (y.tick, y.frame),
+                (Some(_), None) => true,
+                (None, Some(_)) => false,
+                (None, None) => break,
+            };
+            if take_call {
+                let x = c.next().unwrap();
+                let args: Vec<String> = x.args.iter().map(|(w, t)| if t.is_empty() { format!("{w:#x}") } else { format!("{t:?}") }).collect();
+                println!("movie: tick {} frame {} call screen {:#x} vt {:#x} {}({}) a {:#x} b {:#x} from {:#x}", x.tick, x.frame, x.screen, x.vtable, x.name, args.join(", "), x.a, x.b, x.caller);
+            } else {
+                let y = m.next().unwrap();
+                println!("movie: tick {} frame {} command screen {:#x} vt {:#x} {:?} {:?} handler {:#x}", y.tick, y.frame, y.screen, y.vtable, y.command, y.argument, y.handler);
+            }
+        }
+    }
     let Ok(d) = Disc::open(&args[2]) else {
         println!("cannot read {}", args[2]);
         return ExitCode::from(1);

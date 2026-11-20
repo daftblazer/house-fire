@@ -677,6 +677,37 @@ pub struct SoundPostRec {
     pub message: [u32; 8],
 }
 
+/// The game calling a function of a screen's Apt movie (']', Apt_CallMovie 80106164): the
+/// screen, its vtable (which screen), the caller, the game's frame counter, the function's name,
+/// two words passed before the arguments, and each argument raw with its text when it points at
+/// text; the tick.
+#[derive(Clone, Debug, Default)]
+pub struct MovieCallRec {
+    pub tick: u32,
+    pub screen: u32,
+    pub vtable: u32,
+    pub caller: u32,
+    pub frame: u32,
+    pub name: String,
+    pub a: u32,
+    pub b: u32,
+    pub args: Vec<(u32, String)>,
+}
+
+/// A screen's Apt movie sending the game a command ('"', the screens' vtable slot +0x44): the
+/// handler, the screen, its vtable, the game's frame counter, the command and its argument; the
+/// tick.
+#[derive(Clone, Debug, Default)]
+pub struct MovieCommandRec {
+    pub tick: u32,
+    pub handler: u32,
+    pub screen: u32,
+    pub vtable: u32,
+    pub frame: u32,
+    pub command: String,
+    pub argument: String,
+}
+
 /// A call of the sound manager ('/'): 0 acquire (Snd_Acquire: `a` the kind, `b` the handle it
 /// returned), 1 play (Snd_Play: the handle, `a` the sample's id, the CRC-32 of its name in
 /// capitals), 2 stop (Snd_Stop), 3 params (Snd_Params: `a` their address, `params` their first 8
@@ -852,6 +883,10 @@ pub struct Log {
     pub loaded: Vec<LoadedRec>,
     /// The sound manager's calls ('/'), in order.
     pub sounds: Vec<SoundRec>,
+    /// The game's calls into the Apt movies (']'), in order.
+    pub movie_calls: Vec<MovieCallRec>,
+    /// The Apt movies' commands to the game ('"'), in order.
+    pub movie_commands: Vec<MovieCommandRec>,
     /// The sound messages posted ('.'), in order.
     pub sound_posts: Vec<SoundPostRec>,
     /// The animators' speed updates ('#'), in order.
@@ -1111,6 +1146,18 @@ impl Bytes<'_> {
     }
     fn f32(&mut self) -> f32 {
         f32::from_bits(self.u32())
+    }
+    /// A u8 length and that many bytes of text; `None` if the log ends first.
+    fn text(&mut self) -> Option<String> {
+        if !self.has(1) {
+            return None;
+        }
+        let n = self.u8() as usize;
+        if !self.has(n) {
+            return None;
+        }
+        self.p += n;
+        Some(String::from_utf8_lossy(&self.b[self.p - n..self.p]).into_owned())
     }
 }
 
@@ -2004,6 +2051,39 @@ pub fn read_log(path: &str) -> Option<Log> {
                     *w = r.u32();
                 }
                 log.sound_posts.push(p);
+            }
+            b']' => {
+                if !r.has(16) {
+                    break;
+                }
+                let (screen, vtable, caller, frame) = (r.u32(), r.u32(), r.u32(), r.u32());
+                let Some(name) = r.text() else { break };
+                if !r.has(9) {
+                    break;
+                }
+                let (a, b, count) = (r.u32(), r.u32(), r.u8());
+                let mut args = Vec::new();
+                for _ in 0..count {
+                    if !r.has(4) {
+                        break;
+                    }
+                    let w = r.u32();
+                    let Some(t) = r.text() else { break };
+                    args.push((w, t));
+                }
+                if args.len() < count as usize {
+                    break;
+                }
+                log.movie_calls.push(MovieCallRec { tick: log.ticks, screen, vtable, caller, frame, name, a, b, args });
+            }
+            b'"' => {
+                if !r.has(16) {
+                    break;
+                }
+                let (handler, screen, vtable, frame) = (r.u32(), r.u32(), r.u32(), r.u32());
+                let Some(command) = r.text() else { break };
+                let Some(argument) = r.text() else { break };
+                log.movie_commands.push(MovieCommandRec { tick: log.ticks, handler, screen, vtable, frame, command, argument });
             }
             b'/' => {
                 if !r.has(21) {
