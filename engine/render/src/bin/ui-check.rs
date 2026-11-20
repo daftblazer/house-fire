@@ -71,14 +71,14 @@ fn draw_over(gpu: &Gpu, pass: &mut AptPass, colour: &housefire_render::gpu::Imag
 }
 
 /// The words the game draws itself (not in the movies): `$HF_FRAMES/ui/texts.txt`, a line for each
-/// run, `FRAME|FONT|X|Y|l, c or r|SCALE|WIDTH|RRGGBBAA|TEXT`. They are the game's own strings,
+/// run, `FRAME|FONT|X|Y|l, c or r|SCALE|WIDTH|RRGGBBAA|SHADOW|TEXT`. They are the game's own strings,
 /// so the file is not in the repository.
 fn read_texts(path: &Path) -> Vec<(u32, TextRun)> {
     let Ok(text) = std::fs::read_to_string(path) else { return Vec::new() };
     text.lines()
         .filter_map(|l| {
-            let f: Vec<&str> = l.splitn(9, '|').collect();
-            if f.len() < 9 {
+            let f: Vec<&str> = l.splitn(10, '|').collect();
+            if f.len() < 10 {
                 return None;
             }
             let align = match f[4] {
@@ -86,7 +86,7 @@ fn read_texts(path: &Path) -> Vec<(u32, TextRun)> {
                 "r" => Align::Right,
                 _ => Align::Left,
             };
-            Some((f[0].parse().ok()?, TextRun { text: f[8].into(), font: f[1].into(), x: f[2].parse().ok()?, y: f[3].parse().ok()?, align, scale: f[5].parse().ok()?, width: f[6].parse().ok()?, color: u32::from_str_radix(f[7], 16).ok()?, shadow: std::env::var("HF_SHADOW").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) }))
+            Some((f[0].parse().ok()?, TextRun { text: f[9].into(), font: f[1].into(), x: f[2].parse().ok()?, y: f[3].parse().ok()?, align, scale: f[5].parse().ok()?, width: f[6].parse().ok()?, color: u32::from_str_radix(f[7], 16).ok()?, shadow: f[8].parse().ok()? }))
         })
         .collect()
 }
@@ -124,6 +124,7 @@ fn main() -> ExitCode {
     let mut painter = Painter::new(&assets);
     let out_dir = std::env::var_os("HF_UI_OUT").map_or_else(|| frames_dir.join("ui-out"), PathBuf::from);
     std::fs::create_dir_all(&out_dir).expect("the output folder");
+    let lag: u32 = std::env::var("HF_UI_LAG").ok().and_then(|v| v.parse().ok()).unwrap_or(2);
     let texts = read_texts(&std::env::var_os("HF_UI_TEXTS").map_or_else(|| frames_dir.join("ui").join("texts.txt"), PathBuf::from));
     let (mut total, mut total_within) = (0usize, 0usize);
     for &frame in &frames {
@@ -132,7 +133,7 @@ fn main() -> ExitCode {
             eprintln!("ui: frame {frame}: no pictures in {}", ui.display());
             return ExitCode::FAILURE;
         };
-        let (player, _) = play::run(&log, assets.flashes.clone(), Some(frame), play::Timing::default());
+        let (player, _) = play::run(&log, assets.flashes.clone(), Some(frame.saturating_sub(lag)), play::Timing::default());
         let list = player.display_list();
         let mut drawing = painter.draw(&mut pass, &list, (WIDTH, HEIGHT));
         for run in texts.iter().filter(|(f, _)| *f == frame).map(|(_, r)| r) {

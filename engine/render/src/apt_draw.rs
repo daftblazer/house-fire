@@ -101,8 +101,9 @@ pub struct TextRun {
 /// space has none). Fitted to the dialogs' pictures.
 const SPACE: f32 = 9.0;
 
-/// The wrapper's layers the game's pictures show nothing of: the key pictures and the D-pad
-/// (the movies report where their buttons are and the game draws those itself).
+/// The wrapper's layers the game's pictures show nothing of: the key pictures and the D-pad,
+/// and the buttons the wrapper makes for each screen (`dialog_button_accept`...): the movies
+/// report where their buttons are and the game draws those itself.
 const HIDDEN_LAYERS: [&str; 2] = ["keys", "dpad"];
 
 /// The triangles and runs of one frame.
@@ -232,7 +233,7 @@ impl<'a> Painter<'a> {
         let clip = |p: [f32; 2]| [p[0] * sx - 1.0, p[1] * sy - 1.0];
         let _ = size;
         for item in list {
-            if HIDDEN_LAYERS.contains(&&*item.layer) {
+            if HIDDEN_LAYERS.contains(&&*item.layer) || item.layer.contains("_button_") {
                 continue;
             }
             let Some(flash) = self.flashes.get(&*item.movie).copied() else { continue };

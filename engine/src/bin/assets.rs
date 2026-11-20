@@ -4309,7 +4309,7 @@ fn apt_play(d: &Disc, args: &[String]) -> ExitCode {
     }
     if list {
         for it in player.display_list() {
-            println!("  {} char {} {:?} m {:?} mul {:?} add {:?} depth {} text {:?}", it.movie, it.character, it.kind, it.matrix, it.color.mul, it.color.add, it.depth, it.text);
+            println!("  [{}] {} char {} {:?} m {:?} mul {:?} add {:?} depth {} text {:?}", it.layer, it.movie, it.character, it.kind, it.matrix, it.color.mul, it.color.add, it.depth, it.text);
         }
     }
     if rep.same == rep.total { ExitCode::SUCCESS } else { ExitCode::from(1) }
