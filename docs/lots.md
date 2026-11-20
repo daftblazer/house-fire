@@ -493,9 +493,20 @@ wrong, each checked on the game's saves and on its memory in the home run (`BUST
   between lots for one type (run-time figures), written 0 (a value the game's saves have).
 - **A made object's relationships**: the form every saved object has (-1, -2, none).
 
-Left open: with all of these the game's load no longer faults but spends minutes in the slot
-walk (fn_801FCF04 and fn_801EF09C, from the room walk) and never reaches the lot. Without the
-meal in Sim 12's slots it loads (and faults at tick 1, in Sim 12's slot test reaching the
-meal). The group meal 198 held by Sim 237 on the home card loads; the single meal (a type new
-to the lot) held by Sim 12 does not. Tried without effect: the new types' fields 0 to 3 as the
-group meal's, 8 slots for the made objects.
+- **The slot entry** (`DATA_SLOT_ENTRY`, data field 14 = object +66): the cause of the long walk.
+  The game's slot code (801EF140 on; 801EF21C stores it, 801EF440 clears it to -1 with the
+  holder) keeps there the object's entry in its holder's slot table, slot + 1: 176 of 176 held
+  objects of the home and club cards have 1 (slot 0, entry 1 of the holder's `pairs`), the rest
+  -1 (or 0). The room walk (fn_80243C24 per tile, 802357C0's census loop) takes the next object
+  with fn_801FCF04: down the current object's own table (+240, entries from the cursor), and
+  when it has none up through fn_801EF09C, which builds the object's place (fn_801EF2B4: the
+  holder found by the id in field 26, the entry from +66) and goes on in the holder's table from
+  entry + 1. The meal 202 made in play had 0 there, so the walk resumed the holder's table at
+  entry 1, found 202 again, went up again: a cycle with no end (the Sim's own walk, never
+  reaching the tile list's end). The group meal 198 (entry 1) resumes at 2, past the table.
+  Written now with the holder (`set_container`: slot 0, entry 1, the engine's own data, so the
+  save holds it as the world has it). Without the meal in the Sim's `pairs` the load finished
+  because the Sim's table never named it.
+  An unheld object the engine made has 0 in fields 3 and 14 where the game's removal leaves -1
+  (the trash pile 201): not on the walk's path (no holder), left as it is.
+  Not run on the game yet: the figure to look for is the load reaching the lot.

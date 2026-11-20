@@ -94,13 +94,27 @@ pub const DATA_SLOT: usize = 3;
 /// load (fn_80243C24) finds a held object's container through it, and faults on 0.
 pub const DATA_HOLDER: usize = 26;
 
-/// Puts the object (its data) in a container (0: none): `DATA_CONTAINER` and `DATA_HOLDER`.
+/// The object data field (+66) that keeps the object's entry in its container's slot table:
+/// slot + 1 (the first entry is not a slot), -1 when it is in none. The game's slot code
+/// (fn_801EF140 on, 801EF21C) writes it with the holder (`DATA_HOLDER`); all 176 held objects of
+/// the home and club cards have 1 here (slot 0), and the load's room walk (fn_801FCF04, the
+/// next object of a tile's walk) resumes its holder's table at this entry + 1, so 0 here sends
+/// the walk round the same held object for ever.
+pub const DATA_SLOT_ENTRY: usize = 14;
+
+/// Puts the object (its data) in a container (0: none): `DATA_CONTAINER` and `DATA_HOLDER`, and
+/// when it is in one, in its slot 0 (`DATA_SLOT`, `DATA_SLOT_ENTRY`: what a hand or a surface
+/// is, every object the game saved in a container is in slot 0).
 pub fn set_container(data: &mut Vec<i16>, container: i16) {
     if data.len() <= DATA_HOLDER {
         data.resize(DATA_HOLDER + 1, 0);
     }
     data[DATA_CONTAINER] = container;
     data[DATA_HOLDER] = container;
+    if container != 0 {
+        data[DATA_SLOT] = 0;
+        data[DATA_SLOT_ENTRY] = 1;
+    }
 }
 /// The object data field of its flags (0x4: no extent, not an obstacle; 0x10: may be walked
 /// through, an obstacle at a small cost; `docs/simulation.md`, "Which objects block").
