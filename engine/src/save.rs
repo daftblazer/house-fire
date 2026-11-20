@@ -152,6 +152,12 @@ pub struct LotChunks {
     /// Its block's offset in the file.
     pub block: u32,
     pub chunks: Vec<(String, Vec<u8>)>,
+    /// A 16-bit value for each chunk, after the table's sizes (1 in section 0; the families' and
+    /// the made Sims' numbers in section 1).
+    pub ids: Vec<u16>,
+    /// The bytes that pad the table and each chunk to 4, in order: the game leaves whatever its
+    /// buffer held there, so a file is written back the same only with them.
+    pub padding: Vec<u8>,
 }
 
 impl LotChunks {
@@ -168,6 +174,8 @@ pub struct NeighbourhoodBlock {
     pub count: u32,
     /// A save's (memory_card_file), not the disc's.
     pub big_endian: bool,
+    /// The header's sixth word, the format's version.
+    pub version: u32,
     pub data: Vec<u8>,
 }
 
@@ -188,7 +196,7 @@ pub fn read_neighbourhood(f: &[u8]) -> Result<Vec<NeighbourhoodBlock>> {
             if used != pk {
                 return err("a block does not unpack from exactly its packed size");
             }
-            out.push(NeighbourhoodBlock { offset: off as u32, section, count: w(6), big_endian: big, data });
+            out.push(NeighbourhoodBlock { offset: off as u32, section, count: w(6), big_endian: big, version, data });
         }
         off += BLOCK;
     }
@@ -196,7 +204,8 @@ pub fn read_neighbourhood(f: &[u8]) -> Result<Vec<NeighbourhoodBlock>> {
 }
 
 /// A block's chunk table (a lot's, the neighbourhood's): n FourCCs (backwards), n offsets from
-/// the block's start in the file (header included), n sizes.
+/// the block's start in the file (header included), n sizes, n 16-bit values (the table padded
+/// to 4 bytes); the chunks follow, each padded to 4.
 pub fn chunk_table(b: &NeighbourhoodBlock) -> Result<LotChunks> {
     let d = &b.data;
     let mut n = 0;
@@ -207,7 +216,12 @@ pub fn chunk_table(b: &NeighbourhoodBlock) -> Result<LotChunks> {
         return err("a chunk table runs past its block");
     }
     let word = |at: usize| if b.big_endian { be32(d, at) } else { le32(d, at) } as usize;
-    let mut lot = LotChunks { block: b.offset, chunks: Vec::with_capacity(n) };
+    if 14 * n > d.len() {
+        return err("a chunk table runs past its block");
+    }
+    let half = |at: usize| if b.big_endian { u16::from_be_bytes([d[at], d[at + 1]]) } else { le16(d, at) };
+    let mut lot = LotChunks { block: b.offset, chunks: Vec::with_capacity(n), ids: (0..n).map(|k| half(12 * n + 2 * k)).collect(), padding: Vec::new() };
+    lot.padding.extend_from_slice(&d[14 * n..(14 * n + 3) / 4 * 4]);
     for k in 0..n {
         let mut tag: Vec<u8> = d[4 * k..4 * k + 4].to_vec();
         if !b.big_endian {
@@ -217,7 +231,9 @@ pub fn chunk_table(b: &NeighbourhoodBlock) -> Result<LotChunks> {
         if at < HEADER || at - HEADER + size > d.len() {
             return err("a chunk runs past its block");
         }
-        lot.chunks.push((String::from_utf8_lossy(&tag).into_owned(), d[at - HEADER..at - HEADER + size].to_vec()));
+        let end = at - HEADER + size;
+        lot.padding.extend_from_slice(&d[end..d.len().min((end + 3) / 4 * 4)]);
+        lot.chunks.push((String::from_utf8_lossy(&tag).into_owned(), d[at - HEADER..end].to_vec()));
     }
     Ok(lot)
 }
@@ -306,6 +322,16 @@ pub fn read_lots(file: &[u8]) -> Result<Vec<LotChunks>> {
 /// blocks and chunks as the disc's, but its block headers and chunk tables big-endian (and the
 /// FourCCs not reversed); the chunks' own contents are the disc's formats.
 pub fn memory_card_file(card: &[u8], game: &str) -> Result<Vec<u8>> {
+    const CARD_BLOCK: usize = 0x2000;
+    let mut out = Vec::new();
+    for b in memory_card_file_blocks(card, game)? {
+        out.extend_from_slice(&card[b * CARD_BLOCK..(b + 1) * CARD_BLOCK]);
+    }
+    Ok(out)
+}
+
+/// The card's blocks (8 KB, by index) of `game`'s file, in order; empty if the card has none.
+pub fn memory_card_file_blocks(card: &[u8], game: &str) -> Result<Vec<usize>> {
     // 8 KB blocks: 0 the header, 1-2 the directory (and its backup), 3-4 the block map; the
     // files from block 5. A directory entry (64 bytes): the game and maker code, ..., its first
     // block at +0x36 and its block count at +0x38 (big-endian); the map's entries (from +0x0A,
@@ -326,7 +352,7 @@ pub fn memory_card_file(card: &[u8], game: &str) -> Result<Vec<u8>> {
             if b < 5 || b >= blocks {
                 return err("a memory card file's blocks leave the card");
             }
-            out.extend_from_slice(&card[b * CARD_BLOCK..(b + 1) * CARD_BLOCK]);
+            out.push(b);
             b = be16(3 * CARD_BLOCK + 0x0A + 2 * (b - 5));
         }
         return Ok(out);
