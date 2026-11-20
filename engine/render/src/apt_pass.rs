@@ -36,6 +36,48 @@ pub struct Batch {
     pub count: u32,
 }
 
+/// A colour image of `width` by `height` (RGBA, unsigned normalised) the pass can draw over and
+/// be read back from: for pictures made offscreen (the checks).
+pub fn target(gpu: &Gpu, width: u32, height: u32) -> Image {
+    gpu.image(
+        &vk::ImageCreateInfo::default()
+            .image_type(vk::ImageType::TYPE_2D)
+            .format(TARGET_FORMAT)
+            .extent(vk::Extent3D { width, height, depth: 1 })
+            .mip_levels(1)
+            .array_layers(1)
+            .samples(vk::SampleCountFlags::TYPE_1)
+            .usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_SRC | vk::ImageUsageFlags::TRANSFER_DST),
+        vk::ImageAspectFlags::COLOR,
+    )
+}
+
+/// The format of `target`.
+pub const TARGET_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
+
+/// Puts `base` (`width * height * 4` bytes of RGBA) in `colour` (a `target`), draws the pass over
+/// it and reads the picture back.
+pub fn render_over(gpu: &Gpu, pass: &AptPass, colour: &Image, base: &[u8], width: u32, height: u32) -> Vec<u8> {
+    let d = &gpu.device;
+    let staging = gpu.staging(base);
+    let size = (width * height * 4) as usize;
+    let out = gpu.buffer(size as u64, vk::BufferUsageFlags::TRANSFER_DST, vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT);
+    let range = vk::ImageSubresourceRange::default().aspect_mask(vk::ImageAspectFlags::COLOR).level_count(1).layer_count(1);
+    let barrier = |from, to, src, dst| vk::ImageMemoryBarrier::default().old_layout(from).new_layout(to).src_access_mask(src).dst_access_mask(dst).image(colour.image).subresource_range(range);
+    let region = vk::BufferImageCopy::default().image_subresource(vk::ImageSubresourceLayers::default().aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1)).image_extent(vk::Extent3D { width, height, depth: 1 });
+    gpu.one_shot(|cb| unsafe {
+        d.cmd_pipeline_barrier(cb, vk::PipelineStageFlags::TOP_OF_PIPE, vk::PipelineStageFlags::TRANSFER, vk::DependencyFlags::empty(), &[], &[], &[barrier(vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::AccessFlags::empty(), vk::AccessFlags::TRANSFER_WRITE)]);
+        d.cmd_copy_buffer_to_image(cb, staging.buffer, colour.image, vk::ImageLayout::TRANSFER_DST_OPTIMAL, &[region]);
+        d.cmd_pipeline_barrier(cb, vk::PipelineStageFlags::TRANSFER, vk::PipelineStageFlags::TRANSFER, vk::DependencyFlags::empty(), &[], &[], &[barrier(vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, vk::AccessFlags::TRANSFER_WRITE, vk::AccessFlags::TRANSFER_READ)]);
+        pass.record(cb);
+        d.cmd_copy_image_to_buffer(cb, colour.image, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, out.buffer, &[region]);
+    });
+    let rgba = gpu.read(&out, size);
+    gpu.destroy_buffer(staging);
+    gpu.destroy_buffer(out);
+    rgba
+}
+
 /// Textures a pass can hold (one descriptor set each).
 const MAX_TEXTURES: u32 = 4096;
 

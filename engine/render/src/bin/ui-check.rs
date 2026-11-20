@@ -8,19 +8,17 @@
 //! `HF_UI_SIZE=WxH` draws (and compares) at another size (the reference is scaled by nearest
 //! texel: a study aid only). `HF_UI_NEAREST=1` samples the textures at the nearest texel.
 
-use ash::vk;
 use housefire::apt::play;
 use housefire::disc::Disc;
 use housefire::tree_log::read_log;
-use housefire_render::apt_draw::{Align, AptAssets, Drawing, Painter, TextRun};
-use housefire_render::apt_pass::AptPass;
+use housefire_render::apt_draw::{Align, AptAssets, Painter, TextRun};
+use housefire_render::apt_pass::{self, AptPass};
 use housefire_render::gpu::Gpu;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 const WIDTH: u32 = 640;
 const HEIGHT: u32 = 448;
-const FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
 
 fn read_png(path: &Path) -> Option<Vec<u8>> {
     let mut reader = png::Decoder::new(std::fs::File::open(path).ok()?).read_info().ok()?;
@@ -46,28 +44,6 @@ fn write_png(path: &Path, rgba: &[u8]) {
 /// Measured from the pictures (the square the HUD frames, 54 by 56 in them).
 fn portrait_box(frame: u32) -> Option<[usize; 4]> {
     (frame >= 1300).then_some([48, 345, 106, 405])
-}
-
-/// Draws a display list's frame on the GPU over `base` (RGBA, `WIDTH` by `HEIGHT`).
-fn draw_over(gpu: &Gpu, pass: &mut AptPass, colour: &housefire_render::gpu::Image, base: &[u8], drawing: &Drawing) -> Vec<u8> {
-    let d = &gpu.device;
-    pass.set(&drawing.vertices, &drawing.batches);
-    let staging = gpu.staging(base);
-    let out = gpu.buffer(u64::from(WIDTH * HEIGHT * 4), vk::BufferUsageFlags::TRANSFER_DST, vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT);
-    let range = vk::ImageSubresourceRange::default().aspect_mask(vk::ImageAspectFlags::COLOR).level_count(1).layer_count(1);
-    let barrier = |from, to, src, dst| vk::ImageMemoryBarrier::default().old_layout(from).new_layout(to).src_access_mask(src).dst_access_mask(dst).image(colour.image).subresource_range(range);
-    let region = vk::BufferImageCopy::default().image_subresource(vk::ImageSubresourceLayers::default().aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1)).image_extent(vk::Extent3D { width: WIDTH, height: HEIGHT, depth: 1 });
-    gpu.one_shot(|cb| unsafe {
-        d.cmd_pipeline_barrier(cb, vk::PipelineStageFlags::TOP_OF_PIPE, vk::PipelineStageFlags::TRANSFER, vk::DependencyFlags::empty(), &[], &[], &[barrier(vk::ImageLayout::UNDEFINED, vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::AccessFlags::empty(), vk::AccessFlags::TRANSFER_WRITE)]);
-        d.cmd_copy_buffer_to_image(cb, staging.buffer, colour.image, vk::ImageLayout::TRANSFER_DST_OPTIMAL, &[region]);
-        d.cmd_pipeline_barrier(cb, vk::PipelineStageFlags::TRANSFER, vk::PipelineStageFlags::TRANSFER, vk::DependencyFlags::empty(), &[], &[], &[barrier(vk::ImageLayout::TRANSFER_DST_OPTIMAL, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, vk::AccessFlags::TRANSFER_WRITE, vk::AccessFlags::TRANSFER_READ)]);
-        pass.record(cb);
-        d.cmd_copy_image_to_buffer(cb, colour.image, vk::ImageLayout::TRANSFER_SRC_OPTIMAL, out.buffer, &[region]);
-    });
-    let rgba = gpu.read(&out, (WIDTH * HEIGHT * 4) as usize);
-    gpu.destroy_buffer(staging);
-    gpu.destroy_buffer(out);
-    rgba
 }
 
 /// The words the game draws itself (not in the movies): `$HF_FRAMES/ui/texts.txt`, a line for each
@@ -109,18 +85,8 @@ fn main() -> ExitCode {
     let disc = Disc::open(&args[2]).expect("the disc image");
     let assets = AptAssets::new(&disc);
     let gpu = Gpu::new(std::env::var_os("HF_VALIDATE").is_some()).expect("Vulkan");
-    let colour = gpu.image(
-        &vk::ImageCreateInfo::default()
-            .image_type(vk::ImageType::TYPE_2D)
-            .format(FORMAT)
-            .extent(vk::Extent3D { width: WIDTH, height: HEIGHT, depth: 1 })
-            .mip_levels(1)
-            .array_layers(1)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .usage(vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_SRC | vk::ImageUsageFlags::TRANSFER_DST),
-        vk::ImageAspectFlags::COLOR,
-    );
-    let mut pass = AptPass::new(&gpu, colour.view, FORMAT, WIDTH, HEIGHT, std::env::var_os("HF_UI_NEAREST").is_none());
+    let colour = apt_pass::target(&gpu, WIDTH, HEIGHT);
+    let mut pass = AptPass::new(&gpu, colour.view, apt_pass::TARGET_FORMAT, WIDTH, HEIGHT, std::env::var_os("HF_UI_NEAREST").is_none());
     let mut painter = Painter::new(&assets);
     let out_dir = std::env::var_os("HF_UI_OUT").map_or_else(|| frames_dir.join("ui-out"), PathBuf::from);
     std::fs::create_dir_all(&out_dir).expect("the output folder");
@@ -139,13 +105,15 @@ fn main() -> ExitCode {
         for run in texts.iter().filter(|(f, _)| *f == frame).map(|(_, r)| r) {
             painter.text(&mut pass, &mut drawing, run);
         }
-        let ours = draw_over(&gpu, &mut pass, &colour, &world, &drawing);
+        pass.set(&drawing.vertices, &drawing.batches);
+        let ours = apt_pass::render_over(&gpu, &pass, &colour, &world, WIDTH, HEIGHT);
         write_png(&out_dir.join(format!("ours_{frame:05}.png")), &ours);
         let masked = |i: usize| {
             let (x, y) = (i % WIDTH as usize, i / WIDTH as usize);
             portrait_box(frame).is_some_and(|b| x >= b[0] && x < b[2] && y >= b[1] && y < b[3])
         };
         let (mut layer, mut within, mut sq) = (0usize, 0usize, 0f64);
+        let mut hist = [0usize; 9];
         let mut diff = vec![0u8; ours.len()];
         for i in 0..(WIDTH * HEIGHT) as usize {
             let p = i * 4;
@@ -164,6 +132,7 @@ fn main() -> ExitCode {
             layer += usize::from(on_layer);
             if on_layer {
                 within += usize::from(worst <= 4);
+                hist[(32 - u32::from(worst).leading_zeros()) as usize] += 1;
                 for c in 0..3 {
                     let e = f64::from(ours[p + c]) - f64::from(game[p + c]);
                     sq += e * e;
@@ -178,6 +147,9 @@ fn main() -> ExitCode {
         let mse = sq / (layer.max(1) * 3) as f64;
         let psnr = if mse == 0.0 { 99.0 } else { 10.0 * (255.0f64 * 255.0 / mse).log10() };
         println!("ui: frame {frame}, layer {layer} pixels, within 4 {within} ({:.2}%), beyond {}, PSNR {psnr:.2} dB", 100.0 * within as f64 / layer.max(1) as f64, layer - within);
+        if std::env::var_os("HF_UI_HIST").is_some() {
+            println!("    worst channel error, pixels by error bit length (0, 1, 2-3, 4-7, 8-15, 16-31, 32-63, 64-127, 128+): {hist:?}");
+        }
         total += layer;
         total_within += within;
     }

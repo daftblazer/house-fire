@@ -56,6 +56,10 @@ impl AptAssets {
         let src = &b[t.texels.0..];
         let (po, n) = t.palette?;
         let coverage = texture::decode_indexed(t.kind, t.width, t.height, src, b.get(po..po + n * 2)?, 0)?;
+        if std::env::var_os("HF_MODEA").is_some() {
+            let colour = texture::decode_indexed(t.kind, t.width, t.height, src, b.get(po + n * 2..po + n * 4)?, 0)?;
+            return Some((t.width, t.height, coverage.iter().zip(&colour).flat_map(|(&a, &c)| [(c >> 24) as u8, (c >> 24) as u8, (c >> 24) as u8, (a >> 24) as u8]).collect()));
+        }
         Some((t.width, t.height, coverage.iter().flat_map(|&a| [(a >> 24) as u8, (a >> 24) as u8, (a >> 24) as u8, (a >> 24) as u8]).collect()))
     }
 }
@@ -100,6 +104,12 @@ pub struct TextRun {
 /// The advance of a space in the font's texels (a glyph's record is its columns on the page; a
 /// space has none). Fitted to the dialogs' pictures.
 const SPACE: f32 = 9.0;
+fn dx() -> f32 { std::env::var("HF_DX").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) }
+fn dy() -> f32 { std::env::var("HF_DY").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) }
+fn shx() -> f32 { std::env::var("HF_SHX").ok().and_then(|v| v.parse().ok()).unwrap_or(1.0) }
+fn shy() -> f32 { std::env::var("HF_SHY").ok().and_then(|v| v.parse().ok()).unwrap_or(1.0) }
+fn pad() -> f32 { std::env::var("HF_PAD").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) }
+fn space() -> f32 { std::env::var("HF_SPACE").ok().and_then(|v| v.parse().ok()).unwrap_or(SPACE) }
 
 /// The wrapper's layers the game's pictures show nothing of: the key pictures and the D-pad,
 /// and the buttons the wrapper makes for each screen (`dialog_button_accept`...): the movies
@@ -152,7 +162,7 @@ impl<'a> Painter<'a> {
         let assets = self.assets;
         let Some(font) = assets.fonts.get(&run.font) else { return };
         let (sx, sy) = (2.0 / STAGE.0, 2.0 / STAGE.1);
-        let advance = |c: char| -> f32 { if c == ' ' { SPACE } else { font.glyph(c as u32).map_or(0.0, |g| (g.x1 - g.x0) as f32) } };
+        let advance = |c: char| -> f32 { if c == ' ' { space() } else { font.glyph(c as u32).map_or(0.0, |g| (g.x1 - g.x0) as f32 + pad()) } };
         // lines: breaks at newlines, then at the last space that fits
         let mut lines: Vec<Vec<char>> = Vec::new();
         for para in run.text.split('\n') {
@@ -179,11 +189,11 @@ impl<'a> Painter<'a> {
         for (n, line) in lines.iter().enumerate() {
             let width: f32 = line.iter().map(|&c| advance(c)).sum::<f32>() * run.scale;
             let mut x = match run.align {
-                Align::Left => run.x,
-                Align::Center => run.x - width / 2.0,
-                Align::Right => run.x - width,
-            } + offset;
-            let top = run.y + offset + n as f32 * font.line as f32 * run.scale;
+                Align::Left => run.x + dx(),
+                Align::Center => run.x + dx() - width / 2.0,
+                Align::Right => run.x + dx() - width,
+            } + offset * shx();
+            let top = run.y + dy() + offset * shy() + n as f32 * font.line as f32 * run.scale;
             for &c in line {
                 let a = advance(c);
                 if let Some(g) = font.glyph(c as u32)
@@ -194,9 +204,11 @@ impl<'a> Painter<'a> {
                     // the page is stored upside down: the band's last row is the glyph's top
                     let band = font.line as f32;
                     let (v_top, v_bot) = (((g.row as f32 + 1.0) * band) / ph as f32, (g.row as f32 * band) / ph as f32);
-                    let (x1, y1) = (x + a * run.scale, top + band * run.scale);
+                    let snap = |v: f32| if std::env::var_os("HF_SNAP").is_some() { v.round() } else { v };
+                    let (xs, ts) = (snap(x), snap(top));
+                    let (x1, y1) = (xs + a * run.scale, ts + band * run.scale);
                     let corner = |px: f32, py: f32, u: f32, v: f32| Vertex { pos: [px * sx - 1.0, py * sy - 1.0], uv: [u, v], tint, mul: [1.0; 4], add: [0.0; 4], premultiplied: 1.0, _pad: 0.0 };
-                    let (tl, tr, bl, br) = (corner(x, top, u0, v_top), corner(x1, top, u1, v_top), corner(x, y1, u0, v_bot), corner(x1, y1, u1, v_bot));
+                    let (tl, tr, bl, br) = (corner(xs, ts, u0, v_top), corner(x1, ts, u1, v_top), corner(xs, y1, u0, v_bot), corner(x1, y1, u1, v_bot));
                     out.push(tex, [tl, tr, bl]);
                     out.push(tex, [tr, br, bl]);
                 }
@@ -230,7 +242,8 @@ impl<'a> Painter<'a> {
     pub fn draw(&mut self, pass: &mut AptPass, list: &[DisplayItem], size: (u32, u32)) -> Drawing {
         let mut out = Drawing::default();
         let (sx, sy) = (2.0 / STAGE.0, 2.0 / STAGE.1);
-        let clip = |p: [f32; 2]| [p[0] * sx - 1.0, p[1] * sy - 1.0];
+        let (ox, oy) = (std::env::var("HF_OX").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0), std::env::var("HF_OY").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0));
+        let clip = |p: [f32; 2]| [(p[0] + ox) * sx - 1.0, (p[1] + oy) * sy - 1.0];
         let _ = size;
         for item in list {
             if HIDDEN_LAYERS.contains(&&*item.layer) || item.layer.contains("_button_") {

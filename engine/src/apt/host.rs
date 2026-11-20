@@ -10,8 +10,10 @@ use super::value::Value;
 use crate::tree_log::Log;
 
 /// Values set at a game frame by hand: (frame, `extern` member, number). Each was fitted to what
-/// the movies sent in answer (the menu's item counts to its buttons' places, a dialog's size and
-/// place to its title bar's).
+/// the movies sent in answer (the menu's item counts to its buttons' places, a dialog's title bar's
+/// place) or, for the dialogs' and title bars' sizes and places (`dialog_*`, `mu_dialog_*`), to
+/// the game's own pictures (`ui-check`: box edges and the within-4 share, by coordinate descent;
+/// `docs/assets.md`, "Drawing the movies (U2b)").
 const FITTED: &[(u32, &str, f64)] = &[
     (738, "number_big_items", 1.0),
     (738, "number_small_items", 3.0),
@@ -19,27 +21,28 @@ const FITTED: &[(u32, &str, f64)] = &[
     (738, "menu_disable_ID", -1.0),
     (754, "number_big_items", 3.0),
     (1209, "current_load", 100.0),
-    (913, "dialog_box_width", 0.6978),
-    (913, "dialog_box_height", 0.4484),
+    (913, "dialog_box_width", 0.69858),
+    (913, "dialog_box_height", 0.44952),
     (913, "dialog_x", 0.1515),
-    (913, "dialog_y", 0.252),
+    (913, "dialog_y", 0.24977),
     (913, "number_of_buttons", 2.0),
-    (1099, "dialog_box_width", 0.5995),
-    (1099, "dialog_box_height", 0.549),
+    (1099, "dialog_box_width", 0.60028),
+    (1099, "dialog_box_height", 0.55012),
     (1099, "dialog_x", 0.2),
-    (1099, "dialog_y", 0.181),
-    (1099, "dialog_title_bar_width", 0.197),
+    (1099, "dialog_y", 0.17988),
+    (1099, "dialog_title_bar_width", 0.20091),
     (1099, "UI_button_width", 0.056_409_06),
     (1099, "button_width", 0.1),
     (1099, "number_of_buttons", 2.0),
     (1099, "is_critical_dialog", 0.0),
     (1248, "number_of_buttons", 1.0),
-    (1248, "dialog_box_height", 0.4152),
-    (1248, "dialog_title_bar_width", 0.0983),
-    (907, "mu_dialog_width", 0.6234),
+    (1248, "dialog_box_height", 0.41743),
+    (1248, "dialog_y", 0.181),
+    (1248, "dialog_title_bar_width", 0.08814),
+    (907, "mu_dialog_width", 0.62418),
     (907, "mu_dialog_height", 0.6697),
     (907, "mu_dialog_x", 0.1883),
-    (907, "mu_dialog_title_bar_width", 0.2344),
+    (907, "mu_dialog_title_bar_width", 0.25315),
     (907, "mu_dialog_y", 0.145_089_29),
 ];
 
