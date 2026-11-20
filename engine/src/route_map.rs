@@ -34,13 +34,19 @@ const OPEN_COST_INDOORS: i32 = 0;
 /// `routing::obstacle` keeps, in the world's order, its place as `place` gives it (a person's
 /// is where `place` says it stands), less those whose footprint overlaps the Sim's own; a person is the
 /// person kept unless the plan's target or three tiles off (`PERSON_NEAR`). {x0, y0, x1, y1, cost}.
-pub fn obstacles(world: &World, sim_id: i16, target: Option<i16>, goals: &[(i32, i32)], place: &dyn Fn(&Object) -> (i32, i32)) -> Vec<[i32; 5]> {
+pub fn obstacles(world: &World, sim_id: i16, target: Option<i16>, goals: &[(i32, i32)], outdoors: bool, place: &dyn Fn(&Object) -> (i32, i32)) -> Vec<[i32; 5]> {
     let Some(sim) = world.find_object(sim_id) else { return Vec::new() };
     let at = place(sim);
     let sim_rect = [at.0 - PERSON_HALF, at.1 - PERSON_HALF, at.0 + PERSON_HALF, at.1 + PERSON_HALF];
     let mut out = Vec::new();
     for o in world.objects() {
         if !o.on_lot() || o.level != sim.level || o.id() == sim_id {
+            continue;
+        }
+        // The search gathers only the objects of its domain: an outdoor plan the yard's, an indoor
+        // plan the house's (the home log's yard plans hold 63 to 65 obstacles, the house's 33 to 36,
+        // where the lot has 223 objects that would count).
+        if world.walls.indoors(o.x16 >> 4, o.y16 >> 4) == outdoors {
             continue;
         }
         let rect = if o.person {
@@ -92,7 +98,7 @@ fn tile_rects(w: usize, h: usize, wanted: impl Fn(usize, usize) -> bool) -> Vec<
     runs.into_iter().map(|(x0, x1, y0, y1)| [x0 as i32 * 16, y0 as i32 * 16, x1 as i32 * 16, y1 as i32 * 16]).collect()
 }
 
-/// The search's own regions for a plan between places in the rooms `rooms`, {x0, y0, x1, y1, cost},
+/// The search's own regions for a plan between the places `ends`, {x0, y0, x1, y1, cost},
 /// and whether the plan is outdoors (its domain the whole lot) or indoors.
 ///
 /// Outdoors (a plan with an end outside the house; the home log's yard plans): the lot's border
@@ -104,25 +110,25 @@ fn tile_rects(w: usize, h: usize, wanted: impl Fn(usize, usize) -> bool) -> Vec<
 /// no room of the plan (a room not its own, the yard) closed, the walls and diagonals; no paved
 /// floors. The rule is the closest the logs give: the original's own regions differ in how the
 /// rectangles are cut (`docs/simulation.md`).
-pub fn regions(walls: &Walls, rooms: &[u16]) -> (Vec<[i32; 5]>, bool) {
+pub fn regions(walls: &Walls, ends: &[(i32, i32)]) -> (Vec<[i32; 5]>, bool) {
     let (w, h) = walls.size();
     let (w, h) = (w as usize, h as usize);
+    let (lot_w, lot_h) = walls.lot_size();
     let indoors = |x: usize, y: usize| walls.indoors(x as i32, y as i32);
     let room_at = |x: usize, y: usize| walls.room(x as i32, y as i32);
-    let in_house = |r: u16| (0..h).any(|y| (0..w).any(|x| indoors(x, y) && room_at(x, y) == r));
-    let outside = rooms.iter().filter(|&&r| !in_house(r)).count();
+    let outside = ends.iter().filter(|p| !walls.indoors(p.0 >> 4, p.1 >> 4)).count();
     // outdoors: the plan has an end outside the house
     let outdoors = outside > 0;
     let mut out: Vec<[i32; 5]> = Vec::new();
     let mut add = |r: [i32; 4], cost: i32| out.push([r[0], r[1], r[2], r[3], cost]);
     if outdoors {
-        let (lw, lh) = (w as i32 * 16, h as i32 * 16);
+        let (lw, lh) = (lot_w as i32 * 16, lot_h as i32 * 16);
         add([0, 0, lw, 16], BLOCKS);
         add([0, lh - 16, lw, lh], BLOCKS);
         add([0, 0, 16, lh], BLOCKS);
         add([lw - 16, 0, lw, lh], BLOCKS);
         // the house closed to a plan between two places outside it
-        if outside == rooms.len() {
+        if outside == ends.len() {
             for r in tile_rects(w, h, |x, y| indoors(x, y) && room_at(x, y) != 0) {
                 add(r, BLOCKS);
             }
@@ -164,8 +170,13 @@ pub fn regions(walls: &Walls, rooms: &[u16]) -> (Vec<[i32; 5]>, bool) {
         }
     }
     if outdoors {
+        // (the paved floors inside the lot's border tiles: the street beyond is the lot's edge)
+        let (lw, lh) = (lot_w as i32 * 16, lot_h as i32 * 16);
         for r in walls.paved_regions() {
-            add(r, 0);
+            let c = [r[0].max(16), r[1].max(16), r[2].min(lw - 16), r[3].min(lh - 16)];
+            if c[0] < c[2] && c[1] < c[3] {
+                add(c, 0);
+            }
         }
     }
     (out, outdoors)
@@ -188,10 +199,12 @@ pub fn search_rects(obstacles: &[[i32; 5]], regions: &[[i32; 5]], outdoors: bool
 /// going from `start` to places `goals` (sixteenths; the rooms of both ends decide which of the
 /// house is closed), to the object `target` if any.
 pub fn search_for(world: &World, sim_id: i16, target: Option<i16>, start: (i32, i32), goals: &[(i32, i32)], place: &dyn Fn(&Object) -> (i32, i32)) -> (Vec<MapRect>, Growth) {
-    let room = |p: (i32, i32)| world.walls.room(p.0 >> 4, p.1 >> 4);
-    let mut rooms: Vec<u16> = std::iter::once(start).chain(goals.iter().copied()).map(room).filter(|&r| r != 0).collect();
-    rooms.sort_unstable();
-    rooms.dedup();
-    let (regions, outdoors) = regions(&world.walls, &rooms);
-    search_rects(&obstacles(world, sim_id, target, goals, place), &regions, outdoors)
+    let ends: Vec<(i32, i32)> = std::iter::once(start).chain(goals.iter().copied()).collect();
+    let (regions, outdoors) = regions(&world.walls, &ends);
+    search_rects(&obstacles(world, sim_id, target, goals, outdoors, place), &regions, outdoors)
+}
+
+/// Whether a plan from `start` to `goals` is an outdoor one: one of its ends is outside the house.
+pub fn outdoors(world: &World, start: (i32, i32), goals: &[(i32, i32)]) -> bool {
+    std::iter::once(start).chain(goals.iter().copied()).any(|p| !world.walls.indoors(p.0 >> 4, p.1 >> 4))
 }

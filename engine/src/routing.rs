@@ -209,8 +209,9 @@ pub fn slot_request(slot: &crate::library::Slot, facing: i16, names_object: bool
 
 /// A GotoRelativePosition's request natively, from its operand's direction byte (the third:
 /// 0 to 7 eighths of a turn from the object's front, else none) at the object's place facing
-/// `facing`: with a direction, the place a tile off that way (open as a slot's: in the object's
-/// room, no other object on it) at the slot places' score (`slot_goal_score`'s 135); with none,
+/// `facing`: with a direction, the place a tile off that way (reached from the object without
+/// crossing a wall; other objects on it do not close it: the home log's two requests with a
+/// meal and a trash compactor on the tile keep their goal) at the slot places' score (`slot_goal_score`'s 135); with none,
 /// the object's own place at `OWN_PLACE_SCORE`. Checked on the home log's seven requests.
 pub fn relative_request(direction: i8, facing: i16, w: &RequestWorld) -> Vec<Goal> {
     if !(0..8).contains(&direction) {
@@ -219,7 +220,7 @@ pub fn relative_request(direction: i8, facing: i16, w: &RequestWorld) -> Vec<Goa
     let slot = crate::library::Slot { flags: 1 << direction, optimal_proximity: RELATIVE_STEP, min_proximity: RELATIVE_STEP, max_proximity: RELATIVE_STEP, ..Default::default() };
     slot_places(&slot, w.at.0, w.at.1, facing)
         .into_iter()
-        .filter(|&(_, p)| w.same_room(p) && !(w.occupied)(p))
+        .filter(|&(_, p)| w.same_room(p))
         .map(|(k, p)| Goal { place: p, score: *slot_goal_score(&slot, false).start() as i32, bit: 1 << k })
         .collect()
 }
@@ -663,6 +664,9 @@ pub fn along_line(points: &[(f32, f32)], mut i: usize, mut t: f32, mut s: f32) -
     points.last().copied().unwrap_or_default()
 }
 
+/// The third array's byte for a tile outside the lot (the street beyond its border).
+const OUTSIDE_LOT: u8 = 0x20;
+
 /// A tile, (x, y).
 pub type Tile = (i32, i32);
 
@@ -705,6 +709,9 @@ pub struct Walls {
     /// and whether it is inside (the third array's 1).
     floors: Vec<u8>,
     inside: Vec<bool>,
+    /// The lot's size in tiles: the third array's tiles are 0x20 outside it (the home lot's 39 by
+    /// 39: its border tile is 0x26 or 0x06, the street's tiles 0x20; the arrays are 64 by 64).
+    lot: (u32, u32),
     /// Each tile's walls' styles: its -y edge's (the second array's byte 2) and its -x edge's
     /// (byte 3), a `WallTile` or (a fence) a `FenceData` style (`docs/assets.md`, "Walls").
     styles: Vec<[u8; 2]>,
@@ -733,6 +740,11 @@ impl Walls {
         let n = (a.width * a.height) as usize;
         w.floors = arrays.first().map_or(vec![0; n], |f| (0..n).map(|i| f.bytes.get(i * f.element_size as usize).copied().unwrap_or(0)).collect());
         w.inside = arrays.get(2).map_or(vec![false; n], |f| (0..n).map(|i| f.bytes.get(i * f.element_size as usize) == Some(&1)).collect());
+        // the lot's size: the first tile along the first row and the first column the third array calls outside
+        w.lot = arrays.get(2).map_or((a.width, a.height), |f| {
+            let at = |x: u32, y: u32| f.bytes.get((y * a.width + x) as usize * f.element_size as usize).copied();
+            ((0..a.width).find(|&x| at(x, 0) == Some(OUTSIDE_LOT)).unwrap_or(a.width), (0..a.height).find(|&y| at(0, y) == Some(OUTSIDE_LOT)).unwrap_or(a.height))
+        });
         w.wall_edges = w.edges.iter().map(|e| (e & 0x0F).count_ones() as usize).sum();
         // The doors: each pair of a door's parts on two neighbouring tiles opens the edge between.
         let doors: Vec<_> = world.objects().filter(|o| o.door && o.on_lot()).collect();
@@ -874,6 +886,11 @@ impl Walls {
         !self.wall_between(x, y, dx, dy)
             || self.open.contains(&key(x, y, leaving(dx, dy)))
             || self.open.contains(&key(x + dx, y + dy, entering(dx, dy)))
+    }
+
+    /// The lot's tiles across and down (within the arrays' grid: `size`).
+    pub fn lot_size(&self) -> (u32, u32) {
+        self.lot
     }
 
     /// The grid's tiles across and down.

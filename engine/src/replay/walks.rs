@@ -19,13 +19,19 @@ pub(super) fn native_plan_points(pl: &PlanRec, world: &World) -> Option<Vec<(i32
     }
     let rects: Vec<MapRect> = pl.lookup_regions.iter().flatten().map(MapRect::from_raw).collect();
     let growth = Growth { cap: (pl.grower[2] != 0).then_some(pl.grower[3] as i32), open_cost: pl.grower[4] as i32 };
-    // from the Sim's place (the search's start) to the request's goal: its only one, or the one
-    // the backward search takes of several
-    let &(sx, sy) = pl.coarse.first()?;
+    let &start = pl.coarse.first()?;
+    plan_points(pl, world, &rects, growth, start)
+}
+
+/// A plan's points from the search's rects and settings (the log's, or the native ones of
+/// `route_map`): the goal the request takes (its only one, or the backward search's of several),
+/// the way to it, refined, and the point after the goal; (x, y) like the plan's points. The
+/// search starts at `start` (x, y), the Sim's place.
+pub(super) fn plan_points(pl: &PlanRec, world: &World, rects: &[MapRect], growth: Growth, (sx, sy): (i32, i32)) -> Option<Vec<(i32, i32)>> {
     let goals: Vec<(i32, i32, i32)> = pl.goals.iter().map(|g| (g[1] as i32, g[0] as i32, g[2] as i32)).collect();
-    let pick = if goals.len() == 1 { 0 } else { choose_goal(&rects, growth, (sy, sx), &goals)? };
+    let pick = if goals.len() == 1 { 0 } else { choose_goal(rects, growth, (sy, sx), &goals)? };
     let (gy, gx, _) = *goals.get(pick)?;
-    let way = coarse_way(&rects, growth, (sy, sx), (gy, gx))?;
+    let way = coarse_way(rects, growth, (sy, sx), (gy, gx))?;
     let mut points: Vec<(i32, i32)> = refine(&way).iter().map(|&(y, x)| (x, y)).collect();
     if let (Some(a), true) = (pl.approach, pl.chosen >= 0) {
         let facing = world.find_object(a[5] as i16).and_then(|o| o.data.get(1)).map(|&d| d as i32);

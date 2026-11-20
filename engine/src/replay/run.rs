@@ -225,8 +225,8 @@ impl<'l> Replay<'l> {
                 for (n, a) in arrays.iter().enumerate() {
                     let es = a.element_size as usize;
                     println!("array {n}: {}x{}, {es} bytes a tile", a.width, a.height);
-                    for y in 5..16 {
-                        let row: Vec<String> = (15..25).map(|x| {
+                    for y in 8..12 {
+                        let row: Vec<String> = (34..46).map(|x| {
                             let i = (y * a.width + x) as usize * es;
                             a.bytes[i..i + es].iter().map(|b| format!("{b:02x}")).collect::<String>()
                         }).collect();

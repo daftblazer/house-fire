@@ -3,13 +3,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::cfmt::g;
 use crate::library::Library;
 use crate::routing::{direction_angle, turn_towards, BLOCKS, FrameClock, OFF_PAVED_WEIGHT, Tile, turn_frames, WALK_FRAME, weighed_path, WALK_TOP_ADULT, WALK_TOP_CHILD, walk_top, slot_area, slot_goal_score, slot_pick, run_on_point, walk_frames, routing_return_tick, along_line, walk_rates, walk_step, footprint, front, obstacle, overlaps, segment_enters, slot_places, ungrown};
+use crate::routing::{relative_request, slot_request, Goal, RequestWorld};
 use crate::planner::{choose_goal, coarse_way, point_after_goal, refine, Growth, MapRect};
 use crate::library::Slot;
 use crate::tree_log::{Log, StepRec};
 use crate::world::World;
 use super::study::{env, has, file_name};
 use super::counts::Counts;
-use super::walks::native_plan_points;
+use super::walks::{native_plan_points, plan_points};
 
 /// A person's own part among the planner's tested objects ('J'): its offset from the listed
 /// object the observer files it under.
@@ -591,6 +592,155 @@ pub(super) fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, c
             });
         }
     }
+    // The planner's rects natively (`route_map`, logs with 'r', 'X', 'h'): for each plan the
+    // obstacles and the search's own regions the world gives, against the logged lists (the search's
+    // lookup: the obstacles, then the regions with the blocking ones grown), as sets; the regions
+    // by kind; then the plan's points from the native rects against the log's.
+    for pl in log.plans.iter().filter(|p| p.approach.is_some() && !p.goals.is_empty() && !p.lookup_regions[0].is_empty() && !p.points.is_empty()) {
+        let Some(a) = pl.approach else { continue };
+        let places: Vec<(i32, i32)> = pl.goals.iter().map(|g| (g[0] as i32, g[1] as i32)).collect();
+        // a person where the planner sees it, mid-tick: the place logged before the plan's tick
+        let seen = |o: &crate::world::Object| if o.person { log.places.iter().rfind(|q| q.id == o.id() && q.tick < pl.tick).map_or((o.x16, o.y16), |q| (q.x, q.y)) } else { (o.x16, o.y16) };
+        let (native, growth) = crate::route_map::search_for(world, a[7] as i16, Some(a[5] as i16), pl.points[0], &places, &seen);
+        let key = |r: &MapRect| (r.y0, r.x0, r.y1, r.x1, r.cost);
+        let sorted = |rs: Vec<MapRect>| {
+            let mut v: Vec<_> = rs.iter().map(key).collect();
+            v.sort_unstable();
+            v
+        };
+        let logged: Vec<MapRect> = pl.lookup_regions.iter().flatten().map(MapRect::from_raw).collect();
+        counts.note(if sorted(native.clone()) == sorted(logged.clone()) {
+            "planner: a plan's rects natively the search's"
+        } else {
+            "planner: a plan's rects natively NOT the search's"
+        });
+        // the obstacles, the list the loop gathers (in its order, and as a set)
+        let n_obstacles = pl.lookup_regions[0].len();
+        let (nx, lx) = (&native[..native.len().min(n_obstacles)], &logged[..n_obstacles.min(logged.len())]);
+        let ob_native = crate::route_map::obstacles(world, a[7] as i16, Some(a[5] as i16), &places, crate::route_map::outdoors(world, pl.points[0], &places), &seen).len();
+        counts.note(if ob_native == n_obstacles && sorted(nx.to_vec()) == sorted(lx.to_vec()) {
+            "planner: a plan's obstacles natively the search's, as a set"
+        } else {
+            "planner: a plan's obstacles natively NOT the search's"
+        });
+        // the regions by kind: each logged one natively there or not, each native one the search's or not
+        let (nreg, lreg) = (&native[ob_native.min(native.len())..], &logged[n_obstacles.min(logged.len())..]);
+        let kind = |i: usize, r: &MapRect| -> &'static str {
+            let (h, w) = (r.y1 - r.y0, r.x1 - r.x0);
+            if r.cost == 0 {
+                "paved floor (cost 0)"
+            } else if i < 4 {
+                "lot or box border (the first four)"
+            } else if h == 14 && w == 14 {
+                "diagonal wall's point"
+            } else if h == 14 || w == 14 {
+                "wall's line"
+            } else {
+                "closed room or tiles"
+            }
+        };
+        for (set, other, there) in [(lreg, nreg, "a logged region natively there"), (nreg, lreg, "a native region the search's")] {
+            for (i, r) in set.iter().enumerate() {
+                let hit = other.contains(r);
+                counts.add(&format!("planner: rects by kind, {there}: {}{}", kind(i, r), if hit { "" } else { " NOT" }), 1);
+            }
+        }
+        if has("REPLAY_SHOW_RECT_MISS") && sorted(native.clone()) != sorted(logged.clone()) {
+            let (only_native, only_log): (Vec<_>, Vec<_>) = (native.iter().filter(|r| !logged.contains(r)).collect(), logged.iter().filter(|r| !native.contains(r)).collect());
+            println!("rects tick {} sim {}: {} native, {} logged; only native {only_native:?}; only logged {only_log:?}", pl.tick, a[7], native.len(), logged.len());
+        }
+        let _ = growth;
+    }
+    // (the figure's plans: those the log-driven search has a way for)
+    for pl in log.plans.iter().filter(|p| p.approach.is_some()) {
+        if native_plan_points(pl, world).is_none() {
+            continue;
+        }
+        let Some(a) = pl.approach else { continue };
+        let same = if pl.goals.is_empty() {
+            pl.points.is_empty()
+        } else {
+            let places: Vec<(i32, i32)> = pl.goals.iter().map(|g| (g[0] as i32, g[1] as i32)).collect();
+            let seen = |o: &crate::world::Object| if o.person { log.places.iter().rfind(|q| q.id == o.id() && q.tick < pl.tick).map_or((o.x16, o.y16), |q| (q.x, q.y)) } else { (o.x16, o.y16) };
+            pl.points.first().copied().is_some_and(|start| {
+                let (rects, growth) = crate::route_map::search_for(world, a[7] as i16, Some(a[5] as i16), start, &places, &seen);
+                let got = plan_points(pl, world, &rects, growth, start);
+                if got != Some(pl.points.clone()) && has("REPLAY_SHOW_RECT_MISS") {
+                    println!("points from native rects differ: tick {} sim {}: native {got:?}, the log's {:?}; growth {growth:?}, the log's {:?}", pl.tick, a[7], pl.points, pl.grower);
+                }
+                got == Some(pl.points.clone())
+            })
+        };
+        counts.note(if same {
+            "planner: a plan's points natively from native rects, the same as the log's"
+        } else {
+            "planner: a plan's points natively from native rects, NOT the log's"
+        });
+        if !same && has("REPLAY_SHOW_RECT_MISS") {
+            println!("points from native rects differ: tick {} sim {}", pl.tick, a[7]);
+        }
+    }
+    // A request natively (`routing::relative_request`, `slot_request`): the goals of each routing
+    // step that walks and whose plan the log has, against the log's ('H'): GotoRelativePosition's
+    // from its operand, a slot of one proximity's from the slot (places, bits, and the scores where
+    // the rule gives one: not a flagged slot's random part, nor a request that names its object).
+    for s in log.steps.iter().filter(|s| s.result == 1) {
+        let Some(t) = log.tree_of(s) else { continue };
+        let at = s.node as usize * 12;
+        if at + 12 > t.raw.len() {
+            continue;
+        }
+        let op = u16::from_be_bytes([t.raw[at], t.raw[at + 1]]) & 0x7FFF;
+        if !matches!(op, 27 | 45) {
+            continue;
+        }
+        let operand = &t.raw[at + 4..at + 12];
+        let Some(sim) = ids.get(&s.sim).copied() else { continue };
+        let Some(pl) = log.plans.iter().find(|p| p.tick == s.tick && p.approach.is_some_and(|a| a[7] as i16 == sim)) else { continue };
+        if pl.goals.is_empty() {
+            continue;
+        }
+        let Some(o) = world.find_object(s.stack_object) else { continue };
+        let target = log.places.iter().rfind(|p| p.id == o.id() && p.tick <= s.tick).map_or((o.x16, o.y16), |p| (p.x, p.y));
+        let tile = |p: (i32, i32)| (p.0 >> 4, p.1 >> 4);
+        let occupied = |p: (i32, i32)| world.objects().any(|x| !x.person && x.id() != o.id() && (o.leader == 0 || x.leader != o.leader) && x.on_lot() && x.level == 1 && tile((x.x16, x.y16)) == tile(p));
+        let rw = RequestWorld { walls, at: target, occupied: &occupied, obstacles: &[] };
+        let same = |native: &[Goal], scored: bool, bits: bool| {
+            native.len() == pl.goals.len()
+                && native.iter().zip(&pl.goals).all(|(n, g)| n.place == (g[0] as i32, g[1] as i32) && (!scored || n.score == g[2] as i32) && (!bits || u32::from(n.bit) == g[3] & 0xFF))
+        };
+        if op == 27 && pl.goals.len() > 1 {
+            // (the club's: an area of places round the object, its operand's range; not native yet)
+            counts.note("routing: a GotoRelativePosition request of several goals (an area; not native yet)");
+        } else if op == 27 {
+            let direction = operand[2] as i8;
+            let native = relative_request(direction, o.facing(), &rw);
+            counts.note(if same(&native, true, (0..8).contains(&direction)) {
+                "routing: a GotoRelativePosition request's goals natively the log's"
+            } else {
+                "routing: a GotoRelativePosition request's goals natively NOT the log's"
+            });
+            if has("REPLAY_SHOW_GOALS") && !same(&native, true, (0..8).contains(&direction)) {
+                let g = (pl.goals[0][0] as i32, pl.goals[0][1] as i32);
+                let on: Vec<_> = world.objects().filter(|x| !x.person && x.on_lot() && tile((x.x16, x.y16)) == tile(g)).map(|x| (x.id(), x.leader, x.file.map(|f| file_name(lib, f)))).collect();
+                println!("relative goals tick {}: object {} (leader {}) at {target:?} facing {}: native {native:?}, the log's {:?}; line open {}; on the goal's tile {on:?}", pl.tick, o.id(), o.leader, o.facing(), pl.goals, walls.line_open(target, g));
+            }
+        } else if let Some(file) = o.file {
+            let (number, scope) = (u16::from_be_bytes([operand[0], operand[1]]), u16::from_be_bytes([operand[2], operand[3]]));
+            let Some(slot) = lib.routing_slot(file, world.definition(o), scope, number, &s.params) else { continue };
+            if slot.min_proximity != slot.max_proximity || o.person {
+                continue;
+            }
+            let named = pl.goals.iter().any(|g| g[3] >> 16 != 0);
+            let native = slot_request(slot, o.facing(), named, &rw, &mut crate::world::Rng::default());
+            let scored = slot.flags & 0x2000 == 0;
+            counts.note(if same(&native, scored, true) {
+                "routing: a slot request's goals natively the log's (places, bits, scores)"
+            } else {
+                "routing: a slot request's goals natively NOT the log's"
+            });
+        }
+    }
     // The planner's search natively (logs with 'r'): on the rects and settings the plan's last
     // search had, from its coarse way's start to its end, the coarse way point by point.
     for pl in log.plans.iter().filter(|p| p.coarse.len() >= 2 && !p.lookup_regions[0].is_empty()) {
@@ -650,6 +800,7 @@ pub(super) fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, c
     if has("REPLAY_SHOW_REGIONS") {
         println!("native closed edges: {:?}", walls.wall_rects(0));
         println!("native rooms: {}", walls.rooms());
+        println!("floors row 10 x 34..46: {:?}; column 10 y 34..46: {:?}", (34..46).map(|x| walls.floor(x, 10)).collect::<Vec<_>>(), (34..46).map(|y| walls.floor(10, y)).collect::<Vec<_>>());
         for y in 10..32 {
             println!("row {y:2}: {}", (8..30).map(|x| format!("{}{}{}", walls.room(x, y), if walls.indoors(x, y) { "i" } else { "." }, if walls.diagonal(x, y) { "d" } else { " " })).collect::<Vec<_>>().join(" "));
         }

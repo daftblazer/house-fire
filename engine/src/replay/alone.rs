@@ -117,7 +117,7 @@ impl DriveHost<'_> {
         let tile = |p: (i32, i32)| (p.0 >> 4, p.1 >> 4);
         let busy: std::collections::HashSet<(i32, i32)> = self.world.objects().filter(|x| !x.person && x.id() != target_id && (leader == 0 || x.leader != leader) && x.on_lot() && x.level == 1).map(|x| tile((x.x16, x.y16))).collect();
         let occupied = |p: (i32, i32)| busy.contains(&tile(p));
-        let obstacles = super::super::route_map::obstacles(&self.world, id, Some(target_id), &[], &|o| (o.x16, o.y16));
+        let obstacles = super::super::route_map::obstacles(&self.world, id, Some(target_id), &[], super::super::route_map::outdoors(&self.world, from, &[at]), &|o| (o.x16, o.y16));
         let rw = RequestWorld { walls: &self.world.walls, at, occupied: &occupied, obstacles: &obstacles };
         // the request: its goals, and what the plan adds after the goal (the request's kind and flags)
         let (goals, kind, flags): (Vec<Goal>, i32, i32) = if n.opcode == 45 {
