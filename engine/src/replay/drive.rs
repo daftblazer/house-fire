@@ -115,6 +115,8 @@ pub(super) struct DriveHost<'l> {
     pub(super) player: bool,
     /// The dialog now open for the player: the object that asked and its node's operand.
     pub(super) asked: Option<(i16, [u8; 8])>,
+    /// The open dialog's frame's locals (its text's `$NameLocal:N` and `$Local:N`).
+    pub(super) asked_locals: Vec<i16>,
     /// The objects the player's clicks made (the go-here markers), whose checks start with
     /// parameter 0 = 0 instead of 1.
     pub(super) player_targets: Vec<i16>,
@@ -588,6 +590,7 @@ impl Host for DriveHost<'_> {
                 let got = dialog(n, &mut self.world, me_id);
                 if opening {
                     self.asked = Some((me_id, n.operand));
+                    self.asked_locals = interp.top().locals.clone();
                 }
                 if got == PrimResult::True {
                     self.asked = None;
@@ -708,6 +711,7 @@ pub(super) fn setup<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option
         at_tree: -1,
         player: false,
         asked: None,
+        asked_locals: Vec::new(),
         player_targets: Vec::new(),
         sound_out: None,
     };

@@ -2260,6 +2260,22 @@ Left: Mom dances at the radio from tick 2627 to 25070 (the stereo's Dance, stere
 exit, Exit fun object (Global 0x0195), takes fun >= its parameter 0, passed from her temps (all
 0xFFFF arguments), and her temp 0 holds 194 there; her fun stays at 20, the target of Set Dance
 Motives' change (tuning 0x0201). Queues still build up after ~30,000 (Sim 12: 21 at 54,000).
+The dance is the scripts as written: Exit fun object's other exits are motive tests against
+the global BCON 258 (hunger, bladder, energy, comfort at or below its entries 7, 8, 9, 10), and Mom's
+motives start high and fall slowly (comfort -91 at 25,500, when she stops). No log runs 0x0195, so
+its parameter (her temp 0, from whatever last wrote it) has no reference. Over the whole run her
+motives now recover (energy -39, hunger -55 at 54,000; were -99 and -71).
+
+**Dialog text (2026-11-20).** A dialog's text and buttons fill the tokens `$NameLocal:N` (the name of
+the object whose id is the opening frame's local N: a Sim's made name, else the object's catalog
+name, CTSS) and `$Local:N` (the value), as The Sims' scripts mean them (`replay::dialog_tokens`).
+The goal dialog at 1043 of the run alone is the scenario's "Unlock Test - Satisfied Bladder"
+(4098 node 5, goal 40): Sim 12's bladder at 95 (the log's player kept him busy, its test is false
+to tick 3000; the log's only dialog of 194 is the intro, ticks 2-85). Its text is string 66,
+"$NameLocal:1", local 1 the controller itself, so it reads "Scenario Controller". The executable
+has no "Local" token at all: Bustin' Out shows goal unlocks on its own unlock screen (its strings
+"congrats_text", "just_unlocked_text", "$Object", "unlocked_*_message" at 0x802AD1EC), unread.
+`REPLAY_SHOW_DIALOG` prints an open dialog's operand, locals and string table.
 
 The figure (`alone: Sim 237's meal in the log's tree order`): the trees Sim 237 enters (a step at
 node 0, a yield on node 0 not counted again) against the log's, from tick 1 to the first return of

@@ -501,6 +501,8 @@ pub struct DialogAsk {
     /// As the node has it (bytes 2 to 4 the text's and the buttons' strings in the object's
     /// STR# 301).
     pub operand: [u8; 8],
+    /// The locals of the frame that opened it (the text's tokens read them).
+    pub locals: Vec<i16>,
 }
 
 /// An interaction of a target's pie menu that passed the menu's checks.
@@ -668,14 +670,22 @@ impl<'l> Alone<'l> {
 
     /// The dialog waiting for the player's answer, if one is.
     pub fn dialog(&self) -> Option<DialogAsk> {
-        self.d.host.asked.map(|(object, operand)| DialogAsk { object, operand })
+        self.d.host.asked.map(|(object, operand)| DialogAsk { object, operand, locals: self.d.host.asked_locals.clone() })
     }
 
     /// The text a dialog shows and its buttons' labels: the dialog object's STR# 301, the text at
     /// operand byte 2, a button at each of bytes 3 and 4 that is set, else one "OK".
-    pub fn dialog_text(&self, ask: &DialogAsk) -> (String, Vec<String>) {
+    /// Its tokens: `$NameLocal:N` the name (`name`) of the object whose id is the frame's local N,
+    /// `$Local:N` that local's value.
+    pub fn dialog_text(&self, ask: &DialogAsk, name: &dyn Fn(i16) -> String) -> (String, Vec<String>) {
         let strings = self.d.host.world.find_object(ask.object).and_then(|o| o.file).and_then(|f| self.lib.file(f).strings.get(&301));
-        let get = |i: u8| strings.and_then(|s| s.get(usize::from(i))).filter(|t| !t.is_empty()).cloned();
+        let get = |i: u8| strings.and_then(|s| s.get(usize::from(i))).filter(|t| !t.is_empty()).map(|t| dialog_tokens(t, &ask.locals, name));
+        if std::env::var_os("REPLAY_SHOW_DIALOG").is_some() {
+            println!("dialog: operand {:02x?} locals {:?}", ask.operand, ask.locals);
+            for (i, t) in strings.into_iter().flatten().enumerate() {
+                println!("dialog:   string {i}: {t}");
+            }
+        }
         let text = get(ask.operand[2]).unwrap_or_else(|| format!("(dialog {} of object {})", ask.operand[2], ask.object));
         let mut buttons: Vec<String> = [3, 4].iter().filter(|&&b| ask.operand[b] != 0).map(|&b| get(ask.operand[b]).unwrap_or_else(|| "...".to_string())).collect();
         if buttons.is_empty() {
@@ -941,4 +951,31 @@ impl DriveHost<'_> {
         t.turns.insert(id, (ticks, direction_of(dx, dy)));
         PrimResult::Yield
     }
+}
+
+/// A dialog text with its tokens filled (`Alone::dialog_text`): `$NameLocal:N` and `$Local:N`; any
+/// other `$` token is left as it is.
+pub fn dialog_tokens(text: &str, locals: &[i16], name: &dyn Fn(i16) -> String) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(at) = rest.find('$') {
+        out.push_str(&rest[..at]);
+        let tail = &rest[at..];
+        let token = ["$NameLocal:", "$Local:"].into_iter().find(|t| tail.starts_with(t));
+        let Some(token) = token else {
+            out.push('$');
+            rest = &tail[1..];
+            continue;
+        };
+        let digits: String = tail[token.len()..].chars().take_while(|c| c.is_ascii_digit()).collect();
+        let value = digits.parse::<usize>().ok().and_then(|k| locals.get(k).copied());
+        match value {
+            Some(v) if token == "$NameLocal:" => out.push_str(&name(v)),
+            Some(v) => out.push_str(&v.to_string()),
+            None => out.push_str(&tail[..token.len() + digits.len()]),
+        }
+        rest = &tail[token.len() + digits.len()..];
+    }
+    out.push_str(rest);
+    out
 }

@@ -109,6 +109,8 @@ pub struct ObjectFile {
     /// The interactions' names (TTAs, read as a string table) by chunk id, which is the table's
     /// (TTAB) id: an interaction's `string_index` is its place in it.
     pub pie_strings: BTreeMap<u16, Vec<String>>,
+    /// The catalog strings (CTSS, read as a string table) by chunk id: the object's name first.
+    pub catalog: BTreeMap<u16, Vec<String>>,
     /// Named tuning values (FCNS) by chunk id: the global file's motive rates (1), autonomy (2),
     /// rooms and light (3), the family's score (4); `docs/simulation.md`, "The motives".
     pub tuning: BTreeMap<u16, Vec<(String, f32)>>,
@@ -464,6 +466,9 @@ impl Library {
             }
             for c in iff.of(b"STR#") {
                 f.strings.insert(c.id as u16, read_strings(iff.data(c), o));
+            }
+            for c in iff.of(b"CTSS") {
+                f.catalog.insert(c.id as u16, read_strings(iff.data(c), o));
             }
             for c in iff.of(b"TTAs") {
                 f.pie_strings.insert(c.id as u16, read_strings(iff.data(c), o));

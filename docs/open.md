@@ -65,6 +65,9 @@ engineering of the original's code, not more fitting. The list below this sectio
      in the game: the player's command priority (`PLAYER_PRIORITY`, above any), the priority of an
      unknown PushAction kind (1), and an autonomy pick's priority (the Sim's person data 33, read
      from Mom's saved meal, 50 = her data 33; no other saved autonomous entry to confirm it);
+   - goal dialogs: Bustin' Out's unlock screen (strings near 0x802AD1EC: "congrats_text",
+     "just_unlocked_text", "$Object") instead of STR# 301's text, unread (simulation.md, "Dialog
+     text"); dialog 27 of object 196 (string empty) likewise;
    - the run alone's Sim 237 meal against the log (`alone: Sim 237's meal in the log's tree order`,
      66 of 158, 124 in order with additions): the rest is the generator's (the prepare loop's pass
      count and the event chances) and two checks the log runs inside an Expression (8199);

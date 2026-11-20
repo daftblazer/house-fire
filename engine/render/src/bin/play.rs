@@ -263,7 +263,15 @@ impl<'l> Game<'l> {
         let w = self.alone.world();
         match w.find_object(id) {
             Some(o) if o.person => self.sim_name(id),
-            Some(o) => o.file.map_or_else(|| format!("object {id}"), |f| self.lib.file(f).path.rsplit('/').next().unwrap_or("").trim_end_matches(".iff").to_string()),
+            // its catalog name (the file's CTSS), else its file's name
+            Some(o) => o.file.map_or_else(
+                || format!("object {id}"),
+                |f| {
+                    let file = self.lib.file(f);
+                    file.catalog.values().next().and_then(|s| s.first()).filter(|t| !t.is_empty()).cloned()
+                        .unwrap_or_else(|| file.path.rsplit('/').next().unwrap_or("").trim_end_matches(".iff").to_string())
+                },
+            ),
             None => format!("object {id}"),
         }
     }
@@ -502,7 +510,7 @@ impl<'l> Game<'l> {
         if self.dialog.is_none()
             && let Some(ask) = self.alone.dialog()
         {
-            let (text, buttons) = self.alone.dialog_text(&ask);
+            let (text, buttons) = self.alone.dialog_text(&ask, &|id| self.object_name(id));
             println!("play: tick {} dialog from object {}: {text} {buttons:?}", self.alone.ticks(), ask.object);
             self.dialog = Some((ask, text, buttons, 0));
         }
