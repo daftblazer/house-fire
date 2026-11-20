@@ -282,7 +282,7 @@ fn run(args: Args) -> Result<(), String> {
     let start = Start::read(&disc, args.card.as_deref(), args.lot)?;
     let house = std::env::var("HF_HOUSE").ok().and_then(|v| v.parse().ok()).unwrap_or(HOME_HOUSE);
     let catalog = housefire::anim::Catalog::read(&disc, house as u32);
-    let mut replay = Replay::new(&log, &lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, None, RunWith { card_lot: start.card_lot, cat: Some(catalog.clone()) }).ok_or("the log does not start with the lot loaded")?;
+    let mut replay = Replay::new(&log, &lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, None, RunWith { card_lot: start.card_lot, goals: start.goals.clone(), neighbourhood: start.neighbourhood.clone(), cat: Some(catalog.clone()) }).ok_or("the log does not start with the lot loaded")?;
 
     // the world as it loads, for the shot's account of what the run changed
     let loaded = Snapshot::of(replay.world());

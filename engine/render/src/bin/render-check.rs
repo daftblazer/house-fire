@@ -148,7 +148,7 @@ fn engine_frame(scene: &mut Scene, assets: &Assets, disc: &Disc, log: &housefire
     let lib = housefire::library::Library::bustin_out(disc);
     let start = housefire::replay::Start::read(disc, card.and_then(|p| p.to_str()), lot_index.map_or(-1, |k| k as i64)).expect("the lot");
     let catalog = housefire::anim::Catalog::read(disc, house as u32);
-    let mut replay = housefire::replay::Replay::new(log, &lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, None, housefire::replay::RunWith { card_lot: start.card_lot, cat: Some(catalog.clone()) }).expect("the run");
+    let mut replay = housefire::replay::Replay::new(log, &lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, None, housefire::replay::RunWith { card_lot: start.card_lot, goals: start.goals.clone(), neighbourhood: start.neighbourhood.clone(), cat: Some(catalog.clone()) }).expect("the run");
     let no_sims = std::env::var_os("HF_NO_SIMS").is_some();
     let plays = if no_sims { housefire::drawlist::Plays::at(tick) } else { engine_scene::run_to(&mut replay, log, tick) };
     let plan = engine_scene::plan(disc, card, log, tick, &view, (house, lot_index), &plays).expect("the engine's lot");
