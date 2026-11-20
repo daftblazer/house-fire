@@ -70,6 +70,8 @@ pub struct Tally {
     /// Walks to a goal outside the room of the object they go to, and legs of a walk through a
     /// wall (a closed edge): the figures of the walk's being native.
     outside_room: usize,
+    /// Walks of a door's crossing step (through its portal) that end in another room.
+    crossings: usize,
     through_wall: u32,
 }
 
@@ -117,7 +119,7 @@ impl DriveHost<'_> {
         let tile = |p: (i32, i32)| (p.0 >> 4, p.1 >> 4);
         let busy: std::collections::HashSet<(i32, i32)> = self.world.objects().filter(|x| !x.person && x.id() != target_id && (leader == 0 || x.leader != leader) && x.on_lot() && x.level == 1).map(|x| tile((x.x16, x.y16))).collect();
         let occupied = |p: (i32, i32)| busy.contains(&tile(p));
-        let obstacles = super::super::route_map::obstacles(&self.world, id, Some(target_id), &[], super::super::route_map::outdoors(&self.world, from, &[at]), &|o| (o.x16, o.y16));
+        let obstacles = super::super::route_map::obstacles(&self.world, id, Some(target_id), &[], &super::super::route_map::rooms_of(&self.world, &[from, at]), &|o| (o.x16, o.y16));
         let rw = RequestWorld { walls: &self.world.walls, at, occupied: &occupied, obstacles: &obstacles };
         // the request: its goals, and what the plan adds after the goal (the request's kind and flags)
         let (goals, kind, flags): (Vec<Goal>, i32, i32) = if n.opcode == 45 {
@@ -204,11 +206,14 @@ impl DriveHost<'_> {
         // the walker: its line the way to the goal, then a turn to face the point past it
         let walls = &self.world.walls;
         let through = points[..walked].windows(2).filter(|p| !walls.line_open(p[0], p[1])).count();
-        let outside = walls.room(goal.0 >> 4, goal.1 >> 4) != walls.room(at.0 >> 4, at.1 >> 4);
+        // (a door's own crossing step, through its portal, is meant to end in another room: its own count)
+        let other_room = walls.room(goal.0 >> 4, goal.1 >> 4) != walls.room(at.0 >> 4, at.1 >> 4);
+        let (outside, crossed) = (other_room && !target_is_door, other_room && target_is_door);
         let age = o_age(self.world.get(me), lib);
         let t = self.tally.as_mut().expect("alone");
         t.planned += 1;
         t.outside_room += usize::from(outside);
+        t.crossings += usize::from(crossed);
         t.through_wall += through as u32;
         let to_f = |p: &(i32, i32)| (p.0 as f32, p.1 as f32);
         let speed = t.speeds.get(&id).copied().unwrap_or(0.0);
@@ -750,7 +755,7 @@ impl<'l> Alone<'l> {
             println!("sim {id} {name}: interactions started {} finished {}, walked {:.1} tiles, motives low [{}] last [{}], {at}", s.started, s.finished, s.walked, f(&s.low), f(&s.last));
         }
         println!("alone: walks planned {}, arrived {}, no way {}; Sim stacks restarted after an error {}", t.planned, t.arrived, t.no_way, t.restarted);
-        println!("alone: walks to a place outside its object's room {}", t.outside_room);
+        println!("alone: walks to a place outside its object's room {} (not counting {} portal crossing steps, which end in the next room)", t.outside_room, t.crossings);
         println!("alone: walk legs through a wall {}", t.through_wall);
         println!("alone: hash {hash:016x}");
         AloneReport { ticks: done, of, hash }

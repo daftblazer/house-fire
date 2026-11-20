@@ -617,7 +617,7 @@ pub(super) fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, c
         // the obstacles, the list the loop gathers (in its order, and as a set)
         let n_obstacles = pl.lookup_regions[0].len();
         let (nx, lx) = (&native[..native.len().min(n_obstacles)], &logged[..n_obstacles.min(logged.len())]);
-        let ob_native = crate::route_map::obstacles(world, a[7] as i16, Some(a[5] as i16), &places, crate::route_map::outdoors(world, pl.points[0], &places), &seen).len();
+        let ob_native = crate::route_map::obstacles(world, a[7] as i16, Some(a[5] as i16), &places, &crate::route_map::rooms_of(world, &[pl.points[0]].into_iter().chain(places.iter().copied()).collect::<Vec<_>>()), &seen).len();
         counts.note(if ob_native == n_obstacles && sorted(nx.to_vec()) == sorted(lx.to_vec()) {
             "planner: a plan's obstacles natively the search's, as a set"
         } else {
@@ -644,6 +644,10 @@ pub(super) fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, c
                 let hit = other.contains(r);
                 counts.add(&format!("planner: rects by kind, {there}: {}{}", kind(i, r), if hit { "" } else { " NOT" }), 1);
             }
+        }
+        if has("REPLAY_SHOW_RECT_MISS") && !(ob_native == n_obstacles && sorted(nx.to_vec()) == sorted(lx.to_vec())) {
+            let (on, ol): (Vec<_>, Vec<_>) = (nx.iter().filter(|r| !lx.contains(r)).collect(), lx.iter().filter(|r| !nx.contains(r)).collect());
+            println!("obstacles tick {} sim {}: {ob_native} native, {n_obstacles} logged; only native {on:?}; only logged {ol:?}", pl.tick, a[7]);
         }
         if has("REPLAY_SHOW_RECT_MISS") && sorted(native.clone()) != sorted(logged.clone()) {
             let (only_native, only_log): (Vec<_>, Vec<_>) = (native.iter().filter(|r| !logged.contains(r)).collect(), logged.iter().filter(|r| !native.contains(r)).collect());

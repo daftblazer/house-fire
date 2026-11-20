@@ -250,8 +250,7 @@ as plain arrays, the multiplayer blockers, the simulation speed list, the device
 
 ### The playable sandbox (stage 7 left over, 2026-11-19)
 
-- Stand-ins to replace: the walk (`Walls::route` staircase at a constant speed: no objects in
-  the way, no portals, no stairs), the menu, HUD and dialog box (stage 9 brings the
+- Stand-ins to replace: the menu, HUD and dialog box (stage 9 brings the
   original's), the dialog's button rule (first true, second false: the logs hold only
   one-button dialogs), the go-here checks' parameter 0 (plan.md; with 1 guard 4109 is always
   false: why the original passes 1 not found), loadloop for the first 150 ticks (a choice).
@@ -266,3 +265,42 @@ as plain arrays, the multiplayer blockers, the simulation speed list, the device
   side); the original's 1.15 s start latency is not copied; footsteps (no foot-note clock in
   `Alone::motions`) and the stereo's stations (no event the run sees) are silent.
 - No one has played the window by hand yet: the controls are checked only by scripts.
+
+### The run alone's walk, natively (packet W, 2026-11-20)
+
+The walk is the planner's and the walker's now (simulation.md, "The planner's rects, natively",
+"The run alone's walk, natively"). What is left, and which constants are fitted:
+
+- The search's own regions are the closest rule, not the original's: of the home log's 17 plans'
+  rects none is exactly the search's. The original keeps a closed room as a few big, overlapping
+  rectangles cut column-wise ([208, 240, 288, 464] with [224, 224, 256, 464]); natively each
+  room is the row runs of its tiles joined downwards (0 of 149 equal), and every wall edge is a
+  line (1,158 more than the original has). The house plans' box (a ring round the house, two
+  tiles out) is not the original's (its ring [176, 192, 448, 208] etc. sits round the plan's
+  rooms), the front path and porch steps and the back path are cut differently (12 of 28 paved
+  rects), the obstacles miss by a door at a room's edge and by the persons' places. 11 of 18 plans'
+  points come out the same from the native rects (18 from the logged). Not found: the
+  region builder (fn_80249BB8, 8024A068 to 8024C358) and the rule of which objects the loop gathers
+  (here: the objects in the rooms of the plan's ends).
+- Fitted, not read: `route_map::REGION_GROWTH` (7, read off the logged lookup list), `CELL_CAP`
+  (128), `OPEN_COST_OUTDOORS` (3) / `OPEN_COST_INDOORS` (0) (both the logs' `grower` of the two
+  kinds of plan; the original sets them per request), `OBSTACLE_HALF` (3, the global at r13 - 28468
+  halved), `PERSON_NEAR` (3 tiles, 802CFAAC). `OUTSIDE_LOT` 0x20 (the third array) fits the home
+  lot (39 by 39) and its neighbours' street, not checked on the club lot (its walk uses it for its
+  border). The portal's crossing step (a tile on, the way the route crosses) replaces the original's
+  side test (8221 on the door's attribute 1; the slots of a door two tiles wide lie along it).
+  A person or the target on a request's only place does not close it (club dancers all on one place):
+  the original's rule for a goal inside an obstacle is not logged.
+- Not modelled in the walker: the run on after a door's walk (state 5, the walker's object data 9,
+  so the speed into the next walk is the ramp's), the game's other speeds, a person asked to move
+  out of a slot's places (`World::ask_to_move_tree`; the walk answers false), a plan through more
+  than one door at once (the portal replans from each far side), the stairs.
+- GotoRelativePosition's other forms: the club's 27 requests give an area (five in the club log,
+  several goals each); the home log's seven (a direction and own place) are native. The operand's
+  other bytes (the fifth to eighth, the flags 0x4000 / 0x8000 of the log's request) are not read.
+- The slot request's "names its object" bonus (225 for 135) and the flagged range slot's classifier
+  stop (a direction short) are not native (`slot_request` takes the flag from its caller).
+- Sim 237's restart loop at tick ~49,900 (home, seed 1): "a primitive stopped the stack (opcode 17)
+  in tree 281 node 4" 1,918 times: Wait For Notify's IdleForInput finds no parameter slot
+  (`idle_for_input_waiting`). Not the walk's: the stand-in's binary has it too (seed 2: 7,701).
+  The cause (a caller that passes no parameter to 281, from 8282's social wait) is unread.

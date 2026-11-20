@@ -1805,6 +1805,58 @@ pushed with 25, 198, 0, 0 (the temps; the caller's parameters were 25, 198, 2, 0
 `World::seat_at_routing_slot`. Whether a slot with both fields set (the table's slots 0 and 1)
 sits or stands is not in the logs.
 
+## The planner's rects, natively (2026-11-20)
+
+`route_map` builds what the search (`planner::coarse_way`, `choose_goal`) is given, from the world,
+where the replay's checks took the log's lists (`PlanRec::lookup_regions`): the obstacles
+(`route_map::obstacles`: every object on the Sim's level in the rooms the plan has its ends in that
+`routing::obstacle` keeps, less those overlapping the Sim; a person kept unless the plan's target or
+3 tiles off, 6 on a side grown by 3; an object or person standing on a place of the request does not
+close it: a stand-in) then the search's own regions (`route_map::regions`: the lot's border, the
+house closed when both ends are outside it or a box two tiles round it when both are inside, the
+walls as zero-width lines, the diagonal walls' two points, the paved floors at cost 0), the blocking
+regions grown by 7 and turned (y before x), with the settings that go with the kind of plan (cap 128
+and an open cell's cost 3 outdoors, no cap and 0 indoors: both the logs' `grower`). The lot's size
+is natively the third array's: 0x20 marks a tile outside it (39 by 39 at home).
+`Walls::wall_rects`, `paved_regions` and `diagonal_bits` were native already.
+
+Figures on the home log's 17 plans with their rects logged (`replay home.log`):
+- "planner: a plan's points natively from native rects, the same as the log's": 11 of 18 (the
+  18 of "in the log's place" are from the logged rects); the 7 misses are door plans and house plans
+  whose cells differ by the rects' cut.
+- "planner: a plan's rects natively the search's": 0 of 17 as exact sets. By kind
+  ("planner: rects by kind"): the walls' lines, the logged 134 of 134 are native (and 1,158 native
+  lines more: the original keeps a closed room as a few big rectangles and no line of its own walls);
+  the diagonal walls' points 144 of 144 (0x10 is the "/" pair (12, 4), (4, 12) in the tile, 0x20 the
+  "\\" pair (4, 4), (12, 12); 26 native extra, in plans where the original has none); the lot's
+  border 28 of 68 (the yard plans'; the house plans' ring is not the same box); the paved floors 12
+  of 28 (the known misses: the front path runs on through the porch, the steps a tile narrower, the
+  back path in two); the rooms closed as rectangles 0 of 149 (the original's rectangles overlap and
+  run column-wise: [208, 240, 288, 464] and [224, 224, 256, 464] in one list, a cut not found).
+- "planner: a plan's obstacles natively the search's, as a set": 2 of 17; the others miss by one
+  or two rectangles each: a door on a room's edge the original leaves out, and the persons' places
+  (the log's 'P' before the plan's tick against the planner's mid-tick ones).
+
+Not read: the original's rule for the rooms closed (its rectangles), for which objects it gathers
+(here: the plan's rooms, which gives 33 to 36 for a house plan against its 33 to 36), and for a goal
+inside an obstacle. The plan's rects are fitted nowhere: every constant is the logs' (the growth 7,
+the cap, the open cost, 3 tiles for a person).
+
+**The request natively** (`routing::slot_request`, `relative_request`). A slot of one proximity
+offers its places in the object's reach (a line to it crossing no wall; a door's opening is no wall:
+the archway's far side is offered, the group meal's across a wall is not) that no other object stands
+on, in bit order, each at its score (`slot_goal_score`, the flagged slot's random part a draw of the
+run's generator); a range its area, the open places among them (the same reach, strictly inside no
+blocking obstacle, off every wall's rectangle) and the builder's pick (`slot_pick`) over the cap of
+48. GotoRelativePosition (27): its operand's third byte is a direction (0 to 7 eighths from the
+object's front, else none), its fourth the request's kind (a signed byte: -3, -2, 4: the slot's
+facing field for 45) that `point_after_goal` takes; with a direction the goal is the place a tile off
+that way at 135 (bit 1 << direction), with none the object's own place at 100 (0x64). Checked on the
+home log's seven requests (`replay home-full.log`): "routing: a GotoRelativePosition request's goals
+natively the log's" 7 of 7; "a slot request's goals natively the log's" 6 of 7 (the other the paper
+girl's facing); the older "a request's goals natively the open places of its slot" holds (4, 2
+NOT). The club's 27 requests that give an area (several goals, 5) are not native.
+
 ## Asked to move
 
 A GotoRoutingSlot whose request has no goals (every place of the slot taken out) and another
@@ -2121,10 +2173,8 @@ save holds 0 (the logs show 50 at home and the original reads it in its engine c
 script; the club's saved 1 is kept).
 
 **Native for this run** (alone only, so that `--drive`'s figures stand): the walk (GotoRoutingSlot 45,
-GotoRelativePosition 27: `Walls::route` over the lot's tiles, the Sim stepping along it at the
-walker's top speed, 0.83 sixteenths a tick, facing its way and then the object; no object blocks,
-no door's portal function is pushed, no frames, no ramp; 27's operand is not read, it goes to the
-tile in front of the stack object; a slot with no direction, the club's dance floor, is its
+GotoRelativePosition 27: the planner's request, search and walker natively, see "The run alone's
+walk, natively" below; a slot with no direction, the club's dance floor, is its
 object's own place); LookTowards 22 mode 2; the autonomy evaluation (opcode 3: the candidates'
 checks, scores, `autonomy_list`, a pick by the world's generator) and Find Best Action (30: the
 chosen action pushed); FindBestObjectForFunction 14 (`primitives::find_best_object`, the replay's
@@ -2133,6 +2183,42 @@ animation the archive lacks answering true at once; Dialog 36: with no player th
 answers at once (a dialog of one button just goes on; the second button goes the false way, for
 the window's player: `primitives::dialog`, an engine rule, every dialog of the logs has one
 button).
+
+**The run alone's walk, natively (2026-11-20).** `DriveHost::go` (`replay/alone.rs`) runs the
+planner as the checks do and then a walker: (1) every object on the lot stands at the centre of the
+tile the lot loads it on at the start (the log's tick-0 placements, all 206 of home-full's, as
+`step.rs` has them; the run alone never took them, so the slots' places were 8 off); (2) the request
+(45: `slot_request` on the object's slot; 27: `relative_request` from its operand) and, of several
+goals, `choose_goal`; (3) the way on `route_map`'s rects (`coarse_way`, `refine`) and the point after
+the goal (`point_after_goal`: the kind and flags of the slot or operand, the object's facing);
+(4) a route whose first change of room is a door pushes that door's portal function (not the
+portal's own walk to the door); a route to a sitting slot with a seat on its last tile pushes the
+seat's sit function; (5) the walker (`walker::Walker`): from its speed of the walk before, a frame
+at a time (`walk_step`: the ramp, the brake; `along_line`; `turn_towards` and `facing_direction`
+for its direction; at the end `turn_frames` frames of turn to the point past the goal and a frame
+more) with the primitive yielding until it is let go: it returns the tick after that frame's. The
+frames are the frame clock's (`Alone::tick`: all but the last of the tick's frames before the tick,
+the last after it, as the original's frame runs its tick and then its followers). No goal or no way
+(the request holds no open place, or the search finds none): false, as the original goes on in its
+frame (the log's tick 1791 request). The portal's crossing step goes a tile on the way the route
+crosses (the door's own slots are chosen by a side test, 8221, on the door's attribute 1, and a
+two-tile-wide door's lie along it: a stand-in that matches both logged crossings); a person or the
+target standing on the only goal does not close it (the club's dancers all stand on their floor's own
+place). Not modelled: the run on after a door's walk (state 5), the game's other speeds, a person
+asked to move out of a slot's places, a plan through more than one door at once.
+
+Figures (`alone:` lines): "walks to a place outside its object's room" 0 on home and club (the
+portal's crossing steps, which end in the next room by design, are counted apart: 11 on home), "walk
+legs through a wall" 0 (`Walls::line_open`). The radio: Sim 237 goes to (232, 264), a tile east of
+the radio (object 40 at (216, 264)), inside the house, from the tile in front of it (seed 2 at tick
+9329, seed 3 at 10955), not through the west wall to the yard. Home (54,000 ticks, `--card`, seed 1):
+Sim 12 starts 448 interactions and finishes 447, Sim 237 starts 209 and finishes 96; 139 walks
+planned, 139 arrived, 7 with no way; the same hash on two runs (56063379c97bb6c3; the club's
+3c48c10e6b147895: 31 walks, no way 0, errors 4). Errors 2,182 on home: 1,918 are one restart loop of Sim
+237 at tick 49,900 on ("a primitive stopped the stack (opcode 17) in tree 281 node 4": IdleForInput
+with no parameter slot, `idle_for_input_waiting`), which the stand-in's run reaches too (the old
+binary with `--seed 2`: 7,701 of them): not the walk's. The rest as before (the 280 Idle of removed
+made objects, 4174's BadTransition).
 
 **As a stepper.** `replay::Alone` is the same run a tick at a time (`Alone::new`, `tick`, `world`,
 `hash`, `report`; `alone()` is a loop over it, its hash unchanged) with the hooks a front end
@@ -2228,7 +2314,7 @@ every N ticks; `SHOW_STARTS=1` prints each interaction started.
 
 **The picture.** `Alone::motions` gives each Sim on the lot what it shows: `Motion::Playing`
 (its animator's play: animation, frames along it, backward; held at its last pose while its
-interaction goes on), `Walking` (seconds into the walk cycle: the stand-in's walk steps the
+interaction goes on), `Walking` (seconds into the walk cycle: the walker's own frames, native, step the
 cycle's own frames by the frame clock) or `Idle`. `sims::plays_of` (the render package) turns
 that into the triple `figures_of` takes: a walker plays a2o-walking-loop, a2o-walking-female-loop
 or c2o-walking-loop by its description, an idle Sim the standing loop (held at its first frame),
