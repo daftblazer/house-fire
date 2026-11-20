@@ -218,3 +218,26 @@ as plain arrays, the multiplayer blockers, the simulation speed list, the device
   suns. Still from the log in that mode (K2): a moving lamp's place ('e' records), the Sims'
   identities (dressing records, by order). Reference is the full frame, so the portrait and
   HUD count as misses in both modes.
+### Sound (stage 6 left over, 2026-11-19)
+
+- Sound starts on home-full: 57 of the log's 138 event plays start natively (replay
+  "sounds:"). Left: 74 footsteps (the walk's steps have no native clock in the replay: the
+  animation posts, r6 the foot, kind 0xC, are known); 4 dog plays with no simulation request;
+  2 the original played later; 1 other samples. Known but not modelled: a handle plays only
+  on its first post (word 3 = 0x82), voice events draw a chance in their TrackData script
+  (500 of 10,000 for counter_voxchop, script not decoded), counter_chop's drops in ticks
+  470-505. The by-voice hit-list index (3 or 11 entries) is unknown (union taken, 41 starts);
+  HitPatchList tracks (11) unread.
+- The voices (voicecheck, ax.log/ax.dump): 10,527 of 10,813 voice-frames the same; the mix
+  17,495 of 17,646 frames, first different 11,056, the first minute's difference peak 5,
+  rms 0.05. Causes: footstep levels 1-11 tenths of a dB off (the original's volume-to-dB and
+  pan rounding not found); the silence cut 0.1 is a value in the dump's gap (0.084 silent,
+  0.1416 sounds), not measured; two plays at frames 12223/12229 take voices in the other
+  order (16 voice-frames); the loop flag is not in the calls (voicecheck reads it from the
+  dump); a start's frame is anchored on the dump's (the original's threads place it within
+  one AX frame, 230.7 after the game frame, spread 1.0).
+- Music: not started natively. Known: home's only stream is loadloop (the load), played as a
+  double buffer refilled from the disc every 1.5 s (loop.md 6d); the stereo's stations are
+  sbo_<station>1-5. Starting the load's and the stereo's streams goes to stage 7d.
+- Params from the world: the calls' x (position) and volume come from the log; natively they
+  come from the emitter's place against the camera (stage 7d).
