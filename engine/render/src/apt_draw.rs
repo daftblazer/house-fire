@@ -45,7 +45,7 @@ impl AptAssets {
     /// A font page's picture, premultiplied white: the page is 4-bit indices into the first of the
     /// entry's two IA8 palettes, whose intensity is its alpha (`docs/assets.md`,
     /// "Drawing the movies (U2b)").
-    fn page(&self, hash: u32) -> Option<(u32, u32, Vec<u8>)> {
+    fn page(&self, hash: u32, shadow: bool) -> Option<(u32, u32, Vec<u8>)> {
         let at = *self.pages.get(&hash)?;
         let b = &self.textures_arc[at..];
         let (t, _) = texture::read_prefix(b)?;
@@ -55,7 +55,8 @@ impl AptAssets {
         let src = &b[t.texels.0..];
         let (po, n) = t.palette?;
         let coverage = texture::decode_indexed(t.kind, t.width, t.height, src, b.get(po..po + n * 2)?, 0)?;
-        Some((t.width, t.height, coverage.iter().flat_map(|&a| [(a >> 24) as u8; 4]).collect()))
+        let gain = if shadow { SHADOW_GAIN } else { GLYPH_GAIN };
+        Some((t.width, t.height, coverage.iter().flat_map(|&a| [((f32::from((a >> 24) as u8) * gain).min(255.0)) as u8; 4]).collect()))
     }
 }
 
@@ -65,7 +66,7 @@ pub struct Painter<'a> {
     flashes: HashMap<&'a str, &'a Rc<Flash>>,
     white: Option<TextureId>,
     images: HashMap<(&'a str, u32), TextureId>,
-    pages: HashMap<u32, (TextureId, u32, u32)>,
+    pages: HashMap<(u32, bool), (TextureId, u32, u32)>,
 }
 
 /// One line of the game's own text: the game draws the dialogs' and menus' words itself
@@ -82,11 +83,25 @@ pub struct TextRun {
     pub scale: [f32; 2],
     /// 0xRRGGBBAA, the glyphs' tint.
     pub color: u32,
+    /// The game's shadow pass (black, under the line).
+    pub shadow: bool,
 }
 
 /// The advance of a space in the font's texels (a glyph's record is its columns on the page; a
 /// space has none): fitted to the widths of the game's logged lines (`game_text.rs`).
 pub const SPACE: f32 = 11.0;
+
+/// How far the pen moves after a character, in texels of the page.
+pub fn advance(font: &Font, c: char) -> f32 {
+    if c == ' ' { SPACE } else { font.glyph(c as u32).map_or(0.0, |g| (g.x1 - g.x0) as f32) }
+}
+
+/// How much the page's coverage is raised for the game's glyphs (clamped to 1) and for their
+/// black shadow: the game's strokes are crisper and its shadow blacker than the palette's
+/// intensity as alpha gives (sweeps over the seven frames: gains 1 to 10, the within-4 share
+/// peaks at 1.2 and 3).
+const GLYPH_GAIN: f32 = 1.2;
+const SHADOW_GAIN: f32 = 3.0;
 
 /// The wrapper's layers the game's pictures show nothing of: the key pictures and the D-pad,
 /// and the buttons the wrapper makes for each screen (`dialog_button_accept`...): the movies
@@ -124,13 +139,13 @@ impl<'a> Painter<'a> {
         Painter { assets, flashes: assets.flashes.iter().map(|(n, f)| (n.as_str(), f)).collect(), white: None, images: HashMap::new(), pages: HashMap::new() }
     }
 
-    fn page(&mut self, pass: &mut AptPass, hash: u32) -> Option<(TextureId, u32, u32)> {
-        if let Some(p) = self.pages.get(&hash) {
+    fn page(&mut self, pass: &mut AptPass, hash: u32, shadow: bool) -> Option<(TextureId, u32, u32)> {
+        if let Some(p) = self.pages.get(&(hash, shadow)) {
             return Some(*p);
         }
-        let (w, h, rgba) = self.assets.page(hash)?;
+        let (w, h, rgba) = self.assets.page(hash, shadow)?;
         let t = (pass.add_texture(w, h, &rgba, false), w, h);
-        self.pages.insert(hash, t);
+        self.pages.insert((hash, shadow), t);
         Some(t)
     }
 
@@ -144,15 +159,16 @@ impl<'a> Painter<'a> {
         let top = run.y;
         let mut x = run.x;
         for c in run.text.chars() {
-            let advance = if c == ' ' { SPACE } else { font.glyph(c as u32).map_or(0.0, |g| (g.x1 - g.x0) as f32) };
+            let advance = advance(font, c);
+            let cols = font.glyph(c as u32).map_or(0.0, |g| (g.x1 - g.x0) as f32);
             if let Some(g) = font.glyph(c as u32)
                 && let Some(page) = font.pages.get(g.page as usize)
-                && let Some((tex, pw, ph)) = self.page(pass, page.texture)
+                && let Some((tex, pw, ph)) = self.page(pass, page.texture, run.shadow)
             {
                 let (u0, u1) = (g.x0 as f32 / pw as f32, g.x1 as f32 / pw as f32);
                 // the page is stored upside down: the band's last row is the glyph's top
                 let (v_top, v_bot) = (((g.row as f32 + 1.0) * band) / ph as f32, (g.row as f32 * band) / ph as f32);
-                let (x1, y1) = (x + advance * run.scale[0], top + band * run.scale[1]);
+                let (x1, y1) = (x + cols * run.scale[0], top + band * run.scale[1]);
                 let corner = |px: f32, py: f32, u: f32, v: f32| Vertex { pos: [px * sx - 1.0, py * sy - 1.0], uv: [u, v], tint, mul: [1.0; 4], add: [0.0; 4], premultiplied: 1.0, _pad: 0.0 };
                 let (tl, tr, bl, br) = (corner(x, top, u0, v_top), corner(x1, top, u1, v_top), corner(x, y1, u0, v_bot), corner(x1, y1, u1, v_bot));
                 out.push(tex, [tl, tr, bl]);

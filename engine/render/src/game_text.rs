@@ -12,7 +12,7 @@
 //! - a record with no size words, followed by one of the same text that has them, is the black
 //!   shadow pass; one with none after it is a plain draw.
 
-use crate::apt_draw::{AptAssets, SPACE, STAGE, TextRun};
+use crate::apt_draw::{AptAssets, STAGE, TextRun, advance};
 use housefire::shader::name_hash;
 use housefire::tree_log::TextDrawRec;
 
@@ -50,7 +50,7 @@ pub fn lines(assets: &AptAssets, records: &[TextDrawRec], frame: u32) -> Vec<Tex
         } else {
             0xffff_ffff
         };
-        out.push(TextRun { text: r.text.clone(), font: font.clone(), x: r.x * STAGE.0, y: r.y * STAGE.1 + TOP_OFFSET, scale, color });
+        out.push(TextRun { text: r.text.clone(), font: font.clone(), x: r.x * STAGE.0, y: r.y * STAGE.1 + TOP_OFFSET, scale, color, shadow });
     }
     out
 }
@@ -58,7 +58,7 @@ pub fn lines(assets: &AptAssets, records: &[TextDrawRec], frame: u32) -> Vec<Tex
 /// The scale a line was drawn at, across and down.
 fn scale(assets: &AptAssets, font: &str, r: &TextDrawRec) -> [f32; 2] {
     let Some(f) = assets.fonts.get(font).filter(|_| r.size != 0) else { return [PLAIN_SCALE; 2] };
-    let texels: f32 = r.text.chars().map(|c| if c == ' ' { SPACE } else { f.glyph(c as u32).map_or(0.0, |g| (g.x1 - g.x0) as f32) }).sum();
+    let texels: f32 = r.text.chars().map(|c| advance(f, c)).sum();
     let (ax, ay) = (f32::from_bits(r.size_words[2]) * STAGE.0, f32::from_bits(r.size_words[3]) * STAGE.1);
     let (x, y) = (r.x * STAGE.0, r.y * STAGE.1);
     let across = (ax - x > 0.5 && texels > 0.0).then(|| 2.0 * (ax - x) / texels);
