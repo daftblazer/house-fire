@@ -62,6 +62,9 @@ fn main() -> ExitCode {
             let args: Vec<String> = x.args.iter().map(|(w, t)| if t.is_empty() { format!("{w:#x}") } else { format!("{t:?}") }).collect();
             lines.push((x.tick, x.frame, format!("call {}({}) screen {:#x} a {:#x} b {:#x} from {:#x}", x.name, args.join(", "), x.screen, x.a, x.b, x.caller)));
         }
+        for y in &log.movie_reads {
+            lines.push((y.tick, y.frame, format!("read {:?} = {:?} handler {:#x}", y.name, y.value, y.handler)));
+        }
         for y in &log.movie_commands {
             lines.push((y.tick, y.frame, format!("command {:?} {:?} screen {:#x} handler {:#x}", y.command, y.argument, y.screen, y.handler)));
         }

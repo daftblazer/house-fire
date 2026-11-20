@@ -704,6 +704,17 @@ pub struct MovieLoadRec {
     pub path: String,
 }
 
+/// A screen's Apt movie reading a value of the game by name ('\'', the screens' vtable slot
+/// +0x4C): the handler, the game's frame counter, the name and the value as text; the tick.
+#[derive(Clone, Debug, Default)]
+pub struct MovieReadRec {
+    pub tick: u32,
+    pub handler: u32,
+    pub frame: u32,
+    pub name: String,
+    pub value: String,
+}
+
 /// A screen's Apt movie sending the game a command ('"', the screens' vtable slot +0x44): the
 /// handler, the screen, its vtable, the game's frame counter, the command and its argument; the
 /// tick.
@@ -897,6 +908,8 @@ pub struct Log {
     pub movie_calls: Vec<MovieCallRec>,
     /// The Apt movies loaded ('\\'), in order.
     pub movie_loads: Vec<MovieLoadRec>,
+    /// The Apt movies' reads of the game's values ('\''), in order.
+    pub movie_reads: Vec<MovieReadRec>,
     /// The Apt movies' commands to the game ('"'), in order.
     pub movie_commands: Vec<MovieCommandRec>,
     /// The sound messages posted ('.'), in order.
@@ -2095,6 +2108,15 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let (caller, frame) = (r.u32(), r.u32());
                 let Some(path) = r.text() else { break };
                 log.movie_loads.push(MovieLoadRec { tick: log.ticks, caller, frame, path });
+            }
+            b'\'' => {
+                if !r.has(8) {
+                    break;
+                }
+                let (handler, frame) = (r.u32(), r.u32());
+                let Some(name) = r.text() else { break };
+                let Some(value) = r.text() else { break };
+                log.movie_reads.push(MovieReadRec { tick: log.ticks, handler, frame, name, value });
             }
             b'"' => {
                 if !r.has(16) {
