@@ -403,6 +403,9 @@ impl DriveHost<'_> {
         match n.opcode {
             // (a run alone has no animation to wait for where the archive lacks it)
             44 if self.tally.is_some() => PrimResult::True,
+            // (the goal system's new form, in a run alone: no goal is met, or the scenario's
+            // dialogs would open for ever)
+            56 if self.tally.is_some() => PrimResult::False,
             44 | 27 | 45 => PrimResult::Yield,
             _ => PrimResult::True,
         }
@@ -584,13 +587,11 @@ impl Host for DriveHost<'_> {
                 got
             }
             36 if self.tally.is_some() => {
-                // no player to answer: the object waits at its Dialog for ever, and the pass goes
-                // on (counted when it begins to wait)
+                // no player to answer: the dialog is answered at once with its first button (a
+                // dialog of one button just goes on), counted
                 let at = self.at_tree;
-                if self.tally.as_mut().is_some_and(|t| t.waiting.insert(me_id)) {
-                    self.tally.as_mut().unwrap().neutral(36, "no player to answer (waits)", at);
-                }
-                PrimResult::Yield
+                self.tally.as_mut().unwrap().neutral(36, "no player to answer (first button)", at);
+                PrimResult::True
             }
             36 => {
                 let s = self.log_step_here(n, interp).map(|s| (s.result, s.after == n.true_target as u16));

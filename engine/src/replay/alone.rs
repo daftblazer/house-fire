@@ -50,8 +50,6 @@ pub struct Tally {
     neutral: BTreeMap<(u16, &'static str, i32), u32>,
     errors: BTreeMap<String, u32>,
     sims: BTreeMap<i16, SimStats>,
-    /// The objects waiting at a Dialog nobody answers.
-    pub(super) waiting: std::collections::BTreeSet<i16>,
     /// Stacks of Sims restarted at their bottom frame after an error.
     pub(super) restarted: u32,
     /// The turns going on (LookTowards): the ticks left and the direction it ends in.
@@ -486,7 +484,8 @@ impl<'l> Alone<'l> {
         self.d.sim.stack_of(&self.d.host.world, k).stack().iter().map(|f| (f.tree.map_or(-1, |t| lib.tree_at(t).id as i32), f.node)).collect()
     }
 
-    /// A player is there: a Dialog opens and waits for `answer_dialog`, instead of waiting for ever.
+    /// A player is there: a Dialog opens and waits for `answer_dialog`, instead of being answered at
+    /// once with its first button.
     pub fn set_player(&mut self, on: bool) {
         self.d.host.player = on;
     }
@@ -658,7 +657,7 @@ impl<'l> Alone<'l> {
             });
             println!("sim {id} {name}: interactions started {} finished {}, walked {:.1} tiles, motives low [{}] last [{}], {at}", s.started, s.finished, s.walked, f(&s.low), f(&s.last));
         }
-        println!("alone: walks planned {}, arrived {}, no way {}; Sim stacks restarted after an error {}; objects waiting at a Dialog {}", t.planned, t.arrived, t.no_way, t.restarted, t.waiting.len());
+        println!("alone: walks planned {}, arrived {}, no way {}; Sim stacks restarted after an error {}", t.planned, t.arrived, t.no_way, t.restarted);
         println!("alone: hash {hash:016x}");
         AloneReport { ticks: done, of, hash }
     }

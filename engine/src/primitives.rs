@@ -195,7 +195,7 @@ fn set_relationship(vars: &mut ScriptVariables, pair: Option<(i16, i16)>, a: i16
 /// Dialog (opcode 36): opens a dialog for the player (a presentation event, the world's
 /// dialog_object) and waits for the answer (`World::dialog_answer`): each step until then yields
 /// and asks the pass to stop (`World::stop_pass`); the answer given, the node goes to its true
-/// target. Measured (replay): all 2,471 waits and 4 answers of the session as the log's, every
+/// target for the first button (or the only one) and its false target for the second. Measured (replay): all 2,471 waits and 4 answers of the session as the log's, every
 /// answer true (the dialogs' one button); `docs/simulation.md`, "Dialogs".
 pub fn dialog(n: &Node, world: &mut World, me: i16) -> PrimResult {
     if world.dialog_object != me {
@@ -209,8 +209,9 @@ pub fn dialog(n: &Node, world: &mut World, me: i16) -> PrimResult {
         return PrimResult::Yield;
     }
     world.dialog_object = 0;
-    world.dialog_answer = None;
-    PrimResult::True
+    // the first button (the affirmative one, or the only one) goes the true way, the second the
+    // false way (an engine rule; every dialog of the logs has the one button, answered true)
+    if world.dialog_answer.take() == Some(false) { PrimResult::False } else { PrimResult::True }
 }
 
 /// A person's running motive changes, as one of its turns begins: each moves its motive by its
@@ -869,16 +870,18 @@ pub fn find_best_object<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &mut
 /// RunFunctionalTree (opcode 20): the stack object's function (operand byte 0, `function_entry`)
 /// run: its function table's action tree pushed with the Sim's temps as its parameters, the stack
 /// object and its file the frame's; the node stays (Continue) and the tree's return takes its true
-/// or false way. Measured on the home log: food_sg's 8234 node 3 (function 7, the table 47's 8199)
-/// and 8206 node 11 (function 1, the stove 61's 8197), their parameters the temps. No such function
-/// or object: Stop. (`docs/primitives.md`, "RunFunctionalTree".)
+/// or false way; with no such object or function it takes the false way. Measured on the home log: food_sg's 8234 node 3 (function 7, the table 47's 8199)
+/// and 8206 node 11 (function 1, the stove 61's 8197), their parameters the temps. An unknown
+/// function number: the false way too. (`docs/primitives.md`, "RunFunctionalTree".)
 pub fn run_functional_tree<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &mut H, n: &Node) -> PrimResult {
     let world = host.world();
     let lib = world.library();
-    let Some((_, entry)) = function_entry(n.operand[0]) else { return PrimResult::Stop };
     let so = interp.top().stack_object;
-    let Some(o) = world.find(so) else { return PrimResult::Stop };
-    let Some(tree) = world.function_tree(o, entry) else { return PrimResult::Stop };
+    // no function the engine knows (4, 5 and 9 are in no table of the recomp's search), no object, or none with the function: the node's false way (an engine rule: the logs
+    // never meet it, and a script that tests for the function does not need it)
+    let Some((_, entry)) = function_entry(n.operand[0]) else { return PrimResult::False };
+    let Some(o) = world.find(so) else { return PrimResult::False };
+    let Some(tree) = world.function_tree(o, entry) else { return PrimResult::False };
     let file = world.get(o).file;
     let mut temps = [0i16; 4];
     let given = interp.defaults().len().min(temps.len());
