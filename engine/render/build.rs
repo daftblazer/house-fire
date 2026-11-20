@@ -5,13 +5,15 @@ use std::process::Command;
 
 /// (source, output name, defines): the vertex shader is built twice, for rigid meshes and for
 /// the skinned ones (whose vertices the compute pass has blended).
-const SHADERS: [(&str, &str, &[&str]); 6] = [
+const SHADERS: [(&str, &str, &[&str]); 8] = [
     ("model.vert", "model.vert", &[]),
     ("model.vert", "model_skinned.vert", &["-DSKINNED"]),
     ("model.frag", "model.frag", &[]),
     ("skin.comp", "skin.comp", &[]),
     ("overlay.vert", "overlay.vert", &[]),
     ("overlay.frag", "overlay.frag", &[]),
+    ("apt.vert", "apt.vert", &[]),
+    ("apt.frag", "apt.frag", &[]),
 ];
 
 fn main() {

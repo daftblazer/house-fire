@@ -29,6 +29,9 @@ pub struct DisplayItem {
     /// The depth the piece was placed at in its clip, and its clip depth if it masks.
     pub depth: i32,
     pub clip_depth: i32,
+    /// The name of the root's child (a layer of the wrapper: `content`, `dialog`, `keys`, ...)
+    /// the piece is under; empty for the root's own.
+    pub layer: Rc<str>,
 }
 
 impl Player {
@@ -36,12 +39,12 @@ impl Player {
     pub fn display_list(&self) -> Vec<DisplayItem> {
         let mut out = Vec::new();
         if let Some(r) = self.root {
-            self.list_clip(r, &IDENTITY, &Color::IDENTITY, &mut out);
+            self.list_clip(r, &IDENTITY, &Color::IDENTITY, &Rc::from(""), &mut out);
         }
         out
     }
 
-    fn list_clip(&self, id: ClipId, parent: &Matrix, pcol: &Color, out: &mut Vec<DisplayItem>) {
+    fn list_clip(&self, id: ClipId, parent: &Matrix, pcol: &Color, layer: &Rc<str>, out: &mut Vec<DisplayItem>) {
         let c = self.clip(id);
         if !c.visible || !c.alive {
             return;
@@ -49,7 +52,7 @@ impl Player {
         let m = compose(parent, &c.matrix);
         let col = pcol.then(&c.color);
         let mut item = |kind, text| {
-            out.push(DisplayItem { movie: c.flash.name.as_str().into(), character: c.ch, kind, matrix: m, color: col, text, depth: c.depth, clip_depth: c.clip_depth })
+            out.push(DisplayItem { movie: c.flash.name.as_str().into(), character: c.ch, kind, matrix: m, color: col, text, depth: c.depth, clip_depth: c.clip_depth, layer: layer.clone() })
         };
         match c.kind {
             ClipKind::Shape => item(ItemKind::Shape, None),
@@ -64,7 +67,9 @@ impl Player {
             ClipKind::Image | ClipKind::Button => {}
             ClipKind::Sprite => {
                 for &k in c.children.values() {
-                    self.list_clip(k, &m, &col, out);
+                    // the root's children are the layers
+                    let below: Rc<str> = if Some(id) == self.root { self.clip(k).name.as_str().into() } else { layer.clone() };
+                    self.list_clip(k, &m, &col, &below, out);
                 }
             }
         }
