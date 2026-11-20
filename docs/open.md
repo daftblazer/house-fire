@@ -247,3 +247,22 @@ as plain arrays, the multiplayer blockers, the simulation speed list, the device
   to one place (`vox_meal_good`) and bounds, not read from the game; the original's volume
   law may not be linear in the distance. Footsteps are not made in a `play` run (the walk's foot
   posts have no clock in `Alone::motions`).
+
+### The playable sandbox (stage 7 left over, 2026-11-19)
+
+- Stand-ins to replace: the walk (`Walls::route` staircase at a constant speed: no objects in
+  the way, no portals, no stairs), the menu, HUD and dialog box (stage 9 brings the
+  original's), the dialog's button rule (first true, second false: the logs hold only
+  one-button dialogs), the go-here checks' parameter 0 (plan.md; with 1 guard 4109 is always
+  false: why the original passes 1 not found), loadloop for the first 150 ticks (a choice).
+- The Sims alone: social (motive 14) is never restored (conversations never reach Global
+  268/269; TestInteractingWith 37 and the social animations 4212/4280 not native); the club's
+  Sims keep their dances (motives at 100, Find Best Action has no candidate); primitives 1,
+  15, 16, 21, 25, 35, 37 answered neutrally; 85 Sim stack restarts on home in 54,000 ticks.
+- Sound params (engine/src/sound_params.rs): 188 of 213 calls exact on home-full-s, but the
+  range factor 0.22 tile per unit of the track's low byte and the pan's 20 tiles are fitted
+  on one call (vox_meal_good), not read from the game: find the snd layer's own code; the 22
+  lamp calls (five lamps on one handle) miss; the pan law uses |x| (left and right the same
+  side); the original's 1.15 s start latency is not copied; footsteps (no foot-note clock in
+  `Alone::motions`) and the stereo's stations (no event the run sees) are silent.
+- No one has played the window by hand yet: the controls are checked only by scripts.
