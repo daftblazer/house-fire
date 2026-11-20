@@ -22,10 +22,10 @@ fn quad(tint: [f32; 4], mul: [f32; 4], add: [f32; 4], premultiplied: f32) -> Vec
 fn draw(vertices: &[Vertex], texture: Option<(u32, u32, &[u8])>, linear: bool) -> Option<Vec<u8>> {
     let gpu = Gpu::new(false).ok()?;
     let target = apt_pass::target(&gpu, W, H);
-    let mut pass = AptPass::new(&gpu, target.view, apt_pass::TARGET_FORMAT, W, H, linear);
+    let mut pass = AptPass::new(&gpu, target.view, apt_pass::TARGET_FORMAT, W, H);
     let id: TextureId = match texture {
-        Some((w, h, rgba)) => pass.add_texture(w, h, rgba),
-        None => pass.add_texture(1, 1, &[255; 4]),
+        Some((w, h, rgba)) => pass.add_texture(w, h, rgba, linear),
+        None => pass.add_texture(1, 1, &[255; 4], linear),
     };
     pass.set(vertices, &[Batch { texture: id, first: 0, count: vertices.len() as u32 }]);
     let base: Vec<u8> = (0..W * H).flat_map(|_| [100, 100, 100, 255]).collect();

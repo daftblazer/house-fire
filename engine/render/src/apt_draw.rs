@@ -42,10 +42,9 @@ impl AptAssets {
         AptAssets { flashes, fonts, textures_arc, pages }
     }
 
-    /// A font page's picture, premultiplied RGBA: the page is 4-bit indices into two IA8
-    /// palettes (the first half of the entry's palette and the second), the colour taken from
-    /// the second one's alpha and the coverage from the first one's (a black shadow has a
-    /// coverage and no colour). See `docs/assets.md`, "Drawing the movies (U2b)".
+    /// A font page's picture, premultiplied white: the page is 4-bit indices into the first of
+    /// the entry's two IA8 palettes, whose intensity is its alpha (`docs/assets.md`, "Drawing
+    /// the movies (U2b)").
     fn page(&self, hash: u32) -> Option<(u32, u32, Vec<u8>)> {
         let at = *self.pages.get(&hash)?;
         let b = &self.textures_arc[at..];
@@ -56,11 +55,7 @@ impl AptAssets {
         let src = &b[t.texels.0..];
         let (po, n) = t.palette?;
         let coverage = texture::decode_indexed(t.kind, t.width, t.height, src, b.get(po..po + n * 2)?, 0)?;
-        if std::env::var_os("HF_MODEA").is_some() {
-            let colour = texture::decode_indexed(t.kind, t.width, t.height, src, b.get(po + n * 2..po + n * 4)?, 0)?;
-            return Some((t.width, t.height, coverage.iter().zip(&colour).flat_map(|(&a, &c)| [(c >> 24) as u8, (c >> 24) as u8, (c >> 24) as u8, (a >> 24) as u8]).collect()));
-        }
-        Some((t.width, t.height, coverage.iter().flat_map(|&a| [(a >> 24) as u8, (a >> 24) as u8, (a >> 24) as u8, (a >> 24) as u8]).collect()))
+        Some((t.width, t.height, coverage.iter().flat_map(|&a| [(a >> 24) as u8; 4]).collect()))
     }
 }
 
@@ -97,19 +92,14 @@ pub struct TextRun {
     pub width: f32,
     /// 0xRRGGBBAA, the glyphs' tint.
     pub color: u32,
-    /// The offset of the black shadow drawn under the glyphs, in stage pixels.
+    /// The offset in stage pixels of the black copy drawn under the glyphs (0: an edge only).
     pub shadow: f32,
 }
 
 /// The advance of a space in the font's texels (a glyph's record is its columns on the page; a
-/// space has none). Fitted to the dialogs' pictures.
+/// space has none). Fitted to the dialogs' pictures: the lines' widths are within a pixel or two
+/// over 9 (the other values tried, 6 to 8, fit less).
 const SPACE: f32 = 9.0;
-fn dx() -> f32 { std::env::var("HF_DX").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) }
-fn dy() -> f32 { std::env::var("HF_DY").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) }
-fn shx() -> f32 { std::env::var("HF_SHX").ok().and_then(|v| v.parse().ok()).unwrap_or(1.0) }
-fn shy() -> f32 { std::env::var("HF_SHY").ok().and_then(|v| v.parse().ok()).unwrap_or(1.0) }
-fn pad() -> f32 { std::env::var("HF_PAD").ok().and_then(|v| v.parse().ok()).unwrap_or(0.0) }
-fn space() -> f32 { std::env::var("HF_SPACE").ok().and_then(|v| v.parse().ok()).unwrap_or(SPACE) }
 
 /// The wrapper's layers the game's pictures show nothing of: the key pictures and the D-pad,
 /// and the buttons the wrapper makes for each screen (`dialog_button_accept`...): the movies
@@ -152,7 +142,7 @@ impl<'a> Painter<'a> {
             return Some(*p);
         }
         let (w, h, rgba) = self.assets.page(hash)?;
-        let t = (pass.add_texture(w, h, &rgba), w, h);
+        let t = (pass.add_texture(w, h, &rgba, false), w, h);
         self.pages.insert(hash, t);
         Some(t)
     }
@@ -162,7 +152,7 @@ impl<'a> Painter<'a> {
         let assets = self.assets;
         let Some(font) = assets.fonts.get(&run.font) else { return };
         let (sx, sy) = (2.0 / STAGE.0, 2.0 / STAGE.1);
-        let advance = |c: char| -> f32 { if c == ' ' { space() } else { font.glyph(c as u32).map_or(0.0, |g| (g.x1 - g.x0) as f32 + pad()) } };
+        let advance = |c: char| -> f32 { if c == ' ' { SPACE } else { font.glyph(c as u32).map_or(0.0, |g| (g.x1 - g.x0) as f32) } };
         // lines: breaks at newlines, then at the last space that fits
         let mut lines: Vec<Vec<char>> = Vec::new();
         for para in run.text.split('\n') {
@@ -184,42 +174,41 @@ impl<'a> Painter<'a> {
             }
             lines.push(line);
         }
-        let passes: &[(f32, [f32; 4])] = &[(run.shadow, [0.0, 0.0, 0.0, 1.0]), (0.0, unpack(run.color))];
-        for &(offset, tint) in passes.iter().filter(|p| p.0 != 0.0 || p.1 != [0.0, 0.0, 0.0, 1.0] || run.shadow == 0.0) {
-        for (n, line) in lines.iter().enumerate() {
-            let width: f32 = line.iter().map(|&c| advance(c)).sum::<f32>() * run.scale;
-            let mut x = match run.align {
-                Align::Left => run.x + dx(),
-                Align::Center => run.x + dx() - width / 2.0,
-                Align::Right => run.x + dx() - width,
-            } + offset * shx();
-            let top = run.y + dy() + offset * shy() + n as f32 * font.line as f32 * run.scale;
-            for &c in line {
-                let a = advance(c);
-                if let Some(g) = font.glyph(c as u32)
-                    && let Some(page) = font.pages.get(g.page as usize)
-                    && let Some((tex, pw, ph)) = self.page(pass, page.texture)
-                {
-                    let (u0, u1) = (g.x0 as f32 / pw as f32, g.x1 as f32 / pw as f32);
-                    // the page is stored upside down: the band's last row is the glyph's top
-                    let band = font.line as f32;
-                    let (v_top, v_bot) = (((g.row as f32 + 1.0) * band) / ph as f32, (g.row as f32 * band) / ph as f32);
-                    let snap = |v: f32| if std::env::var_os("HF_SNAP").is_some() { v.round() } else { v };
-                    let (xs, ts) = (snap(x), snap(top));
-                    let (x1, y1) = (xs + a * run.scale, ts + band * run.scale);
-                    let corner = |px: f32, py: f32, u: f32, v: f32| Vertex { pos: [px * sx - 1.0, py * sy - 1.0], uv: [u, v], tint, mul: [1.0; 4], add: [0.0; 4], premultiplied: 1.0, _pad: 0.0 };
-                    let (tl, tr, bl, br) = (corner(xs, ts, u0, v_top), corner(x1, ts, u1, v_top), corner(xs, y1, u0, v_bot), corner(x1, y1, u1, v_bot));
-                    out.push(tex, [tl, tr, bl]);
-                    out.push(tex, [tr, br, bl]);
+        // a black copy `shadow` pixels down and right, then the colour
+        for (offset, tint) in [(run.shadow, [0.0, 0.0, 0.0, 1.0]), (0.0, unpack(run.color))] {
+            for (n, line) in lines.iter().enumerate() {
+                let width: f32 = line.iter().map(|&c| advance(c)).sum::<f32>() * run.scale;
+                let mut x = offset
+                    + match run.align {
+                        Align::Left => run.x,
+                        Align::Center => run.x - width / 2.0,
+                        Align::Right => run.x - width,
+                    };
+                let top = run.y + offset + n as f32 * font.line as f32 * run.scale;
+                for &c in line {
+                    let a = advance(c);
+                    if let Some(g) = font.glyph(c as u32)
+                        && let Some(page) = font.pages.get(g.page as usize)
+                        && let Some((tex, pw, ph)) = self.page(pass, page.texture)
+                    {
+                        let (u0, u1) = (g.x0 as f32 / pw as f32, g.x1 as f32 / pw as f32);
+                        // the page is stored upside down: the band's last row is the glyph's top
+                        let band = font.line as f32;
+                        let (v_top, v_bot) = (((g.row as f32 + 1.0) * band) / ph as f32, (g.row as f32 * band) / ph as f32);
+                        let (x1, y1) = (x + a * run.scale, top + band * run.scale);
+                        let corner = |px: f32, py: f32, u: f32, v: f32| Vertex { pos: [px * sx - 1.0, py * sy - 1.0], uv: [u, v], tint, mul: [1.0; 4], add: [0.0; 4], premultiplied: 1.0, _pad: 0.0 };
+                        let (tl, tr, bl, br) = (corner(x, top, u0, v_top), corner(x1, top, u1, v_top), corner(x, y1, u0, v_bot), corner(x1, y1, u1, v_bot));
+                        out.push(tex, [tl, tr, bl]);
+                        out.push(tex, [tr, br, bl]);
+                    }
+                    x += a * run.scale;
                 }
-                x += a * run.scale;
             }
-        }
         }
     }
 
     fn white(&mut self, pass: &mut AptPass) -> TextureId {
-        *self.white.get_or_insert_with(|| pass.add_texture(1, 1, &[255; 4]))
+        *self.white.get_or_insert_with(|| pass.add_texture(1, 1, &[255; 4], true))
     }
 
     fn image(&mut self, pass: &mut AptPass, movie: &'a str, id: u32) -> Option<(TextureId, u32, u32)> {
@@ -230,7 +219,7 @@ impl<'a> Painter<'a> {
             None => {
                 let pal = &bytes[img.palette.clone()];
                 let rgba: Vec<u8> = bytes[img.texels.clone()].iter().flat_map(|&i| [pal[i as usize * 4], pal[i as usize * 4 + 1], pal[i as usize * 4 + 2], pal[i as usize * 4 + 3]]).collect();
-                let t = pass.add_texture(img.width, img.height, &rgba);
+                let t = pass.add_texture(img.width, img.height, &rgba, true);
                 self.images.insert((movie, id), t);
                 t
             }
@@ -238,13 +227,11 @@ impl<'a> Painter<'a> {
         Some((tex, img.width, img.height))
     }
 
-    /// The triangles of a display list at a picture of `size` pixels.
-    pub fn draw(&mut self, pass: &mut AptPass, list: &[DisplayItem], size: (u32, u32)) -> Drawing {
+    /// The triangles of a display list (in clip space: any picture size).
+    pub fn draw(&mut self, pass: &mut AptPass, list: &[DisplayItem]) -> Drawing {
         let mut out = Drawing::default();
         let (sx, sy) = (2.0 / STAGE.0, 2.0 / STAGE.1);
-        let (ox, oy) = (std::env::var("HF_OX").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0), std::env::var("HF_OY").ok().and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0));
-        let clip = |p: [f32; 2]| [(p[0] + ox) * sx - 1.0, (p[1] + oy) * sy - 1.0];
-        let _ = size;
+        let clip = |p: [f32; 2]| [p[0] * sx - 1.0, p[1] * sy - 1.0];
         for item in list {
             if HIDDEN_LAYERS.contains(&&*item.layer) || item.layer.contains("_button_") {
                 continue;
@@ -252,36 +239,35 @@ impl<'a> Painter<'a> {
             let Some(flash) = self.flashes.get(&*item.movie).copied() else { continue };
             let mul = item.color.mul.map(|v| v as f32);
             let add = item.color.add.map(|v| v as f32);
-            match (item.kind, flash.movie.characters.get(item.character as usize)) {
-                (ItemKind::Shape, Some(Character::Shape { geometry, .. })) => {
-                    let Some(shape) = flash.geometry.shape(*geometry) else { continue };
-                    for fill in &shape.fills {
-                        match fill {
-                            Fill::Solid { color, triangles } => {
-                                let white = self.white(pass);
-                                let tint = unpack(*color);
-                                for t in triangles {
-                                    let v = t.map(|p| Vertex { pos: clip(apply(&item.matrix, p)), uv: [0.5, 0.5], tint, mul, add, premultiplied: 0.0, _pad: 0.0 });
-                                    out.push(white, v);
-                                }
+            // (the text items of the movies' own text characters are not drawn yet: the dialogs'
+            // words are the game's, `text`)
+            if let (ItemKind::Shape, Some(Character::Shape { geometry, .. })) = (item.kind, flash.movie.characters.get(item.character as usize)) {
+                let Some(shape) = flash.geometry.shape(*geometry) else { continue };
+                for fill in &shape.fills {
+                    match fill {
+                        Fill::Solid { color, triangles } => {
+                            let white = self.white(pass);
+                            let tint = unpack(*color);
+                            for t in triangles {
+                                let v = t.map(|p| Vertex { pos: clip(apply(&item.matrix, p)), uv: [0.5, 0.5], tint, mul, add, premultiplied: 0.0, _pad: 0.0 });
+                                out.push(white, v);
                             }
-                            Fill::Textured { color, image, matrix, triangles } => {
-                                let Some((tex, w, h)) = self.image(pass, &flash.name, *image) else { continue };
-                                let tint = unpack(*color);
-                                for t in triangles {
-                                    let v = t.map(|p| {
-                                        let u = p[0] * matrix[0] + p[1] * matrix[4] + matrix[12];
-                                        let vv = p[0] * matrix[1] + p[1] * matrix[5] + matrix[13];
-                                        Vertex { pos: clip(apply(&item.matrix, p)), uv: [u / w as f32, vv / h as f32], tint, mul, add, premultiplied: 0.0, _pad: 0.0 }
-                                    });
-                                    out.push(tex, v);
-                                }
-                            }
-                            Fill::Lines { .. } | Fill::Unknown(_) => {}
                         }
+                        Fill::Textured { color, image, matrix, triangles } => {
+                            let Some((tex, w, h)) = self.image(pass, &flash.name, *image) else { continue };
+                            let tint = unpack(*color);
+                            for t in triangles {
+                                let v = t.map(|p| {
+                                    let u = p[0] * matrix[0] + p[1] * matrix[4] + matrix[12];
+                                    let vv = p[0] * matrix[1] + p[1] * matrix[5] + matrix[13];
+                                    Vertex { pos: clip(apply(&item.matrix, p)), uv: [u / w as f32, vv / h as f32], tint, mul, add, premultiplied: 0.0, _pad: 0.0 }
+                                });
+                                out.push(tex, v);
+                            }
+                        }
+                        Fill::Lines { .. } | Fill::Unknown(_) => {}
                     }
                 }
-                _ => {}
             }
         }
         out

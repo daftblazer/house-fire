@@ -89,7 +89,8 @@ pub struct AptPass<'g> {
     framebuffer: vk::Framebuffer,
     set_layout: vk::DescriptorSetLayout,
     pool: vk::DescriptorPool,
-    sampler: vk::Sampler,
+    /// Bilinear and nearest-texel samplers.
+    samplers: [vk::Sampler; 2],
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
     vert: vk::ShaderModule,
@@ -101,9 +102,8 @@ pub struct AptPass<'g> {
 
 impl<'g> AptPass<'g> {
     /// The pass over `colour` (an image of `format` that the scene pass leaves in the
-    /// transfer-source layout, and this one leaves in it again). `linear` picks bilinear
-    /// filtering for the textures, otherwise the nearest texel.
-    pub fn new(gpu: &'g Gpu, colour: vk::ImageView, format: vk::Format, width: u32, height: u32, linear: bool) -> AptPass<'g> {
+    /// transfer-source layout, and this one leaves in it again).
+    pub fn new(gpu: &'g Gpu, colour: vk::ImageView, format: vk::Format, width: u32, height: u32) -> AptPass<'g> {
         let d = &gpu.device;
         let attachment = [vk::AttachmentDescription::default()
             .format(format)
@@ -135,14 +135,11 @@ impl<'g> AptPass<'g> {
         let render_pass = unsafe { d.create_render_pass(&vk::RenderPassCreateInfo::default().attachments(&attachment).subpasses(&subpass).dependencies(&deps), None) }.unwrap();
         let views = [colour];
         let framebuffer = unsafe { d.create_framebuffer(&vk::FramebufferCreateInfo::default().render_pass(render_pass).attachments(&views).width(width).height(height).layers(1), None) }.unwrap();
-        let filter = if linear { vk::Filter::LINEAR } else { vk::Filter::NEAREST };
-        let sampler = unsafe {
-            d.create_sampler(
-                &vk::SamplerCreateInfo::default().mag_filter(filter).min_filter(filter).address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE).address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE),
-                None,
-            )
+        let sampler = |filter| unsafe {
+            d.create_sampler(&vk::SamplerCreateInfo::default().mag_filter(filter).min_filter(filter).address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE).address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE), None)
         }
         .unwrap();
+        let samplers = [sampler(vk::Filter::LINEAR), sampler(vk::Filter::NEAREST)];
         let binding = [vk::DescriptorSetLayoutBinding::default().binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).descriptor_count(1).stage_flags(vk::ShaderStageFlags::FRAGMENT)];
         let set_layout = unsafe { d.create_descriptor_set_layout(&vk::DescriptorSetLayoutCreateInfo::default().bindings(&binding), None) }.unwrap();
         let sizes = [vk::DescriptorPoolSize::default().ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).descriptor_count(MAX_TEXTURES)];
@@ -195,11 +192,12 @@ impl<'g> AptPass<'g> {
             .layout(pipeline_layout)
             .render_pass(render_pass)];
         let pipeline = unsafe { d.create_graphics_pipelines(vk::PipelineCache::null(), &info, None) }.map_err(|e| e.1).unwrap()[0];
-        AptPass { gpu, width, height, render_pass, framebuffer, set_layout, pool, sampler, pipeline_layout, pipeline, vert, frag, textures: Vec::new(), vertices: None, batches: Vec::new() }
+        AptPass { gpu, width, height, render_pass, framebuffer, set_layout, pool, samplers, pipeline_layout, pipeline, vert, frag, textures: Vec::new(), vertices: None, batches: Vec::new() }
     }
 
-    /// Uploads a picture (`width * height * 4` bytes of straight RGBA, from the top) once.
-    pub fn add_texture(&mut self, width: u32, height: u32, rgba: &[u8]) -> TextureId {
+    /// Uploads a picture (`width * height * 4` bytes of RGBA, from the top) once; `linear` has it
+    /// filtered bilinearly, otherwise the nearest texel is taken.
+    pub fn add_texture(&mut self, width: u32, height: u32, rgba: &[u8], linear: bool) -> TextureId {
         assert_eq!(rgba.len() as u64, u64::from(width) * u64::from(height) * 4, "a texture is RGBA");
         assert!((self.textures.len() as u32) < MAX_TEXTURES, "too many textures");
         let (gpu, d) = (self.gpu, &self.gpu.device);
@@ -226,7 +224,7 @@ impl<'g> AptPass<'g> {
         gpu.destroy_buffer(staging);
         let layouts = [self.set_layout];
         let set = unsafe { d.allocate_descriptor_sets(&vk::DescriptorSetAllocateInfo::default().descriptor_pool(self.pool).set_layouts(&layouts)) }.unwrap()[0];
-        let info = [vk::DescriptorImageInfo::default().sampler(self.sampler).image_view(image.view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
+        let info = [vk::DescriptorImageInfo::default().sampler(self.samplers[usize::from(!linear)]).image_view(image.view).image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)];
         unsafe { d.update_descriptor_sets(&[vk::WriteDescriptorSet::default().dst_set(set).dst_binding(0).descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER).image_info(&info)], &[]) };
         self.textures.push((image, set));
         TextureId(self.textures.len() as u32 - 1)
@@ -286,7 +284,9 @@ impl Drop for AptPass<'_> {
             d.destroy_shader_module(self.frag, None);
             d.destroy_descriptor_pool(self.pool, None);
             d.destroy_descriptor_set_layout(self.set_layout, None);
-            d.destroy_sampler(self.sampler, None);
+            for &sm in &self.samplers {
+                d.destroy_sampler(sm, None);
+            }
             d.destroy_framebuffer(self.framebuffer, None);
             d.destroy_render_pass(self.render_pass, None);
         }

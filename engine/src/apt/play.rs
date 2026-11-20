@@ -16,11 +16,14 @@ pub struct Timing {
     pub rate: f32,
     /// Whether a game frame's loads and calls come before its movie frames.
     pub calls_first: bool,
+    /// Whether the dialogs' boxes are sized as the game's pictures show them (`host::PICTURE`)
+    /// rather than as the commands the movies sent fit.
+    pub picture: bool,
 }
 
 impl Default for Timing {
     fn default() -> Timing {
-        Timing { rate: 1.0, calls_first: false }
+        Timing { rate: 1.0, calls_first: false, picture: false }
     }
 }
 
@@ -51,6 +54,7 @@ pub fn run(log: &Log, flashes: Vec<(String, Rc<Flash>)>, to: Option<u32>, timing
     let last = log.movie_loads.iter().map(|l| l.frame).chain(log.movie_calls.iter().map(|c| c.frame)).chain(log.movie_commands.iter().map(|c| c.frame)).max().unwrap_or(0);
     let last = to.map_or(last, |t| t.min(last));
     let host = super::host::Host::for_log(log);
+    let host = if timing.picture { host.for_pictures() } else { host };
     let (mut li, mut ci) = (0, 0);
     let mut owed = 0.0f32;
     for f in 0..=last {

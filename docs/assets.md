@@ -3429,9 +3429,10 @@ buttons' reports), the mu dialog's, the load bar's `current_load` (100 from fram
 say `done_loading`); (3) the screens' hearing counts above. These make the figure; none is
 known from the game.
 
-**Not done.** Key and mouse input and the clips' event handlers; text is not laid out (the
+**Not done.** Key and mouse input and the clips' event handlers; text is not laid out here (the
 display list gives each text field's string: a script's `text`, the variable it is bound to, or
-its own initial text, and the drawing of glyphs is U2b's); `hitTest` is false; `getBounds`,
+its own initial text; the glyphs and the dialogs' words, which are the game's, are drawn in
+"Drawing the movies (U2b)"); `hitTest` is false; `getBounds`,
 `createEmptyMovieClip`, sounds are not there; a clip's `_width` and `_height` are its shapes'
 and texts' bounds (not the glyphs'); `With` is done. Every call or member the player does not
 know is listed once by `apt-play` as `stub:` (here: `toggleKey` on a clip that does not exist yet,
@@ -3443,9 +3444,113 @@ call them and the original does nothing too.
 depth), each with its movie, character id, the matrix to the stage (a, b, c, d, tx, ty as the
 Flash format has it), the colour transform (multiplier and offset, 0 to 1, from the clip's
 place item and `_alpha`, composed down the tree), the string of a text, its depth and its clip
-depth (a masking layer's end). Hidden clips (`_visible`) and clips not in the tree are left
+depth (a masking layer's end) and its `layer` (the name of the root's child it is under). Hidden clips (`_visible`) and clips not in the tree are left
 out; buttons and images are not items (the wrapper's buttons are hit areas only; a button's up state
 is not drawn yet).
+
+### Drawing the movies (U2b)
+
+`engine/render`: `apt_pass.rs` (the GPU pass), `apt_draw.rs` (the display list made into
+triangles, the glyph layout), `bin/ui-check.rs` (the check against the game's frames). The engine
+crate stays GPU-free; the player gives the display list and the drawing takes it.
+
+**The pass.** One pipeline, triangles with a position in clip space (the drawing scales the
+640 by 448 stage to the picture, so any size works: ui-check renders at 640 by 448 only to
+compare), a texture coordinate, the fill's colour (the tint), the clip's colour transform
+(multiplier and offset, from the display list) and a flag for premultiplied textures. Fragment:
+`clamp(texel * tint * mul + add)`, then premultiplied by its alpha and blended with `one, one
+minus source alpha` over the picture (straight alpha blending; the picture's own alpha is kept).
+A solid fill uses a white 1 by 1 texture. Textures are uploaded once, each when first needed:
+an image of a movie by (movie, id) from its 8-bit palette; a font page by its hash. The
+textured fill's 4 by 4 matrix is used as the notes above give it (a vertex row times it, in
+texels; divided by the stored size, not the picture's). Images and boxes are filtered bilinearly,
+font pages by the nearest texel (the font's strokes are 2 pixels wide and the game's are not
+blurred: 90.0% against 89.5% within 4 on the four dialog frames).
+
+**What the movies do not draw.** The dialogs' and menus' words are not in the movies (the
+movies hold 2 text characters, in `buildSim`): the game draws them itself, from its own string
+tables, at places the movies report (`dialog_title_bar_x/y`, `mu_dialog_title_bar_x/y`) and
+around the dialog's box. So the display list has no text items for them and `ui-check` takes the
+runs from a file (`HF_UI_TEXTS`, default `$HF_FRAMES/ui/texts.txt`: `FRAME|FONT|X|Y|l, c or
+r|SCALE|WIDTH|RRGGBBAA|SHADOW|TEXT`; the strings are the game's, so the file is not in the
+repository). Nor do the pictures show the wrapper's key and D-pad layers (`keys`, `dpad`) or its
+buttons (`<context>_button_<name>` clips, with the `bt_GC` pictures): the movies report where
+their buttons are (the `*_button_*_x/_y` commands) and the game draws those itself, if at all;
+the pass leaves them out (`HIDDEN_LAYERS`; the display list's `layer` is the name of the
+root's child a piece is under).
+
+**The pictures lag the log by 2 frames** (`HF_UI_LAG`, default 2): the picture of frame N is the
+movies' state after the log's frame N - 2 (the load bar's frame 1194: 100% within 4 at 2, 41%
+at 1, 30% at 0).
+
+**Glyphs.** A font page is a 4-bit paletted picture, 16 colours, kept as two IA8 palettes of
+16 (the first half and the second of the entry's palette). The first has intensity = alpha at
+each index (0, 1, 2, 3, 6, 12, 24, 47, 109, 99, 217, 162, 208, 232, 244, 255: not monotone),
+the second differs at 5 to 8 and 10 (a black with an alpha at 8 and 10): the pass uses the first
+as a white, premultiplied glyph (the game's text is white with a black edge and shadow, the
+black drawn by the pass: below). The pages are stored upside down: a glyph's band
+(`row * line` to `(row + 1) * line` of the page, line 37 for the 24-point fonts) is drawn with
+its last row on top. A glyph's quad is its columns (`x0..x1`) and the whole band; the advance is
+the columns' width; a space (no glyph) is 9 texels (fitted). Lines break at spaces and at `\n`;
+a line is placed by its first glyph's quad's top left (`x`, `y` of the run: the top of the
+band) and centred on `x` for `c`. The page texel is 0.586 pixels of the stage in the dialogs'
+text (24 point to 14 pixels: fitted to the lines' widths, 1% over lines of 350 pixels;
+the body of frame 1122 has bigger letters: 0.62), 0.58 to 0.60 for the title bars.
+The black edge: each run is drawn twice, a black copy `shadow` pixels down and right, then the
+colour copy; a shadow of 0 makes an edge, 2 a shadow (the 1,300 and 978 bodies fit 2).
+Not found: the game's own recipe: its strokes are bolder than this model's and its shadow is a
+thick black 2 pixels wide on the lower right.
+
+**Dialog boxes.** The box is the dialog movie's own shapes stretched by the `extern` sizes the
+game sets before `showDialog` (`dialog_box_width`, `dialog_box_height`, `dialog_x`, `dialog_y`,
+fractions of the screen; the title bar's `dialog_title_bar_width`); the mu dialog's are
+`mu_dialog_*`. None is recorded; `host.rs`'s `PICTURE` has them for the four dialogs of the frames (`Timing::picture`, which
+`ui-check` sets; `FITTED`, which the commands fit, is not changed: the same members cannot give
+both, the commands want a box 240 pixels wide, the pictures 380), by coordinate descent on the within-4 count (a 1 pixel step in each, then half), starting from
+the boxes' edges in the pictures (the box's left, top and right edges are the picture's bounding
+box, its bottom edge 2 pixels less).
+
+**The check** (`ui-check LOG ISO FRAME...`, `HF_FRAMES` the folder with `ui/`; `HF_UI_OUT` the
+output folder, default `$HF_FRAMES/ui-out`; `HF_UI_HIST=1` a histogram of the errors). The 2D
+layer is the pixels where the game's frame differs from its world picture by more than 4 in a
+channel; ours is drawn over the world picture, so what we draw where the game draws nothing is
+not counted (the 1050 and 1122 pictures have the CAS bar and icons of `buildSim`, and 1300 the
+HUD's ring and bars, that the game's frames do not show at those moments: they stay in the
+`diff_` pictures). The portrait box of frames 1300 and later is masked. Frames 760 and 1390
+have a black world picture (their 2D layer is the whole frame: the logo and gradient of the
+title are not the movies'), so they are listed and not scored.
+
+**Figures** (`ui-check` on `ui-dump.log`, 640 by 448, within 4 of the game's frame on the 2D layer):
+
+| frame | what | layer pixels | within 4 |
+|---|---|---|---|
+| 760 | title (logo, gradient, copyright) | 286,101 | not scored: the world picture is black |
+| 930 | "Load save data?" dialog | 85,761 | 91.98% (beyond 6,881, PSNR 24.7 dB) |
+| 978 | "Please wait" box | 137,683 | 93.42% (beyond 9,056, 19.7 dB) |
+| 1050 | Sim chooser arrows | 929 | 8.29% |
+| 1122 | "Are you sure?" dialog | 94,398 | 91.95% (beyond 7,599, 18.4 dB) |
+| 1194 | load bar | 3,736 | 100.00% (49.5 dB) |
+| 1300 | Mom's dialog | 71,519 | 86.16% (beyond 9,896, 19.5 dB) |
+| 1390 | HUD, portrait | 281,509 | not scored: the world picture is black |
+
+Total over the 6 scored frames: 394,026 layer pixels, **91.30%** within 4 (the aim was 95%).
+What is left, by size: (1) the glyphs (about half of the misses in the dialog frames, e.g. 930's
+text rows 158 to 190 are 1,700 of its 6,900; the model above gives strokes 1 pixel too wide and
+a thinner shadow than the game's, and every line's scale, x and y are fitted per line, the
+fitted values 0.57 to 0.60 against the 0.586 of the widths, 0.62 for `Are you sure you want to
+save and`, so the layout rule is not found, only fitted); (2) the box edges: a row or two at the
+bottom shadow and at the highlight bar of each box (930: rows 306 to 310, 1,300 pixels) that a
+fraction of a pixel in the sizes does not fix (the sizes are on a 1/640 and 1/448 grid and fitted
+to a half step); (3) gradients off by 5 to 8 in places (930: 2,000 pixels with 8 to 15 off, not
+looked into: the box image is 8 by 256 stretched 1.01 times); (4) 1050: the movies draw the CAS
+bar and icons (and 1122 the same under the dialog) that the game's frames do not show, and the
+arrows (the only layer pixels there) are off by 32 to 63 (not looked into); (5) 760 and 1390
+cannot be measured this way; at 760 the player also draws the menu's six items, which the game's
+frame lacks (the menu's items are not in it at 760 and 800 though the player has them full
+size), the logo and copyright are not in the movies we run. At 1300 the player draws the HUD's
+ring and bars that the game's frame does not show; they are outside the layer and not counted.
+Not drawn: line fills (`Fill::Lines`), clip layers (`clip_depth`), the movies' own text
+characters (2, in `buildSim`).
 
 ### Left over
 

@@ -5,8 +5,6 @@
 //! than 4 in a channel. The portrait square (the game's own 3D draw, not the movies') is left
 //! out. Writes ours and a difference picture under `$HF_FRAMES/ui-out/`.
 //!
-//! `HF_UI_SIZE=WxH` draws (and compares) at another size (the reference is scaled by nearest
-//! texel: a study aid only). `HF_UI_NEAREST=1` samples the textures at the nearest texel.
 
 use housefire::apt::play;
 use housefire::disc::Disc;
@@ -86,22 +84,25 @@ fn main() -> ExitCode {
     let assets = AptAssets::new(&disc);
     let gpu = Gpu::new(std::env::var_os("HF_VALIDATE").is_some()).expect("Vulkan");
     let colour = apt_pass::target(&gpu, WIDTH, HEIGHT);
-    let mut pass = AptPass::new(&gpu, colour.view, apt_pass::TARGET_FORMAT, WIDTH, HEIGHT, std::env::var_os("HF_UI_NEAREST").is_none());
+    let mut pass = AptPass::new(&gpu, colour.view, apt_pass::TARGET_FORMAT, WIDTH, HEIGHT);
     let mut painter = Painter::new(&assets);
     let out_dir = std::env::var_os("HF_UI_OUT").map_or_else(|| frames_dir.join("ui-out"), PathBuf::from);
     std::fs::create_dir_all(&out_dir).expect("the output folder");
     let lag: u32 = std::env::var("HF_UI_LAG").ok().and_then(|v| v.parse().ok()).unwrap_or(2);
     let texts = read_texts(&std::env::var_os("HF_UI_TEXTS").map_or_else(|| frames_dir.join("ui").join("texts.txt"), PathBuf::from));
-    let (mut total, mut total_within) = (0usize, 0usize);
+    let (mut total, mut total_within, mut scored) = (0usize, 0usize, 0usize);
     for &frame in &frames {
         let ui = frames_dir.join("ui");
         let (Some(world), Some(game)) = (read_png(&ui.join(format!("world_{frame:05}.png"))), read_png(&ui.join(format!("frame_{frame:05}.png")))) else {
             eprintln!("ui: frame {frame}: no pictures in {}", ui.display());
             return ExitCode::FAILURE;
         };
-        let (player, _) = play::run(&log, assets.flashes.clone(), Some(frame.saturating_sub(lag)), play::Timing::default());
+        // a world picture that is all black (frames 760 and 1390 of the dump) has no picture to
+        // lay the layer over: the 2D layer is then the whole frame, not the movies' alone
+        let black = world.chunks(4).all(|p| p[..3].iter().all(|&c| c < 8));
+        let (player, _) = play::run(&log, assets.flashes.clone(), Some(frame.saturating_sub(lag)), play::Timing { picture: true, ..play::Timing::default() });
         let list = player.display_list();
-        let mut drawing = painter.draw(&mut pass, &list, (WIDTH, HEIGHT));
+        let mut drawing = painter.draw(&mut pass, &list);
         for run in texts.iter().filter(|(f, _)| *f == frame).map(|(_, r)| r) {
             painter.text(&mut pass, &mut drawing, run);
         }
@@ -146,13 +147,17 @@ fn main() -> ExitCode {
         write_png(&out_dir.join(format!("diff_{frame:05}.png")), &diff);
         let mse = sq / (layer.max(1) * 3) as f64;
         let psnr = if mse == 0.0 { 99.0 } else { 10.0 * (255.0f64 * 255.0 / mse).log10() };
-        println!("ui: frame {frame}, layer {layer} pixels, within 4 {within} ({:.2}%), beyond {}, PSNR {psnr:.2} dB", 100.0 * within as f64 / layer.max(1) as f64, layer - within);
+        let note = if black { " (world picture black: not scored)" } else { "" };
+        println!("ui: frame {frame}, layer {layer} pixels, within 4 {within} ({:.2}%), beyond {}, PSNR {psnr:.2} dB{note}", 100.0 * within as f64 / layer.max(1) as f64, layer - within);
         if std::env::var_os("HF_UI_HIST").is_some() {
             println!("    worst channel error, pixels by error bit length (0, 1, 2-3, 4-7, 8-15, 16-31, 32-63, 64-127, 128+): {hist:?}");
         }
-        total += layer;
-        total_within += within;
+        if !black {
+            total += layer;
+            total_within += within;
+            scored += 1;
+        }
     }
-    println!("ui: frames {}, layer {total}, within 4 {:.2}%", frames.len(), 100.0 * total_within as f64 / total.max(1) as f64);
+    println!("ui: frames {scored}, layer {total}, within 4 {:.2}%", 100.0 * total_within as f64 / total.max(1) as f64);
     ExitCode::SUCCESS
 }

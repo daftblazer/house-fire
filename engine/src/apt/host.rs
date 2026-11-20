@@ -10,10 +10,8 @@ use super::value::Value;
 use crate::tree_log::Log;
 
 /// Values set at a game frame by hand: (frame, `extern` member, number). Each was fitted to what
-/// the movies sent in answer (the menu's item counts to its buttons' places, a dialog's title bar's
-/// place) or, for the dialogs' and title bars' sizes and places (`dialog_*`, `mu_dialog_*`), to
-/// the game's own pictures (`ui-check`: box edges and the within-4 share, by coordinate descent;
-/// `docs/assets.md`, "Drawing the movies (U2b)").
+/// the movies sent in answer (the menu's item counts to its buttons' places, a dialog's size and
+/// place to its title bar's).
 const FITTED: &[(u32, &str, f64)] = &[
     (738, "number_big_items", 1.0),
     (738, "number_small_items", 3.0),
@@ -21,6 +19,31 @@ const FITTED: &[(u32, &str, f64)] = &[
     (738, "menu_disable_ID", -1.0),
     (754, "number_big_items", 3.0),
     (1209, "current_load", 100.0),
+    (1099, "dialog_box_width", 0.375),
+    (1099, "dialog_box_height", 0.55),
+    (1099, "dialog_x", 0.3125),
+    (1099, "dialog_y", 0.18),
+    (1099, "dialog_title_bar_width", 0.3),
+    (1099, "UI_button_width", 0.056_409_06),
+    (1099, "button_width", 0.1),
+    (1099, "number_of_buttons", 2.0),
+    (1099, "is_critical_dialog", 0.0),
+    (1248, "number_of_buttons", 1.0),
+    (1248, "dialog_box_height", 0.418_405),
+    (907, "mu_dialog_width", 0.375),
+    (907, "mu_dialog_height", 0.3),
+    (907, "mu_dialog_x", 0.3125),
+    (907, "mu_dialog_y", 0.145_089_29),
+];
+
+/// What the game's pictures want on top of `FITTED`: the dialogs' boxes and title bars as the
+/// frames show them (`ui-check`; `docs/assets.md`, "Drawing the movies (U2b)"). They are the
+/// same `extern` members, with other numbers: the boxes in the pictures are wider than the
+/// fractions that make the movies send the logged title bar and button places (240 pixels, not
+/// 380), so one set of numbers does not give both; the commands keep `FITTED`, a run for the
+/// pictures (`Timing::picture`) sets these after it. Each was fitted to the box's edges and then
+/// to the within-4 share of the dialog's frame (a pixel's step in each, then half).
+const PICTURE: &[(u32, &str, f64)] = &[
     (913, "dialog_box_width", 0.69858),
     (913, "dialog_box_height", 0.44952),
     (913, "dialog_x", 0.1515),
@@ -31,11 +54,6 @@ const FITTED: &[(u32, &str, f64)] = &[
     (1099, "dialog_x", 0.2),
     (1099, "dialog_y", 0.17988),
     (1099, "dialog_title_bar_width", 0.20091),
-    (1099, "UI_button_width", 0.056_409_06),
-    (1099, "button_width", 0.1),
-    (1099, "number_of_buttons", 2.0),
-    (1099, "is_critical_dialog", 0.0),
-    (1248, "number_of_buttons", 1.0),
     (1248, "dialog_box_height", 0.41743),
     (1248, "dialog_y", 0.181),
     (1248, "dialog_title_bar_width", 0.08814),
@@ -43,12 +61,13 @@ const FITTED: &[(u32, &str, f64)] = &[
     (907, "mu_dialog_height", 0.6697),
     (907, "mu_dialog_x", 0.1883),
     (907, "mu_dialog_title_bar_width", 0.25315),
-    (907, "mu_dialog_y", 0.145_089_29),
 ];
 
 /// What the game does to the values at game frames: (frame, name, the number or `None` to remove
 /// it).
 pub struct Host {
+    /// Whether `PICTURE` goes on top of `FITTED`.
+    picture: bool,
     sets: Vec<(u32, String, Option<f64>)>,
     clears: Vec<(u32, String)>,
     /// How many screens heard the commands of a game frame (frames not listed: one).
@@ -87,7 +106,7 @@ impl Host {
             screens.entry(c.frame).or_default().insert(c.screen);
         }
         let listeners = screens.into_iter().map(|(f, s)| (f, s.len())).collect();
-        let mut host = Host { sets: Vec::new(), clears: Vec::new(), listeners };
+        let mut host = Host { picture: false, sets: Vec::new(), clears: Vec::new(), listeners };
         for (i, c) in log.movie_commands.iter().enumerate() {
             let Some((base, v)) = [c.command.strip_suffix("_x"), c.command.strip_suffix("_y")].into_iter().flatten().next().zip(c.argument.parse::<f64>().ok()) else { continue };
             // a button taken off the screen reports -512 pixels: that is no place it was given
@@ -112,11 +131,24 @@ impl Host {
         host
     }
 
+    /// The same host, setting the numbers the pictures want (`PICTURE`) after `FITTED`'s.
+    pub fn for_pictures(mut self) -> Host {
+        self.picture = true;
+        self
+    }
+
     /// What the game sets before it calls the movies in game frame `f`.
     pub fn before_calls(&self, p: &mut Player, f: u32) {
         for (at, name, v) in FITTED {
             if *at == f {
                 p.set_extern(name, Value::Num(*v));
+            }
+        }
+        if self.picture {
+            for (at, name, v) in PICTURE {
+                if *at == f {
+                    p.set_extern(name, Value::Num(*v));
+                }
             }
         }
         for (at, name, v) in &self.sets {
