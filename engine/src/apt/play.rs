@@ -16,14 +16,11 @@ pub struct Timing {
     pub rate: f32,
     /// Whether a game frame's loads and calls come before its movie frames.
     pub calls_first: bool,
-    /// Whether the dialogs' boxes are sized as the game's pictures show them (`host::PICTURE`)
-    /// rather than as the commands the movies sent fit.
-    pub picture: bool,
 }
 
 impl Default for Timing {
     fn default() -> Timing {
-        Timing { rate: 1.0, calls_first: false, picture: false }
+        Timing { rate: 1.0, calls_first: false }
     }
 }
 
@@ -51,10 +48,10 @@ pub fn run(log: &Log, flashes: Vec<(String, Rc<Flash>)>, to: Option<u32>, timing
     p.set_extern("_lang", Value::str("en"));
     p.set_extern("_sku", Value::str("us"));
     p.set_extern("_enable_debug", Value::str("0"));
+    p.set_reads(log.movie_reads.iter().map(|r| (r.frame, r.name.clone(), r.value.clone())));
     let last = log.movie_loads.iter().map(|l| l.frame).chain(log.movie_calls.iter().map(|c| c.frame)).chain(log.movie_commands.iter().map(|c| c.frame)).max().unwrap_or(0);
     let last = to.map_or(last, |t| t.min(last));
     let host = super::host::Host::for_log(log);
-    let host = if timing.picture { host.for_pictures() } else { host };
     let (mut li, mut ci) = (0, 0);
     let mut owed = 0.0f32;
     for f in 0..=last {
@@ -87,9 +84,7 @@ pub fn run(log: &Log, flashes: Vec<(String, Rc<Flash>)>, to: Option<u32>, timing
             eprintln!("apt: game frame {f}");
         }
         if timing.calls_first {
-            host.before_calls(&mut p, f);
             calls(&mut p, &mut ci, &mut li);
-            host.after_calls(&mut p, f);
         }
         owed += timing.rate;
         while owed >= 1.0 {
@@ -99,9 +94,7 @@ pub fn run(log: &Log, flashes: Vec<(String, Rc<Flash>)>, to: Option<u32>, timing
         p.tick_loads();
         loads(&mut p, &mut li);
         if !timing.calls_first {
-            host.before_calls(&mut p, f);
             calls(&mut p, &mut ci, &mut li);
-            host.after_calls(&mut p, f);
         }
     }
     let mut sent = p.take_commands();

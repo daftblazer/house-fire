@@ -527,6 +527,11 @@ impl Player {
             }
             Value::Obj(o) => {
                 let o = o.borrow();
+                if matches!(o.kind, Kind::Native(Native::Extern))
+                    && let Some(v) = self.read_value(name)
+                {
+                    return v;
+                }
                 if let Some(v) = o.props.get(name) {
                     return v.clone();
                 }

@@ -159,6 +159,9 @@ pub struct Player {
     pub trace: bool,
     /// Game frames added to the frame stamped on a command being sent.
     send_lag: u32,
+    /// What the game answered when a movie read a value of it by name, per name in the game's
+    /// frame order: (the game's frame, the value as text).
+    reads: HashMap<(u32, String), Rc<str>>,
     /// Prints each member and local variable a script sets (`APT_TRACE=2`).
     pub(super) trace_sets: bool,
 }
@@ -191,6 +194,7 @@ impl Player {
             steps: 0,
             rng: 1,
             send_lag: 0,
+            reads: HashMap::new(),
             trace: std::env::var_os("APT_TRACE").is_some(),
             trace_sets: std::env::var("APT_TRACE").is_ok_and(|v| v == "2"),
         };
@@ -201,6 +205,22 @@ impl Player {
     /// A value the game provides to the movies (a member of `extern`).
     pub fn set_extern(&mut self, name: &str, v: Value) {
         self.extern_obj.borrow_mut().props.set(name, v);
+    }
+
+    /// The game's answers to the movies' reads of its values: (game frame, name, value as
+    /// text). A movie's read at game frame `f` gets the answer the game logged for that name at
+    /// `f` (the last of them); with none logged the name is what `set_extern` gave, else
+    /// undefined: the game keeps no value past the call that needs it.
+    pub fn set_reads(&mut self, reads: impl IntoIterator<Item = (u32, String, String)>) {
+        self.reads.clear();
+        for (f, name, v) in reads {
+            self.reads.insert((f, name), v.into());
+        }
+    }
+
+    /// The value a movie reading `name` of the game gets from the game's logged answers.
+    pub(super) fn read_value(&self, name: &str) -> Option<Value> {
+        self.reads.get(&(self.frame, name.to_string())).map(|v| Value::Str(v.clone()))
     }
 
     pub fn note_stub(&mut self, what: String) {
