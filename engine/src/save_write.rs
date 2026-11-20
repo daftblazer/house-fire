@@ -3,7 +3,10 @@
 //! the file goes back into a memory card's block chain.
 
 use crate::iff::FormatError;
-use crate::save::{LotChunks, NeighbourhoodBlock, memory_card_file_blocks};
+use crate::save::{
+    LotChunks, LotObject, LotObjects, LotStringForm, NeighbourhoodBlock, RelationshipForm, SavedClass, SavedQueueEntry, SavedRelationship, VERSION,
+    memory_card_file_blocks,
+};
 
 type Result<T> = std::result::Result<T, FormatError>;
 
@@ -317,5 +320,305 @@ pub fn encode_chunk_table(t: &LotChunks, big_endian: bool) -> Vec<u8> {
         out.extend_from_slice(c);
         pad(&mut out);
     }
+    out
+}
+
+/// The save stream's writer (`save::SaveStream`'s inverse): bits from the top of each byte; with
+/// compression on, a value is a 0 bit (zero) or a 1 bit, a two-bit width code and the value's
+/// low bits at the smallest of the four widths that holds it as a signed number (measured: every
+/// value of every lot of the cards and the disc is so packed).
+pub struct SaveWriter {
+    out: Vec<u8>,
+    nbits: u32,
+    pub compressed: bool,
+}
+
+const WIDTHS8: [u32; 4] = [2, 4, 6, 8];
+const WIDTHS16: [u32; 4] = [5, 8, 13, 16];
+const WIDTHS32: [u32; 4] = [6, 11, 21, 32];
+
+impl SaveWriter {
+    pub fn new() -> Self {
+        SaveWriter { out: Vec::new(), nbits: 0, compressed: false }
+    }
+    fn bits(&mut self, v: u32, n: u32) {
+        for k in (0..n).rev() {
+            if self.nbits % 8 == 0 {
+                self.out.push(0);
+            }
+            if v >> k & 1 != 0 {
+                *self.out.last_mut().unwrap() |= 0x80 >> (self.nbits % 8);
+            }
+            self.nbits += 1;
+        }
+    }
+    fn packed(&mut self, v: i32, widths: &[u32; 4]) {
+        if v == 0 {
+            self.bits(0, 1);
+            return;
+        }
+        let code = widths.iter().position(|&w| w >= 32 || (-(1i64 << (w - 1))..1i64 << (w - 1)).contains(&(v as i64))).unwrap_or(3);
+        let w = widths[code];
+        self.bits(1, 1);
+        self.bits(code as u32, 2);
+        self.bits(if w == 32 { v as u32 } else { v as u32 & ((1 << w) - 1) }, w);
+    }
+    fn raw(&mut self, v: u32, n: usize) {
+        self.pad();
+        self.out.extend_from_slice(&v.to_le_bytes()[..n]);
+    }
+    pub fn w8(&mut self, v: i32) {
+        if self.compressed { self.packed(v as i8 as i32, &WIDTHS8) } else { self.raw(v as u32, 1) }
+    }
+    pub fn w16(&mut self, v: i32) {
+        if self.compressed { self.packed(v as i16 as i32, &WIDTHS16) } else { self.raw(v as u32, 2) }
+    }
+    pub fn w32(&mut self, v: i32) {
+        if self.compressed { self.packed(v, &WIDTHS32) } else { self.raw(v as u32, 4) }
+    }
+    pub fn wbool(&mut self, v: bool) {
+        self.w8(v as i32);
+    }
+    pub fn wfloat(&mut self, v: f32) {
+        self.w32(v.to_bits() as i32);
+    }
+    /// A plain little-endian word, from the next byte.
+    pub fn mark(&mut self, v: u32) {
+        self.raw(v, 4);
+    }
+    /// On to the next byte.
+    pub fn pad(&mut self) {
+        self.nbits = 0;
+    }
+    pub fn pos(&self) -> usize {
+        self.out.len()
+    }
+    /// Overwrites a mark written at `at`.
+    pub fn patch_mark(&mut self, at: usize, v: u32) {
+        self.out[at..at + 4].copy_from_slice(&v.to_le_bytes());
+    }
+    pub fn push_bytes(&mut self, b: &[u8]) {
+        self.pad();
+        self.out.extend_from_slice(b);
+    }
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.out
+    }
+}
+
+impl Default for SaveWriter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn write_relationship(w: &mut SaveWriter, r: &SavedRelationship) {
+    w.w32(r.with);
+    w.w32(r.values.len() as i32);
+    for &v in &r.values {
+        w.w32(v);
+    }
+}
+
+fn write_relationships(w: &mut SaveWriter, o: &LotObject) {
+    match &o.relationship_form {
+        RelationshipForm::Counted => {
+            w.w32(o.relationships.len() as i32);
+            for r in &o.relationships {
+                write_relationship(w, r);
+            }
+        }
+        RelationshipForm::Sparse { head, second, flags } => {
+            w.w32(*head);
+            w.w32(*second);
+            w.w32(flags.len() as i32);
+            let mut entries = o.relationships.iter();
+            for &f in flags {
+                w.w32(f);
+                if f != 0 && let Some(r) = entries.next() {
+                    write_relationship(w, r);
+                }
+            }
+        }
+    }
+}
+
+fn write_base_rest(w: &mut SaveWriter, o: &LotObject) {
+    w.w16(o.before_stack as i32);
+    w.w32(o.stack.len() as i32);
+    w.w32(o.stack_capacity);
+    for f in &o.stack {
+        w.w16(f.stack_object as i32);
+        w.w16(f.tree as i16 as i32);
+        w.w16(f.node as i16 as i32);
+        w.w8(f.locals.len() as i32);
+        w.w8(f.params.len() as i32);
+        for &v in &f.params {
+            w.w16(v as i32);
+        }
+        for &v in &f.locals {
+            w.w16(v as i32);
+        }
+        w.w32(if !f.engine { 0 } else if f.engine_value != 0 { f.engine_value } else { 1 });
+        w.w16(f.file as i32);
+    }
+    write_relationships(w, o);
+    w.w16(o.pairs.len() as i32);
+    for &(a, b) in &o.pairs {
+        w.w16(a as i32);
+        w.w16(b as i32);
+    }
+    w.w32(o.after_pairs);
+    w.w16(o.shorts.len() as i32);
+    for &v in &o.shorts {
+        w.w16(v as i32);
+    }
+}
+
+fn write_queue_entry(w: &mut SaveWriter, e: &SavedQueueEntry) {
+    w.w32(e.a);
+    w.w32(e.id);
+    for &o in &e.objects {
+        w.w16(o as i32);
+    }
+    w.w32(e.b);
+    for &v in &e.shorts {
+        w.w16(v as i32);
+    }
+    w.w32(e.c);
+    w.w16(e.tree as i32);
+    w.wfloat(e.e);
+    w.w32(e.flags);
+}
+
+fn write_sim(w: &mut SaveWriter, o: &LotObject) {
+    let m = &o.member_1136;
+    w.w16(m.pairs.len() as i32);
+    for &(flag, v) in &m.pairs {
+        w.w8(flag as i32);
+        w.w32(v);
+    }
+    w.w8(m.flag as i32);
+    w.wfloat(m.value);
+    for &v in &m.ints {
+        w.w32(v);
+    }
+    for &v in &o.motives {
+        w.wfloat(v);
+    }
+    for &v in &o.motives_b {
+        w.wfloat(v);
+    }
+    for &v in &o.person_data {
+        w.w16(v as i32);
+    }
+    w.w32(o.list_1160);
+    write_queue_entry(w, &o.current);
+    w.w32(o.queue.len() as i32);
+    for e in &o.queue {
+        write_queue_entry(w, e);
+    }
+    w.w32(o.list_1180.len() as i32);
+    for e in &o.list_1180 {
+        w.w16(e.object as i32);
+        w.w32(e.value);
+        w.w8(e.flag as i32);
+    }
+    w.w32(o.motive_deltas.len() as i32);
+    for d in &o.motive_deltas {
+        w.w32(d.motive);
+        w.wfloat(d.rate);
+        w.wfloat(d.target);
+    }
+}
+
+fn write_part(w: &mut SaveWriter, o: &LotObject, door: bool) {
+    for &v in &o.part_values {
+        w.w32(v);
+    }
+    w.w16(o.leader as i32);
+    if door {
+        w.w32(o.door_floats.len() as i32);
+        for &f in &o.door_floats {
+            w.wfloat(f);
+        }
+    }
+}
+
+fn write_object_section(w: &mut SaveWriter, o: &LotObject) {
+    w.compressed = true;
+    for &v in &o.header[..7] {
+        w.w32(v);
+    }
+    w.w16(o.header[7]);
+    w.w16(o.attributes.len() as i32);
+    for &v in &o.attributes {
+        w.w16(v as i32);
+    }
+    for &v in o.temps.iter().chain(&o.data) {
+        w.w16(v as i32);
+    }
+    write_base_rest(w, o);
+    match o.saved_class {
+        SavedClass::Object => {}
+        SavedClass::Part => write_part(w, o, false),
+        SavedClass::Door => write_part(w, o, true),
+        SavedClass::Sim => write_sim(w, o),
+    }
+    w.w32(o.loader_int);
+    w.pad();
+}
+
+/// An ObjM chunk from its model (`save::read_lot_objects`'s inverse): the header (0, the
+/// version, "MjbO"), the stream's packing byte, the object table, then the mark chain with each
+/// object's section and the lot's own.
+pub fn encode_lot_objects(l: &LotObjects) -> Vec<u8> {
+    let mut w = SaveWriter::new();
+    w.compressed = false;
+    w.w8(l.compressed as i32);
+    w.compressed = l.compressed;
+    for o in &l.objects {
+        w.w16(o.id as i32);
+        w.w32(o.a);
+        w.w32(o.b);
+        w.w8(o.extra.len() as i32);
+        for &v in &o.extra {
+            w.w32(v);
+        }
+        w.w16(o.kind as i32);
+    }
+    w.w16(0);
+    for o in &l.objects {
+        let at = w.pos();
+        w.mark(0);
+        write_object_section(&mut w, o);
+        let next = w.pos() as u32;
+        w.patch_mark(at, next);
+    }
+    w.mark(l.last_mark);
+    w.compressed = true;
+    w.w16(l.lot_object as i32);
+    w.w32(l.lot_objects.len() as i32);
+    for &o in &l.lot_objects {
+        w.w16(o as i32);
+    }
+    w.pad();
+    if w.pos() % 2 == 1 {
+        w.push_bytes(&[l.lot_pad]);
+    }
+    let little = l.lot_string_form == LotStringForm::MarkFeFf;
+    match l.lot_string_form {
+        LotStringForm::Plain => {}
+        LotStringForm::MarkFfFe => w.push_bytes(&[0xFF, 0xFE]),
+        LotStringForm::MarkFeFf => w.push_bytes(&[0xFE, 0xFF]),
+    }
+    for &u in l.lot_string.iter().chain(&[0]) {
+        w.push_bytes(&if little { u.to_le_bytes() } else { u.to_be_bytes() });
+    }
+    let mut out = Vec::new();
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&(VERSION as u32).to_le_bytes());
+    out.extend_from_slice(b"MjbO");
+    out.extend_from_slice(&w.into_bytes());
     out
 }

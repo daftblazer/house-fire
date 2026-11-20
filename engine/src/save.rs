@@ -722,6 +722,12 @@ pub struct SavedFrame {
     pub locals: Vec<i16>,
     /// A frame the engine started (the original's +8).
     pub engine: bool,
+    /// The +8 member as saved (a word: not 0 when the engine started the frame, and its value is
+    /// kept as it is). A frame made by the engine has 0 here.
+    pub engine_value: i32,
+    /// The original's index of the frame's file in its list of loaded files (fn_801F961C):
+    /// kept as saved, the engine takes the object's.
+    pub file: i16,
 }
 
 /// What the loader makes an object of, which decides what its section holds after the base
@@ -787,12 +793,35 @@ pub struct MotiveDelta {
     pub target: f32,
 }
 
-/// A Sim's +1180 list's entry (fn_8022989C): an object, a 32-bit value and a flag (to be named).
+/// A Sim's +1180 list's entry (fn_8022989C): an object, a 32-bit value and a flag (to be
+/// named; a bool the game reads from a byte, which holds more than 0 and 1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Entry1180 {
     pub object: i16,
     pub value: i32,
-    pub flag: bool,
+    pub flag: i8,
+}
+
+/// How an object's relationships are laid out in the save (`read_relationships`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum RelationshipForm {
+    /// A count (not negative), then that many entries.
+    #[default]
+    Counted,
+    /// A negative value, a second value, a count of slots, and for each slot a flag word (not
+    /// zero: an entry follows); the entries are the object's `relationships` in order.
+    Sparse { head: i32, second: i32, flags: Vec<i32> },
+}
+
+/// A Sim's +1136 member (fn_800AD6E8), as saved.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Member1136 {
+    /// A list of (bool, 32-bit) pairs (the bools as the saved bytes).
+    pub pairs: Vec<(i8, i32)>,
+    /// Then a bool (a byte), a float and three 32-bit values (to be named).
+    pub flag: i8,
+    pub value: f32,
+    pub ints: [i32; 3],
 }
 
 /// A lot's object as its table gives it, in the world's list order.
@@ -819,14 +848,27 @@ pub struct LotObject {
     /// part (to be named): a list of pairs, a 32-bit value, a list of 16-bit values.
     pub stack: Vec<SavedFrame>,
     pub relationships: Vec<SavedRelationship>,
+    pub relationship_form: RelationshipForm,
     pub pairs: Vec<(i16, i16)>,
     pub shorts: Vec<i16>,
+    /// The values the base object's part has between its lists, as saved (to be named): a
+    /// 16-bit value before the tree stack, the stack's capacity, and a 32-bit value after the
+    /// pairs.
+    pub before_stack: i16,
+    pub stack_capacity: i32,
+    pub after_pairs: i32,
+    /// The loader's int that ends every object's section.
+    pub loader_int: i32,
     /// Where the base object's part ends; the class's own part runs from here to the loader's
     /// int at the end of the section.
     pub base_end: usize,
     pub saved_class: SavedClass,
     /// A multi-tile object's part: its leader's id (0 for the leader itself).
     pub leader: i16,
+    /// A part's six 32-bit values before its leader (its tile offsets among them), and a
+    /// door's floats after it.
+    pub part_values: [i32; 6],
+    pub door_floats: Vec<f32>,
     /// A Sim's own part: its person data (scope 18), its motives (scope 14), a second table of
     /// 16 floats (to be named), the entry it is on and its queue.
     pub person_data: Vec<i16>,
@@ -838,6 +880,7 @@ pub struct LotObject {
     pub list_1180: Vec<Entry1180>,
     /// Its +1160 list (fn_8022933C): only a count is saved; its elements are made at the load.
     pub list_1160: i32,
+    pub member_1136: Member1136,
 }
 
 pub const OBJECT_DATA_FIELDS: usize = 72;
@@ -854,10 +897,30 @@ pub struct LotObjects {
     pub lot_object: i16,
     pub lot_objects: Vec<i16>,
     pub lot_string: Vec<u16>,
+    /// How the string is stored, and the pad byte before it when the stream's position is odd.
+    pub lot_string_form: LotStringForm,
+    pub lot_pad: u8,
+    /// The stream's first byte: whether the table's values are packed.
+    pub compressed: bool,
+    /// The last mark of the chain (it points at no section; the lot's part follows it).
+    pub last_mark: u32,
+}
+
+/// How the lot's string is stored: 16-bit characters from an even position, with a mark first
+/// or not.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LotStringForm {
+    /// No mark, characters high byte first.
+    #[default]
+    Plain,
+    /// The mark ff fe, characters high byte first.
+    MarkFfFe,
+    /// The mark fe ff, characters low byte first.
+    MarkFeFf,
 }
 
 /// ObjM's version on Bustin' Out's disc; the conditions are its loader's.
-const VERSION: i32 = 80;
+pub(crate) const VERSION: i32 = 80;
 
 fn count(r: &mut SaveStream, limit: i32, what: &str) -> Result<i32> {
     let n = r.r32()?;
@@ -886,27 +949,29 @@ fn read_relationships(r: &mut SaveStream, o: &mut LotObject) -> Result<()> {
         }
         return Ok(());
     }
-    if VERSION > 78 {
-        r.r32()?;
-    }
+    let second = if VERSION > 78 { r.r32()? } else { 0 };
+    let mut flags = Vec::new();
     for _ in 0..count(r, 4096, "ObjM: relationship entries out of range")? {
-        if r.r32()? != 0 {
+        let flag = r.r32()?;
+        flags.push(flag);
+        if flag != 0 {
             // an int: the entry is there
             o.relationships.push(read_relationship(r)?);
         }
     }
+    o.relationship_form = RelationshipForm::Sparse { head: a, second, flags };
     Ok(())
 }
 
 /// After the data: a zero, the tree stack (fn_8023F928, frames fn_8023E9A8, file fn_801F961C),
 /// the relationships, the pairs (fn_801F22D0), a 32-bit value, the shorts.
 fn read_base_rest(r: &mut SaveStream, o: &mut LotObject) -> Result<()> {
-    r.r16()?;
+    o.before_stack = r.r16()? as i16;
     let frames = r.r32()?;
     if !(0..=64).contains(&frames) {
         return err("ObjM: a tree stack out of range");
     }
-    r.r32()?; // its capacity
+    o.stack_capacity = r.r32()?;
     for _ in 0..frames {
         let stack_object = r.r16()? as i16;
         let tree = r.r16()? as u16;
@@ -915,16 +980,17 @@ fn read_base_rest(r: &mut SaveStream, o: &mut LotObject) -> Result<()> {
         let nparams = r.r8()? & 0xFF;
         let params = (0..nparams).map(|_| r.r16().map(|v| v as i16)).collect::<Result<_>>()?;
         let locals = (0..nlocals).map(|_| r.r16().map(|v| v as i16)).collect::<Result<_>>()?;
-        let engine = r.r32()? != 0;
-        r.r16()?; // the original's file index
-        o.stack.push(SavedFrame { stack_object, tree, node, params, locals, engine });
+        let engine_value = r.r32()?;
+        let engine = engine_value != 0;
+        let file = r.r16()? as i16;
+        o.stack.push(SavedFrame { stack_object, tree, node, params, locals, engine, engine_value, file });
     }
     read_relationships(r, o)?;
     for _ in 0..r.r16()?.max(0) {
         let a = r.r16()? as i16;
         o.pairs.push((a, r.r16()? as i16));
     }
-    r.r32()?;
+    o.after_pairs = r.r32()?;
     for _ in 0..r.r16()?.max(0) {
         o.shorts.push(r.r16()? as i16);
     }
@@ -951,14 +1017,14 @@ fn read_queue_entry(r: &mut SaveStream) -> Result<SavedQueueEntry> {
 fn read_sim(r: &mut SaveStream, o: &mut LotObject) -> Result<()> {
     // Its +1136 member (fn_800AD6E8): a count of (bool, 32-bit) pairs, five values.
     for _ in 0..r.r16()?.max(0) {
-        r.rbool()?;
-        r.r32()?;
+        let flag = r.r8()? as i8;
+        o.member_1136.pairs.push((flag, r.r32()?));
     }
-    r.rbool()?;
-    r.rfloat()?;
-    r.r32()?;
-    r.r32()?;
-    r.r32()?;
+    o.member_1136.flag = r.r8()? as i8;
+    o.member_1136.value = r.rfloat()?;
+    for v in &mut o.member_1136.ints {
+        *v = r.r32()?;
+    }
     for _ in 0..16 {
         o.motives.push(r.rfloat()?);
     }
@@ -989,7 +1055,7 @@ fn read_sim(r: &mut SaveStream, o: &mut LotObject) -> Result<()> {
     for _ in 0..k {
         let object = r.r16()? as i16;
         let value = r.r32()?;
-        o.list_1180.push(Entry1180 { object, value, flag: r.rbool()? });
+        o.list_1180.push(Entry1180 { object, value, flag: r.r8()? as i8 });
     }
     // The +1120 list (fn_8021A598 each): the motive deltas.
     let k = r.r32()?;
@@ -1007,13 +1073,13 @@ fn read_sim(r: &mut SaveStream, o: &mut LotObject) -> Result<()> {
 /// A multi-tile object's part (fn_801D3F50) and a door's (fn_8022DE18): its leader's id kept,
 /// the rest read past (its tile offsets among it).
 fn read_part(r: &mut SaveStream, o: &mut LotObject, door: bool) -> Result<()> {
-    for _ in 0..6 {
-        r.r32()?;
+    for v in &mut o.part_values {
+        *v = r.r32()?;
     }
     o.leader = r.r16()? as i16;
     if door {
         for _ in 0..count(r, 4096, "ObjM: a door's values out of range")? {
-            r.rfloat()?;
+            o.door_floats.push(r.rfloat()?);
         }
     }
     Ok(())
@@ -1029,7 +1095,7 @@ pub fn read_lot_objects(m: &[u8], class_of: impl Fn(i16) -> SavedClass) -> Resul
     let s = &m[START..];
     let mut r = SaveStream::new(s, 0);
     r.compressed = r.rbool()?;
-    let mut out = LotObjects::default();
+    let mut out = LotObjects { compressed: r.compressed, ..Default::default() };
     loop {
         let id = r.r16()? as i16;
         if id == 0 {
@@ -1047,10 +1113,12 @@ pub fn read_lot_objects(m: &[u8], class_of: impl Fn(i16) -> SavedClass) -> Resul
     let mut mark_at = r.pos();
     let mut next = r.mark()? as usize;
     let mut sections = Vec::new();
+    let mut last_mark = next as u32;
     loop {
         let start = mark_at + 4;
         if next <= mark_at || next + 4 > s.len() {
             sections.push((start, s.len()));
+            last_mark = next as u32;
             break;
         }
         sections.push((start, next));
@@ -1097,12 +1165,13 @@ pub fn read_lot_objects(m: &[u8], class_of: impl Fn(i16) -> SavedClass) -> Resul
             SavedClass::Door => read_part(&mut h, o, true)?,
             SavedClass::Sim => read_sim(&mut h, o)?,
         }
-        h.r32()?; // the loader's int
+        o.loader_int = h.r32()?;
         h.pad();
         if h.pos() != end {
             return err("ObjM: an object's section does not end at its mark");
         }
     }
+    out.last_mark = last_mark;
     let &(start, end) = sections.last().unwrap();
     out.lot_section = START + start;
     out.lot_section_end = START + end;
@@ -1114,11 +1183,16 @@ pub fn read_lot_objects(m: &[u8], class_of: impl Fn(i16) -> SavedClass) -> Resul
     }
     l.pad(); // the string (Recon_String2): UTF-16 from an even position
     let mut p = l.pos() + (l.pos() & 1);
+    if p > l.pos() {
+        out.lot_pad = s.get(l.pos()).copied().unwrap_or(0);
+    }
     let mut little = false;
     if p + 2 <= s.len() && s[p] == 0xFE && s[p + 1] == 0xFF {
         little = true;
+        out.lot_string_form = LotStringForm::MarkFeFf;
         p += 2;
     } else if p + 2 <= s.len() && s[p] == 0xFF && s[p + 1] == 0xFE {
+        out.lot_string_form = LotStringForm::MarkFfFe;
         p += 2;
     }
     loop {
