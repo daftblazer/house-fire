@@ -117,20 +117,10 @@ fn saved_object(world: &World, k: ObjectKey, frames: &[Frame], types: &mut Vec<O
     s
 }
 
-/// An object the lot did not load (made during play): the save's table entry and section for it.
-/// No recording has the game's save of a lot after play, so what it gives such an object is not
-/// known. The rules here: its type is its GUID's in the lot's objt (a new one, numbered after the
-/// last, if the lot has none; a Sim with no definition has its neighbour's GUID); the values the
-/// engine does not model are those of an object of the same type the lot loaded (else of the
-/// lot's first Sim, for a Sim; else zeros, a stack capacity of 512 and 65536 for the loader's
-/// int: the values most objects of the lots have); its two serials (`a`, `b`) follow the lot's
-/// highest, `b` one above `a` and the word after the pairs the `a` again, as in the objects of
-/// the home card (a part of a multi-tile object has the leader's serial in `b`, not made here:
-/// the engine makes no multi-tile objects).
-fn new_object(world: &World, k: ObjectKey, types: &mut Vec<ObjectType>, serial: &mut i32) -> LotObject {
-    let o = world.get(k);
-    let d = world.definition(o);
-    let saved_class = World::saved_class(d);
+/// The objt type of an object made during play: its GUID's in the lot's objt (a new one,
+/// numbered after the last, if the lot has none; a Sim with no definition has its neighbour's
+/// GUID), and the GUID.
+fn object_type(world: &World, o: &crate::world::Object, types: &mut Vec<ObjectType>) -> (u32, i16) {
     let neighbour = o.person_data.get(crate::world::PERSON_NEIGHBOUR_ID).copied().filter(|&n| n != 0).and_then(|n| world.neighbours.iter().find(|m| m.id == n));
     let guid = if o.guid != 0 { o.guid } else { neighbour.map_or(0, |n| n.guid) };
     let kind = match types.iter().find(|t| t.guid == guid) {
@@ -145,6 +135,24 @@ fn new_object(world: &World, k: ObjectKey, types: &mut Vec<ObjectType>, serial: 
             next as i16
         }
     };
+    (guid, kind)
+}
+
+/// An object the lot did not load (made during play): the save's table entry and section for it.
+/// No recording has the game's save of a lot after play, so what it gives such an object is not
+/// known. The rules here: its type is its GUID's in the lot's objt (a new one, numbered after the
+/// last, if the lot has none; a Sim with no definition has its neighbour's GUID); the values the
+/// engine does not model are those of an object of the same type the lot loaded (else of the
+/// lot's first Sim, for a Sim; else zeros, a stack capacity of 512 and 65536 for the loader's
+/// int: the values most objects of the lots have); its two serials (`a`, `b`) follow the lot's
+/// highest, `b` one above `a` and the word after the pairs the `a` again, as in the objects of
+/// the home card (a part of a multi-tile object has the leader's serial in `b`, not made here:
+/// the engine makes no multi-tile objects).
+fn new_object(world: &World, k: ObjectKey, types: &mut Vec<ObjectType>, serial: &mut i32) -> LotObject {
+    let o = world.get(k);
+    let d = world.definition(o);
+    let saved_class = World::saved_class(d);
+    let (guid, kind) = object_type(world, o, types);
     let same_type = world.objects().filter_map(|t| t.loaded.as_deref().map(|l| (t, l))).find(|(t, l)| if guid != 0 { t.guid == guid } else { l.saved_class == saved_class });
     let mut s = match same_type {
         Some((_, l)) => l.clone(),
@@ -174,7 +182,17 @@ fn new_object(world: &World, k: ObjectKey, types: &mut Vec<ObjectType>, serial: 
 /// The ObjM model of the world's objects, in the list's order: the lot's own part (the
 /// `template`'s) after them. `types` is the lot's objt, which grows by the types of new objects.
 pub fn lot_objects(world: &World, template: &LotObjects, types: &mut Vec<ObjectType>, stacks: &mut Stacks) -> LotObjects {
-    let kinds = file_kinds(world, types);
+    let mut kinds = file_kinds(world, types);
+    // a new object's type names the frames of the stacks that run in its file, and those may be
+    // written before the object
+    for &k in world.order() {
+        let o = world.get(k);
+        if o.loaded.is_none()
+            && let Some(file) = o.file
+        {
+            kinds.entry(file).or_insert_with(|| object_type(world, o, types).1);
+        }
+    }
     let mut out = LotObjects { objects: Vec::new(), ..template.clone() };
     let mut serial = world.objects().filter_map(|o| o.loaded.as_ref()).map(|l| l.a.max(l.b)).max().unwrap_or(0) + 1;
     for &k in world.order() {

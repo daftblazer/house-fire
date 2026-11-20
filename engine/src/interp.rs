@@ -54,6 +54,10 @@ pub struct Frame {
     pub file: Option<FileId>,
     /// A frame the engine started rather than a script (the original's +8).
     pub engine: bool,
+    /// A frame a save loaded with its +8 word 0: a return into it takes the node's transition
+    /// even at a routing or idle node (where a frame the routing step itself pushed over would
+    /// have had +8 set, and the return would run the node again). Cleared when the frame steps.
+    pub plain_return: bool,
 }
 
 /// Where the trees a [`TreeId`] names are kept: the library's, or a test's own.
@@ -261,6 +265,7 @@ impl Interpreter {
             stack_object: caller.map_or(0, |c| c.stack_object),
             file: caller.and_then(|c| c.file),
             engine: false,
+            plain_return: false,
         };
         self.stack.push(frame);
         true
@@ -333,9 +338,10 @@ impl Interpreter {
             // result; so does a door's portal function a routing step pushed (GotoRelativePosition
             // 27, GotoRoutingSlot 45: the home log's 8215 returning to 8210 node 0 at tick 521),
             // which plans again from the door's far side.
-            let caller = self.stack.last().unwrap();
+            let caller = self.stack.last_mut().unwrap();
+            let plain = std::mem::take(&mut caller.plain_return);
             let op = caller.tree.and_then(|t| host.tree_at(t).nodes.get(caller.node as usize)).map(|n| n.opcode);
-            if matches!(op, Some(17 | 27 | 45)) {
+            if !plain && matches!(op, Some(17 | 27 | 45)) {
                 if op == Some(17) {
                     host.interaction_returned();
                 }
@@ -347,6 +353,7 @@ impl Interpreter {
         let Some(n) = f.tree.and_then(|t| host.tree_at(t).nodes.get(f.node as usize)).copied() else {
             return self.fail(Error::Missing);
         };
+        self.top().plain_return = false;
         self.iterations += 1;
         if self.iterations > self.max_iterations {
             return self.fail(Error::TooManyIterations);

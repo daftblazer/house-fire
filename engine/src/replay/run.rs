@@ -122,7 +122,7 @@ impl<'l> Replay<'l> {
                 for f in &o.stack {
                     if let Some(t) = f.tree {
                         let tr = lib.tree_at(t);
-                        println!("  frame {} node {}: node op {:?} stack object {}", tr.id, f.node, tr.nodes.get(f.node as usize).map(|n| (n.opcode, n.true_target, n.false_target)), f.stack_object);
+                        println!("  frame {} node {}: node op {:?} stack object {} engine {} file {:?}", tr.id, f.node, tr.nodes.get(f.node as usize).map(|n| (n.opcode, n.true_target, n.false_target)), f.stack_object, f.engine, o.loaded.as_ref().map(|l| l.stack.iter().map(|s| s.file).collect::<Vec<_>>()));
                     }
                 }
                 println!("stack of {id}: {:?}", o.stack.iter().map(|f| (f.tree.map(|t| lib.tree_at(t).id), f.node, f.file.map(|x| file_name(lib, x)))).collect::<Vec<_>>());

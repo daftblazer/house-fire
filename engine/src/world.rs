@@ -606,7 +606,7 @@ impl<'lib> World<'lib> {
         let guid_of: BTreeMap<i32, u32> = read_object_types(objt)?.iter().map(|t| (t.fields[4] as i32, t.guid)).collect();
         let mut missing = 0;
         // each object's saved frames' tree ids, for the pass below
-        let mut saved_ids: Vec<(i16, Vec<u16>)> = Vec::new();
+        let mut saved_ids: Vec<(i16, Vec<(u16, bool)>)> = Vec::new();
         // and each frame's tree and the file index the save names for it
         let mut saved_files: Vec<(i16, Vec<(u16, i16)>)> = Vec::new();
         for lo in self.read_objects(lot)?.objects {
@@ -650,25 +650,32 @@ impl<'lib> World<'lib> {
                 o.queue = lo.queue;
                 o.current_at = lo.stack.iter().position(|sf| sf.tree as i16 == lo.current.tree && lo.current.tree != 0);
             }
-            saved_ids.push((o.id(), lo.stack.iter().map(|sf| sf.tree).collect()));
+            // (the file a frame's +12 names, when that file has its tree)
+            let named_file = |sf: &SavedFrame| guid_of.get(&i32::from(sf.file)).and_then(|&g| self.lib.definition(g)).map(|d| d.file).filter(|&f| self.lib.tree(Some(f), sf.tree).is_some());
+            saved_ids.push((o.id(), lo.stack.iter().map(|sf| (sf.tree, named_file(sf).is_some())).collect()));
             saved_files.push((o.id(), lo.stack.iter().map(|sf| (sf.tree, sf.file)).collect()));
             // The original's +8 on a saved frame is on the frame a return comes back into (281
             // under a delivered interaction, a routing step that pushed a door's portal): such a
             // return takes no transition. Here that is the returning frame's `engine`: each
             // saved flag moves to the frame above it (the home log's Sim 237: 8207's return into
             // the counter's 8208 node 13 goes on to node 8, a call's true way).
+            let loaded_plus8: Vec<bool> = lo.stack.iter().map(|sf| sf.engine).collect();
             let above: Vec<bool> = std::iter::once(false).chain(lo.stack.iter().map(|sf| sf.engine)).collect();
             // what the save has of each frame beyond what the engine models (the lists are the frames')
             let loaded_stack: Vec<SavedFrame> = lo.stack.iter().map(|sf| SavedFrame { params: Vec::new(), locals: Vec::new(), ..sf.clone() }).collect();
             for (k, sf) in lo.stack.into_iter().enumerate() {
+                // the frame's file is the one of the object type its +12 names (an index into the
+                // lot's objt), when that file has the tree; else the object's own
+                let file = named_file(&sf).or(o.file);
                 o.stack.push(Frame {
-                    tree: self.lib.tree(o.file, sf.tree),
+                    tree: self.lib.tree(file, sf.tree),
                     node: sf.node,
                     params: sf.params,
                     locals: sf.locals,
                     stack_object: sf.stack_object,
-                    file: o.file,
+                    file,
                     engine: above[k],
+                    plain_return: !loaded_plus8[k],
                     ..Default::default()
                 });
             }
@@ -698,7 +705,8 @@ impl<'lib> World<'lib> {
             }));
             self.add(o, false);
         }
-        // A saved frame above an IdleForInput node is the interaction it delivered: its tree is
+        // A saved frame whose index names no file with its tree (the lot's objt lacks the type,
+        // or the file lacks the tree) is found by the rules here. One above an IdleForInput node is the interaction it delivered: its tree is
         // in its target's file (the frame's stack object), not the Sim's own (the paper girl's
         // 4100 on object 8); the frames it called resolve in their own stack object's file where
         // it has the tree, else in the one below's (Sim 237: the meal's 4201, then on the counter
@@ -709,7 +717,12 @@ impl<'lib> World<'lib> {
             let Some(k) = self.find(id) else { continue };
             let mut carried: Option<FileId> = None;
             let n = self.get(k).stack.len().min(ids.len());
-            for (i, &saved_tree) in ids.iter().enumerate().take(n).skip(1) {
+            for (i, &(saved_tree, named)) in ids.iter().enumerate().take(n).skip(1) {
+                // (a frame whose index names its file, as the original's load reads it, stays)
+                if named {
+                    carried = self.get(k).stack[i].file;
+                    continue;
+                }
                 let below = &self.get(k).stack[i - 1];
                 let is_idle = below.tree.and_then(|t| self.lib.get_tree(t)?.nodes.get(below.node as usize).copied()).is_some_and(|n| n.opcode == 17);
                 let so = self.get(k).stack[i].stack_object;

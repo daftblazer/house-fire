@@ -437,3 +437,37 @@ its first tick with 4104 at node 32 (the frame reads 0x9008, node 0x20), the dis
 the save has node 9 in an Idle of 10000. With the controllers' stacks from the disc
 (`World::take_house_from`), the club log runs with no differing step, a new club log of the same
 428,688 steps (`club-k.log`, with 'k' records) likewise.
+
+### What a load does to a saved stack (packet S3a, `eng-2000`)
+
+The card the engine wrote at tick 2000 of the home run, loaded by the recompiled game (`eng-2000.log`),
+showed what the game does with a saved stack: it takes each frame as the card says, and nothing else.
+
+- **A frame's file index is the file** (`SavedFrame::file`, the frame's +12). The game finds a
+  frame's tree in the file of the objt type that index names (`fn_8023E9A8` reads it back as it
+  stands; `TreeSim_DoNodeAction`, 8023F1FC, looks the node up with it at every step). The writer
+  had given the frames of a made object's file (Sim 12's 4196, 8200 and 8234 in the meal 202's
+  file, a type new in the lot's objt) the Sim's own type, because the new type was added to the
+  objt only when its object was written, after the Sim's frames (`save_world::lot_objects`: the
+  types of the new objects are now taken first). In the game tree 8234 of file 89 is the person's
+  "Kiss" (person_sg), whose node 3 has error for false: Sim 12's return from 8199 took the error
+  and the game cancelled the interaction (the log's 8234:255, res 2, then the stack back at 8210
+  and 4096), and the objects of that interaction (47, 202) ran on differently. Natively the same
+  card read the frames in the object's file by a rule of ours (`load_lot`'s carried files); the
+  load now reads each frame's file from its index first, and the old rule only for a frame whose
+  index names no file with its tree (the figure of the old card, the log of the old card, is
+  therefore not the figure to drive to 0: the log has to be recorded again with a card written
+  by the fixed writer, `replay ... --save-at 2000`).
+- **A return into a routing or idle node** (a frame at IdleForInput 17, GotoRelativePosition
+  27, GotoRoutingSlot 45 with a frame above) takes no transition only when the frame's +8 word is
+  set (`TreeSim_DoNodeAction` 8023F57C: the caller's +8 nonzero ends the step; a primitive's
+  transition clears it, 8023F4D0). The routing primitives set it when they push the portal
+  function, and the saved word carries it; the engine's writer writes 0 there (its flag is on
+  the returning frame), so the game's load has +8 = 0 and the return goes the node's true or false
+  way: Sim 12's 8207 returning false into 8218 node 74 (op 45) went to 255, where the native
+  held the node. A loaded frame whose saved +8 is 0 now takes the transition
+  (`Frame::plain_return`, cleared when the frame steps).
+- **Not found**: the 49 steps of the made objects 47 and 202 (a sleep that the game counts down
+  stepwise where the native wakes it, 202 restarted at 4193 node 0) and Sim 237's tick-4 steps
+  (313:18 against 313:29). They follow Sim 12's cancelled interaction (the objects it used) in the
+  old log; whether they remain with a log of the corrected card is not known.
