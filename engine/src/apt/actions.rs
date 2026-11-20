@@ -79,8 +79,9 @@ pub enum Instr {
     BranchAlways(usize),
     /// 0x9d: jumps if the popped value is true.
     BranchIfTrue(usize),
-    /// 0x94: the next `size` bytes of instructions run with the popped object as the scope.
-    With { size: u32 },
+    /// 0x94: the next `size` bytes of instructions run with the popped object as the scope;
+    /// `until` is the index of the first instruction after them.
+    With { size: u32, until: usize },
     /// 0x9b: a function, its body kept as its own list.
     DefineFunction { name: Option<String>, params: Vec<String>, body: Vec<Instr> },
     /// 0x00 inside a function's body (a stream's own end is not kept).
@@ -115,6 +116,7 @@ pub fn decode(m: &mut Img, consts: &[Value], at: usize, limit: Option<usize>) ->
     let mut out = Vec::new();
     let mut starts = Vec::new();
     let mut targets: Vec<(usize, i64)> = Vec::new();
+    let mut withs: Vec<(usize, i64)> = Vec::new();
     let mut p = at;
     // where the stream's own End byte is (a branch may land on it, meaning the end)
     let mut end_at = None;
@@ -160,8 +162,10 @@ pub fn decode(m: &mut Img, consts: &[Value], at: usize, limit: Option<usize>) ->
                 p += 4;
             }
             0x94 => {
-                out.push(Instr::With { size: m.u32(p)? });
+                let size = m.u32(p)?;
                 p += 4;
+                withs.push((out.len(), p as i64 + size as i64));
+                out.push(Instr::With { size, until: 0 });
             }
             0x88 | 0x96 => {
                 let (n, ptr) = (m.u32(p)? as usize, m.ptr(p + 4)?);
@@ -207,6 +211,12 @@ pub fn decode(m: &mut Img, consts: &[Value], at: usize, limit: Option<usize>) ->
         match &mut out[i] {
             Instr::BranchAlways(x) | Instr::BranchIfTrue(x) => *x = t,
             _ => unreachable!(),
+        }
+    }
+    for (i, target) in withs {
+        let t = starts.iter().position(|&s| s as i64 >= target).unwrap_or(starts.len());
+        if let Instr::With { until, .. } = &mut out[i] {
+            *until = t;
         }
     }
     Ok(out)

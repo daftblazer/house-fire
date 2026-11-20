@@ -41,7 +41,7 @@ fn instrs(out: &mut String, v: &[Instr], pool: &mut Vec<Value>, ind: usize) {
             Instr::Push(vs) => format!("Push {}", vs.iter().map(|v| show_value(v, pool)).collect::<Vec<_>>().join(", ")),
             Instr::BranchAlways(t) => format!("BranchAlways -> {t}"),
             Instr::BranchIfTrue(t) => format!("BranchIfTrue -> {t}"),
-            Instr::With { size } => format!("With {size} bytes"),
+            Instr::With { size, .. } => format!("With {size} bytes"),
             Instr::DefineFunction { name, params, body } => {
                 let _ = writeln!(out, "{pad}{n:3}  DefineFunction {} ({}) {{", name.as_deref().unwrap_or("-"), params.join(", "));
                 instrs(out, body, pool, ind + 4);

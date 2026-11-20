@@ -144,6 +144,7 @@ fn main() -> ExitCode {
             println!("archives read {read}, not {not}");
         }
         "apt" => return apt(&d, &args[3..]),
+        "apt-play" => return apt_play(&d, &args[3..]),
         "sounds" => return sounds(&d, &args[3..]),
         "sound-calls" => return sound_calls(&d, &args[3..]),
         "textures" => {
@@ -4227,6 +4228,80 @@ fn sound_calls(d: &Disc, args: &[String]) -> ExitCode {
     let plays = log.sounds.iter().filter(|s| s.call == 1).count();
     println!("sound calls {}, plays {}, plays not in the bank {}", log.sounds.len(), plays, unknown);
     ExitCode::SUCCESS
+}
+
+/// `assets ISO apt-play LOG [--to FRAME] [--list] [--diff] [--rate R] [--late-calls]`: the Apt
+/// player driven by the log's movie loads and calls; its commands against the log's. `--list`
+/// prints the display list at the end.
+fn apt_play(d: &Disc, args: &[String]) -> ExitCode {
+    use housefire::apt::{self, play};
+    let Some(path) = args.first() else {
+        println!("usage: assets ISO apt-play LOG [--to FRAME] [--list] [--diff] [--rate R] [--late-calls]");
+        return ExitCode::from(2);
+    };
+    let Some(log) = housefire::tree_log::read_log(path) else {
+        println!("cannot read {path}");
+        return ExitCode::from(1);
+    };
+    let (mut to, mut list, mut diff) = (None, false, false);
+    let mut probes: Vec<String> = Vec::new();
+    let mut timing = play::Timing::default();
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--to" if i + 1 < args.len() => {
+                i += 1;
+                to = args[i].parse().ok();
+            }
+            "--rate" if i + 1 < args.len() => {
+                i += 1;
+                timing.rate = args[i].parse().unwrap_or(1.0);
+            }
+            "--late-calls" => timing.calls_first = false,
+            "--list" => list = true,
+            "--diff" => diff = true,
+            "--probe" if i + 1 < args.len() => {
+                i += 1;
+                probes.push(args[i].clone());
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    let flashes: Vec<_> = apt::read_flashes(&d.read("flashes.arc").unwrap_or_default()).into_iter().filter_map(|(n, r)| r.ok().map(|f| (n, std::rc::Rc::new(f)))).collect();
+    let (player, ours) = play::run(&log, flashes, to, timing);
+    let rep = play::compare(&log, &ours, to);
+    let first = rep.first_diff.map(|k| {
+        let c = log.movie_commands.iter().filter(|c| to.is_none_or(|t| c.frame <= t)).nth(k).unwrap();
+        let near = ours.iter().find(|o| o.frame >= c.frame).map_or("none".to_string(), |o| format!("{} {}", o.name, o.argument));
+        format!("frame {}, ours {near}, the log's {} {}", c.frame, c.command, c.argument)
+    });
+    println!("apt-play: commands {}, the same {}, first different {}", rep.total, rep.same, first.unwrap_or_else(|| "none".into()));
+    if diff {
+        let cmds: Vec<_> = log.movie_commands.iter().filter(|c| to.is_none_or(|t| c.frame <= t)).collect();
+        for (k, c) in cmds.iter().enumerate() {
+            if rep.matched[k] {
+                println!("  same: frame {} (ours {}) {} {}", c.frame, rep.ours_frame[k], c.command, c.argument);
+            } else {
+                println!("  missing: frame {} {} {}", c.frame, c.command, c.argument);
+            }
+        }
+        for c in &rep.extra {
+            println!("  extra: frame {} {} {}", c.frame, c.name, c.argument);
+        }
+    }
+    for s in &player.stubs {
+        println!("  stub: {s}");
+    }
+    for p in &probes {
+        println!("  {}", player.describe(p));
+    }
+    if list {
+        for it in player.display_list() {
+            println!("  {} char {} {:?} m {:?} mul {:?} add {:?} depth {} text {:?}", it.movie, it.character, it.kind, it.matrix, it.color.mul, it.color.add, it.depth, it.text);
+        }
+    }
+    if rep.same == rep.total { ExitCode::SUCCESS } else { ExitCode::from(1) }
 }
 
 /// `assets ISO apt [NAME]`: the movies of flashes.arc and the fonts of fonts.arc, read (see

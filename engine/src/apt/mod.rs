@@ -7,12 +7,17 @@
 
 pub mod actions;
 pub mod bundle;
+pub mod display;
 pub mod dump;
 pub mod font;
 pub mod geometry;
 mod img;
 pub mod movie;
+pub mod play;
+pub mod player;
 pub mod texture;
+pub mod value;
+mod vm;
 
 use std::collections::BTreeMap;
 
