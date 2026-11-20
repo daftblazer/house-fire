@@ -317,7 +317,10 @@ impl Simulator {
             // original's interpreter keeps a pointer to them, +44)
             interp.copy_defaults(&host.world().get(e.key).temps);
             let steps = host.run_turn(interp);
-            end_turn(&self.rates, host.world(), e.key, motives_due, true);
+            // (an object that removed itself in its turn has nothing to end)
+            if host.world().get_live(e.key).is_some() {
+                end_turn(&self.rates, host.world(), e.key, motives_due, true);
+            }
             self.apply_wakes(host.world());
             host.on_turn(e.key, steps);
             if host.world().stop_pass {

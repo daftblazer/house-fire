@@ -30,6 +30,8 @@ pub enum Error {
     TooManyIterations = 1101,
     /// No such node, or no such tree.
     Missing = 1102,
+    /// The host's code for the stack panicked (a run alone ends the stack, not the run).
+    Panicked = 1103,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -269,6 +271,11 @@ impl Interpreter {
         self.stack = frames;
         self.finished = false;
         self.error = Error::None;
+    }
+
+    /// The stack ended from outside with an error (a host that contains a panic).
+    pub fn abort(&mut self, e: Error) {
+        self.fail(e);
     }
 
     fn fail(&mut self, e: Error) -> Step {

@@ -36,6 +36,7 @@ use crate::world::{ObjectKey, ScriptVariables, World};
 use crate::{FileId, TreeId};
 use super::animate::{AnimReplay, animate, write_event};
 use super::run::Replay;
+use super::alone::Tally;
 use super::start::RunWith;
 
 /// What a driven run found.
@@ -76,20 +77,20 @@ struct Native {
 }
 
 /// The host a driven run's scripts run with.
-struct DriveHost<'l> {
-    lib: &'l Library,
-    world: World<'l>,
+pub(super) struct DriveHost<'l> {
+    pub(super) lib: &'l Library,
+    pub(super) world: World<'l>,
     log: Rc<Log>,
-    me: ObjectKey,
+    pub(super) me: ObjectKey,
     file_of_top: Option<FileId>,
-    tick: u32,
+    pub(super) tick: u32,
     /// The log's steps of each object this tick still to be matched, by object id.
-    expected: BTreeMap<i16, VecDeque<usize>>,
+    pub(super) expected: BTreeMap<i16, VecDeque<usize>>,
     /// The log's step the native step now being taken should match (the inputs read from it).
     front: Option<usize>,
-    parting: Option<Parting>,
+    pub(super) parting: Option<Parting>,
     /// A turn asked the pass to stop (a dialog waiting).
-    stopped: bool,
+    pub(super) stopped: bool,
     /// The last native steps (tree:node, opcode, where it went), for the parting.
     trail: VecDeque<String>,
     /// The last expression's reads, natively: (scope, datum, value) of its two sides.
@@ -98,9 +99,13 @@ struct DriveHost<'l> {
     neutral: BTreeMap<u16, u32>,
     /// The animator (Animate 44) and the frames it is stepped by; none where the log has no
     /// animation records.
-    anim: Option<AnimReplay>,
+    pub(super) anim: Option<AnimReplay>,
     /// Each object's animator key (the Sim's address in the log), by object id.
     sim_of: BTreeMap<i16, u32>,
+    /// A run alone (no log): its counts of what was answered neutrally and of the errors.
+    pub(super) tally: Option<Tally>,
+    /// The action the last evaluation chose: its object, tree and the object's file.
+    pub(super) chosen: Option<(i16, TreeId, Option<FileId>)>,
 }
 
 impl Trees for DriveHost<'_> {
@@ -121,13 +126,36 @@ impl<'l> SimHost<'l> for DriveHost<'l> {
     /// when its turn ends: the engine's "display money balloon" over the yielding frame, run in
     /// the same turn (docs/simulation.md, "The money balloon").
     fn run_turn(&mut self, interp: &mut Interpreter) -> u32 {
+        if self.tally.is_none() {
+            return self.turn(interp);
+        }
+        // A run alone contains a panic in one object's script code to that stack.
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.turn(interp))) {
+            Ok(steps) => {
+                if interp.done() {
+                    self.note_error(interp);
+                }
+                steps
+            }
+            Err(_) => {
+                interp.abort(Error::Panicked);
+                self.note_error(interp);
+                1
+            }
+        }
+    }
+}
+
+impl DriveHost<'_> {
+    /// The turn, a step at a time (each compared with the log's unless alone).
+    fn turn(&mut self, interp: &mut Interpreter) -> u32 {
         let mut steps = 0;
         let me = self.me;
         loop {
             if self.parting.is_some() {
                 break;
             }
-            let r = self.step_checked(interp);
+            let r = if self.tally.is_some() { self.step_alone(interp) } else { self.step_checked(interp) };
             steps += 1;
             match r {
                 Step::Go => {}
@@ -149,7 +177,7 @@ impl<'l> SimHost<'l> for DriveHost<'l> {
             }
         }
         self.stopped |= self.world.stop_pass;
-        if self.parting.is_none() {
+        if self.parting.is_none() && self.tally.is_none() {
             let id = self.world.get_live(me).map(|o| o.id());
             if let Some(id) = id
                 && let Some(&i) = self.expected.get(&id).and_then(|q| q.front())
@@ -160,6 +188,22 @@ impl<'l> SimHost<'l> for DriveHost<'l> {
             }
         }
         steps
+    }
+
+    /// A stack that ended in an error, counted by its tree and the error.
+    fn note_error(&mut self, interp: &Interpreter) {
+        let tree = interp.stack().last().and_then(|f| f.tree).map_or(-1, |t| self.lib.tree_at(t).id as i32);
+        let node = interp.stack().last().map_or(0, |f| f.node);
+        // (a stack that ended with no error code was stopped by a primitive: its script error)
+        let op = interp.stack().last().and_then(|f| f.tree.and_then(|t| self.lib.tree_at(t).nodes.get(f.node as usize))).map_or(-1, |n| n.opcode as i32);
+        let kind = if interp.error() == Error::None { format!("a primitive stopped the stack (opcode {op})") } else { format!("{:?} ({})", interp.error(), interp.error() as i32) };
+        let id = self.world.get_live(self.me).map_or(-1, |o| o.id());
+        if super::study::has("REPLAY_ALONE_SHOW_ERRORS") {
+            println!("error {kind} tick {} object {id} tree {tree} node {node}; trail {:?}", self.tick, self.trail);
+        }
+        if let Some(t) = &mut self.tally {
+            t.error(tree, node, &kind, id);
+        }
     }
 }
 
@@ -172,6 +216,42 @@ impl DriveHost<'_> {
 
     fn me_id(&self) -> i16 {
         self.world.get(self.me).id()
+    }
+
+    /// One native step of a run alone: no comparison. A Sim's interactions are counted: one
+    /// starts when a frame is pushed over its IdleForInput (a delivery) or over its Find Best
+    /// Action (autonomy's choice), and is over when that frame is gone.
+    fn step_alone(&mut self, interp: &mut Interpreter) -> Step {
+        let lib = self.lib;
+        let opcode = |i: &Interpreter| i.stack().last().and_then(|f| f.tree.and_then(|t| lib.tree_at(t).nodes.get(f.node as usize))).map_or(-1, |n| n.opcode as i32);
+        let (depth, op) = (interp.stack().len(), opcode(interp));
+        if self.trail.len() >= 8 {
+            self.trail.pop_front();
+        }
+        if super::study::has("REPLAY_ALONE_SHOW_ERRORS") {
+            let at = interp.stack().last().map_or((-1, 0), |f| (f.tree.map_or(-1, |t| lib.tree_at(t).id as i32), f.node));
+            self.trail.push_back(format!("{}:{} op {op} so {}", at.0, at.1, interp.stack().last().map_or(0, |f| f.stack_object)));
+        }
+        // (the trees a call names are the top frame's file's)
+        self.file_of_top = interp.stack().last().and_then(|f| f.file);
+        let r = interp.step(self);
+        let now = interp.stack().len();
+        // (the object may have removed itself)
+        let who = self.world.get_live(self.me).filter(|o| o.person).map(|o| o.id());
+        if let Some(t) = &mut self.tally
+            && let Some(id) = who
+        {
+            let s = t.sim(id);
+            if now == depth + 1 && (op == 17 || op == 30) {
+                s.started += 1;
+                s.open.push(now);
+            }
+            while s.open.last().is_some_and(|&d| d > now) {
+                s.open.pop();
+                s.finished += 1;
+            }
+        }
+        r
     }
 
     /// One native step of `interp` (the object's stack or one of its checks), compared with the
@@ -263,8 +343,11 @@ impl DriveHost<'_> {
     /// A primitive the engine cannot answer yet, the frame as it is (named in the parting):
     /// an animation or a walk (Animate 44, GotoRelativePosition 27, GotoRoutingSlot 45) is still
     /// going on, a yield; any other is true.
-    fn neutral(&mut self, n: &Node) -> PrimResult {
+    fn neutral(&mut self, n: &Node, why: &'static str) -> PrimResult {
         *self.neutral.entry(n.opcode).or_default() += 1;
+        if let Some(t) = &mut self.tally {
+            t.neutral(n.opcode, why);
+        }
         match n.opcode {
             44 | 27 | 45 => PrimResult::Yield,
             _ => PrimResult::True,
@@ -306,8 +389,16 @@ impl Host for DriveHost<'_> {
         chk.top().stack_object = stack_object;
         let outer = self.file_of_top;
         while !chk.done() && self.parting.is_none() {
-            chk.reset_iterations();
-            self.step_checked(&mut chk);
+            // (a run alone keeps the iteration limit: a check that loops ends in an error)
+            if self.tally.is_some() {
+                self.step_alone(&mut chk);
+            } else {
+                chk.reset_iterations();
+                self.step_checked(&mut chk);
+            }
+        }
+        if self.tally.is_some() && chk.done() && chk.error() != Error::None {
+            self.note_error(&chk);
         }
         self.file_of_top = outer;
         (chk.done() && chk.error() == Error::None && self.parting.is_none()).then(|| chk.result())
@@ -316,15 +407,18 @@ impl Host for DriveHost<'_> {
     fn primitive(&mut self, interp: &mut Interpreter, n: &Node) -> PrimResult {
         let lib = self.lib;
         let me = self.me;
-        let me_id = self.me_id();
-        let person = self.world.get(me).person;
+        // (an object that removed itself has nothing left to run)
+        let Some(object) = self.world.get_live(me) else { return PrimResult::Stop };
+        let (me_id, person) = (object.id(), object.person);
         match n.opcode {
             // Animate: natively, the answer the animator gives (yield, true, false with an event);
             // where the archive lacks the animation, neutral
             44 if self.anim.is_some() => {
-                let sim = self.sim_of.get(&me_id).copied().unwrap_or(0);
+                let sim = self.sim_of.get(&me_id).copied().unwrap_or(if self.tally.is_some() { 0x8000_0000 + me_id as u32 } else { 0 });
                 let ar = self.anim.as_mut().expect("checked");
-                ar.animating.entry(self.tick).or_default().insert(sim);
+                if self.tally.is_none() {
+                    ar.animating.entry(self.tick).or_default().insert(sim);
+                }
                 match animate(ar, lib, &self.world, me, interp, n, (sim, self.tick)).2 {
                     Some(Poll::Pending) => PrimResult::Yield,
                     Some(Poll::Done) => PrimResult::True,
@@ -332,9 +426,21 @@ impl Host for DriveHost<'_> {
                         write_event(interp.top(), n, v);
                         PrimResult::False
                     }
-                    None => self.neutral(n),
+                    None => self.neutral(n, "animation not modelled"),
                 }
             }
+            // the autonomy of a run alone: the evaluation and the action it chose
+            3 if self.tally.is_some() && person => self.evaluate(interp),
+            30 if self.tally.is_some() => match self.chosen.take() {
+                Some((id, t, file)) if interp.push(lib, t, &[]) => {
+                    interp.top().stack_object = id;
+                    interp.top().file = file;
+                    PrimResult::Continue
+                }
+                _ => self.neutral(n, "no action chosen"),
+            },
+            // the walks of a run alone: the engine's own (the log has no say)
+            27 | 45 if self.tally.is_some() => self.go(interp, n),
             // Idle
             0 => {
                 let may = may_sleep(self.world.get(me), false);
@@ -395,13 +501,13 @@ impl Host for DriveHost<'_> {
             // RunFunctionalTree, PushAction
             20 => run_functional_tree(interp, self, n),
             13 => push_action(interp, self, n),
-            29 => set_motive_delta(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())).unwrap_or_else(|| self.neutral(n)),
+            29 => set_motive_delta(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())).unwrap_or_else(|| self.neutral(n, "form not modelled")),
             49 => notify_stack_object(&mut ScriptVariables::new(&mut self.world, me, interp.top())),
             11 => distance_to(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())),
             12 => direction_to(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())),
             24 => relationship_old(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())),
             26 => relationship(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())),
-            56 => complete_goal(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())).unwrap_or_else(|| self.neutral(n)),
+            56 => complete_goal(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())).unwrap_or_else(|| self.neutral(n, "new form not modelled")),
             32 => test_object_type(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())),
             // IdleForInput: a Sim waits, or delivers what is queued for it
             17 if person && (self.world.get(me).queue.is_empty() || n.operand16(1) == 0) => { let mut fl = self.world.get(me).data.get(crate::world::DATA_FLAGS).copied().unwrap_or(0); let r = idle_for_input_waiting(n, interp.top(), &mut fl, !self.world.get(me).queue.is_empty()); if let Some(d) = self.world.get_mut(me).data.get_mut(crate::world::DATA_FLAGS) { *d = fl; } r },
@@ -410,6 +516,11 @@ impl Host for DriveHost<'_> {
             // 1 a wait the pass goes on after, 2 a wait that stops it
             36 => {
                 let s = self.log_step_here(n, interp).map(|s| (s.result, s.after == n.true_target as u16));
+                if self.tally.is_some() {
+                    // no player: the answer is yes, counted
+                    self.world.dialog_answer = Some(true);
+                    self.tally.as_mut().unwrap().neutral(36, "no player to answer");
+                }
                 if let Some((0, yes)) = s {
                     self.world.dialog_answer = Some(yes);
                 }
@@ -447,7 +558,7 @@ impl Host for DriveHost<'_> {
                 let so = interp.top().stack_object;
                 let got = if n.opcode == 6 { change_suit(n, &mut self.world, me_id) } else { Some(balloon_or_string(n, &mut self.world, me_id, so)) };
                 self.world.presentation.clear();
-                got.unwrap_or_else(|| self.neutral(n))
+                got.unwrap_or_else(|| self.neutral(n, "form not modelled"))
             }
             23 | 7 | 48 => {
                 let got = present(n, &mut self.world, me_id);
@@ -461,18 +572,29 @@ impl Host for DriveHost<'_> {
             }
             _ => {
                 let _ = lib;
-                self.neutral(n)
+                self.neutral(n, "not native")
             }
         }
     }
 }
 
-/// The run driven by the engine over the log's inputs, to its end or the first parting. With
-/// `on`, the run goes on past the parting (the later steps are then not compared).
-pub fn drive<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l LotChunks>), globals: &[i16], neighbours: &[Neighbour], with: RunWith) -> Option<DriveReport> {
+/// What a run has once its start is done: the host, the simulator and the log's indexes.
+pub(super) struct Driven<'l> {
+    pub(super) host: DriveHost<'l>,
+    pub(super) sim: Simulator,
+    pub(super) log: Rc<Log>,
+    ids: BTreeMap<u32, i16>,
+    by_tick: Vec<Vec<usize>>,
+    engine_run: Vec<bool>,
+    have_passes: bool,
+}
+
+/// The start both runs share: the lot loaded (`Replay::new`), the host made, the load pass run
+/// (the log's tick-0 calls: which function of which object, see `load_init`) and the sleeps the
+/// save lacks put in (`load_sleeps`). A parting in the load is in `host.parting`.
+pub(super) fn setup<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l LotChunks>), globals: &[i16], neighbours: &[Neighbour], with: RunWith, tally: Option<Tally>) -> Option<Driven<'l>> {
     let rep = Replay::new(log, lib, lot, globals, neighbours, None, with)?;
     let Replay { log, h, ids, by_tick, engine_run, have_passes, mut sim, mut finder, .. } = rep;
-    let ticks = log.ticks;
     let mut host = DriveHost {
         lib,
         world: h.world,
@@ -489,6 +611,8 @@ pub fn drive<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l Lo
         neutral: BTreeMap::new(),
         anim: h.anim,
         sim_of: ids.iter().map(|(&sim, &id)| (id, sim)).collect(),
+        tally,
+        chosen: None,
     };
     if super::study::has("REPLAY_DRIVE_SHOW_FIRSTS") {
         let mut first: BTreeMap<i16, (u32, u16, u16)> = BTreeMap::new();
@@ -583,10 +707,19 @@ pub fn drive<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l Lo
         let text = format!("the load's native init did not run it; {} log steps", q.len());
         host.part(id, s.tree as i32, s.node, text);
     }
+    if host.parting.is_none() {
+        load_sleeps(&mut host, &mut sim, &log, &ids, &engine_run);
+    }
+    Some(Driven { host, sim, log, ids, by_tick, engine_run, have_passes })
+}
+
+/// The run driven by the engine over the log's inputs, to its end or the first parting.
+pub fn drive<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l LotChunks>), globals: &[i16], neighbours: &[Neighbour], with: RunWith) -> Option<DriveReport> {
+    let Driven { mut host, mut sim, log, ids, by_tick, engine_run, have_passes } = setup(log, lib, lot, globals, neighbours, with, None)?;
+    let ticks = log.ticks;
     if host.parting.is_some() {
         return Some(DriveReport { same: 0, of: ticks, parting: host.parting });
     }
-    load_sleeps(&mut host, &mut sim, &log, &ids, &engine_run);
     let mut same = 0;
     // The animation frames due before a tick's first step (its place in the log, `tick_steps`):
     // the native frame clock's, or the log's track records before its first tick.
@@ -675,7 +808,8 @@ fn player_commands(host: &mut DriveHost, sim: &mut Simulator, log: &Log, t: u32)
 /// saved at an Idle was asleep there, for how long the save does not say (the log's first runs
 /// of such stacks are at ticks 1, 2, 90, 1744, ... whatever their count). That is a load input
 /// the engine cannot compute yet: each such stack is asleep until the tick of its first step in
-/// the log's passes, none for ever if the log never runs it.
+/// the log's passes, none for ever if the log never runs it (a run alone, which has no log after
+/// the start, wakes those at its first tick).
 fn load_sleeps(host: &mut DriveHost, sim: &mut Simulator, log: &Log, ids: &BTreeMap<u32, i16>, engine_run: &[bool]) {
     let mut first: BTreeMap<i16, u32> = BTreeMap::new();
     for (i, s) in log.steps.iter().enumerate() {
@@ -693,7 +827,7 @@ fn load_sleeps(host: &mut DriveHost, sim: &mut Simulator, log: &Log, ids: &BTree
         let i = sim.stack_of(&host.world, k);
         let at_idle = i.stack().last().and_then(|f| f.tree.and_then(|t| lib.tree_at(t).nodes.get(f.node as usize))).is_some_and(|n| n.opcode == 0);
         if at_idle && !i.done() {
-            i.sleep_and_top().0.sleep(first.get(&id).map_or(u32::MAX, |&t| t - 1), usize::MAX);
+            i.sleep_and_top().0.sleep(first.get(&id).map_or(if host.tally.is_some() { 0 } else { u32::MAX }, |&t| t - 1), usize::MAX);
         }
     }
 }

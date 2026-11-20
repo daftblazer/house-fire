@@ -76,6 +76,7 @@ macro_rules! note {
     };
 }
 
+mod alone;
 mod animate;
 mod clock;
 mod counts;
@@ -94,6 +95,7 @@ mod study;
 mod variables;
 mod walks;
 
+pub use alone::alone;
 pub use counts::{Bench, Counts};
 pub use drive::{DriveReport, Parting, drive};
 pub use run::{Replay, run};

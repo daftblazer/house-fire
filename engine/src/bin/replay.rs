@@ -1,7 +1,7 @@
 //! The club run natively, tick after tick, against a log of the recompiled Bustin' Out's
 //! interpreter (its `src/tree_log.cpp`, BUSTIN_TREE_LOG) and the disc it ran.
 //!
-//! Usage: replay LOG ISO [--card CARD] [--lot N] [--bench] [--free] [--drive] [--hood CARD]
+//! Usage: replay LOG ISO [--card CARD] [--lot N] [--bench] [--free] [--drive] [--alone [TICKS]] [--seed N] [--hood CARD]
 //!
 //! --card: the lot from a save on a memory card image (its first lot, Mom's house in the user's
 //! save, unless --lot says), not the disc's club; the neighbours are the save's too.
@@ -28,7 +28,7 @@
 
 use housefire::disc::Disc;
 use housefire::library::Library;
-use housefire::replay::{Bench, RunWith, Start, atoi, drive, env, has, run};
+use housefire::replay::{Bench, RunWith, Start, alone, atoi, drive, env, has, run};
 use housefire::save::read_lot_arrays;
 use housefire::tree_log::read_log;
 use std::process::ExitCode;
@@ -36,7 +36,7 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 3 {
-        println!("usage: replay LOG ISO [--card CARD] [--lot N] [--bench] [--free] [--drive] [--hood CARD]");
+        println!("usage: replay LOG ISO [--card CARD] [--lot N] [--bench] [--free] [--drive] [--alone [TICKS]] [--seed N] [--hood CARD]");
         return ExitCode::from(2);
     }
     let Some(log) = read_log(&args[1]) else {
@@ -51,6 +51,8 @@ fn main() -> ExitCode {
     let mut bench = false;
     let mut free = false;
     let mut driven = false;
+    let mut alone_ticks: Option<u32> = None;
+    let mut seed: u64 = 1;
     let mut card_path: Option<String> = None;
     let mut hood_path: Option<String> = None;
     let mut lot_index: i64 = -1;
@@ -64,6 +66,17 @@ fn main() -> ExitCode {
             }
             "--free" => free = true,
             "--drive" => driven = true,
+            "--alone" => {
+                alone_ticks = Some(54_000);
+                if i + 1 < args.len() && args[i + 1].bytes().all(|b| b.is_ascii_digit()) {
+                    i += 1;
+                    alone_ticks = Some(atoi(&args[i]) as u32);
+                }
+            }
+            "--seed" if i + 1 < args.len() => {
+                i += 1;
+                seed = atoi(&args[i]) as u64;
+            }
             "--hood" if i + 1 < args.len() => {
                 i += 1;
                 hood_path = Some(args[i].clone());
@@ -126,6 +139,11 @@ fn main() -> ExitCode {
             }
             Err(e) => println!("lot arrays: error {e:?}"),
         }
+    }
+    if let Some(ticks) = alone_ticks {
+        let with = RunWith { card_lot, goals: start.goals.clone(), neighbourhood: start.neighbourhood.clone(), cat: (!log.tracks.is_empty()).then(|| housefire::anim::Catalog::read(&d, house_number)) };
+        let Some(_) = alone(&log, &lib, (the_lot, house), the_globals, neighbours, with, ticks, seed) else { return ExitCode::from(1) };
+        return ExitCode::SUCCESS;
     }
     if driven {
         let with = RunWith { card_lot, goals: start.goals.clone(), neighbourhood: start.neighbourhood.clone(), cat: (!log.tracks.is_empty()).then(|| housefire::anim::Catalog::read(&d, house_number)) };
