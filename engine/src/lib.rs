@@ -50,6 +50,7 @@ pub mod lotpick;
 pub mod mathf;
 pub mod save;
 pub mod save_write;
+pub mod save_world;
 pub mod simulator;
 pub mod texture;
 pub mod tree_log;

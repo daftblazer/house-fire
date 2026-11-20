@@ -10,7 +10,7 @@ use crate::interp::Frame;
 use crate::library::{DefId, Definition, Library};
 use crate::routing::Walls;
 use crate::save::{
-    read_lot_arrays, LotChunks, LotObjects, MotiveDelta, Neighbour, OBJECT_TEMPS, SavedClass, SavedQueueEntry, SavedRelationship, read_lot_objects,
+    read_lot_arrays, LotChunks, LotObject, LotObjects, MotiveDelta, Neighbour, OBJECT_TEMPS, SavedClass, SavedFrame, SavedQueueEntry, SavedRelationship, read_lot_objects,
     read_object_types,
 };
 use crate::{FileId, TreeId};
@@ -175,6 +175,11 @@ pub struct Object {
     /// object: a word per index, set by scripts and read by its graphics; not in the save as far
     /// as read, so its first values are taken from what scripts read).
     pub sprite_flags: Vec<i16>,
+    /// The save's values for it that the engine does not model (its table entry's unnamed words,
+    /// the section's header words, the pairs, the Sim's +1136 member, ...), kept as the lot
+    /// loaded them and written back by `save_world`; the lists the object has as engine state
+    /// (data, stack, queue, ...) are empty here. `None` for an object made during play.
+    pub loaded: Option<Box<LotObject>>,
 }
 
 impl Object {
@@ -650,6 +655,8 @@ impl<'lib> World<'lib> {
             // saved flag moves to the frame above it (the home log's Sim 237: 8207's return into
             // the counter's 8208 node 13 goes on to node 8, a call's true way).
             let above: Vec<bool> = std::iter::once(false).chain(lo.stack.iter().map(|sf| sf.engine)).collect();
+            // what the save has of each frame beyond what the engine models (the lists are the frames')
+            let loaded_stack: Vec<SavedFrame> = lo.stack.iter().map(|sf| SavedFrame { params: Vec::new(), locals: Vec::new(), ..sf.clone() }).collect();
             for (k, sf) in lo.stack.into_iter().enumerate() {
                 o.stack.push(Frame {
                     tree: self.lib.tree(o.file, sf.tree),
@@ -662,6 +669,30 @@ impl<'lib> World<'lib> {
                     ..Default::default()
                 });
             }
+            o.loaded = Some(Box::new(LotObject {
+                id: lo.id,
+                a: lo.a,
+                b: lo.b,
+                extra: lo.extra,
+                kind: lo.kind,
+                header: lo.header,
+                stack: loaded_stack,
+                relationship_form: lo.relationship_form,
+                pairs: lo.pairs,
+                shorts: lo.shorts,
+                before_stack: lo.before_stack,
+                stack_capacity: lo.stack_capacity,
+                after_pairs: lo.after_pairs,
+                loader_int: lo.loader_int,
+                saved_class: lo.saved_class,
+                leader: lo.leader,
+                part_values: lo.part_values,
+                door_floats: lo.door_floats,
+                list_1180: lo.list_1180,
+                list_1160: lo.list_1160,
+                member_1136: lo.member_1136,
+                ..Default::default()
+            }));
             self.add(o, false);
         }
         // A saved frame above an IdleForInput node is the interaction it delivered: its tree is
