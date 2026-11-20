@@ -3,6 +3,7 @@
 
 pub mod anim;
 pub mod arc;
+pub mod axdump;
 pub mod autonomy;
 pub mod bhav;
 pub mod cfmt;
@@ -32,6 +33,7 @@ pub mod scene;
 pub mod shader;
 pub mod skeleton;
 pub mod sound;
+pub mod sound_player;
 pub mod sound_events;
 pub mod skin;
 pub mod routing;

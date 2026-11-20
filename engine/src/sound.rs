@@ -119,6 +119,21 @@ impl<'a> Sound<'a> {
         self.channels.len()
     }
 
+    /// What a mixer voice is loaded with to play channel `ch`: its ADPCM bytes and the header's
+    /// coefficients, first-frame state and loop state.
+    pub fn source(&self, ch: usize) -> VoiceSource<'_> {
+        let c = &self.channels[ch];
+        VoiceSource {
+            data: c.data,
+            coefs: c.coefs,
+            start: c.start,
+            loop_at: c.loop_at,
+            loop_start: c.loop_start,
+            loop_end: c.loop_end,
+            keep_history: self.keep_history,
+        }
+    }
+
     /// A one-shot decoder of channel `ch`: exactly `samples` samples, then it ends.
     pub fn decode(&self, ch: usize) -> Decoder<'_> {
         Decoder::new(self, ch, Some(self.samples))
@@ -136,6 +151,23 @@ impl<'a> Sound<'a> {
     pub fn decode_all(&self, ch: usize) -> Vec<i16> {
         self.decode(ch).collect()
     }
+}
+
+/// One channel as a mixer voice plays it (see [`Sound::source`]).
+#[derive(Clone, Copy, Debug)]
+pub struct VoiceSource<'a> {
+    /// The ADPCM frames, from the first frame's predictor/scale byte (nibble address 0).
+    pub data: &'a [u8],
+    pub coefs: [i16; 16],
+    /// Predictor/scale of the first frame, and the history before its first sample.
+    pub start: (u8, i16, i16),
+    /// Predictor/scale and history at the loop start.
+    pub loop_at: (u8, i16, i16),
+    /// The header's loop span as nibble addresses (start, last nibble before the jump back).
+    pub loop_start: u32,
+    pub loop_end: u32,
+    /// Whether the history is kept when a loop jumps back (streams).
+    pub keep_history: bool,
 }
 
 /// The decoder: the accelerator's state for one voice.

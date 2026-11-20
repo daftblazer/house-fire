@@ -3002,3 +3002,100 @@ coefficients and header, mixer control and level changes), and the output does n
 since each frame reads its voices from the dump. One surprise in the reference: the interpolation's
 product `(last[3] - last[2]) * frac` can overflow 32 bits, so the engine wraps it as the original
 does. The run takes 0.08 s for 88 s of audio, 0.02 s of it reading the file.
+
+### The voices
+
+Code: `engine/src/sound_player.rs` (the sound calls to mixer voices), `engine/src/axdump.rs` (the
+dump's records, the 93-word block layout and the replay shared with `mixcheck`), the check
+`voicecheck LOG DUMP ISO` (the log of the same run as the dump: `work/sound/ax.log`, `ax.dump`).
+The player takes the calls as the observer logs them (acquire, play, stop, params), copies a
+play's ADPCM bytes into its own sample memory and keeps one mixer voice per handle; `advance` is
+the sound library's sync between two 5 ms frames, `playing` the voices the next frame takes,
+`mix` mixes them. Figures (home log, 95 plays, 17,646 frames):
+
+    voices: starts 94, paired 94, settings the same 10527 of 10813 (voice-frames)
+    mix: frames 17646, the same 17495, first different 11056
+      difference of left and right over the first 12000 frames: peak 5, rms 0.05
+
+The dump has 98 "starts" by the rule "a block turns running or its address goes back"; 4 of them
+are a looping voice wrapping, so 94 starts (7 more are the music stream's restarts, left out).
+Each play is paired with the dump's start of a sample of its size (the data's bytes: the end
+address is the last nibble of the last byte) in the window 30 frames before to 300 after the call;
+all 94 pair, and the 95th play is a second `UI_accept` in the same game frame on the same handle
+(a restart in place: one start in the dump). A voice-frame is "the same" if the ratio, loop flag,
+start offset (the address of the first sample, 2 nibbles in), volume, volume delta, the nine send
+levels and deltas and the mixer control all equal the dump's block. The mix replays the dump's
+setup, aux and CPU buffers and mixes the engine's voices; the music stream is the dump's own
+voice (music is not the player's yet).
+
+**Rules found** (each is a comment in `sound_player.rs`):
+- **Timing.** The log's frame counter and the dump's AX frames: 200 AX frames a second over the
+  game's 30000/1001 frames a second, 6.6733 AX frames per game frame (calls 468 game frames apart
+  are 3,123 AX frames apart). A sound starts at once (9 plays, 9.2 to 9.8 AX frames *before* the
+  counter says: UI sounds) or **about 1.15 s (230.2 to 231.2 frames) after the call** (86 plays:
+  every object's sound, and `UI_SPEED_*`). The spread is one frame: the start is a whole frame.
+  A later call of a voice shows in the dump `floor(delta * 6.6733)` frames after the start's
+  block, the target block being the second frame after the call's own (below).
+- **Ratio.** `floor(rate * 65536 / 32028.66)`: 22,050 Hz gives 0xB03D, the 48,000 Hz music
+  0x17FA8; the two fix the output rate between 32,028.654 and 32,028.671 Hz (not 32,000). The
+  other rates (8,000, 11,025, 24,000, 44,100) do not occur in the dump: unchecked.
+- **Voice at a start.** Running, source 1 (linear), the sample's coefficients, the first frame's
+  predictor/scale and history, the address of nibble 2, `end` the last nibble of the last byte,
+  the loop address nibble 2 of the sample with the loop flag from the object's script (not in
+  the calls: 2 plays loop, `FRIDGE_CHEAP_LOOP` and `STOVE_BUBBLE`; the check takes it from the
+  dump). Volume 0 and a fade-in, or 0x7FFF if the first params call's word 3 is 1.0 (the UI's
+  second and later plays; its first plays and `UI_SPEED_*` carry 0 or noise and fade in).
+- **The library's sync.** Nothing changes during a frame. A start: block `S` has the levels the
+  voice was left with (a new voice: 0x5A9D, 0x5BAA, mixer control 0x4003; an earlier one's
+  leftovers otherwise), `S + 1` has the 0x4000 mark and, for a fade-in, volume delta 0xCC
+  (0x7FFF / 160), and `S + 2` is settled (volume 0x7FFF, delta 0, control 3, or 0 if both
+  levels are 0). A change of levels at any time is two blocks: the ramp block (old levels,
+  delta `trunc((new - old) / 160)`, control = 0x4000 | 8 | the old low bits) and the target block
+  (new levels, delta 0, control 3 or 0). A call at the game frame whose time is `t` shows its
+  ramp block at `t - 1` and its target at `t`; the play's own params (same frame as the play)
+  change at `S + 1` and `S + 2`.
+- **Voices are pooled.** A voice a stop frees keeps its levels and control (0 and 0 after the
+  stops, which come with params of 0) and is the first taken by the next handle; the handle gets
+  a voice at its first play (the acquire reserves none), and a UI sound's voice is the one an
+  object's stop in the same frame has freed, the object's play taking a new one.
+- **Send levels.** `level(d) = trunc(32768 * 10^(d / 200))` for `d` in tenths of a dB, 0 at
+  -960: all 65 distinct main-send levels of the dump are exactly these (test
+  `levels_of_the_dump`). The two floats of the params (words 1 and 2, repeated in 5 and 6) are a
+  position `x` and a volume `v`: `d_left = trunc(100 ln v + 200 log10 cos(pan pi / 254))`,
+  `d_right` the same with `sin`, `pan = round(127 (1 - |x| / (2 v)))` (the sign of `x` does not
+  matter): `v = 1`, `x = v` gives pan 64 and the dump's 0x5A9D and 0x5BAA (-3.0 and -2.9 dB:
+  a sin/cos pan law in tenths of a dB, as the SDK's MIX library has it, unverified), the dogs'
+  0.5742 and 0.4561 give -86/-85 and -109/-108 (exact). The volume's scale is `100 ln v` tenths
+  of a dB, not `200 log10 v` (found by fitting the 30 params changes: 1.1513 times as many
+  tenths per decade as a dB scale). The send is 0 below a volume of 0.1 (see below).
+
+**What remains** (settings the same 10,527 of 10,813: 286 voice-frames differ, 602 differences
+of words; the check's `VOICECHECK_DIFFS=1` lists each):
+- **The moving sounds' levels: 4 voices (footsteps), 270 voice-frames.** The pan law and the
+  volume scale above fit 10 of the 30 params changes of the dump to the tenth of a dB (python
+  fit on the log and the dump; not in the repo), and the rest by 1 to 11 tenths: of the 501
+  level differences on these voices, 263 are 1 tenth, 75 are 2, 93 are 3, 27 are 4, 39 are 5 to
+  11 and 4 are 19 to 71 (a fade's last frames, where the cut of silence differs). The pan
+  follows `|x| / v` linearly and the volume `ln v`, but their roundings (an integer pan, a
+  quantised volume, integer tables) are not found: a 127-step volume, and floor/round/ceil on
+  the volume, the two tables and the sum, gave no exact fit (best 15 of 30; a search of ~1,000
+  variants, so that figure may be chance). Unverified: the original's volume-to-dB and pan code
+  (the params call goes on to `MIXSetInput` and `MIXSetPan`, as the 0.1 dB steps suggest) would
+  settle it; the calls do not show it.
+- **The silence threshold.** A volume of 0.1416 sounds (a footstep's fade-out), 0.084 does not;
+  the player cuts below 0.1, a round value in the gap (not a measured one).
+- **A voice's leftovers at a start: 16 voice-frames.** Two plays at the AX frames 12223 and
+  12229 (`FOOTSTEP_MEDIUM4`, `VOX_SING_HAPPY_SHORTF1`) take a new voice and an old one in the dump
+  where the player gives the old one and then the new: the order of the voice takers in the
+  frame differs from the log's (cause not found). Delaying a stop's free by 1 to 5 frames
+  changed nothing; 6 or more made it worse.
+- **The sub-frame start.** The offsets of the 86 late plays spread over 1.0 frame (230.2 to
+  231.2): the game's frame counter is read at a different moment of the AX thread each time
+  (the original's threads: not in any log). The check anchors each voice's later calls on its own
+  start; a free-running engine cannot know the start's frame to within one, and a call landing a
+  frame off the dump's would show as a level or delta difference above (not separated out).
+- **The loop flag and the music** are not the player's: the loop flag is in the object's script
+  (the player takes it as an argument), and the 7 restarts of the 48 kHz looping music stream
+  (ratio 0x17FA8) are the music packet's. The mix takes the stream from the dump.
+- The `mix` figure's 151 different frames start at the first footstep (frame 11056); they come
+  from the level differences above (the 16 leftover frames included). Not checked separately.
