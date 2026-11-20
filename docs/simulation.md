@@ -2132,6 +2132,14 @@ rule without the log); Animate 44 stepped by the native frame clock through the 
 animation the archive lacks answering true at once; Dialog 36: nobody answers, so the object waits
 at it for ever and the pass goes on.
 
+**As a stepper.** `replay::Alone` is the same run a tick at a time (`Alone::new`, `tick`, `world`,
+`hash`, `report`; `alone()` is a loop over it, its hash unchanged) with the hooks a front end
+needs: `queue_command` (`World::queue_player_command`), `menu` (the menu's checks of a target for a
+Sim), `make_object` (the go-here marker the player's floor click makes, its init function run),
+`set_player` with `dialog`, `dialog_text` and `answer_dialog` (a Dialog then opens in the world and
+waits, as in `--replay`, instead of waiting for ever), `frames_of` (a Sim's stack). Used by the
+`play` binary (`docs/plan.md`, "The playable sandbox").
+
 **Containment.** A script error, a primitive's stop and a runaway loop (the interpreter's iteration
 limit; a check's loop is limited too, `--drive` resets it every step) end that stack only and are
 counted by tree and node (`REPLAY_ALONE_SHOW_ERRORS=1` prints each with its last steps); a panic

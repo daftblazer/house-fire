@@ -4,6 +4,7 @@
 
 use crate::frame::*;
 use crate::gpu::{Buffer, Gpu, Image};
+use crate::overlay_pass::OverlayPass;
 use ash::vk;
 use std::collections::HashMap;
 
@@ -150,6 +151,9 @@ pub struct Renderer<'g> {
     white: TextureId,
     /// Bytes uploaded for good: textures (RGBA8, every level) and meshes (vertices and indices).
     resident: (usize, usize),
+    /// The interface laid over the scene, and whether the next frame has one.
+    overlay: Option<OverlayPass<'g>>,
+    overlay_on: bool,
 }
 
 /// What a frame costs the GPU, for the budget (`docs/assets.md`, "The budget").
@@ -299,7 +303,10 @@ impl<'g> Renderer<'g> {
             textures: Vec::new(),
             resident: (0, 0),
             white: TextureId(0),
+            overlay: None,
+            overlay_on: false,
         };
+        r.overlay = Some(OverlayPass::new(gpu, r.colour.view, COLOUR_FORMAT, width, height));
         // the transient meshes' set is the first, its buffers the host's to write each frame
         let empty = || r.gpu.buffer(0, vk::BufferUsageFlags::VERTEX_BUFFER, vk::MemoryPropertyFlags::HOST_VISIBLE);
         let set = MeshSet { vertices: empty(), indices: empty(), skin: None };
@@ -325,6 +332,15 @@ impl<'g> Renderer<'g> {
                 vk::WriteDescriptorSet::default().dst_set(set.1).dst_binding(3).descriptor_type(vk::DescriptorType::STORAGE_BUFFER).buffer_info(&skinned),
             ];
             unsafe { self.gpu.device.update_descriptor_sets(&write, &[]) };
+        }
+    }
+
+    /// The interface for the frames that follow (`width * height * 4` bytes, premultiplied
+    /// RGBA, over the scene), or none.
+    pub fn set_overlay(&mut self, rgba: Option<&[u8]>) {
+        self.overlay_on = rgba.is_some();
+        if let (Some(pass), Some(rgba)) = (&self.overlay, rgba) {
+            pass.set(rgba);
         }
     }
 
@@ -749,6 +765,9 @@ impl<'g> Renderer<'g> {
                 d.cmd_draw_indexed(cb, mesh.index_count, 1, mesh.first_index, mesh.vertex_offset, i as u32);
             }
             d.cmd_end_render_pass(cb);
+            if let (true, Some(pass)) = (self.overlay_on, &self.overlay) {
+                pass.record(cb);
+            }
             match present {
                 None => {
                     let region = |_: ()| vk::BufferImageCopy::default().image_subresource(vk::ImageSubresourceLayers::default().aspect_mask(vk::ImageAspectFlags::COLOR).layer_count(1)).image_extent(vk::Extent3D { width: w, height: h, depth: 1 });
@@ -804,6 +823,8 @@ impl Drop for Renderer<'_> {
     fn drop(&mut self) {
         let gpu = self.gpu;
         let d = &gpu.device;
+        // (the interface pass over the colour image goes first)
+        self.overlay = None;
         unsafe {
             d.device_wait_idle().ok();
             for (_, p) in self.pipelines.drain() {

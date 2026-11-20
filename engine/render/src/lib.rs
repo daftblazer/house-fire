@@ -8,3 +8,8 @@ pub mod renderer;
 pub mod scene;
 pub mod engine_scene;
 pub mod sims;
+pub mod overlay;
+pub mod overlay_pass;
+pub mod pick;
+pub mod window;
+pub mod standin;

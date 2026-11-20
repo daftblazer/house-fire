@@ -113,6 +113,9 @@ pub(super) struct DriveHost<'l> {
     pub(super) player: bool,
     /// The dialog now open for the player: the object that asked and its node's operand.
     pub(super) asked: Option<(i16, [u8; 8])>,
+    /// The objects the player's clicks made (the go-here markers), whose checks start with
+    /// parameter 0 = 0 instead of 1.
+    pub(super) player_targets: Vec<i16>,
 }
 
 impl Trees for DriveHost<'_> {
@@ -418,8 +421,9 @@ impl Host for DriveHost<'_> {
         }
         let mut chk = Interpreter::new(Mode::Check, 10000);
         chk.set_defaults(defaults.to_vec());
-        // (a check tree starts with parameter 0 = 1)
-        chk.start(self.lib, Some(t), &[1], file);
+        // (a check tree starts with parameter 0 = 1; on a target the player's click made, 0:
+        // `Alone::make_object`)
+        chk.start(self.lib, Some(t), &[i16::from(!self.player_targets.contains(&stack_object))], file);
         if chk.done() {
             return None;
         }
@@ -671,6 +675,7 @@ pub(super) fn setup<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option
         at_tree: -1,
         player: false,
         asked: None,
+        player_targets: Vec::new(),
     };
     if super::study::has("REPLAY_DRIVE_SHOW_FIRSTS") {
         let mut first: BTreeMap<i16, (u32, u16, u16)> = BTreeMap::new();

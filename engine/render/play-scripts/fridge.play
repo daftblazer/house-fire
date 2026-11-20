@@ -1,0 +1,10 @@
+# Sim 12 (the household's, the active Sim at the start) has a snack from the fridge (object 62):
+# the same target and action the home log's Sim 12 ran there (8215, "Have A Snack").
+# The opening dialog (object 194) is answered first.
+3 answer 0
+10 sim 12
+10 pick 62
+10 menu
+10 choose @8215
+10 expect 12 8215 600
+900 quit

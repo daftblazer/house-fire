@@ -1,0 +1,8 @@
+# Sim 237 (the household's) is sent to a point of the floor: a "go here" marker made on the tile
+# and its first interaction queued, as the home log's player did at tick 1579 (Sim 237, 4107 on the
+# marker; the log's marker stood on tile 24, 21).
+3 answer 0
+10 sim 237
+10 floor 24.5 21.5
+10 expect 237 4096 600
+700 quit

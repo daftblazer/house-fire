@@ -438,6 +438,31 @@ impl<'l> Alone<'l> {
         self.d.host.world.queue_player_command(k, target, action)
     }
 
+    /// An object the player's click makes (the "go here" marker) of the definition with `guid`, at
+    /// a place (sixteenths) and level: made as CreateObjectInstance makes one, its init function
+    /// (OBJf entry 0) run on it as a check would be, as the maker's step runs it. Its id.
+    ///
+    /// The checks run on it start with parameter 0 = 0 where every other target's start with 1: the
+    /// marker's "Go here test" (4109) is false for 1 (a test of the parameter, then of the marker's
+    /// attribute 0, to false) and passes for 0, and the original delivers the player's go-here
+    /// (the club log's 4096 at 6593), so the original's check of such a click does not start with 1.
+    /// A deliberate difference of the played run, for lockstep to skip (docs/plan.md, "The
+    /// playable sandbox").
+    pub fn make_object(&mut self, guid: u32, at: (i32, i32), level: i32) -> Option<i16> {
+        let host = &mut self.d.host;
+        let k = crate::primitives::make_of_guid(&mut host.world, guid)?;
+        let o = host.world.get_mut(k);
+        (o.x16, o.y16, o.level) = (at.0, at.1, level);
+        let id = o.id();
+        let file = o.file;
+        host.player_targets.push(id);
+        if let Some(init) = host.world.function_tree(k, 0) {
+            host.me = k;
+            host.run_check(init, file, id, &[]);
+        }
+        Some(id)
+    }
+
     /// The interactions of `target`'s pie menu for `sim`, by the engine's checks as the original's
     /// menu runs them (docs/simulation.md, "The player's commands"): the table's first tree, then
     /// each interaction's guard in the table's order ("hide menu" taken as a no), and for a person
@@ -460,7 +485,7 @@ impl<'l> Alone<'l> {
         if (tperson && !check(host, SOCIAL_ELIGIBILITY)) || !check(host, tab.first) {
             return Vec::new();
         }
-        let names = lib.file(f).strings.get(&table);
+        let names = lib.file(f).pie_strings.get(&table);
         let mut out = Vec::new();
         for e in lib.table(f, table) {
             if check(host, e.guard) {
@@ -490,7 +515,7 @@ impl<'l> Alone<'l> {
         watch(&mut d.host);
         if let Some(every) = super::study::env("REPLAY_ALONE_SHOW_SIMS").map(|v| super::study::atoi(&v) as u32)
             && every > 0
-            && t % every == 0
+            && t.is_multiple_of(every)
         {
             // study: each Sim's stack every N ticks
             let lib = self.lib;

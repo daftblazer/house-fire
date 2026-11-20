@@ -195,6 +195,37 @@ the load (was 2.2 ms); scripts 88 µs a tick, the pass 24 µs. The worst plan an
 together, about 2.3 ms, fit the 5 ms budget; the planner's runs are not yet in the tick's
 figures (they are measured apart), nor animation and the rest of routing.
 
+## The playable sandbox (`play`, stage 7b and 7c)
+
+`play LOG ISO --card CARD [--lot N --hood CARD] [--seed N]` (`engine/render/src/bin/play.rs`) is
+a window in which the player plays the lot: the simulation runs with no log after its start
+(`replay::Alone`, "The run alone" in `simulation.md`), 30 ticks a second, drawn as `view` draws
+it. Space pauses, 1, 2, 3 are the speed (ticks a frame); Q/E or the right stick turn the camera,
+the wheel, +/- or the triggers zoom (to the farthest distance the home log's camera records
+reach, 17.67; the tilt follows as the original's zoom has it, 25 to 36), WASD, the arrows, a
+middle drag or the left stick pan. Tab (or a pad's Y) changes the active Sim among the household's
+(person data 32 = 0), a click on another object opens its menu for the active Sim, a click on the
+floor makes the "go here" marker and sends the Sim there. The menu lists the interactions that
+pass the menu's checks (`Alone::menu`: the table's first tree, each guard in table order, "hide
+menu" as a no, and "get social eligibility" for a person), named by the object's TTAs; choosing
+one queues it (`World::queue_player_command`) and prints `play: tick T sim S target O action A
+(name)`. A Dialog (36) of the run opens a box with its text and buttons (STR# 301 of its object)
+and the run waits for the answer; every button answers the primitive's true way (`dialog` takes no
+other).
+
+**The HUD, the pie menu (a list) and the dialog box are stand-ins** (`standin.rs`, drawn by the CPU
+into `overlay.rs`'s picture with the public-domain `font8x8`, laid over the frame by
+`overlay_pass.rs`); the original's own menus and HUD replace `standin` and the overlay's source
+whole, the renderer's overlay pass stays. `--headless --script FILE` runs the same Game with no
+window; `render/play-scripts/` has the checks, `render/tests/play_script.rs` runs them (HF_ISO,
+HF_HOME_LOG, HF_HOME_CARD).
+
+Deliberate differences of the played run, for lockstep to skip: the checks run on a target the
+player's click made (the go-here marker) start with parameter 0 = 0 (every other check's is 1: the
+marker's "Go here test" 4109 is false for 1, and the original delivers the player's go-here);
+Sims draw with no animation play (the animator's plays are not read from the alone run yet, so
+they stand in their rest pose); the camera is the player's, not the log's.
+
 ## What does not come over from Bustin' Out's port
 
 The port's own redrawn interface (its "HD UI": `src/hud_read.cpp`, `hud_pieces.h`,
