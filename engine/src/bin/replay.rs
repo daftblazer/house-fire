@@ -52,23 +52,22 @@ fn main() -> ExitCode {
         return ExitCode::from(1);
     };
     if std::env::var_os("REPLAY_SHOW_MOVIES").is_some() {
-        // The game and its Apt movies (']' calls in, '"' commands out), one line each.
-        let (mut c, mut m) = (log.movie_calls.iter().peekable(), log.movie_commands.iter().peekable());
-        loop {
-            let take_call = match (c.peek(), m.peek()) {
-                (Some(x), Some(y)) => (x.tick, x.frame) <= (y.tick, y.frame),
-                (Some(_), None) => true,
-                (None, Some(_)) => false,
-                (None, None) => break,
-            };
-            if take_call {
-                let x = c.next().unwrap();
-                let args: Vec<String> = x.args.iter().map(|(w, t)| if t.is_empty() { format!("{w:#x}") } else { format!("{t:?}") }).collect();
-                println!("movie: tick {} frame {} call screen {:#x} vt {:#x} {}({}) a {:#x} b {:#x} from {:#x}", x.tick, x.frame, x.screen, x.vtable, x.name, args.join(", "), x.a, x.b, x.caller);
-            } else {
-                let y = m.next().unwrap();
-                println!("movie: tick {} frame {} command screen {:#x} vt {:#x} {:?} {:?} handler {:#x}", y.tick, y.frame, y.screen, y.vtable, y.command, y.argument, y.handler);
-            }
+        // The game and its Apt movies ('\\' loads, ']' calls in, '"' commands out), one line each
+        // in the game's frame order.
+        let mut lines: Vec<(u32, u32, String)> = Vec::new();
+        for x in &log.movie_loads {
+            lines.push((x.tick, x.frame, format!("load {:?} from {:#x}", x.path, x.caller)));
+        }
+        for x in &log.movie_calls {
+            let args: Vec<String> = x.args.iter().map(|(w, t)| if t.is_empty() { format!("{w:#x}") } else { format!("{t:?}") }).collect();
+            lines.push((x.tick, x.frame, format!("call {}({}) screen {:#x} a {:#x} b {:#x} from {:#x}", x.name, args.join(", "), x.screen, x.a, x.b, x.caller)));
+        }
+        for y in &log.movie_commands {
+            lines.push((y.tick, y.frame, format!("command {:?} {:?} screen {:#x} handler {:#x}", y.command, y.argument, y.screen, y.handler)));
+        }
+        lines.sort_by_key(|l| (l.0, l.1));
+        for (tick, frame, text) in lines {
+            println!("movie: tick {tick} frame {frame} {text}");
         }
     }
     let Ok(d) = Disc::open(&args[2]) else {
