@@ -11,9 +11,10 @@
 
 use std::collections::BTreeMap;
 
+use crate::interp::Host;
 use crate::library::Library;
 use crate::save::{LotChunks, Neighbour};
-use crate::world::ObjectKey;
+use crate::world::{ObjectKey, World};
 use super::drive::{DriveHost, Driven, setup};
 use super::start::RunWith;
 
@@ -316,39 +317,169 @@ fn watch(host: &mut DriveHost) {
     }
 }
 
-/// The run alone, `ticks` ticks from the loaded start, printing its figures.
-pub fn alone<'l>(log: &crate::tree_log::Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l LotChunks>), globals: &[i16], neighbours: &[Neighbour], with: RunWith, run: AloneRun) -> Option<AloneReport> {
-    let AloneRun { ticks, seed } = run;
-    let mut d = setup(log, lib, lot, globals, neighbours, with, Some(Tally::default()))?;
-    // (a panic in a stack's turn is counted, not printed, unless studied)
-    if !super::study::has("REPLAY_ALONE_SHOW_ERRORS") {
-        std::panic::set_hook(Box::new(|_| {}));
+/// A run alone, a tick at a time: the simulation from the loaded start, with no log. `alone` runs
+/// it for a number of ticks and prints its figures; a front end (the sandbox's window) steps it
+/// itself, queues the player's commands, asks the menu's checks and answers the dialogs.
+pub struct Alone<'l> {
+    d: Driven<'l>,
+    lib: &'l Library,
+    clock: crate::routing::FrameClock,
+    tick: u32,
+}
+
+/// A dialog open for the player (Dialog, opcode 36): who asked, and its node's operand.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DialogAsk {
+    /// The object whose script opened it.
+    pub object: i16,
+    /// As the node has it (bytes 2 to 4 the text's and the buttons' strings in the object's
+    /// STR# 301).
+    pub operand: [u8; 8],
+}
+
+/// An interaction of a target's pie menu that passed the menu's checks.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MenuEntry {
+    /// The interaction's action tree (what `queue_command` takes).
+    pub action: u16,
+    /// Its name from the object's strings.
+    pub name: String,
+}
+
+/// "Get social eligibility" (PersonGlobals 8230): the check the pie menu of a person runs first.
+const SOCIAL_ELIGIBILITY: u16 = 8230;
+
+impl<'l> Alone<'l> {
+    /// The start: `drive::setup`'s, then the engine's own (the autonomy level of the household's
+    /// Sims, the random generator seeded by `seed`). None if the log does not start with the lot.
+    pub fn new(log: &crate::tree_log::Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l LotChunks>), globals: &[i16], neighbours: &[Neighbour], with: RunWith, seed: u64) -> Option<Alone<'l>> {
+        let mut d = setup(log, lib, lot, globals, neighbours, with, Some(Tally::default()))?;
+        // (a panic in a stack's turn is counted, not printed, unless studied)
+        if !super::study::has("REPLAY_ALONE_SHOW_ERRORS") {
+            std::panic::set_hook(Box::new(|_| {}));
+        }
+        if let Some(p) = d.host.parting.take() {
+            println!("alone: the load parted from the log at object {} tree {} node {} (the run goes on): {}", p.object, p.tree, p.node, p.text.chars().take(300).collect::<String>());
+        }
+        d.host.expected.clear();
+        // The autonomy level (person data 36): the original's engine reads it (no script does) and
+        // the logs show 50 for the home Sims; the saves hold 0. A household Sim with none gets 50
+        // (the free will of the lot's own family); the visitors' mark (32) keeps the others out.
+        let keys: Vec<ObjectKey> = d.host.world.objects().filter(|o| o.person).filter_map(|o| d.host.world.find(o.id())).collect();
+        for k in keys {
+            let o = d.host.world.get_mut(k);
+            if o.person_data.get(32) == Some(&0)
+                && let Some(v) = o.person_data.get_mut(36)
+                && *v == 0
+            {
+                *v = 50;
+            }
+        }
+        d.host.world.rng.state = seed_state(seed);
+        Some(Alone { d, lib, clock: crate::routing::FrameClock::default(), tick: 0 })
     }
-    if let Some(p) = d.host.parting.take() {
-        println!("alone: the load parted from the log at object {} tree {} node {} (the run goes on): {}", p.object, p.tree, p.node, p.text.chars().take(300).collect::<String>());
+
+    /// The ticks run so far.
+    pub fn ticks(&self) -> u32 {
+        self.tick
     }
-    d.host.expected.clear();
-    // The autonomy level (person data 36): the original's engine reads it (no script does) and
-    // the logs show 50 for the home Sims; the saves hold 0. A household Sim with none gets 50
-    // (the free will of the lot's own family); the visitors' mark (32) keeps the others out.
-    let keys: Vec<ObjectKey> = d.host.world.objects().filter(|o| o.person).filter_map(|o| d.host.world.find(o.id())).collect();
-    for k in keys {
-        let o = d.host.world.get_mut(k);
-        if o.person_data.get(32) == Some(&0)
-            && let Some(v) = o.person_data.get_mut(36)
-            && *v == 0
-        {
-            *v = 50;
+
+    pub fn world(&self) -> &World<'l> {
+        &self.d.host.world
+    }
+
+    pub fn world_mut(&mut self) -> &mut World<'l> {
+        &mut self.d.host.world
+    }
+
+    /// The tree ids and nodes of a Sim's stack, bottom first (for a front end that shows what a
+    /// Sim is doing, and for checks).
+    pub fn frames_of(&mut self, id: i16) -> Vec<(i32, u16)> {
+        let lib = self.lib;
+        let Some(k) = self.d.host.world.find(id) else { return Vec::new() };
+        self.d.sim.stack_of(&self.d.host.world, k).stack().iter().map(|f| (f.tree.map_or(-1, |t| lib.tree_at(t).id as i32), f.node)).collect()
+    }
+
+    /// A player is there: a Dialog opens and waits for `answer_dialog`, instead of waiting for ever.
+    pub fn set_player(&mut self, on: bool) {
+        self.d.host.player = on;
+    }
+
+    /// The dialog waiting for the player's answer, if one is.
+    pub fn dialog(&self) -> Option<DialogAsk> {
+        self.d.host.asked.map(|(object, operand)| DialogAsk { object, operand })
+    }
+
+    /// The text a dialog shows and its buttons' labels: the dialog object's STR# 301, the text at
+    /// operand byte 2, a button at each of bytes 3 and 4 that is set, else one "OK".
+    pub fn dialog_text(&self, ask: &DialogAsk) -> (String, Vec<String>) {
+        let strings = self.d.host.world.find_object(ask.object).and_then(|o| o.file).and_then(|f| self.lib.file(f).strings.get(&301));
+        let get = |i: u8| strings.and_then(|s| s.get(usize::from(i))).filter(|t| !t.is_empty()).cloned();
+        let text = get(ask.operand[2]).unwrap_or_else(|| format!("(dialog {} of object {})", ask.operand[2], ask.object));
+        let mut buttons: Vec<String> = [3, 4].iter().filter(|&&b| ask.operand[b] != 0).map(|&b| get(ask.operand[b]).unwrap_or_else(|| "...".to_string())).collect();
+        if buttons.is_empty() {
+            buttons.push("OK".to_string());
+        }
+        (text, buttons)
+    }
+
+    /// The player's answer to the open dialog: true for the first button. The object takes the
+    /// primitive's true way at its next turn (`primitives::dialog`).
+    pub fn answer_dialog(&mut self, first_button: bool) {
+        if self.d.host.asked.is_some() {
+            self.d.host.world.dialog_answer = Some(first_button);
         }
     }
-    d.host.world.rng.state = seed_state(seed);
-    let mut done = 0;
-    let mut clock = crate::routing::FrameClock::default();
-    for t in 1..=ticks {
+
+    /// The player's command to a Sim (`World::queue_player_command`). False if the Sim, the target
+    /// or the interaction is not found.
+    pub fn queue_command(&mut self, sim: i16, target: i16, action: u16) -> bool {
+        let Some(k) = self.d.host.world.find(sim) else { return false };
+        self.d.host.world.queue_player_command(k, target, action)
+    }
+
+    /// The interactions of `target`'s pie menu for `sim`, by the engine's checks as the original's
+    /// menu runs them (docs/simulation.md, "The player's commands"): the table's first tree, then
+    /// each interaction's guard in the table's order ("hide menu" taken as a no), and for a person
+    /// "get social eligibility" first. The checks run as the Sim's, on the target.
+    pub fn menu(&mut self, sim: i16, target: i16) -> Vec<MenuEntry> {
+        let (lib, host) = (self.lib, &mut self.d.host);
+        let (Some(sk), Some(t)) = (host.world.find(sim), host.world.find_object(target)) else { return Vec::new() };
+        let (tfile, tperson, tid) = (t.file, t.person, t.id());
+        let tab = lib.table_of(tfile, tperson, host.world.definition(t));
+        let (Some(f), Some(table)) = (tab.file, tab.table) else { return Vec::new() };
+        host.me = sk;
+        let defaults = host.world.get(sk).temps.to_vec();
+        let check = |host: &mut DriveHost<'l>, id: u16| -> bool {
+            if id == 0 {
+                return true;
+            }
+            let ok = lib.tree(tfile, id).and_then(|t| host.run_check(t, tfile, tid, &defaults)) == Some(true);
+            ok && host.world.get(sk).data.get(crate::world::DATA_HIDE_INTERACTION).is_none_or(|&h| h == 0)
+        };
+        if (tperson && !check(host, SOCIAL_ELIGIBILITY)) || !check(host, tab.first) {
+            return Vec::new();
+        }
+        let names = lib.file(f).strings.get(&table);
+        let mut out = Vec::new();
+        for e in lib.table(f, table) {
+            if check(host, e.guard) {
+                let name = usize::try_from(e.string_index).ok().and_then(|i| names.and_then(|n| n.get(i))).cloned().unwrap_or_else(|| format!("interaction {}", e.action));
+                out.push(MenuEntry { action: e.action, name });
+            }
+        }
+        out
+    }
+
+    /// One tick: the animations' frames at the normal speed, then the simulation's pass.
+    pub fn tick(&mut self) {
+        let d = &mut self.d;
+        self.tick += 1;
+        let t = self.tick;
         d.host.tick = t;
         // the animations' frames the tick follows, by the native clock at the normal speed
         if let Some(ar) = &mut d.host.anim {
-            for _ in 0..clock.frames_to_tick_at(1.0) {
+            for _ in 0..self.clock.frames_to_tick_at(1.0) {
                 ar.m.frame(|_| 1.0);
             }
         }
@@ -362,6 +493,7 @@ pub fn alone<'l>(log: &crate::tree_log::Log, lib: &'l Library, lot: (&'l LotChun
             && t % every == 0
         {
             // study: each Sim's stack every N ticks
+            let lib = self.lib;
             let sims: Vec<i16> = d.host.world.objects().filter(|o| o.person).map(|o| o.id()).collect();
             for id in sims {
                 let Some(k) = d.host.world.find(id) else { continue };
@@ -371,32 +503,52 @@ pub fn alone<'l>(log: &crate::tree_log::Log, lib: &'l Library, lot: (&'l LotChun
                 println!("tick {t} sim {id}: {} {}{} top {top:?}", frames.join(" "), if i.asleep() { "asleep " } else { "" }, if i.done() { "DONE" } else { "" });
             }
         }
-        done = t;
     }
-    let hash = world_hash(&mut d);
-    let t = d.host.tally.take().unwrap_or_default();
-    let neutral_total: u32 = t.neutral.values().sum();
-    let error_total: u32 = t.errors.values().sum();
-    println!("alone: ticks {done} of {ticks}, errors {error_total}, neutral answers {neutral_total}");
-    let mut kinds: Vec<(u32, String)> = t.neutral.iter().map(|(&(op, why, tree), &n)| (n, format!("neutral {}: {why}, in tree {tree}", primitive_name(op)))).collect();
-    kinds.extend(t.errors.iter().map(|(k, &n)| (n, k.clone())));
-    kinds.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
-    for (n, k) in kinds.iter().take(15) {
-        println!("  {n:>8}  {k}");
+
+    /// The world's hash (as `--alone` prints it).
+    pub fn hash(&mut self) -> u64 {
+        world_hash(&mut self.d)
     }
-    for (id, s) in &t.sims {
-        let name = d.host.world.find_object(*id).and_then(|o| o.person_data.get(crate::world::PERSON_NEIGHBOUR_ID).copied()).and_then(|n| d.host.world.neighbours.iter().find(|x| x.id == n)).map_or(String::new(), |n| n.name.clone());
-        let f = |v: &[f32]| v.iter().take(8).map(|m| format!("{m:.0}")).collect::<Vec<_>>().join(" ");
-        let at = d.host.world.find(*id).map_or("gone".to_string(), |k| {
-            let i = d.sim.stack_of(&d.host.world, k);
-            let top = i.stack().last().map_or((-1, 0), |fr| (fr.tree.map_or(-1, |t| lib.tree_at(t).id as i32), fr.node));
-            format!("stack {} deep at {}:{}{}{}", i.stack().len(), top.0, top.1, if i.asleep() { " asleep" } else { "" }, if i.done() { " DONE" } else { "" })
-        });
-        println!("sim {id} {name}: interactions started {} finished {}, walked {:.1} tiles, motives low [{}] last [{}], {at}", s.started, s.finished, s.walked, f(&s.low), f(&s.last));
+
+    /// The run's figures printed, as `--alone` ends: `of` the ticks asked.
+    pub fn report(mut self, of: u32) -> AloneReport {
+        let (done, lib) = (self.tick, self.lib);
+        let hash = world_hash(&mut self.d);
+        let mut d = self.d;
+        let t = d.host.tally.take().unwrap_or_default();
+        let neutral_total: u32 = t.neutral.values().sum();
+        let error_total: u32 = t.errors.values().sum();
+        println!("alone: ticks {done} of {of}, errors {error_total}, neutral answers {neutral_total}");
+        let mut kinds: Vec<(u32, String)> = t.neutral.iter().map(|(&(op, why, tree), &n)| (n, format!("neutral {}: {why}, in tree {tree}", primitive_name(op)))).collect();
+        kinds.extend(t.errors.iter().map(|(k, &n)| (n, k.clone())));
+        kinds.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+        for (n, k) in kinds.iter().take(15) {
+            println!("  {n:>8}  {k}");
+        }
+        for (id, s) in &t.sims {
+            let name = d.host.world.find_object(*id).and_then(|o| o.person_data.get(crate::world::PERSON_NEIGHBOUR_ID).copied()).and_then(|n| d.host.world.neighbours.iter().find(|x| x.id == n)).map_or(String::new(), |n| n.name.clone());
+            let f = |v: &[f32]| v.iter().take(8).map(|m| format!("{m:.0}")).collect::<Vec<_>>().join(" ");
+            let at = d.host.world.find(*id).map_or("gone".to_string(), |k| {
+                let i = d.sim.stack_of(&d.host.world, k);
+                let top = i.stack().last().map_or((-1, 0), |fr| (fr.tree.map_or(-1, |t| lib.tree_at(t).id as i32), fr.node));
+                format!("stack {} deep at {}:{}{}{}", i.stack().len(), top.0, top.1, if i.asleep() { " asleep" } else { "" }, if i.done() { " DONE" } else { "" })
+            });
+            println!("sim {id} {name}: interactions started {} finished {}, walked {:.1} tiles, motives low [{}] last [{}], {at}", s.started, s.finished, s.walked, f(&s.low), f(&s.last));
+        }
+        println!("alone: walks planned {}, arrived {}, no way {}; Sim stacks restarted after an error {}; objects waiting at a Dialog {}", t.planned, t.arrived, t.no_way, t.restarted, t.waiting.len());
+        println!("alone: hash {hash:016x}");
+        AloneReport { ticks: done, of, hash }
     }
-    println!("alone: walks planned {}, arrived {}, no way {}; Sim stacks restarted after an error {}; objects waiting at a Dialog {}", t.planned, t.arrived, t.no_way, t.restarted, t.waiting.len());
-    println!("alone: hash {hash:016x}");
-    Some(AloneReport { ticks: done, of: ticks, hash })
+}
+
+/// The run alone, `ticks` ticks from the loaded start, printing its figures.
+pub fn alone<'l>(log: &crate::tree_log::Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l LotChunks>), globals: &[i16], neighbours: &[Neighbour], with: RunWith, run: AloneRun) -> Option<AloneReport> {
+    let AloneRun { ticks, seed } = run;
+    let mut a = Alone::new(log, lib, lot, globals, neighbours, with, seed)?;
+    for _ in 0..ticks {
+        a.tick();
+    }
+    Some(a.report(ticks))
 }
 
 impl DriveHost<'_> {

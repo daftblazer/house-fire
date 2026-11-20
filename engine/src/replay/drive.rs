@@ -108,6 +108,11 @@ pub(super) struct DriveHost<'l> {
     pub(super) chosen: Option<(i16, TreeId, Option<FileId>)>,
     /// The tree of the step being taken (a run alone, for the counts).
     at_tree: i32,
+    /// A player is there to answer a Dialog (a run alone, played): the dialog opens in the world
+    /// (`primitives::dialog`) and waits for `World::dialog_answer`, instead of waiting for ever.
+    pub(super) player: bool,
+    /// The dialog now open for the player: the object that asked and its node's operand.
+    pub(super) asked: Option<(i16, [u8; 8])>,
 }
 
 impl Trees for DriveHost<'_> {
@@ -548,6 +553,18 @@ impl Host for DriveHost<'_> {
             17 if person => idle_for_input(interp, self, me),
             // Dialog: the player's answer is the input (the log's, where its step is this one);
             // 1 a wait the pass goes on after, 2 a wait that stops it
+            36 if self.player => {
+                let opening = self.world.dialog_object != me_id;
+                let got = dialog(n, &mut self.world, me_id);
+                if opening {
+                    self.asked = Some((me_id, n.operand));
+                }
+                if got == PrimResult::True {
+                    self.asked = None;
+                }
+                self.world.presentation.clear();
+                got
+            }
             36 if self.tally.is_some() => {
                 // no player to answer: the object waits at its Dialog for ever, and the pass goes
                 // on (counted when it begins to wait)
@@ -652,6 +669,8 @@ pub(super) fn setup<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option
         tally,
         chosen: None,
         at_tree: -1,
+        player: false,
+        asked: None,
     };
     if super::study::has("REPLAY_DRIVE_SHOW_FIRSTS") {
         let mut first: BTreeMap<i16, (u32, u16, u16)> = BTreeMap::new();
