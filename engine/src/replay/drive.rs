@@ -93,6 +93,8 @@ pub(super) struct DriveHost<'l> {
     pub(super) stopped: bool,
     /// The last native steps (tree:node, opcode, where it went), for the parting.
     trail: VecDeque<String>,
+    /// The tree, node and opcode of the step last taken (a study).
+    at_trace: (i32, u16, i32),
     /// The last expression's reads, natively: (scope, datum, value) of its two sides.
     last_expr: [(u8, i16, Option<i16>); 2],
     /// Primitives answered with the neutral default, by opcode (printed with the parting).
@@ -169,8 +171,14 @@ impl DriveHost<'_> {
             }
             let r = if self.tally.is_some() { self.step_alone(interp) } else { self.step_checked(interp) };
             steps += 1;
-            if self.tally.is_some() && super::study::env("REPLAY_ALONE_TRACE").is_some_and(|v| super::study::atoi(&v) == i64::from(self.me_id()) && self.tick >= 20000 && self.tick < 20003) {
-                println!("trace tick {} object {} step {steps}: {:?} trail {:?} params {:?} queue {}", self.tick, self.me_id(), r, self.trail.back(), interp.stack().last().map(|f| f.params.clone()), self.world.get(self.me).queue.len());
+            // study: REPLAY_ALONE_TRACE=OBJECT,FROM,TO prints each step of the object in the ticks
+            if self.tally.is_some()
+                && let Some(v) = super::study::env("REPLAY_ALONE_TRACE")
+            {
+                let w: Vec<i64> = v.split(',').map(super::study::atoi).collect();
+                if w.first() == Some(&i64::from(self.me_id())) && (w.get(1).copied().unwrap_or(0)..w.get(2).copied().unwrap_or(1 << 30)).contains(&i64::from(self.tick)) {
+                    println!("trace tick {} object {} step {steps}: {:?} at {:?} params {:?}", self.tick, self.me_id(), r, self.at_trace, interp.stack().last().map(|f| f.params.clone()));
+                }
             }
             match r {
                 Step::Go => {}
@@ -263,6 +271,7 @@ impl DriveHost<'_> {
         }
         let at = interp.stack().last().map_or((-1, 0), |f| (f.tree.map_or(-1, |t| lib.tree_at(t).id as i32), f.node));
         self.at_tree = at.0;
+        self.at_trace = (at.0, at.1, op);
         if super::study::has("REPLAY_ALONE_SHOW_ERRORS") {
             self.trail.push_back(format!("{}:{} op {op} so {}", at.0, at.1, interp.stack().last().map_or(0, |f| f.stack_object)));
         }
@@ -667,6 +676,7 @@ pub(super) fn setup<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option
         stopped: false,
         last_expr: [(0, 0, None); 2],
         trail: VecDeque::new(),
+        at_trace: (-1, 0, -1),
         neutral: BTreeMap::new(),
         anim: h.anim,
         sim_of: ids.iter().map(|(&sim, &id)| (id, sim)).collect(),

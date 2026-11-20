@@ -144,6 +144,8 @@ pub struct Object {
     /// It spent money this turn (an AlterBudget that is not a test): the money balloon shows when
     /// its turn ends (`money_balloon_tree`).
     pub spent: bool,
+    /// It was made during play (`World::make_object`), not loaded with the lot.
+    pub made: bool,
     /// Its tree stack, bottom first: a lot's objects' as the lot saved it (a frame whose tree is
     /// not on the disc keeps no tree).
     pub stack: Vec<Frame>,
@@ -243,6 +245,9 @@ pub struct World<'lib> {
     /// call not identified yet (`docs/simulation.md`, "The motives"); until then the lot's
     /// loader says.
     pub motives_run: bool,
+    /// Whether an object made during play runs its own main tree from the next pass (a run alone:
+    /// the original's does; a replay takes its steps from the log, which asks for them).
+    pub run_made: bool,
     /// Scope 6.
     pub globals: Vec<i16>,
     /// Scope 34.
@@ -333,6 +338,7 @@ impl<'lib> World<'lib> {
             stop_pass: false,
             hour: 12,
             motives_run: true,
+            run_made: false,
             globals: Vec::new(),
             neighbourhood: Vec::new(),
             neighbours: Vec::new(),
@@ -725,6 +731,7 @@ impl<'lib> World<'lib> {
             o.data.resize(DATA_OBJECT_ID + 1, 0);
         }
         o.data[DATA_OBJECT_ID] = self.next_id();
+        o.made = true;
         self.add(o, true)
     }
 

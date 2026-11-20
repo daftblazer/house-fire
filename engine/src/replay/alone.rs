@@ -376,7 +376,43 @@ impl<'l> Alone<'l> {
             }
         }
         d.host.world.rng.state = seed_state(seed);
+        d.host.world.run_made = true;
         Some(Alone { d, lib, clock: crate::routing::FrameClock::default(), tick: 0 })
+    }
+
+    /// Study (REPLAY_ALONE_SHOW_TREE=OBJECT:TREE,..., or OBJECT:c for its constants, at the tick
+    /// REPLAY_ALONE_SHOW_TREE_AT, default 1): the trees' nodes as OBJECT's file has them.
+    fn show_trees(&mut self) {
+        let Some(v) = super::study::env("REPLAY_ALONE_SHOW_TREE") else { return };
+        for item in v.split(',') {
+            let Some((o, t)) = item.split_once(':') else { continue };
+            let file = self.d.host.world.find_object(super::study::atoi(o) as i16).and_then(|o| o.file);
+            if t == "i" {
+                if let Some(k) = self.d.host.world.find(super::study::atoi(o) as i16) {
+                    let (lib, i) = (self.lib, self.d.sim.stack_of(&self.d.host.world, k));
+                    let frames: Vec<String> = i.stack().iter().map(|f| format!("{}:{}", f.tree.map_or(-1, |t| lib.tree_at(t).id as i32), f.node)).collect();
+                    println!("object {o}: stack {} asleep {} done {}", frames.join(" "), i.asleep(), i.done());
+                }
+                if let Some(ob) = self.d.host.world.find_object(super::study::atoi(o) as i16) {
+                    println!("object {o}: person {} file {:?} at ({}, {}) on lot {} data {:?} person data {:?}", ob.person, file.map(|f| self.lib.file(f).path.clone()), ob.x16, ob.y16, ob.on_lot(), ob.data, ob.person_data);
+                }
+                continue;
+            }
+            if t == "c" {
+                let all: Vec<_> = (0..256).map(|i| self.lib.constant(file, i)).collect();
+                println!("constants of object {o}'s file, data 0 on: {all:?}");
+                continue;
+            }
+            match self.lib.tree(file, super::study::atoi(t) as u16) {
+                Some(tid) => {
+                    println!("tree {t} of object {o} ({}):", file.map_or("-", |f| self.lib.file(f).path.rsplit('/').next().unwrap_or("")));
+                    for (i, n) in self.lib.tree_at(tid).nodes.iter().enumerate() {
+                        println!("  {i}: op {} t {} f {} {:?}", n.opcode, n.true_target, n.false_target, n.operand);
+                    }
+                }
+                None => println!("tree {t} of object {o}: not found"),
+            }
+        }
     }
 
     /// The ticks run so far.
@@ -498,8 +534,11 @@ impl<'l> Alone<'l> {
 
     /// One tick: the animations' frames at the normal speed, then the simulation's pass.
     pub fn tick(&mut self) {
-        let d = &mut self.d;
         self.tick += 1;
+        if i64::from(self.tick) == super::study::env("REPLAY_ALONE_SHOW_TREE_AT").map_or(1, |v| super::study::atoi(&v)) {
+            self.show_trees();
+        }
+        let d = &mut self.d;
         let t = self.tick;
         d.host.tick = t;
         // the animations' frames the tick follows, by the native clock at the normal speed
@@ -525,7 +564,8 @@ impl<'l> Alone<'l> {
                 let i = d.sim.stack_of(&d.host.world, k);
                 let frames: Vec<String> = i.stack().iter().map(|f| format!("{}:{}", f.tree.map_or(-1, |t| lib.tree_at(t).id as i32), f.node)).collect();
                 let top = i.stack().last().map(|f| (f.tree.and_then(|t| lib.tree_at(t).nodes.get(f.node as usize)).map(|n| (n.opcode, n.operand)), f.params.clone(), f.locals.clone()));
-                println!("tick {t} sim {id}: {} {}{} top {top:?}", frames.join(" "), if i.asleep() { "asleep " } else { "" }, if i.done() { "DONE" } else { "" });
+                let (queue, motives) = (d.host.world.get(k).queue.len(), d.host.world.get(k).motives.iter().skip(5).map(|m| format!("{m:.0}")).collect::<Vec<_>>().join(" "));
+                println!("tick {t} sim {id}: {} {}{} queue {queue} motives {motives} deltas {:?} m9 {} top {top:?}", frames.join(" "), if i.asleep() { "asleep " } else { "" }, if i.done() { "DONE" } else { "" }, d.host.world.get(k).motive_deltas, d.host.world.get(k).motives[9]);
             }
         }
     }
@@ -552,7 +592,7 @@ impl<'l> Alone<'l> {
         }
         for (id, s) in &t.sims {
             let name = d.host.world.find_object(*id).and_then(|o| o.person_data.get(crate::world::PERSON_NEIGHBOUR_ID).copied()).and_then(|n| d.host.world.neighbours.iter().find(|x| x.id == n)).map_or(String::new(), |n| n.name.clone());
-            let f = |v: &[f32]| v.iter().take(8).map(|m| format!("{m:.0}")).collect::<Vec<_>>().join(" ");
+            let f = |v: &[f32]| v.iter().skip(5).take(11).map(|m| format!("{m:.0}")).collect::<Vec<_>>().join(" ");
             let at = d.host.world.find(*id).map_or("gone".to_string(), |k| {
                 let i = d.sim.stack_of(&d.host.world, k);
                 let top = i.stack().last().map_or((-1, 0), |fr| (fr.tree.map_or(-1, |t| lib.tree_at(t).id as i32), fr.node));

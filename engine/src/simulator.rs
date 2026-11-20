@@ -228,7 +228,7 @@ impl Simulator {
         }
         self.order.clear();
         for (&id, &key) in by_id {
-            if id <= 0 || (world.get(key).stack.is_empty() && !self.has_run(key)) {
+            if id <= 0 || (world.get(key).stack.is_empty() && !self.has_run(key) && !(world.run_made && world.get(key).made)) {
                 continue;
             }
             self.stack_of(world, key);

@@ -963,11 +963,9 @@ pub fn set_motive_delta(n: &Node, vars: &mut ScriptVariables) -> Option<PrimResu
     let stop = vars.get(o[1], field(n, 6));
     let (Some(rate), Some(stop)) = (rate, stop) else { return Some(PrimResult::Stop) };
     let d = MotiveDelta { motive: o[2] as i32, rate: rate.value as f32 / 1800.0, target: stop.value as f32 };
-    // One change a motive: a new one takes the old one's place (the log has only one use).
-    let deltas = &mut vars.world.get_mut(me).motive_deltas;
-    match deltas.iter_mut().find(|x| x.motive == d.motive) {
-        Some(x) => *x = d,
-        None => deltas.push(d),
-    }
+    // Changes of one motive add up: the toilet sets its bladder's (+1000 an hour to 100) and
+    // then its own other one (+100 to 80), and its wait ends when the bladder reaches the first's
+    // stop, 100, which a lone second change (to 80) would never reach.
+    vars.world.get_mut(me).motive_deltas.push(d);
     Some(PrimResult::True)
 }
