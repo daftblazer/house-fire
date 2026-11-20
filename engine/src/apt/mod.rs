@@ -10,6 +10,7 @@ pub mod bundle;
 pub mod display;
 pub mod dump;
 pub mod font;
+pub mod host;
 pub mod geometry;
 mod img;
 pub mod movie;

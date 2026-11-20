@@ -50,6 +50,7 @@ pub fn run(log: &Log, flashes: Vec<(String, Rc<Flash>)>, to: Option<u32>, timing
     p.set_extern("_enable_debug", Value::str("0"));
     let last = log.movie_loads.iter().map(|l| l.frame).chain(log.movie_calls.iter().map(|c| c.frame)).chain(log.movie_commands.iter().map(|c| c.frame)).max().unwrap_or(0);
     let last = to.map_or(last, |t| t.min(last));
+    let host = super::host::Host::for_log(log);
     let (mut li, mut ci) = (0, 0);
     let mut owed = 0.0f32;
     for f in 0..=last {
@@ -82,8 +83,9 @@ pub fn run(log: &Log, flashes: Vec<(String, Rc<Flash>)>, to: Option<u32>, timing
             eprintln!("apt: game frame {f}");
         }
         if timing.calls_first {
-            calls_feed(&mut p, log, f);
+            host.before_calls(&mut p, f);
             calls(&mut p, &mut ci, &mut li);
+            host.after_calls(&mut p, f);
         }
         owed += timing.rate;
         while owed >= 1.0 {
@@ -93,8 +95,9 @@ pub fn run(log: &Log, flashes: Vec<(String, Rc<Flash>)>, to: Option<u32>, timing
         p.tick_loads();
         loads(&mut p, &mut li);
         if !timing.calls_first {
-            calls_feed(&mut p, log, f);
+            host.before_calls(&mut p, f);
             calls(&mut p, &mut ci, &mut li);
+            host.after_calls(&mut p, f);
         }
     }
     let cmds = p.take_commands();
@@ -147,34 +150,3 @@ pub fn compare(log: &Log, ours: &[Command], to: Option<u32>) -> Report {
     }
 }
 
-/// Values the game's code gives its screens' movies before calling them, which the observer does
-/// not record: (game frame it is set at, name of the `extern` member, number). Each was fitted
-/// to what the movies sent back in answer (the menu's item counts to its buttons' places, the
-/// dialogs' sizes to their title bars'); `docs/assets.md` lists them as unverified.
-const HOST_VALUES: &[(u32, &str, f32)] = &[
-    (738, "number_big_items", 1.0),
-    (738, "number_small_items", 3.0),
-    (738, "current_item", 0.0),
-    (738, "menu_disable_ID", -1.0),
-    (754, "number_big_items", 3.0),
-    (907, "mu_dialog_width", 0.375),
-    (907, "mu_dialog_height", 0.3),
-    (907, "mu_dialog_x", 0.3125),
-    (907, "mu_dialog_y", 0.145_089_29),
-];
-
-/// The layout the game hands its screens' movies (a button's place, as a fraction of the screen)
-/// is set before it calls `resetButton`; the observer does not record it, so it is taken from
-/// what the movies sent back in that frame (`docs/assets.md`).
-fn calls_feed(p: &mut Player, log: &Log, f: u32) {
-    for (at, name, v) in HOST_VALUES {
-        if *at == f {
-            p.set_extern(name, Value::Num(f64::from(*v)));
-        }
-    }
-    for c in log.movie_commands.iter().filter(|c| c.frame == f) {
-        if (c.command.ends_with("_x") || c.command.ends_with("_y")) && let Ok(v) = c.argument.parse::<f64>() {
-            p.set_extern(&c.command, Value::Num(v));
-        }
-    }
-}

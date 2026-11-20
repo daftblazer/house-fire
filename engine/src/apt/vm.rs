@@ -563,7 +563,10 @@ impl Player {
             Value::Obj(o) => {
                 let native = matches!(o.borrow().kind, Kind::Native(Native::Extern));
                 if native {
+                    // a command to the game; what the movie wrote is not stored: the members
+                    // the movies read are the game's own values
                     self.send(name, &v);
+                    return;
                 }
                 let mut ob = o.borrow_mut();
                 if let Kind::Array(a) = &mut ob.kind {
