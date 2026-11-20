@@ -36,16 +36,13 @@ const PAUSE_BUTTONS: [&str; 8] = ["accept", "decline", "walls", "alt2", "flipper
 const PAUSE_ACCEPT: (&str, f32, f32) = ("SELECT", 0.4, 0.905);
 const PAUSE_DECLINE: (&str, f32, f32) = ("BACK", 0.7, 0.905);
 
-/// A button's label sits this far right of the button's place (2 pixels: the face of the
-/// "SELECT" and "BACK" lines is centred on 0.403125 and 0.703125 for the buttons at 0.4 and 0.7).
-const BUTTON_LABEL_SHIFT: f32 = 2.0 / SCREEN.0;
-
-/// What the game measured of the pause screen's own strings, as the log has it: the line's
-/// width in pixels (twice the distance from its place to the point it is aligned at) and, for the
-/// buttons' labels, the width `drawButton` was given (a fraction of the screen). The font's
-/// glyph columns do not give these (the advance is not the columns, `docs/assets.md`), and the
-/// strings are fixed, so they are the log's own numbers (the pause screen of ui-menu.log).
-const PAUSE_WIDTHS: [(&str, f32, f32); 3] = [("GOALS", 65.66, 0.0), ("SELECT", 63.9, 0.093525), ("BACK", 49.0, 0.070360)];
+/// What the game measured of the pause screen's own strings, as the log has it (the pause screen
+/// of ui-menu.log): the width as a fraction of the screen. A button's is the width `drawButton`
+/// was given, and its label is drawn that wide, centred on the button's place; the title's is the
+/// movie's `title_bar_width` read, and the title is that wide, centred on the middle. The font's
+/// glyph columns do not give these (the advance is not the columns, `docs/assets.md`) and the
+/// strings are fixed.
+const PAUSE_WIDTHS: [(&str, f32); 3] = [("GOALS", 0.102652), ("SELECT", 0.093525), ("BACK", 0.070360)];
 
 /// The pause screen's title ("GOALS" for the first section): centred on the middle, its top at
 /// this fraction of the screen (the log's line, `0.1861`; the movie's title bar place is not
@@ -190,7 +187,7 @@ impl Ui {
             // built on, and the title's width
             out.push(("pause_mode".into(), "resident".into()));
             out.push(("pause_enable_buy_build".into(), "true".into()));
-            out.push(("title_bar_width".into(), format!("{:.6}", pause_width(f.measure, PAUSE_TITLE).0 / SCREEN.0)));
+            out.push(("title_bar_width".into(), format!("{:.6}", pause_width(f.measure, PAUSE_TITLE))));
         }
         out
     }
@@ -257,7 +254,7 @@ impl Ui {
             && at == self.frame
         {
             for (label, x, y) in [PAUSE_ACCEPT, PAUSE_DECLINE] {
-                let w = pause_width(f.measure, label).1;
+                let w = pause_width(f.measure, label);
                 calls.push(Call { name: "drawButton", args: vec![if label == "SELECT" { "accept" } else { "decline" }.into(), format!("{x:.6}"), format!("{y:.6}"), format!("{w:.6}")] });
             }
         }
@@ -279,11 +276,11 @@ impl Ui {
         f.hud.funds_text(f.view, f.measure, out);
         let h = crate::hud::TEXT_HEIGHT * PAUSE_SIZE_RATIO;
         let hh = Some(h * SCREEN.1);
-        let tw = pause_width(f.measure, PAUSE_TITLE).0;
+        let tw = pause_width(f.measure, PAUSE_TITLE) * SCREEN.0;
         out.push(Text { text: PAUSE_TITLE.into(), x: 0.5 - tw / SCREEN.0 / 2.0, y: PAUSE_TITLE_Y, shadow: false, width: Some(tw), height: hh, plain: true });
         for (label, x, y) in [PAUSE_ACCEPT, PAUSE_DECLINE] {
-            let w = pause_width(f.measure, label).0;
-            line(out, label, x + BUTTON_LABEL_SHIFT - w / SCREEN.0 / 2.0, y - h / 2.0, Some(w), hh);
+            let w = pause_width(f.measure, label) * SCREEN.0;
+            line(out, label, x - w / SCREEN.0 / 2.0, y - h / 2.0, Some(w), hh);
         }
     }
 
@@ -292,15 +289,12 @@ impl Ui {
     }
 }
 
-/// A pause string's line width (pixels) and button width (fraction of the screen): the log's for
-/// the strings it has, else the HUD's measure at the pause's size.
-fn pause_width(measure: &Measure, text: &str) -> (f32, f32) {
+/// A pause string's width, a fraction of the screen: the log's for the strings it has, else the
+/// HUD's measure at the pause's size.
+fn pause_width(measure: &Measure, text: &str) -> f32 {
     match PAUSE_WIDTHS.iter().find(|w| w.0 == text) {
-        Some(&(_, px, button)) => (px, button),
-        None => {
-            let px = measure.hud_width(text) * PAUSE_SIZE_RATIO;
-            (px, px / SCREEN.0)
-        }
+        Some(&(_, w)) => w,
+        None => measure.hud_width(text) * PAUSE_SIZE_RATIO / SCREEN.0,
     }
 }
 
