@@ -704,6 +704,17 @@ pub(super) fn setup<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option
         player_targets: Vec::new(),
         sound_out: None,
     };
+    if host.tally.is_some() {
+        // A run alone's tick-0 placement, natively (the replay takes the log's 'P' records of
+        // tick 0): every object on the lot (a person too) stands at the centre of the tile the
+        // lot loads it on, as all 206 of the home log's do (`step.rs`, "a tick-0 placement").
+        let keys: Vec<ObjectKey> = host.world.objects().filter(|o| o.on_lot()).filter_map(|o| host.world.find(o.id())).collect();
+        for k in keys {
+            let o = host.world.get_mut(k);
+            o.x16 = ((o.x16 >> 4) << 4) + 8;
+            o.y16 = ((o.y16 >> 4) << 4) + 8;
+        }
+    }
     if super::study::has("REPLAY_DRIVE_SHOW_FIRSTS") {
         let mut first: BTreeMap<i16, (u32, u16, u16)> = BTreeMap::new();
         for s in &log.steps {

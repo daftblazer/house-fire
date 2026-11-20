@@ -17,6 +17,7 @@ use crate::save::{LotChunks, Neighbour};
 use crate::world::{ObjectKey, World};
 use super::drive::{DriveHost, Driven, alone_sim, setup};
 use super::start::RunWith;
+use crate::walker::Walker;
 
 /// What one Sim did.
 #[derive(Default)]
@@ -55,27 +56,22 @@ pub struct Tally {
     /// The turns going on (LookTowards): the ticks left and the direction it ends in.
     turns: BTreeMap<i16, (u32, i16)>,
     /// The walks going on, by the walking object.
-    pub(super) walks: BTreeMap<i16, Walk>,
+    pub(super) walks: BTreeMap<i16, Walker>,
+    /// The speed each walker's last walk left it (the next starts at it).
+    speeds: BTreeMap<i16, f32>,
+    /// The way (a unit step) a Sim's route crosses at the door whose portal it was sent through.
+    crossing: BTreeMap<i16, (i32, i32)>,
     /// How long each walker has walked, in seconds of the walk cycle (the figure's phase).
     walk_time: BTreeMap<i16, f32>,
     /// Walks planned, arrived, and asked for with no way.
     pub(super) planned: u32,
     pub(super) arrived: u32,
     pub(super) no_way: u32,
+    /// Walks to a goal outside the room of the object they go to, and legs of a walk through a
+    /// wall (a closed edge): the figures of the walk's being native.
+    outside_room: usize,
+    through_wall: u32,
 }
-
-/// One walk: the points of its line in sixteenths and the one it goes to; where it ends it
-/// faces `face`.
-pub(super) struct Walk {
-    path: Vec<(f32, f32)>,
-    to: usize,
-    at: (f32, f32),
-    face: Option<(i32, i32)>,
-}
-
-/// A walker's step a tick, in sixteenths: its top a second over the tick's time (natively a
-/// constant speed: no ramp and no frames; the replay's walker is the log's).
-const STEP_PER_TICK: f32 = crate::routing::WALK_TOP_ADULT * crate::routing::TICK_TIME;
 
 /// The direction (object data 1) of a step.
 fn direction_of(dx: f32, dy: f32) -> i16 {
@@ -83,103 +79,167 @@ fn direction_of(dx: f32, dy: f32) -> i16 {
 }
 
 impl DriveHost<'_> {
-    /// GotoRelativePosition (27) and GotoRoutingSlot (45) of a run alone: the walk planned over
-    /// the lot's tiles (`Walls::route`: open edges, doors' openings; no object blocks and no
-    /// door's portal function is pushed), the Sim stepping along its line a tick at a time and
-    /// yielding until it is there. 45: the nearest of the stack object's slot's places by route;
-    /// 27: the tile in front of the stack object (its operand is not read).
+    /// GotoRelativePosition (27) and GotoRoutingSlot (45) of a run alone, natively as the
+    /// original runs them (`docs/simulation.md`, "Routing" and "The run alone"): the planner's
+    /// request (`routing::slot_request`, `relative_request`), the goal it takes
+    /// (`planner::choose_goal`) and the way to it (`coarse_way`, `refine`, `point_after_goal`) on
+    /// the rects the world gives (`route_map`); a route that changes room at a door pushes the
+    /// door's portal function, one to a slot for sitting the seat's sit function; else the Sim's
+    /// walker (`walker::Walker`) walks the way a frame at a time (`DriveHost::walker_frames`) and the
+    /// primitive yields until it is let go. A request with no goal, or no way: false, as the
+    /// original goes on in its frame. (Not as the original: no one asked to move out of a slot's
+    /// places, and no run on after a door's walk.)
     pub(super) fn go(&mut self, interp: &mut crate::interp::Interpreter, n: &crate::bhav::Node) -> crate::interp::PrimResult {
         use crate::interp::PrimResult;
+        use crate::planner::{choose_goal, coarse_way, point_after_goal, refine};
+        use crate::routing::{relative_request, slot_request, Goal, RequestWorld};
         let (me, lib) = (self.me, self.lib);
         let id = self.world.get(me).id();
-        let so = interp.top().stack_object;
-        if !self.tally.as_ref().is_some_and(|t| t.walks.contains_key(&id)) {
-            let o = self.world.get(me);
-            if !o.on_lot() {
-                return PrimResult::False;
-            }
-            let from = (o.x16, o.y16);
-            let target = self.world.find_object(so).map(|t| (t.x16, t.y16));
-            let goals: Vec<(i32, i32)> = match self.world.find_object(so) {
-                None => return PrimResult::True,
-                Some(t) if n.opcode == 45 => {
-                    let slot = t.file.and_then(|file| lib.routing_slot(file, self.world.definition(t), n.operand16(1), n.operand16(0), &interp.top().params));
-                    match slot {
-                        // (a slot that names no direction, the club's dance floor: its object's own place)
-                        Some(slot) => match crate::routing::slot_places(slot, t.x16, t.y16, t.facing()) {
-                            places if places.is_empty() => vec![(t.x16, t.y16)],
-                            places => places.into_iter().map(|p| p.1).collect(),
-                        },
-                        None => return PrimResult::True,
-                    }
-                }
-                Some(t) => {
-                    let d = crate::routing::front(t.facing()).unwrap_or((0, 0));
-                    vec![(t.x16 + d.0 * 16, t.y16 + d.1 * 16)]
-                }
-            };
-            let tile = |p: (i32, i32)| (p.0 >> 4, p.1 >> 4);
-            if super::study::has("REPLAY_ALONE_SHOW_NO_WAY") {
-                if let Some(t) = self.world.find_object(so) { println!("  target {so}: place ({}, {}) facing {} guid {:08x} file {:?} tile indoors {}", t.x16, t.y16, t.facing(), t.guid, t.file, self.world.walls.indoors(t.x16 >> 4, t.y16 >> 4)); }
-                println!("goals of object {id} tick {} to object {so} opcode {} operand {:02x?}: {goals:?} (me {from:?} room {}, indoors {}, goal rooms {:?})", self.tick, n.opcode, n.operand, self.world.walls.room(from.0 >> 4, from.1 >> 4), self.world.walls.indoors(from.0 >> 4, from.1 >> 4), goals.iter().map(|g| (self.world.walls.room(g.0 >> 4, g.1 >> 4), self.world.walls.indoors(g.0 >> 4, g.1 >> 4))).collect::<Vec<_>>());
-            }
-            let mut best: Option<(Vec<crate::routing::Tile>, (i32, i32))> = None;
-            for g in goals {
-                if g.0 < 0 || g.1 < 0 {
-                    continue;
-                }
-                let route = if tile(g) == tile(from) { vec![tile(g)] } else { self.world.walls.route(tile(from), tile(g), None) };
-                if !route.is_empty() && best.as_ref().is_none_or(|b| route.len() < b.0.len()) {
-                    best = Some((route, g));
-                }
+        if let Some(w) = self.tally.as_ref().and_then(|t| t.walks.get(&id)) {
+            if !w.released() {
+                return PrimResult::Yield;
             }
             let t = self.tally.as_mut().expect("alone");
-            let Some((route, goal)) = best else {
-                t.no_way += 1;
-                if super::study::has("REPLAY_ALONE_SHOW_NO_WAY") {
-                    println!("no way: tick {} object {id} at {from:?} (tile {:?}) to object {so} opcode {}", self.tick, tile(from), n.opcode);
-                }
-                return PrimResult::False;
-            };
-            t.planned += 1;
-            let mut path: Vec<(f32, f32)> = route.iter().skip(1).map(|&(x, y)| (x as f32 * 16.0 + 8.0, y as f32 * 16.0 + 8.0)).collect();
-            path.push((goal.0 as f32, goal.1 as f32));
-            t.walks.insert(id, Walk { path, to: 0, at: (from.0 as f32, from.1 as f32), face: target });
-        }
-        let t = self.tally.as_mut().expect("alone");
-        let w = t.walks.get_mut(&id).expect("planned");
-        let mut left = STEP_PER_TICK;
-        let mut dir = None;
-        while left > 0.0 && w.to < w.path.len() {
-            let goal = w.path[w.to];
-            let (dx, dy) = (goal.0 - w.at.0, goal.1 - w.at.1);
-            let dist = f32::hypot(dx, dy);
-            if dist <= left {
-                w.at = goal;
-                left -= dist;
-                w.to += 1;
-            } else {
-                w.at = (w.at.0 + dx / dist * left, w.at.1 + dy / dist * left);
-                left = 0.0;
+            if let Some(w) = t.walks.remove(&id) {
+                t.speeds.insert(id, w.speed());
             }
-            if dist > 0.0 {
-                dir = Some(direction_of(dx, dy));
-            }
-        }
-        let (x, y, arrived, face) = (w.at.0.round() as i32, w.at.1.round() as i32, w.to >= w.path.len(), w.face);
-        if arrived {
-            t.walks.remove(&id);
             t.arrived += 1;
+            return PrimResult::True;
         }
-        let dir = if arrived { face.filter(|f| *f != (x, y)).map(|f| direction_of((f.0 - x) as f32, (f.1 - y) as f32)).or(dir) } else { dir };
-        let o = self.world.get_mut(me);
-        o.x16 = x;
-        o.y16 = y;
-        if let (Some(d), Some(v)) = (dir, o.data.get_mut(crate::world::DATA_FACING)) {
-            *v = d;
+        let so = interp.top().stack_object;
+        let o = self.world.get(me);
+        if !o.on_lot() {
+            return PrimResult::False;
         }
-        if arrived { PrimResult::True } else { PrimResult::Yield }
+        let (from, my_facing) = ((o.x16, o.y16), o.facing());
+        let Some(t) = self.world.find_object(so) else { return PrimResult::True };
+        let (at, facing, target_is_door, target_id, leader) = ((t.x16, t.y16), t.facing(), t.door, t.id(), t.leader);
+        let tile = |p: (i32, i32)| (p.0 >> 4, p.1 >> 4);
+        let busy: std::collections::HashSet<(i32, i32)> = self.world.objects().filter(|x| !x.person && x.id() != target_id && (leader == 0 || x.leader != leader) && x.on_lot() && x.level == 1).map(|x| tile((x.x16, x.y16))).collect();
+        let occupied = |p: (i32, i32)| busy.contains(&tile(p));
+        let obstacles = super::super::route_map::obstacles(&self.world, id, Some(target_id), &[], &|o| (o.x16, o.y16));
+        let rw = RequestWorld { walls: &self.world.walls, at, occupied: &occupied, obstacles: &obstacles };
+        // the request: its goals, and what the plan adds after the goal (the request's kind and flags)
+        let (goals, kind, flags): (Vec<Goal>, i32, i32) = if n.opcode == 45 {
+            let slot = t.file.and_then(|file| lib.routing_slot(file, self.world.definition(t), n.operand16(1), n.operand16(0), &interp.top().params)).copied();
+            let Some(slot) = slot else { return PrimResult::True };
+            // (a slot that names no direction, the club's dance floor: its object's own place, a stand-in)
+            let crossing = if target_is_door { self.tally.as_mut().and_then(|t| t.crossing.remove(&id)) } else { None };
+            let goals = if let Some((dx, dy)) = crossing {
+                // a portal's crossing step: a tile on, the way the route goes
+                vec![Goal { place: (from.0 + 16 * dx, from.1 + 16 * dy), score: 135, bit: 0 }]
+            } else if slot.flags & 0xFF == 0 {
+                vec![Goal { place: at, score: 135, bit: 0 }]
+            } else {
+                slot_request(&slot, facing, false, &rw, &mut self.world.rng)
+            };
+            (goals, slot.facing, slot.flags)
+        } else {
+            let direction = n.operand[2] as i8;
+            (relative_request(direction, facing, &rw), n.operand[3] as i8 as i32, if (0..8).contains(&direction) { 1 << direction } else { 0 })
+        };
+        let places: Vec<(i32, i32)> = goals.iter().map(|g| g.place).collect();
+        if super::study::has("REPLAY_ALONE_SHOW_NO_WAY") {
+            println!("goals of object {id} tick {}: {places:?} (me {from:?} room {}, object {target_id} at {at:?} room {})", self.tick, self.world.walls.room(from.0 >> 4, from.1 >> 4), self.world.walls.room(at.0 >> 4, at.1 >> 4));
+        }
+        let (rects, growth) = super::super::route_map::search_for(&self.world, id, Some(target_id), from, &places, &|o| (o.x16, o.y16));
+        // the goal the planner takes (its backward search of several), the way to it, its points
+        let ways = (|| {
+            let goals3: Vec<(i32, i32, i32)> = goals.iter().map(|g| (g.place.1, g.place.0, g.score)).collect();
+            let pick = if goals3.len() == 1 { 0 } else { choose_goal(&rects, growth, (from.1, from.0), &goals3)? };
+            let &(gy, gx, _) = goals3.get(pick)?;
+            let way = coarse_way(&rects, growth, (from.1, from.0), (gy, gx))?;
+            Some(((gx, gy), refine(&way).iter().map(|&(y, x)| (x, y)).collect::<Vec<(i32, i32)>>()))
+        })();
+        let Some((goal, mut points)) = ways else {
+            let t = self.tally.as_mut().expect("alone");
+            t.no_way += 1;
+            if super::study::has("REPLAY_ALONE_SHOW_NO_WAY") {
+                println!("no way: tick {} object {id} at {from:?} (tile {:?}) to object {target_id} opcode {}", self.tick, tile(from), n.opcode);
+            }
+            return PrimResult::False;
+        };
+        let walked = points.len();
+        if super::study::has("REPLAY_ALONE_SHOW_WALKS") {
+            println!("walk: tick {} object {id} op {} to object {target_id} at {at:?}: from {from:?} goal {goal:?} of {} goals, points {points:?}", self.tick, n.opcode, goals.len());
+        }
+        points.extend(point_after_goal(kind, flags, at, Some(facing as i32), my_facing as i32, &points));
+        // A route that changes room at a door pushes the door's portal function (not the portal's
+        // own walk to the door), a route to a seat the seat's sit function, and stays at its node
+        if !target_is_door
+            && let Some(door) = self.world.portal_on_route(&points)
+            && let Some(tree) = self.world.function_tree(door, crate::world::PORTAL_FUNCTION)
+        {
+            let (did, dfile) = (self.world.get(door).id(), self.world.get(door).file);
+            // The way the route crosses (the tiles of its first change of room): the portal's own
+            // crossing step (below) goes that way. The original's portal chooses its slot by a side
+            // test (its 8221, on the door's attribute 1) the engine sets; its rule is not read, and
+            // the slots of a door two tiles wide lie along it, so the way is taken from the route.
+            let w = &self.world.walls;
+            let step = points.windows(2).map(|p| ((p[0].0 >> 4, p[0].1 >> 4), (p[1].0 >> 4, p[1].1 >> 4))).find(|&(a, b)| {
+                let (r0, r1) = (w.room(a.0, a.1), w.room(b.0, b.1));
+                r0 != r1 && r0 != 0 && r1 != 0
+            });
+            if let Some((a, b)) = step {
+                self.tally.as_mut().expect("alone").crossing.insert(id, ((b.0 - a.0).signum(), (b.1 - a.1).signum()));
+            }
+            if interp.push(lib, tree, &[]) {
+                interp.top().stack_object = did;
+                interp.top().file = dfile;
+                return PrimResult::Continue;
+            }
+        }
+        if n.opcode == 45
+            && let Some(chair) = self.world.seat_at_routing_slot(n, &interp.top().params, so, &points)
+            && let Some(tree) = self.world.function_tree(chair, crate::world::SIT_FUNCTION)
+        {
+            let (cid, cfile) = (self.world.get(chair).id(), self.world.get(chair).file);
+            let params: Vec<i16> = interp.defaults().iter().take(4).copied().collect();
+            if interp.push(lib, tree, &params) {
+                interp.top().stack_object = cid;
+                interp.top().file = cfile;
+                return PrimResult::Continue;
+            }
+        }
+        // the walker: its line the way to the goal, then a turn to face the point past it
+        let walls = &self.world.walls;
+        let through = points[..walked].windows(2).filter(|p| !walls.line_open(p[0], p[1])).count();
+        let outside = walls.room(goal.0 >> 4, goal.1 >> 4) != walls.room(at.0 >> 4, at.1 >> 4);
+        let age = o_age(self.world.get(me), lib);
+        let t = self.tally.as_mut().expect("alone");
+        t.planned += 1;
+        t.outside_room += usize::from(outside);
+        t.through_wall += through as u32;
+        let to_f = |p: &(i32, i32)| (p.0 as f32, p.1 as f32);
+        let speed = t.speeds.get(&id).copied().unwrap_or(0.0);
+        let walker = Walker::new(points[..walked].iter().map(to_f).collect(), points.get(walked).map(to_f), speed, my_facing, crate::routing::walk_top(age));
+        t.walks.insert(id, walker);
+        PrimResult::Yield
     }
+
+    /// `n` frames of every walker (`Walker::frame`), each Sim then at the place and direction its
+    /// walker gives it (the route follower's frame, `docs/simulation.md`, "The walker's step").
+    pub(super) fn walker_frames(&mut self, n: u32) {
+        let Some(t) = self.tally.as_mut() else { return };
+        for (&id, w) in t.walks.iter_mut() {
+            for _ in 0..n {
+                w.frame();
+            }
+            if let Some(k) = self.world.find(id) {
+                let o = self.world.get_mut(k);
+                o.x16 = w.at.0.round() as i32;
+                o.y16 = w.at.1.round() as i32;
+                if let Some(d) = o.data.get_mut(crate::world::DATA_FACING) {
+                    *d = w.direction;
+                }
+            }
+        }
+    }
+}
+
+/// A person's body age (the first of its file's body strings, STR# 200: "adult" or "child").
+fn o_age<'a>(o: &crate::world::Object, lib: &'a Library) -> Option<&'a str> {
+    o.file.and_then(|f| lib.file(f).strings.get(&200)).and_then(|t| t.first()).map(String::as_str)
 }
 
 impl Tally {
@@ -337,6 +397,8 @@ pub struct Alone<'l> {
     d: Driven<'l>,
     lib: &'l Library,
     clock: crate::routing::FrameClock,
+    /// The frames the tick in hand follows (the clock's).
+    frames: u32,
     tick: u32,
 }
 
@@ -390,7 +452,7 @@ impl<'l> Alone<'l> {
         }
         d.host.world.rng.state = seed_state(seed);
         d.host.world.run_made = true;
-        Some(Alone { d, lib, clock: crate::routing::FrameClock::default(), tick: 0 })
+        Some(Alone { d, lib, clock: crate::routing::FrameClock::default(), frames: 0, tick: 0 })
     }
 
     /// Study (REPLAY_ALONE_SHOW_TREE=OBJECT:TREE,..., or OBJECT:c for its constants, at the tick
@@ -614,8 +676,9 @@ impl<'l> Alone<'l> {
         let t = self.tick;
         d.host.tick = t;
         // the animations' frames the tick follows, by the native clock at the normal speed
+        self.frames = self.clock.frames_to_tick_at(1.0);
         if let Some(ar) = &mut d.host.anim {
-            let frames = self.clock.frames_to_tick_at(1.0);
+            let frames = self.frames;
             for _ in 0..frames {
                 ar.m.frame(|_| 1.0);
             }
@@ -629,7 +692,12 @@ impl<'l> Alone<'l> {
         }
         d.host.stopped = false;
         d.host.world.stop_pass = false;
+        // the route followers' frames: all but the last of the tick's frames before it, the last
+        // after it (the frame whose time makes the tick due runs the tick, then its followers)
+        let frames = self.frames;
+        d.host.walker_frames(frames.saturating_sub(1));
         d.sim.tick(&mut d.host);
+        d.host.walker_frames(frames.min(1));
         d.host.world.clock_pass(d.host.stopped);
         watch(&mut d.host);
         if let Some(every) = super::study::env("REPLAY_ALONE_SHOW_SIMS").map(|v| super::study::atoi(&v) as u32)
@@ -682,6 +750,8 @@ impl<'l> Alone<'l> {
             println!("sim {id} {name}: interactions started {} finished {}, walked {:.1} tiles, motives low [{}] last [{}], {at}", s.started, s.finished, s.walked, f(&s.low), f(&s.last));
         }
         println!("alone: walks planned {}, arrived {}, no way {}; Sim stacks restarted after an error {}", t.planned, t.arrived, t.no_way, t.restarted);
+        println!("alone: walks to a place outside its object's room {}", t.outside_room);
+        println!("alone: walk legs through a wall {}", t.through_wall);
         println!("alone: hash {hash:016x}");
         AloneReport { ticks: done, of, hash }
     }

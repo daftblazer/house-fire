@@ -137,6 +137,93 @@ pub fn slot_area(slot: &crate::library::Slot, x16: i32, y16: i32, facing: i16) -
     out
 }
 
+/// One goal of a planner's request: a place (sixteenths), its score (the goal's third word) and
+/// the direction bit it comes from (the low byte of the last word).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Goal {
+    pub place: (i32, i32),
+    pub score: i32,
+    pub bit: u8,
+}
+
+/// The most goals a request keeps (its +164, 48 in the home log's).
+pub const REQUEST_CAP: usize = 48;
+/// A goal's score for a relative position that names no direction (its object's own place): the
+/// cost 0x64 of the home log's `GotoRelativePosition` requests (the goals' third word).
+pub const OWN_PLACE_SCORE: i32 = 100;
+/// The distance of a relative position's goal from its object, a tile (the home log's).
+pub const RELATIVE_STEP: i32 = 16;
+
+/// What a request is built against: the walls, the object's place, the places other objects
+/// stand on, and the blocking obstacles of the plan (grown {x0, y0, x1, y1, cost}).
+pub struct RequestWorld<'a> {
+    pub walls: &'a Walls,
+    pub at: (i32, i32),
+    /// Whether another object (not a person) stands on the tile of a place.
+    pub occupied: &'a dyn Fn((i32, i32)) -> bool,
+    pub obstacles: &'a [[i32; 5]],
+}
+
+impl RequestWorld<'_> {
+    /// Whether a place is reached from the object without crossing a wall (a door's opening is
+    /// no wall): the object's room, and what a door beside it leads to. (The group meal's far
+    /// side, across a wall, is left out; the archway's far side, through its opening, is not.)
+    fn same_room(&self, p: (i32, i32)) -> bool {
+        self.walls.line_open(self.at, p)
+    }
+}
+
+/// A routing slot's request natively (`docs/simulation.md`, "The planner's request, logged"): its
+/// open places, each with its score. A slot of one proximity offers its places (`slot_places`)
+/// that lie in the object's room and that no other object stands on, in the order of the bits; one
+/// of a range its area (`slot_area`) of places in the object's room, strictly inside no blocking
+/// obstacle and on no wall's rectangle, from which the builder's pick (`slot_pick`, up to
+/// `REQUEST_CAP`, drawing from `rng`) takes the goals when there are more than the cap. A
+/// flagged slot (0x2000) scores each place with a draw (`slot_goal_score`'s range), one for every
+/// place of the area before any is closed.
+pub fn slot_request(slot: &crate::library::Slot, facing: i16, names_object: bool, w: &RequestWorld, rng: &mut crate::world::Rng) -> Vec<Goal> {
+    let low = *slot_goal_score(slot, names_object).start() as i32;
+    let score = |rng: &mut crate::world::Rng| if slot.flags & 0x2000 != 0 { low + rng.below(20) as i32 } else { low };
+    if slot.min_proximity == slot.max_proximity {
+        return slot_places(slot, w.at.0, w.at.1, facing)
+            .into_iter()
+            .filter(|&(_, p)| w.same_room(p) && !(w.occupied)(p))
+            .map(|(k, p)| Goal { place: p, score: score(rng), bit: 1 << k })
+            .collect();
+    }
+    let walls = w.walls.wall_rects(3);
+    let on_or_in = |p: (i32, i32), r: &[i32]| p.0 >= r[0] && p.0 <= r[2] && p.1 >= r[1] && p.1 <= r[3];
+    let strictly_in = |p: (i32, i32), r: &[i32]| p.0 > r[0] && p.0 < r[2] && p.1 > r[1] && p.1 < r[3];
+    let open: Vec<Goal> = slot_area(slot, w.at.0, w.at.1, facing)
+        .into_iter()
+        .map(|(k, p)| (k, p, score(rng)))
+        .filter(|&(_, p, _)| w.same_room(p) && !w.obstacles.iter().any(|r| r[4] == BLOCKS && strictly_in(p, &r[..4])) && !walls.iter().any(|r| on_or_in(p, r)))
+        .map(|(k, p, s)| Goal { place: p, score: s, bit: 1 << k })
+        .collect();
+    if open.len() <= REQUEST_CAP {
+        return open;
+    }
+    let draws: Vec<u32> = (0..REQUEST_CAP).map(|_| rng.next_u32()).collect();
+    slot_pick(open.len(), &draws, REQUEST_CAP).into_iter().map(|i| open[i]).collect()
+}
+
+/// A GotoRelativePosition's request natively, from its operand's direction byte (the third:
+/// 0 to 7 eighths of a turn from the object's front, else none) at the object's place facing
+/// `facing`: with a direction, the place a tile off that way (open as a slot's: in the object's
+/// room, no other object on it) at the slot places' score (`slot_goal_score`'s 135); with none,
+/// the object's own place at `OWN_PLACE_SCORE`. Checked on the home log's seven requests.
+pub fn relative_request(direction: i8, facing: i16, w: &RequestWorld) -> Vec<Goal> {
+    if !(0..8).contains(&direction) {
+        return vec![Goal { place: w.at, score: OWN_PLACE_SCORE, bit: 0 }];
+    }
+    let slot = crate::library::Slot { flags: 1 << direction, optimal_proximity: RELATIVE_STEP, min_proximity: RELATIVE_STEP, max_proximity: RELATIVE_STEP, ..Default::default() };
+    slot_places(&slot, w.at.0, w.at.1, facing)
+        .into_iter()
+        .filter(|&(_, p)| w.same_room(p) && !(w.occupied)(p))
+        .map(|(k, p)| Goal { place: p, score: *slot_goal_score(&slot, false).start() as i32, bit: 1 << k })
+        .collect()
+}
+
 /// An object's footprint on its tile, {x0, y0, x1, y1} in sixteenths: the tile less its
 /// definition's footprint mask (OBJD field 75), whose nibble k (the low first) is the inset of
 /// the side k quarter turns from the object's front (`front(facing + 2k)`). Measured on the home

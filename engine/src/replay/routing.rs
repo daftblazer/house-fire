@@ -171,6 +171,19 @@ pub(super) fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, c
             }
         }
     }
+    if has("REPLAY_SHOW_27") {
+        for s in log.steps.iter().filter(|s| s.result == 1) {
+            let Some(t) = log.tree_of(s) else { continue };
+            let at = s.node as usize * 12;
+            if at + 12 > t.raw.len() || !matches!(u16::from_be_bytes([t.raw[at], t.raw[at + 1]]) & 0x7FFF, 27 | 45) {
+                continue;
+            }
+            let sim = ids.get(&s.sim).copied().unwrap_or(-1);
+            let Some(pl) = log.plans.iter().find(|p| p.tick == s.tick && p.approach.is_some_and(|a| a[7] as i16 == sim)) else { continue };
+            let o = world.find_object(s.stack_object).map(|o| (o.x16, o.y16, o.facing(), o.person));
+            println!("op27 tick {} sim {sim} op {} tree {} node {} operand {:02x?} params {:?} stack object {} {o:?}; plan from {:?} approach {:?} goals {:?} chosen {} points {:?}", s.tick, u16::from_be_bytes([t.raw[at], t.raw[at + 1]]) & 0x7FFF, s.tree, s.node, &t.raw[at + 4..at + 12], s.params, s.stack_object, pl.points.first(), pl.approach, pl.goals, pl.chosen, pl.points);
+        }
+    }
     for s in &log.steps {
         let Some(raw) = raw45(s) else { continue };
         let number = u16::from_be_bytes([raw[4], raw[5]]);
@@ -632,6 +645,21 @@ pub(super) fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, c
                     }
                 }
             }
+        }
+    }
+    if has("REPLAY_SHOW_REGIONS") {
+        println!("native closed edges: {:?}", walls.wall_rects(0));
+        println!("native rooms: {}", walls.rooms());
+        for y in 10..32 {
+            println!("row {y:2}: {}", (8..30).map(|x| format!("{}{}{}", walls.room(x, y), if walls.indoors(x, y) { "i" } else { "." }, if walls.diagonal(x, y) { "d" } else { " " })).collect::<Vec<_>>().join(" "));
+        }
+        for pl in log.plans.iter().filter(|p| !p.lookup_regions[0].is_empty() || !p.regions.is_empty()) {
+            println!("   points {:?} goals {:?} coarse {:?}", pl.points, pl.goals.iter().map(|g| (g[0], g[1], g[2])).collect::<Vec<_>>(), pl.coarse);
+            println!("plan tick {} start {:?} goals {} chosen {}: D {} regions, lookup0 {} lookup1 {}", pl.tick, pl.points.first(), pl.goals.len(), pl.chosen, pl.regions.len(), pl.lookup_regions[0].len(), pl.lookup_regions[1].len());
+            for r in &pl.regions { println!("   D {r:?}"); }
+            for r in &pl.lookup_regions[1] { println!("   L1 {r:?}"); }
+            for r in &pl.obstacles { println!("   X {r:?}"); }
+            for r in &pl.lookup_regions[0] { println!("   L0 {r:?}"); }
         }
     }
     let show_obstacles = has("REPLAY_SHOW_OBSTACLES");

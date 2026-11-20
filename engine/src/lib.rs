@@ -40,6 +40,8 @@ pub mod sound_run;
 pub mod sound_front;
 pub mod skin;
 pub mod routing;
+pub mod walker;
+pub mod route_map;
 pub mod interp;
 pub mod lamps;
 pub mod lighting;
