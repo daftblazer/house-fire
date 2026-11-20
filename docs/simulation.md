@@ -2129,8 +2129,10 @@ object's own place); LookTowards 22 mode 2; the autonomy evaluation (opcode 3: t
 checks, scores, `autonomy_list`, a pick by the world's generator) and Find Best Action (30: the
 chosen action pushed); FindBestObjectForFunction 14 (`primitives::find_best_object`, the replay's
 rule without the log); Animate 44 stepped by the native frame clock through the animator, an
-animation the archive lacks answering true at once; Dialog 36: nobody answers, so the object waits
-at it for ever and the pass goes on.
+animation the archive lacks answering true at once; Dialog 36: with no player the first button
+answers at once (a dialog of one button just goes on; the second button goes the false way, for
+the window's player: `primitives::dialog`, an engine rule, every dialog of the logs has one
+button).
 
 **As a stepper.** `replay::Alone` is the same run a tick at a time (`Alone::new`, `tick`, `world`,
 `hash`, `report`; `alone()` is a loop over it, its hash unchanged) with the hooks a front end
@@ -2148,7 +2150,7 @@ again from its bottom frame (none has needed it yet). Fixed at their cause: an o
 itself in its turn (`Simulator::tick` ended its turn on a dead key); the check host's file for the
 trees a call names (`file_of_top`); a script stack of a removed object.
 
-**Figures** (master 6ad6782 plus this; home `--card`, club `--lot 15 --hood`; 54,000 ticks, each
+**Figures of the first version** (master 6ad6782 plus this; superseded by "Making the Sims live" below; home `--card`, club `--lot 15 --hood`; 54,000 ticks, each
 run 1.7 s home, 2.2 s club, the same hash on two runs):
 
 | | before (all neutral; 3,000 ticks home) | after, home | after, club |
@@ -2165,15 +2167,74 @@ each), Animate 44 (1), the stopped stacks (280's Idle on two removed objects, th
 4127:1); club: Find Best Action with no action chosen (57: the evaluation chose nothing, the reason
 not looked into), primitive 1, 16, the two stops (4104:3, 4127:1).
 
-**What is left, and why the Sims are not yet living.** The Sims do start interactions, but each
-ends up waiting for something that does not come: home's 12 is in 8223 (on object 114) at its
-281:1 wait for ever, 237 in 4177 on the trash pile 201 at 4215's Idle loop, the motives sink (237's
-to -100): the other side of those waits (an object's stack answering a notify, an animation event,
-a flag another stack sets) is not running right, so the household eats and sleeps only in the
-first minutes. Not native: the planner (the walk is a tile staircase, not the original's lines; no
-obstacles, no portal functions, no asking a Sim to move), the sit and the seat functions, the
-walker's ramp, the autonomy's visitor and "takes best" cases, TestInteractingWith 37, AlterBudget
-25 (the family's funds are not read from the save), primitives 1, 15, 16, 21 (unnamed here).
+**Making the Sims live (stage 7, P3, 2026-11-19).** The causes found, in the order they hid each
+other (the figure: per Sim, interactions started / finished over 54,000 ticks):
+
+1. *Running changes of one motive add up* (`set_motive_delta`). The toilet's 8224 sets the
+   bladder's change twice (+1000 an hour to 100, then +100 to 80); the engine kept only the
+   last, so the bladder stopped at 80 where the wait's test (8199, the first's stop) needs 100:
+   Sim 12 sat in "Wait For Notify" (281) for ever, its motives sinking. Now both apply.
+2. *Objects made in play never ran* (`Simulator::refresh` skipped an object with no saved stack
+   unless the log asked for its stack). `World::run_made` (set only by a run alone) lets an
+   object made by CreateObjectInstance run its main tree from the next pass. The social helper
+   object a conversation makes (201, `social_interactions.iff`) never ran, so Sim 237 waited at
+   4215's loop for ever.
+3. *A finished event play restarted at once* (`anim::Play::answered`): a play that ended with its
+   last event is restarted only once it has answered true, so the bed's get-in animation
+   (8201:4) ended; before, Sim 12 and Sim 237 looped in it for ever (energy at -100).
+4. *A queued entry whose check fails* is dropped and the wait ends true (`idle_for_input`; it
+   stopped the stack, which restarted and tried again 7,000 times).
+5. *RunFunctionalTree* with a function number the engine does not know (4, 5, 9), or no object,
+   takes the false way (it stopped the stack: 4,444 restarts of 237); Relationship's lookups with
+   no such object likewise.
+6. *The goal system's new form* (CompleteGoal 56, never in a log) answers false in a run alone;
+   with true the scenario object (194) opened its goal dialogs every tick.
+7. *Dialogs* (see above).
+
+The zeros in the motives figure were no motives: the table's entries 0 to 4 are unused and the
+figure printed the table's first eight values; it now prints 5 to 15 (energy, comfort, hunger,
+hygiene, bladder, 11 sleep state, 14 social, 15 fun).
+
+Home after (the figure is `alone: ... sim` lines): Sim 12 283 / 271, Sim 237 180 / 106 (before 4 / 3
+and 1 / 0); both go down and up in energy, comfort, hunger, hygiene and bladder over the run (Sim 12's
+lowest -88 energy, -53 comfort, -45 hunger; last -17, 29, -33), only social (14) sinks to -94 and -32;
+the paper girl walks and leaves.
+Hashes (two runs the same): home `f457144170551b30`, club `80c81ff575577081`.
+
+The club: its 9 Sims start one interaction each and stay in it (the dance, the bar, the
+dream-sequence scenario: 4106, 4114, 4117, 4132, 4176), Sim 178 nine. Find Best Action choosing
+nothing (73 times, tree 8233) is no fault: the visitors' motives are 100 (the club's motives do not move,
+see "The motives"), so no candidate has a value (`REPLAY_ALONE_SHOW_EVAL`: 25 pass their checks,
+0 valued). Switching the motives on at the club makes them all sink to -100 while the
+scenario holds them in their dances, so it is left off.
+
+**What is left.** Social (motive 14) is never restored: Sim 12 ends at -94, 237 at -32. The
+conversations start (4148, 4177 on the helper) but never reach Global 268/269 ("change my
+motive 14 / the stack object's"), the tree that adds the social gain; what stops them is not
+looked into (candidates: TestInteractingWith 37, 446 neutral answers in tree 410; the animations
+of the social table, 4212 and 4280 "not modelled", 460 neutral answers; TreeBreak 15 in 4148).
+Not native: GenericSimCall 1, TreeBreak 15, FindGoodLocation 16, ShowString 21, AlterBudget 25
+(the family's funds are not read from the save), TestInteractingWith 37, UserEvent 35 (each
+ranked in `--alone`'s output), the planner (the walk is a tile staircase), the sit and seat
+functions. 85 Sim stacks are restarted after an error (the ranked list names them: Relationship2 on a
+missing person in 4174, an expression in 4238, ...) and 67 Idles on objects that removed
+themselves in their turn are counted as errors. The "Sim is asleep" state (motive 11) is only
+set where the scripts do (GenericSimCall 1 is the likely other writer: the bed's 8201 node 27).
+Study switches (all `REPLAY_ALONE_*`): `SHOW_TREE=OBJECT:TREE,...` (or `OBJECT:i`, `OBJECT:c`,
+`OBJECT:mN`, `g:mN`) with `SHOW_TREE_AT=TICK` prints a tree's nodes, an object's state, its
+file's constants, the trees that write a motive; `TRACE=OBJECT,FROM,TO` prints each step of an
+object in the ticks; `SHOW_SIMS=N` prints each Sim's stack, queue, motives and running changes
+every N ticks; `SHOW_STARTS=1` prints each interaction started.
+
+**The picture.** `Alone::motions` gives each Sim on the lot what it shows: `Motion::Playing`
+(its animator's play: animation, frames along it, backward; held at its last pose while its
+interaction goes on), `Walking` (seconds into the walk cycle: the stand-in's walk steps the
+cycle's own frames by the frame clock) or `Idle`. `sims::plays_of` (the render package) turns
+that into the triple `figures_of` takes: a walker plays a2o-walking-loop, a2o-walking-female-loop
+or c2o-walking-loop by its description, an idle Sim the standing loop (held at its first frame),
+the others their own animation. In a run alone the animator's key for a Sim is its id on the
+high bit (`alone_sim`), not the log's address.
+
 Checks to add to `docs/checks.txt` (the figures only go up in the sense of fewer errors): the
 `alone:` line and `alone: hash` twice on home and club, and `cargo test` (`engine/tests/alone.rs`,
 HOUSEFIRE_BUSTIN_ISO, HOUSEFIRE_HOME_LOG, HOUSEFIRE_CARD).

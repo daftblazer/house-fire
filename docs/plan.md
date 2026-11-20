@@ -210,8 +210,9 @@ pass the menu's checks (`Alone::menu`: the table's first tree, each guard in tab
 menu" as a no, and "get social eligibility" for a person), named by the object's TTAs; choosing
 one queues it (`World::queue_player_command`) and prints `play: tick T sim S target O action A
 (name)`. A Dialog (36) of the run opens a box with its text and buttons (STR# 301 of its object)
-and the run waits for the answer; every button answers the primitive's true way (`dialog` takes no
-other).
+and the run waits for the answer; the first button answers the primitive's true way and the second
+its false way (an engine rule: the logs' dialogs have one button; with no player a run alone takes
+the first at once). The HUD names a Sim by the save's made Sim of its neighbour record.
 
 **The HUD, the pie menu (a list) and the dialog box are stand-ins** (`standin.rs`, drawn by the CPU
 into `overlay.rs`'s picture with the public-domain `font8x8`, laid over the frame by
@@ -223,8 +224,10 @@ HF_HOME_LOG, HF_HOME_CARD).
 Deliberate differences of the played run, for lockstep to skip: the checks run on a target the
 player's click made (the go-here marker) start with parameter 0 = 0 (every other check's is 1: the
 marker's "Go here test" 4109 is false for 1, and the original delivers the player's go-here);
-Sims draw with no animation play (the animator's plays are not read from the alone run yet, so
-they stand in their rest pose); the camera is the player's, not the log's.
+the Sims' walk plays the walk cycle at the stand-in's constant speed (no ramp, no turns in
+place) and an idle Sim its standing loop (`Alone::motions`); the camera is the player's, not the
+log's. What the Sims do of themselves in a run alone is "The run alone" in `simulation.md`
+(social is the one need still not met).
 
 ## What does not come over from Bustin' Out's port
 

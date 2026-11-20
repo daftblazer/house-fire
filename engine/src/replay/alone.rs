@@ -659,6 +659,7 @@ impl<'l> Alone<'l> {
         for (n, k) in kinds.iter().take(40) {
             println!("  {n:>8}  {k}");
         }
+        println!("alone: motives shown are the table's 5 to 15 (5 energy, 6 comfort, 7 hunger, 8 hygiene, 9 bladder, 11 sleep state, 14 social, 15 fun; 0 to 4 are no motives)");
         for (id, s) in &t.sims {
             let name = d.host.world.find_object(*id).and_then(|o| o.person_data.get(crate::world::PERSON_NEIGHBOUR_ID).copied()).and_then(|n| d.host.world.neighbours.iter().find(|x| x.id == n)).map_or(String::new(), |n| n.name.clone());
             let f = |v: &[f32]| v.iter().skip(5).take(11).map(|m| format!("{m:.0}")).collect::<Vec<_>>().join(" ");
