@@ -151,6 +151,8 @@ pub struct Player {
     pub(super) rng: u32,
     /// Prints each action run (`APT_TRACE`).
     pub trace: bool,
+    /// Game frames added to the frame stamped on a command being sent.
+    send_lag: u32,
     /// Prints each member and local variable a script sets (`APT_TRACE=2`).
     pub(super) trace_sets: bool,
 }
@@ -179,6 +181,7 @@ impl Player {
             depth: 0,
             steps: 0,
             rng: 1,
+            send_lag: 0,
             trace: std::env::var_os("APT_TRACE").is_some(),
             trace_sets: std::env::var("APT_TRACE").is_ok_and(|v| v == "2"),
         };
@@ -616,7 +619,11 @@ impl Player {
             if self.clips[target].alive
                 && let Some(flash) = self.flashes.get(&name).cloned()
             {
+                // what an `f_` movie says as it starts reaches the game two frames later
+                self.send_lag = if name.starts_with("f_") { 2 } else { 0 };
                 self.fill(target, flash, &name);
+                self.run_queue();
+                self.send_lag = 0;
             }
         }
         self.run_queue();
@@ -630,7 +637,7 @@ impl Player {
             return;
         }
         let argument = v.to_text().to_string();
-        self.commands.push(Command { frame: self.frame, name: name.to_string(), argument });
+        self.commands.push(Command { frame: self.frame + self.send_lag, name: name.to_string(), argument });
     }
 
     pub fn take_commands(&mut self) -> Vec<Command> {

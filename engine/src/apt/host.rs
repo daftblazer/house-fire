@@ -69,7 +69,7 @@ impl Host {
         for (i, c) in log.movie_commands.iter().enumerate() {
             let Some((base, v)) = [c.command.strip_suffix("_x"), c.command.strip_suffix("_y")].into_iter().flatten().next().zip(c.argument.parse::<f64>().ok()) else { continue };
             // a button taken off the screen reports -512 pixels: that is no place it was given
-            if v == -512.0 / 640.0 || v == -512.0 / 448.0 {
+            if (v * 640.0 + 512.0).abs() < 0.01 || (v * 448.0 + 512.0).abs() < 0.01 {
                 continue;
             }
             // only the last command of this name in the frame has the value
