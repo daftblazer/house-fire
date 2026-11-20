@@ -73,6 +73,13 @@ impl<'l> Replay<'l> {
     /// Loads the lot and gets the run ready to step (`step`); `None` when the log does not start
     /// with the lot loaded.
     pub fn new(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l LotChunks>), globals: &[i16], neighbours: &[Neighbour], bench: Option<Bench>, with: RunWith) -> Option<Replay<'l>> {
+        Self::start(log, lib, lot, globals, neighbours, bench, with, false)
+    }
+
+    /// `new`, or (`resume`) for a lot that is a save of a run: its objects are not the log's first
+    /// list (a run alone resumed from a save takes nothing else from the log).
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn start(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l LotChunks>), globals: &[i16], neighbours: &[Neighbour], bench: Option<Bench>, with: RunWith, resume: bool) -> Option<Replay<'l>> {
         let RunWith { card_lot, goals, neighbourhood, cat } = with;
         let (club, house) = lot;
         let mut world = World::new(lib);
@@ -345,7 +352,7 @@ impl<'l> Replay<'l> {
                 }
             }
         }
-        if log.lists.first().is_none_or(|l| l.ids.len() != world.len()) {
+        if !resume && log.lists.first().is_none_or(|l| l.ids.len() != world.len()) {
             println!(
                 "the log does not start with the lot loaded ({} objects in its first list, {} in the lot)",
                 log.lists.first().map_or(0, |l| l.ids.len()),

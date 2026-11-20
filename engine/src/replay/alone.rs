@@ -410,6 +410,9 @@ fn world_hash(d: &mut Driven) -> u64 {
     let keys: Vec<ObjectKey> = d.host.world.objects().filter_map(|o| d.host.world.find(o.id())).collect();
     for k in keys {
         let o = d.host.world.get(k);
+        if super::study::has("REPLAY_ALONE_HASH_OBJECTS") {
+            h.0 = 0xcbf29ce484222325; // (each object's own)
+        }
         h.put(o.id() as i64);
         h.put(o.x16 as i64);
         h.put(o.y16 as i64);
@@ -430,9 +433,16 @@ fn world_hash(d: &mut Driven) -> u64 {
             h.all(&l);
             h.put(so as i64);
         }
+        if super::study::has("REPLAY_ALONE_HASH_OBJECTS") {
+            // study: the hash so far after each object, to see which differ between two runs
+            println!("hash after object {}: {:016x}", o.id(), h.0);
+        }
     }
     h.all(&d.host.world.globals);
-    h.put(d.host.world.rng.state as i64);
+    // (study REPLAY_ALONE_HASH_NO_RNG: the generator's state left out, for a run resumed from a save)
+    if !super::study::has("REPLAY_ALONE_HASH_NO_RNG") {
+        h.put(d.host.world.rng.state as i64);
+    }
     h.0
 }
 
@@ -521,7 +531,20 @@ impl<'l> Alone<'l> {
     /// The start: `drive::setup`'s, then the engine's own (the autonomy level of the household's
     /// Sims, the random generator seeded by `seed`). None if the log does not start with the lot.
     pub fn new(log: &crate::tree_log::Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l LotChunks>), globals: &[i16], neighbours: &[Neighbour], with: RunWith, seed: u64) -> Option<Alone<'l>> {
-        let mut d = setup(log, lib, lot, globals, neighbours, with, Some(Tally::default()))?;
+        Self::begin(log, lib, lot, globals, neighbours, with, seed, false)
+    }
+
+    /// The run from a save of a world (`save`, a card written from a run): the lot as saved, with
+    /// no load pass (the log is read only for what the run alone takes from it at the start).
+    /// What the save does not hold starts as at a load: the stacks' sleeps, the walks, the
+    /// generator (seeded by `seed`).
+    pub fn resume(log: &crate::tree_log::Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l LotChunks>), globals: &[i16], neighbours: &[Neighbour], with: RunWith, seed: u64) -> Option<Alone<'l>> {
+        Self::begin(log, lib, lot, globals, neighbours, with, seed, true)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn begin(log: &crate::tree_log::Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l LotChunks>), globals: &[i16], neighbours: &[Neighbour], with: RunWith, seed: u64, resume: bool) -> Option<Alone<'l>> {
+        let mut d = setup(log, lib, lot, globals, neighbours, with, Some(Tally::default()), resume)?;
         // (a panic in a stack's turn is counted, not printed, unless studied)
         if !super::study::has("REPLAY_ALONE_SHOW_ERRORS") {
             std::panic::set_hook(Box::new(|_| {}));
@@ -544,6 +567,10 @@ impl<'l> Alone<'l> {
             }
         }
         d.host.world.rng.state = seed_state(seed);
+        // study REPLAY_ALONE_RNG=STATE (decimal, as `--save-at` prints it): a resumed run with the generator of the run it was saved from
+        if resume && let Some(v) = super::study::env("REPLAY_ALONE_RNG").and_then(|v| v.parse().ok()) {
+            d.host.world.rng.state = v;
+        }
         d.host.world.run_made = true;
         Some(Alone { d, lib, clock: crate::routing::FrameClock::default(), frames: 0, tick: 0 })
     }
@@ -817,6 +844,11 @@ impl<'l> Alone<'l> {
                 println!("tick {t} sim {id}: {} {}{} queue {queue} motives {motives} deltas {:?} m9 {} top {top:?}", frames.join(" "), if i.asleep() { "asleep " } else { "" }, if i.done() { "DONE" } else { "" }, d.host.world.get(k).motive_deltas, d.host.world.get(k).motives[9]);
             }
         }
+    }
+
+    /// The generator's state (what a resumed run of this world needs for the same run: the save does not hold it).
+    pub fn rng_state(&self) -> u64 {
+        self.d.host.world.rng.state
     }
 
     /// The world as it stands, saved on `card` (a memory card's bytes) as lot `lot` of its file

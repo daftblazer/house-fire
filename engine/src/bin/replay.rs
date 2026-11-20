@@ -3,6 +3,9 @@
 //!
 //! Usage: replay LOG ISO [--card CARD] [--lot N] [--bench] [--free] [--drive] [--alone [TICKS]] [--seed N] [--hood CARD] [--save-at TICK OUT.raw]
 //!
+//! --resume: with --alone, the card's lot is a save of a run (--save-at's): the run goes on from it
+//! with no load pass.
+//!
 //! --save-at: at that tick (of the run alone with --alone, else of the log-driven run) the world is
 //! saved on a copy of --card (`save_world`), written to OUT.raw, and read back: the figure printed
 //! is how many fields the loaded world differs in (0: the save holds the world).
@@ -41,7 +44,7 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 3 {
-        println!("usage: replay LOG ISO [--card CARD] [--lot N] [--bench] [--free] [--drive] [--alone [TICKS]] [--seed N] [--hood CARD] [--save-at TICK OUT.raw]");
+        println!("usage: replay LOG ISO [--card CARD] [--lot N] [--bench] [--free] [--drive] [--alone [TICKS]] [--seed N] [--hood CARD] [--save-at TICK OUT.raw] [--resume]");
         return ExitCode::from(2);
     }
     let Some(log) = read_log(&args[1]) else {
@@ -62,6 +65,7 @@ fn main() -> ExitCode {
     let mut hood_path: Option<String> = None;
     let mut lot_index: i64 = -1;
     let mut save_at: Option<(u32, String)> = None;
+    let mut resume = false;
     let mut i = 3;
     while i < args.len() {
         match args[i].as_str() {
@@ -71,6 +75,7 @@ fn main() -> ExitCode {
                 card_path = Some(args[i].clone());
             }
             "--free" => free = true,
+            "--resume" => resume = true,
             "--drive" => driven = true,
             "--alone" => {
                 alone_ticks = Some(54_000);
@@ -152,20 +157,23 @@ fn main() -> ExitCode {
     }
     if let Some(ticks) = alone_ticks {
         let with = RunWith { card_lot, goals: start.goals.clone(), neighbourhood: start.neighbourhood.clone(), cat: (!log.tracks.is_empty()).then(|| housefire::anim::Catalog::read(&d, house_number)) };
-        if let Some((at, out)) = &save_at {
-            let Some(card) = card_path.as_deref().and_then(|p| std::fs::read(p).ok()) else {
+        if save_at.is_some() || resume {
+            let card = card_path.as_deref().and_then(|p| std::fs::read(p).ok());
+            if save_at.is_some() && card.is_none() {
                 println!("--save-at needs --card");
                 return ExitCode::from(2);
-            };
-            let Some(mut a) = Alone::new(&log, &lib, (the_lot, house), the_globals, neighbours, with, seed) else { return ExitCode::from(1) };
-            for t in 0..ticks.max(*at) {
-                if t == *at {
-                    save_and_check(&card, start.index, card_lot, out, &mut a);
-                }
-                a.tick();
             }
-            if *at >= ticks {
-                save_and_check(&card, start.index, card_lot, out, &mut a);
+            let lot = (the_lot, house);
+            let Some(mut a) = (if resume { Alone::resume(&log, &lib, lot, the_globals, neighbours, with, seed) } else { Alone::new(&log, &lib, lot, the_globals, neighbours, with, seed) }) else { return ExitCode::from(1) };
+            for t in 0..=ticks {
+                if let (Some((at, out)), Some(card)) = (&save_at, &card)
+                    && t == *at
+                {
+                    save_and_check(card, start.index, card_lot, out, &mut a);
+                }
+                if t < ticks {
+                    a.tick();
+                }
             }
             a.report(ticks);
             return ExitCode::SUCCESS;
@@ -260,9 +268,16 @@ fn main() -> ExitCode {
 trait Saves {
     fn save(&mut self, card: &[u8], lot: usize) -> Result<Vec<u8>, FormatError>;
     fn reload(&mut self, saved: &[u8], lot: usize, card_lot: bool) -> Result<Vec<String>, FormatError>;
+    /// The generator's state (not in the save), if the run keeps it where it is asked.
+    fn rng_state(&self) -> Option<u64> {
+        None
+    }
 }
 
 impl Saves for Alone<'_> {
+    fn rng_state(&self) -> Option<u64> {
+        Some(Alone::rng_state(self))
+    }
     fn save(&mut self, card: &[u8], lot: usize) -> Result<Vec<u8>, FormatError> {
         Alone::save(self, card, lot)
     }
@@ -297,6 +312,9 @@ fn save_and_check(card: &[u8], lot: usize, card_lot: bool, out: &str, run: &mut 
     match run.reload(&saved, lot, card_lot) {
         Ok(d) => {
             println!("save: written to {out}; the loaded world differs in {} fields", d.len());
+            if let Some(r) = run.rng_state() {
+                println!("save: the generator's state (not in the save; REPLAY_ALONE_RNG for a resumed run) {r}");
+            }
             for line in d.iter().take(20) {
                 println!("  {line}");
             }

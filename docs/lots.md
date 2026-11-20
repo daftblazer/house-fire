@@ -323,6 +323,67 @@ The figures (`tests/save_write.rs`, with the five cards and the disc): all 35 se
 lots' ObjM on their own, all 35 blocks repacked to the same bytes, all 35 CRCs verifying, every
 file assembled byte for byte and each card put back unchanged.
 
+### Saving the world (`save_world.rs`, packet S2)
+
+`save_card(world, card, lot, stacks)` writes the engine's World into a copy of a card: the
+card's file as the template, the world's lot (block `lot` of section 3: ObjM and objt), its
+SIMI (section 0) and the NGBH words and goal marks and the neighbours (section 1) rewritten from
+the engine's state; the other lots, thumbnails and chunks stay as read. `CardLot::read` /
+`CardLot::load` read a card's lot into a world as `replay` does without the log's load pass;
+`reload_differences` counts the fields a world differs in from the one its card loads as
+(`replay ... --save-at TICK OUT.raw` prints it; `--resume` with `--alone` runs on from such a
+card with no load pass).
+
+- **Kept as loaded** (`Object::loaded`, a `LotObject` with the lists the engine models emptied):
+  the table entry's two serials and counted values, the section header's other words, the pairs,
+  shorts, the words before the stack, after the pairs and the loader's int, a stack's capacity, a
+  part's six values and a door's floats, a Sim's +1136 member and +1180 list, the relationships'
+  form. Each frame's `file` index and +8 word are kept for a frame the run left as it was.
+- **The header** (six place words, then 1, 1): the object's place and the box round it; the box
+  moves with the object (a translation of the loaded words).
+- **The +8 words of the frames**: word k says frame k + 1 was started by the engine (the load
+  moves each up a frame); the top frame's word means nothing and is kept.
+- **The file index of a frame** (`SavedFrame::file`) is an objt type number (not an index of
+  files): 474 of the home card's 475 frames name the object's own type, the 475th the type of
+  the object whose file the tree is in. The load now resolves a frame left without a tree by it
+  (`World::load_lot`: the club's Sim 176 above a Sim-to-Sim interaction in the dream sequence's
+  file); the replay and alone figures do not change. A frame the run pushed takes the object's
+  type if the tree is in its file, else the first object of the list with that file: the club's
+  frames in the dance floors' and the bar's files name another type of the file, by a rule not
+  found (the index is only the file: the load reads it back right).
+- **Neighbours**: the load copies a house-less family's neighbour motives into its Sims
+  (`take_neighbour_motives`), so the save copies the Sims' back (all but motive 11, which the
+  load zeroes). The figures compare motive 11, person data 32 (household 0, a visitor's 0 to 1)
+  after the load's rule.
+- **A new object** (made during play; `new_object`): its type is its GUID's in objt (a new one
+  numbered after the last if the lot has none, its other fields the last type's; a Sim with no
+  definition takes its neighbour's GUID); the unnamed values are those of a loaded object of the
+  same type (else of the lot's first Sim, else zeros, capacity 512, loader's int 65536); the
+  serials follow the lot's highest (`a`, `b = a + 1`, the word after the pairs `a`, as the home
+  card's objects have them). Not known: what the original gives; nothing records a lot saved
+  after play.
+
+Figures (`tests/save_world.rs` with the five cards; `tests/alone.rs`; `replay --save-at`): a loaded
+lot written back has the input's ObjM and objt byte for byte (all 32 lots of the home and club
+cards; five cards in the checks), but the Sims whose motives the load took from their neighbours;
+the world loaded from the written card is the world written: 0 differences at the load of every
+lot. After play, run alone: 0 differences at ticks 0, 1000 and 5000 of the home and of the club
+(club-live card, `--lot 15`). Log-driven: home 0 at ticks 0, 100, 2000; club 1 (person data 65 of
+Sim 57, the log's 1 where the description says 0) at 100, 2000 and 4000.
+
+The run alone's lot written at tick 0 is not the input's: the load pass has run. Home (206
+objects): 184 headers (the tick-0 placement to the tile's centre), attributes of 12 objects,
+temps of 2, person data of 3 Sims, motives of 1, data of 3 (what the load's calls set). Club
+(card, lot 15; 178): 155 headers, 177 stacks (a community lot's stacks restart at their bottom
+frame), 8 queues, motives of 1 Sim.
+
+What a card does not hold, so that a run resumed from it differs from the uninterrupted one: the
+generator's state (`REPLAY_ALONE_RNG` hands it over), the sleeps of the stacks asleep at an Idle
+(at tick 1000 of the home 45 of 207 objects differ after one tick: the saved stack's first Idle
+step wakes), the walks going on, the turn counts and the animation clocks. With the generator
+handed over the home run resumed at 1000 still differs after one tick (the sleeps), so the
+54,000 hash is not the uninterrupted run's.
+
 ## The arrays
 
 Each lot has three Arry chunks: 0, a width and a height (64 and 64 on the disc), an element

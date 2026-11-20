@@ -7,7 +7,7 @@ use housefire::disc::Disc;
 use housefire::library::Library;
 use housefire::save::{LotObject, memory_card_file, read_lots};
 use housefire::world::World;
-use housefire::save_world::{GAME, differences, load_world, read_card_lot, save_card};
+use housefire::save_world::{CardLot, GAME, differences, save_card};
 
 fn cards() -> Vec<String> {
     let mut v: Vec<String> = Vec::new();
@@ -35,21 +35,28 @@ fn a_loaded_world_is_saved_and_loaded_the_same() {
         let file = memory_card_file(&card, GAME).unwrap();
         let n = read_lots(&file).unwrap().len();
         for lot in 0..n {
-            let (chunks, globals, neighbours, goals, hood) = read_card_lot(&card, lot).unwrap();
-            let Ok(world) = load_world(&lib, &chunks, &globals, &neighbours, goals.clone(), hood.clone(), true) else { continue };
+            let input = CardLot::read(&card, lot).unwrap();
+            let (chunks, neighbours) = (&input.chunks, &input.neighbours);
+            let Ok(world) = input.load(&lib, true) else { continue };
             let mut stacks = |k| world.get(k).stack.clone();
             let out = save_card(&world, &card, lot, &mut stacks).expect("the save");
             let file2 = memory_card_file(&out, GAME).unwrap();
             let lots2 = read_lots(&file2).unwrap();
             for tag in ["ObjM", "objt"] {
                 if chunks.find(tag) != lots2[lot].find(tag) && tag == "ObjM" {
-                    let (a, b) = (World::new(&lib).read_objects(&chunks).unwrap(), World::new(&lib).read_objects(&lots2[lot]).unwrap());
+                    let (a, b) = (World::new(&lib).read_objects(chunks).unwrap(), World::new(&lib).read_objects(&lots2[lot]).unwrap());
                     // (a house-less family's Sims take their motives from their neighbours at the load)
                     let taken: Vec<i16> = neighbours.iter().filter(|n| n.house == Some(0)).map(|n| n.id).collect();
                     let strip = |mut o: LotObject| {
                         (o.section, o.section_end, o.base_end) = (0, 0, 0);
                         if o.person_data.get(31).is_some_and(|n| taken.contains(n)) {
                             (o.motives, o.motives_b) = (Vec::new(), Vec::new());
+                        }
+                        // (the load marks the visitors, person data 32, and sets the sex, 65, from the description)
+                        for i in [32, 65] {
+                            if let Some(v) = o.person_data.get_mut(i) {
+                                *v = 0;
+                            }
                         }
                         format!("{o:?}")
                     };
@@ -66,8 +73,7 @@ fn a_loaded_world_is_saved_and_loaded_the_same() {
                 }
                 assert!(chunks.find(tag) == lots2[lot].find(tag), "{p} lot {lot}: {tag} differs");
             }
-            let (c2, g2, n2, goals2, hood2) = read_card_lot(&out, lot).unwrap();
-            let world2 = load_world(&lib, &c2, &g2, &n2, goals2, hood2, true).unwrap();
+            let world2 = CardLot::read(&out, lot).unwrap().load(&lib, true).unwrap();
             let mut s2 = |k| world2.get(k).stack.clone();
             let diff = differences(&world, &world2, &mut stacks, &mut s2);
             assert!(diff.is_empty(), "{p} lot {lot}: {:?}", &diff[..diff.len().min(10)]);

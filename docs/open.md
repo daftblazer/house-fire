@@ -313,3 +313,19 @@ The walk is the planner's and the walker's now (simulation.md, "The planner's re
   in tree 281 node 4" 1,918 times: Wait For Notify's IdleForInput finds no parameter slot
   (`idle_for_input_waiting`). Not the walk's: the stand-in's binary has it too (seed 2: 7,701).
   The cause (a caller that passes no parameter to 281, from 8282's social wait) is unread.
+
+### Saves: what a written card lacks (packet S2, 2026-11-20)
+
+`save_world.rs` (docs/lots.md, "Saving the world") writes the world; open:
+
+- A resumed run (`replay --alone --resume` on a `--save-at` card) is not the uninterrupted one:
+  the card has no generator state, no sleep counts of stacks asleep at an Idle (45 of 207 home
+  objects at tick 1000), no walks, turn counts or animation clocks. Saving the sleep count (a
+  small value per stack) and the generator would be the clean additions; the ObjM has no place
+  for them that is named.
+- What the original writes for a made object (serials, type, unnamed values) is not known: no
+  recording has a lot saved after play. `new_object`'s rules are from the loaded objects.
+- The frame file index of a frame the run pushed in another object's file (the club's dance
+  floors, the bar): the original names one type of the file's objects by a rule not found.
+- The log-driven club run's Sim 57 has person data 65 = 1 (the log's variable) where the
+  description sets 0 at the load.

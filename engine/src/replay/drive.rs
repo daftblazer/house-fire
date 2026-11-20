@@ -686,8 +686,9 @@ pub(super) struct Driven<'l> {
 /// The start both runs share: the lot loaded (`Replay::new`), the host made, the load pass run
 /// (the log's tick-0 calls: which function of which object, see `load_init`) and the sleeps the
 /// save lacks put in (`load_sleeps`). A parting in the load is in `host.parting`.
-pub(super) fn setup<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l LotChunks>), globals: &[i16], neighbours: &[Neighbour], with: RunWith, tally: Option<Tally>) -> Option<Driven<'l>> {
-    let rep = Replay::new(log, lib, lot, globals, neighbours, None, with)?;
+#[allow(clippy::too_many_arguments)]
+pub(super) fn setup<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l LotChunks>), globals: &[i16], neighbours: &[Neighbour], with: RunWith, tally: Option<Tally>, resume: bool) -> Option<Driven<'l>> {
+    let rep = Replay::start(log, lib, lot, globals, neighbours, None, with, resume)?;
     let Replay { log, h, ids, by_tick, engine_run, have_passes, mut sim, mut finder, .. } = rep;
     let mut host = DriveHost {
         lib,
@@ -715,7 +716,7 @@ pub(super) fn setup<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option
         player_targets: Vec::new(),
         sound_out: None,
     };
-    if host.tally.is_some() {
+    if host.tally.is_some() && !resume {
         // A run alone's tick-0 placement, natively (the replay takes the log's 'P' records of
         // tick 0): every object on the lot (a person too) stands at the centre of the tile the
         // lot loads it on, as all 206 of the home log's do (`step.rs`, "a tick-0 placement").
@@ -810,24 +811,27 @@ pub(super) fn setup<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option
         }
     }
     // The load: what the engine calls on every object before the first tick (the log's tick 0).
+    // (a run resumed from a save of the world has been through the load already)
     host.tick = 0;
-    load_init(&mut host, &log, &ids, &mut finder);
-    if host.parting.is_none()
-        && let Some((&id, q)) = host.expected.iter().find(|(_, q)| !q.is_empty())
-    {
-        let s = &log.steps[q[0]];
-        let text = format!("the load's native init did not run it; {} log steps", q.len());
-        host.part(id, s.tree as i32, s.node, text);
-    }
-    if host.parting.is_none() {
-        load_sleeps(&mut host, &mut sim, &log, &ids, &engine_run);
+    if !resume {
+        load_init(&mut host, &log, &ids, &mut finder);
+        if host.parting.is_none()
+            && let Some((&id, q)) = host.expected.iter().find(|(_, q)| !q.is_empty())
+        {
+            let s = &log.steps[q[0]];
+            let text = format!("the load's native init did not run it; {} log steps", q.len());
+            host.part(id, s.tree as i32, s.node, text);
+        }
+        if host.parting.is_none() {
+            load_sleeps(&mut host, &mut sim, &log, &ids, &engine_run);
+        }
     }
     Some(Driven { host, sim, log, ids, by_tick, engine_run, have_passes })
 }
 
 /// The run driven by the engine over the log's inputs, to its end or the first parting.
 pub fn drive<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l LotChunks>), globals: &[i16], neighbours: &[Neighbour], with: RunWith) -> Option<DriveReport> {
-    let Driven { mut host, mut sim, log, ids, by_tick, engine_run, have_passes } = setup(log, lib, lot, globals, neighbours, with, None)?;
+    let Driven { mut host, mut sim, log, ids, by_tick, engine_run, have_passes } = setup(log, lib, lot, globals, neighbours, with, None, false)?;
     let ticks = log.ticks;
     if host.parting.is_some() {
         return Some(DriveReport { same: 0, of: ticks, parting: host.parting });

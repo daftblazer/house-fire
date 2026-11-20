@@ -73,16 +73,20 @@ fn saved_frames(lib: &Library, frames: &[Frame], loaded: &[SavedFrame], own: (Op
 }
 
 /// The save's record of one object: what the engine has, over what the lot loaded with it.
-fn saved_object(world: &World, k: ObjectKey, frames: &[Frame], types: &mut Vec<ObjectType>, kinds: &BTreeMap<FileId, i16>) -> LotObject {
+fn saved_object(world: &World, k: ObjectKey, frames: &[Frame], types: &mut Vec<ObjectType>, kinds: &BTreeMap<FileId, i16>, serial: &mut i32) -> LotObject {
     let lib = world.library();
     let o = world.get(k);
     let mut s = match &o.loaded {
         Some(l) => (**l).clone(),
-        None => new_object(world, k, types),
+        None => new_object(world, k, types, serial),
     };
     s.id = o.id();
-    s.header[0] = o.x16;
-    s.header[1] = o.y16;
+    // the header: the place and the box round it, moved with the object (the six words are x, y,
+    // then two more points, then y and x of a third: a translation keeps what the lot saved)
+    let (dx, dy) = (o.x16 - s.header[0], o.y16 - s.header[1]);
+    for (i, v) in s.header[..6].iter_mut().enumerate() {
+        *v += if i % 2 == 0 { dx } else { dy };
+    }
     s.attributes = o.attributes.clone();
     s.temps = o.temps.to_vec();
     s.data = o.data.clone();
@@ -100,8 +104,11 @@ fn saved_object(world: &World, k: ObjectKey, frames: &[Frame], types: &mut Vec<O
     }
     if s.saved_class == SavedClass::Sim {
         s.person_data = o.person_data.clone();
+        s.person_data.resize(80, 0);
         s.motives = o.motives.clone();
+        s.motives.resize(16, 0.0);
         s.motives_b = o.motives_b.clone();
+        s.motives_b.resize(16, 0.0);
         s.current = o.current;
         // (the save keeps at most 8: its loader's limit)
         s.queue = o.queue.iter().take(8).copied().collect();
@@ -111,27 +118,53 @@ fn saved_object(world: &World, k: ObjectKey, frames: &[Frame], types: &mut Vec<O
 }
 
 /// An object the lot did not load (made during play): the save's table entry and section for it.
-/// What the original's save gives such an object is not known (no recording has the game's save
-/// of a lot after play); the values here are those every object of the lots in the saves read
-/// has in common (`docs/lots.md`, "Saving the world").
-fn new_object(world: &World, k: ObjectKey, types: &mut Vec<ObjectType>) -> LotObject {
+/// No recording has the game's save of a lot after play, so what it gives such an object is not
+/// known. The rules here: its type is its GUID's in the lot's objt (a new one, numbered after the
+/// last, if the lot has none; a Sim with no definition has its neighbour's GUID); the values the
+/// engine does not model are those of an object of the same type the lot loaded (else of the
+/// lot's first Sim, for a Sim; else zeros, a stack capacity of 512 and 65536 for the loader's
+/// int: the values most objects of the lots have); its two serials (`a`, `b`) follow the lot's
+/// highest, `b` one above `a` and the word after the pairs the `a` again, as in the objects of
+/// the home card (a part of a multi-tile object has the leader's serial in `b`, not made here:
+/// the engine makes no multi-tile objects).
+fn new_object(world: &World, k: ObjectKey, types: &mut Vec<ObjectType>, serial: &mut i32) -> LotObject {
     let o = world.get(k);
     let d = world.definition(o);
     let saved_class = World::saved_class(d);
-    let kind = match types.iter().find(|t| t.guid == o.guid) {
+    let neighbour = o.person_data.get(crate::world::PERSON_NEIGHBOUR_ID).copied().filter(|&n| n != 0).and_then(|n| world.neighbours.iter().find(|m| m.id == n));
+    let guid = if o.guid != 0 { o.guid } else { neighbour.map_or(0, |n| n.guid) };
+    let kind = match types.iter().find(|t| t.guid == guid) {
+        None if guid == 0 => 0, // (no type to name: the entry stays unnamed)
         Some(t) => t.fields[4] as i16,
         None => {
             // a new type: the next number after the lot's, its other fields those of the last
             let next = types.iter().map(|t| t.fields[4]).max().map_or(1, |m| m + 1);
             let mut fields = types.last().map_or([0; 6], |t| t.fields);
             fields[4] = next;
-            types.push(ObjectType { guid: o.guid, fields, name: String::new(), pad: 0 });
+            types.push(ObjectType { guid, fields, name: String::new(), pad: 0 });
             next as i16
         }
     };
-    let mut s = LotObject { id: o.id(), kind, saved_class, ..Default::default() };
-    s.header = [o.x16, o.y16, 0, 0, 0, 0, 0, 0];
-    s.stack_capacity = 4;
+    let same_type = world.objects().filter_map(|t| t.loaded.as_deref().map(|l| (t, l))).find(|(t, l)| if guid != 0 { t.guid == guid } else { l.saved_class == saved_class });
+    let mut s = match same_type {
+        Some((_, l)) => l.clone(),
+        None => LotObject { stack_capacity: 512, loader_int: 65536, header: [0, 0, 6, 6, 3, 3, 1, 1], ..Default::default() },
+    };
+    // the header relative to its own place (`saved_object` moves it to the object's)
+    let (tx, ty) = (s.header[0], s.header[1]);
+    for (i, v) in s.header[..6].iter_mut().enumerate() {
+        *v -= if i % 2 == 0 { tx } else { ty };
+    }
+    s.id = o.id();
+    s.kind = kind;
+    s.saved_class = saved_class;
+    (s.a, s.b, s.after_pairs) = (*serial, *serial + 1, *serial);
+    *serial += 2;
+    s.extra.clear();
+    s.pairs.clear();
+    s.shorts.clear();
+    s.list_1180.clear();
+    s.relationship_form = RelationshipForm::Counted;
     if matches!(saved_class, SavedClass::Part | SavedClass::Door) {
         s.leader = if o.leader == o.id() { 0 } else { o.leader };
     }
@@ -143,9 +176,10 @@ fn new_object(world: &World, k: ObjectKey, types: &mut Vec<ObjectType>) -> LotOb
 pub fn lot_objects(world: &World, template: &LotObjects, types: &mut Vec<ObjectType>, stacks: &mut Stacks) -> LotObjects {
     let kinds = file_kinds(world, types);
     let mut out = LotObjects { objects: Vec::new(), ..template.clone() };
+    let mut serial = world.objects().filter_map(|o| o.loaded.as_ref()).map(|l| l.a.max(l.b)).max().unwrap_or(0) + 1;
     for &k in world.order() {
         let frames = stacks(k);
-        out.objects.push(saved_object(world, k, &frames, types, &kinds));
+        out.objects.push(saved_object(world, k, &frames, types, &kinds, &mut serial));
     }
     out
 }
@@ -250,40 +284,48 @@ fn rewrite_lot(world: &World, t: &mut LotChunks, stacks: &mut Stacks) -> Result<
     Ok(())
 }
 
-/// The world a card's lot loads as (what `replay` starts from, without the log's load pass):
-/// the lot's objects, its globals, the neighbours, the goals and the neighbourhood's data, with
-/// the load's own rules (the persons' sex, the visitors' mark, the household's motives from
-/// their neighbours).
-pub fn load_world<'l>(lib: &'l Library, lot: &LotChunks, globals: &[i16], neighbours: &[save::Neighbour], goals: Goals, neighbourhood: Vec<i16>, card_lot: bool) -> Result<World<'l>, FormatError> {
-    let mut world = World::new(lib);
-    world.load_lot(lot)?;
-    world.globals = globals.to_vec();
-    world.motives_run = card_lot;
-    world.neighbours = neighbours.to_vec();
-    world.describe_persons();
-    world.mark_visitors();
-    world.take_neighbour_motives();
-    world.goals = goals;
-    world.neighbourhood = neighbourhood;
-    Ok(world)
+/// A card's lot as it reads: its chunks, globals, the neighbourhood's neighbours, goal marks
+/// and data (`Start::read` has the same, with the disc's goals besides).
+pub struct CardLot {
+    pub chunks: LotChunks,
+    pub globals: Vec<i16>,
+    pub neighbours: Vec<save::Neighbour>,
+    pub goals: Goals,
+    pub neighbourhood: Vec<i16>,
 }
 
-/// A card's lot, read: the lots and the neighbourhood as `Start::read` has them, for tests that
-/// need no disc's house.
-pub fn read_card_lot(card: &[u8], lot: usize) -> Result<(LotChunks, Vec<i16>, Vec<save::Neighbour>, Goals, Vec<i16>), FormatError> {
-    let file = memory_card_file(card, GAME)?;
-    let lots = save::read_lots(&file)?;
-    let globals = save::read_lot_globals(&file)?;
-    let lot_chunks = lots.get(lot).cloned().ok_or_else(|| FormatError("no such lot".into()))?;
-    let goals = Goals { houses: Vec::new(), met: save::read_goal_marks(&file)? };
-    Ok((lot_chunks, globals.get(lot).cloned().unwrap_or_default(), save::read_neighbours(&file)?, goals, save::read_neighbourhood_data(&file)?))
+impl CardLot {
+    pub fn read(card: &[u8], lot: usize) -> Result<CardLot, FormatError> {
+        let file = memory_card_file(card, GAME)?;
+        let chunks = save::read_lots(&file)?.get(lot).cloned().ok_or_else(|| FormatError("no such lot".into()))?;
+        let globals = save::read_lot_globals(&file)?.get(lot).cloned().unwrap_or_default();
+        let goals = Goals { houses: Vec::new(), met: save::read_goal_marks(&file)? };
+        Ok(CardLot { chunks, globals, neighbours: save::read_neighbours(&file)?, goals, neighbourhood: save::read_neighbourhood_data(&file)? })
+    }
+
+    /// The world it loads as (what `replay` starts from, without the log's load pass): the
+    /// lot's objects, its globals, the neighbours, the goals and the neighbourhood's data, with
+    /// the load's own rules (the persons' sex, the visitors' mark, the household's motives from
+    /// their neighbours).
+    pub fn load<'l>(&self, lib: &'l Library, card_lot: bool) -> Result<World<'l>, FormatError> {
+        let mut world = World::new(lib);
+        world.load_lot(&self.chunks)?;
+        world.globals = self.globals.clone();
+        world.motives_run = card_lot;
+        world.neighbours = self.neighbours.clone();
+        world.describe_persons();
+        world.mark_visitors();
+        world.take_neighbour_motives();
+        world.goals = self.goals.clone();
+        world.neighbourhood = self.neighbourhood.clone();
+        Ok(world)
+    }
 }
 
 /// How the world differs from the one a card `saved` from it loads as (`differences`); the loaded
 /// world's stacks are the lot's saved ones.
 pub fn reload_differences(world: &World, stacks: &mut Stacks, saved: &[u8], lot: usize, card_lot: bool) -> Result<Vec<String>, FormatError> {
-    let (chunks, globals, neighbours, goals, hood) = read_card_lot(saved, lot)?;
-    let loaded = load_world(world.library(), &chunks, &globals, &neighbours, goals, hood, card_lot)?;
+    let loaded = CardLot::read(saved, lot)?.load(world.library(), card_lot)?;
     let mut then = |k| loaded.get(k).stack.clone();
     Ok(differences(world, &loaded, stacks, &mut then))
 }
@@ -315,26 +357,27 @@ pub fn differences(a: &World, b: &World, sa: &mut Stacks, sb: &mut Stacks) -> Ve
         field("data", x.data == y.data);
         field("attributes", x.attributes == y.attributes);
         field("leader", x.leader == y.leader);
-        field("person data", x.person_data == y.person_data);
-        // (the load zeroes motive 11 of a Sim it takes the motives of its neighbour for: compared as 0)
-        let taken = x.person && x.person_data.get(crate::world::PERSON_NEIGHBOUR_ID).is_some_and(|&n| n != 0 && a.neighbours.iter().any(|m| m.id == n && m.house == Some(0) && m.motives.len() == 16 && m.motives_b.len() == 16));
-        let bits = |v: &[f32]| v.iter().enumerate().map(|(i, m)| if taken && i == 11 { 0 } else { m.to_bits() }).collect::<Vec<_>>();
-        field("motives", bits(&x.motives) == bits(&y.motives));
-        field("motives b", bits(&x.motives_b) == bits(&y.motives_b));
-        field("motive deltas", x.motive_deltas == y.motive_deltas);
-        field("relationships", x.relationships.len() == y.relationships.len() && x.relationships.iter().zip(&y.relationships).all(|(p, q)| p.with == q.with && p.values == q.values));
+        // (the load marks a household Sim's person data 32 as 0 and a visitor's 0 as 1 (`World::mark_visitors`): compared so)
+        let household = x.person && x.person_data.get(crate::world::PERSON_NEIGHBOUR_ID).is_some_and(|&n| n != 0 && a.neighbours.iter().any(|m| m.id == n && (m.house == Some(0) || (m.house.is_some() && m.house == a.globals.get(crate::world::GLOBAL_HOUSE).map(|&h| i32::from(h))))));
+        // (a Sim's lists are saved at their full length, 80 and 16: a made Sim's short ones read back padded with zeros)
+        let sim = x.person || World::saved_class(a.definition(x)) == SavedClass::Sim;
+        let pd = |d: &[i16]| {
+            let mut v: Vec<i16> = d.to_vec();
+            if sim {
+                v.resize(80, 0);
+            }
+            if sim && let Some(m) = v.get_mut(crate::world::PERSON_VISITOR) {
+                *m = if household { 0 } else if *m == 0 { 1 } else { *m };
+            }
+            v
+        };
+        field("person data", pd(&x.person_data) == pd(&y.person_data));
         let entry = |e: &save::SavedQueueEntry| (e.a, e.id, e.b, e.c, e.flags, e.objects, e.shorts, e.tree, e.e.to_bits());
         field("current entry", entry(&x.current) == entry(&y.current));
         field("queue", x.queue.len() == y.queue.len() && x.queue.iter().zip(&y.queue).all(|(p, q)| entry(p) == entry(q)));
         let frames = |fs: Vec<Frame>| fs.into_iter().map(|f| (f.tree.map_or(-1, |t| lib.tree_at(t).id as i32), f.node, f.params, f.locals, f.stack_object, f.engine)).collect::<Vec<_>>();
         let (fa, fb) = (frames(sa(ka)), frames(sb(kb)));
         field("stack", fa == fb);
-        if fa != fb && std::env::var_os("SAVE_SHOW_STACK").is_some() {
-            println!("  stack of {id}: {} frames vs {}", fa.len(), fb.len());
-            for (k, (p, q)) in fa.iter().zip(&fb).enumerate().filter(|(_, (p, q))| p != q) {
-                println!("    frame {k}: {p:?} vs {q:?}");
-            }
-        }
     }
     if a.globals != b.globals {
         out.push("lot globals".into());
