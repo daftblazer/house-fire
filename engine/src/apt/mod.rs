@@ -244,4 +244,6 @@ pub fn read_fonts(arc_data: &[u8]) -> Vec<(String, Res<font::Font>)> {
 }
 
 #[cfg(test)]
+mod player_tests;
+#[cfg(test)]
 mod tests;

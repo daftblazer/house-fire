@@ -260,6 +260,12 @@ impl Player {
                 self.scheduled.push((self.frame + delay, name.clone(), t));
             }
         }
+        if name.starts_with("f_") {
+            // loading a functions movie finishes the copies from memory that are waiting
+            for c in &mut self.cached {
+                c.0 = 0;
+            }
+        }
         self.tick_loads();
         true
     }
