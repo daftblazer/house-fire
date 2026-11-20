@@ -510,4 +510,18 @@ impl<'l> Replay<'l> {
     pub fn tick(&self) -> u32 {
         self.t
     }
+
+    /// The world as it stands, saved on `card` (a memory card's bytes) as lot `lot` of its file
+    /// (`save_world::save_card`); the stacks are the run's.
+    pub fn save(&mut self, card: &[u8], lot: usize) -> Result<Vec<u8>, crate::iff::FormatError> {
+        let (world, sim) = (&self.h.world, &mut self.sim);
+        crate::save_world::save_card(world, card, lot, &mut |k| sim.stack_of(world, k).stack().to_vec())
+    }
+
+    /// How the world differs from the one `saved` (a card this run's `save` wrote) loads as
+    /// (`save_world::reload_differences`).
+    pub fn reload_differences(&mut self, saved: &[u8], lot: usize, card_lot: bool) -> Result<Vec<String>, crate::iff::FormatError> {
+        let (world, sim) = (&self.h.world, &mut self.sim);
+        crate::save_world::reload_differences(world, &mut |k| sim.stack_of(world, k).stack().to_vec(), saved, lot, card_lot)
+    }
 }

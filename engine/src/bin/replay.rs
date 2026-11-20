@@ -1,7 +1,11 @@
 //! The club run natively, tick after tick, against a log of the recompiled Bustin' Out's
 //! interpreter (its `src/tree_log.cpp`, BUSTIN_TREE_LOG) and the disc it ran.
 //!
-//! Usage: replay LOG ISO [--card CARD] [--lot N] [--bench] [--free] [--drive] [--alone [TICKS]] [--seed N] [--hood CARD]
+//! Usage: replay LOG ISO [--card CARD] [--lot N] [--bench] [--free] [--drive] [--alone [TICKS]] [--seed N] [--hood CARD] [--save-at TICK OUT.raw]
+//!
+//! --save-at: at that tick (of the run alone with --alone, else of the log-driven run) the world is
+//! saved on a copy of --card (`save_world`), written to OUT.raw, and read back: the figure printed
+//! is how many fields the loaded world differs in (0: the save holds the world).
 //!
 //! --card: the lot from a save on a memory card image (its first lot, Mom's house in the user's
 //! save, unless --lot says), not the disc's club; the neighbours are the save's too.
@@ -28,7 +32,8 @@
 
 use housefire::disc::Disc;
 use housefire::library::Library;
-use housefire::replay::{Bench, RunWith, Start, AloneRun, alone, atoi, drive, env, has, run};
+use housefire::iff::FormatError;
+use housefire::replay::{Alone, Bench, Replay, RunWith, Start, AloneRun, alone, atoi, drive, env, has, run};
 use housefire::save::read_lot_arrays;
 use housefire::tree_log::read_log;
 use std::process::ExitCode;
@@ -36,7 +41,7 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 3 {
-        println!("usage: replay LOG ISO [--card CARD] [--lot N] [--bench] [--free] [--drive] [--alone [TICKS]] [--seed N] [--hood CARD]");
+        println!("usage: replay LOG ISO [--card CARD] [--lot N] [--bench] [--free] [--drive] [--alone [TICKS]] [--seed N] [--hood CARD] [--save-at TICK OUT.raw]");
         return ExitCode::from(2);
     }
     let Some(log) = read_log(&args[1]) else {
@@ -56,6 +61,7 @@ fn main() -> ExitCode {
     let mut card_path: Option<String> = None;
     let mut hood_path: Option<String> = None;
     let mut lot_index: i64 = -1;
+    let mut save_at: Option<(u32, String)> = None;
     let mut i = 3;
     while i < args.len() {
         match args[i].as_str() {
@@ -80,6 +86,10 @@ fn main() -> ExitCode {
             "--hood" if i + 1 < args.len() => {
                 i += 1;
                 hood_path = Some(args[i].clone());
+            }
+            "--save-at" if i + 2 < args.len() => {
+                save_at = Some((atoi(&args[i + 1]) as u32, args[i + 2].clone()));
+                i += 2;
             }
             "--lot" if i + 1 < args.len() => {
                 i += 1;
@@ -142,6 +152,24 @@ fn main() -> ExitCode {
     }
     if let Some(ticks) = alone_ticks {
         let with = RunWith { card_lot, goals: start.goals.clone(), neighbourhood: start.neighbourhood.clone(), cat: (!log.tracks.is_empty()).then(|| housefire::anim::Catalog::read(&d, house_number)) };
+        if let Some((at, out)) = &save_at {
+            let Some(card) = card_path.as_deref().and_then(|p| std::fs::read(p).ok()) else {
+                println!("--save-at needs --card");
+                return ExitCode::from(2);
+            };
+            let Some(mut a) = Alone::new(&log, &lib, (the_lot, house), the_globals, neighbours, with, seed) else { return ExitCode::from(1) };
+            for t in 0..ticks.max(*at) {
+                if t == *at {
+                    save_and_check(&card, start.index, card_lot, out, &mut a);
+                }
+                a.tick();
+            }
+            if *at >= ticks {
+                save_and_check(&card, start.index, card_lot, out, &mut a);
+            }
+            a.report(ticks);
+            return ExitCode::SUCCESS;
+        }
         let Some(_) = alone(&log, &lib, (the_lot, house), the_globals, neighbours, with, AloneRun { ticks, seed }) else { return ExitCode::from(1) };
         return ExitCode::SUCCESS;
     }
@@ -152,6 +180,17 @@ fn main() -> ExitCode {
         if let Some(p) = r.parting {
             println!("drive: first parting tick {} object {} tree {} node {}: {}", p.tick, p.object, p.tree, p.node, p.text);
         }
+        return ExitCode::SUCCESS;
+    }
+    if let Some((at, out)) = &save_at {
+        let Some(card) = card_path.as_deref().and_then(|p| std::fs::read(p).ok()) else {
+            println!("--save-at needs --card");
+            return ExitCode::from(2);
+        };
+        let with = RunWith { card_lot, goals: start.goals.clone(), neighbourhood: start.neighbourhood.clone(), cat: None };
+        let Some(mut r) = Replay::new(&log, &lib, (the_lot, house), the_globals, neighbours, None, with) else { return ExitCode::from(1) };
+        while r.tick() < *at && r.step() {}
+        save_and_check(&card, start.index, card_lot, out, &mut r);
         return ExitCode::SUCCESS;
     }
     if !bench {
@@ -215,4 +254,53 @@ fn main() -> ExitCode {
     );
     println!("  not native yet (not in these figures): routing, autonomy, animation, the other primitives");
     ExitCode::SUCCESS
+}
+
+/// A run whose world can be saved on a card and checked against what the card loads as.
+trait Saves {
+    fn save(&mut self, card: &[u8], lot: usize) -> Result<Vec<u8>, FormatError>;
+    fn reload(&mut self, saved: &[u8], lot: usize, card_lot: bool) -> Result<Vec<String>, FormatError>;
+}
+
+impl Saves for Alone<'_> {
+    fn save(&mut self, card: &[u8], lot: usize) -> Result<Vec<u8>, FormatError> {
+        Alone::save(self, card, lot)
+    }
+    fn reload(&mut self, saved: &[u8], lot: usize, card_lot: bool) -> Result<Vec<String>, FormatError> {
+        self.reload_differences(saved, lot, card_lot)
+    }
+}
+
+impl Saves for Replay<'_> {
+    fn save(&mut self, card: &[u8], lot: usize) -> Result<Vec<u8>, FormatError> {
+        Replay::save(self, card, lot)
+    }
+    fn reload(&mut self, saved: &[u8], lot: usize, card_lot: bool) -> Result<Vec<String>, FormatError> {
+        self.reload_differences(saved, lot, card_lot)
+    }
+}
+
+/// Saves the run's world on `card`'s copy as lot `lot`, writes it to `out`, and prints how many
+/// fields the world it loads as differs in.
+fn save_and_check(card: &[u8], lot: usize, card_lot: bool, out: &str, run: &mut dyn Saves) {
+    let saved = match run.save(card, lot) {
+        Ok(s) => s,
+        Err(e) => {
+            println!("save: {e}");
+            return;
+        }
+    };
+    if let Err(e) = std::fs::write(out, &saved) {
+        println!("save: cannot write {out}: {e}");
+        return;
+    }
+    match run.reload(&saved, lot, card_lot) {
+        Ok(d) => {
+            println!("save: written to {out}; the loaded world differs in {} fields", d.len());
+            for line in d.iter().take(20) {
+                println!("  {line}");
+            }
+        }
+        Err(e) => println!("save: reload: {e}"),
+    }
 }

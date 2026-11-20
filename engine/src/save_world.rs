@@ -279,6 +279,15 @@ pub fn read_card_lot(card: &[u8], lot: usize) -> Result<(LotChunks, Vec<i16>, Ve
     Ok((lot_chunks, globals.get(lot).cloned().unwrap_or_default(), save::read_neighbours(&file)?, goals, save::read_neighbourhood_data(&file)?))
 }
 
+/// How the world differs from the one a card `saved` from it loads as (`differences`); the loaded
+/// world's stacks are the lot's saved ones.
+pub fn reload_differences(world: &World, stacks: &mut Stacks, saved: &[u8], lot: usize, card_lot: bool) -> Result<Vec<String>, FormatError> {
+    let (chunks, globals, neighbours, goals, hood) = read_card_lot(saved, lot)?;
+    let loaded = load_world(world.library(), &chunks, &globals, &neighbours, goals, hood, card_lot)?;
+    let mut then = |k| loaded.get(k).stack.clone();
+    Ok(differences(world, &loaded, stacks, &mut then))
+}
+
 /// How two worlds differ over everything a save holds: each differing field of each object (its
 /// id and order, place, temps, data, attributes, person data, motives, deltas, relationships,
 /// queue, stack), the globals, the neighbourhood's data, the goal marks and the neighbours. A
@@ -307,7 +316,9 @@ pub fn differences(a: &World, b: &World, sa: &mut Stacks, sb: &mut Stacks) -> Ve
         field("attributes", x.attributes == y.attributes);
         field("leader", x.leader == y.leader);
         field("person data", x.person_data == y.person_data);
-        let bits = |v: &[f32]| v.iter().map(|m| m.to_bits()).collect::<Vec<_>>();
+        // (the load zeroes motive 11 of a Sim it takes the motives of its neighbour for: compared as 0)
+        let taken = x.person && x.person_data.get(crate::world::PERSON_NEIGHBOUR_ID).is_some_and(|&n| n != 0 && a.neighbours.iter().any(|m| m.id == n && m.house == Some(0) && m.motives.len() == 16 && m.motives_b.len() == 16));
+        let bits = |v: &[f32]| v.iter().enumerate().map(|(i, m)| if taken && i == 11 { 0 } else { m.to_bits() }).collect::<Vec<_>>();
         field("motives", bits(&x.motives) == bits(&y.motives));
         field("motives b", bits(&x.motives_b) == bits(&y.motives_b));
         field("motive deltas", x.motive_deltas == y.motive_deltas);
@@ -318,6 +329,12 @@ pub fn differences(a: &World, b: &World, sa: &mut Stacks, sb: &mut Stacks) -> Ve
         let frames = |fs: Vec<Frame>| fs.into_iter().map(|f| (f.tree.map_or(-1, |t| lib.tree_at(t).id as i32), f.node, f.params, f.locals, f.stack_object, f.engine)).collect::<Vec<_>>();
         let (fa, fb) = (frames(sa(ka)), frames(sb(kb)));
         field("stack", fa == fb);
+        if fa != fb && std::env::var_os("SAVE_SHOW_STACK").is_some() {
+            println!("  stack of {id}: {} frames vs {}", fa.len(), fb.len());
+            for (k, (p, q)) in fa.iter().zip(&fb).enumerate().filter(|(_, (p, q))| p != q) {
+                println!("    frame {k}: {p:?} vs {q:?}");
+            }
+        }
     }
     if a.globals != b.globals {
         out.push("lot globals".into());
@@ -328,10 +345,12 @@ pub fn differences(a: &World, b: &World, sa: &mut Stacks, sb: &mut Stacks) -> Ve
     if a.goals.met != b.goals.met {
         out.push("goal marks".into());
     }
-    if a.neighbours.len() != b.neighbours.len() {
+    // (the neighbours as they would be saved: with their Sims' motives)
+    let saved = neighbours_as_saved(a);
+    if saved.len() != b.neighbours.len() {
         out.push("neighbour count".into());
     }
-    for (n, m) in a.neighbours.iter().zip(&b.neighbours) {
+    for (n, m) in saved.iter().zip(&b.neighbours) {
         let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
         let rels = |n: &save::Neighbour| n.relationships.iter().map(|r| (r.with, r.values.clone(), r.word_d)).collect::<Vec<_>>();
         let same = (n.id, &n.name, n.guid, &n.person_data, n.house, n.slot) == (m.id, &m.name, m.guid, &m.person_data, m.house, m.slot) && bits(&n.motives) == bits(&m.motives) && bits(&n.motives_b) == bits(&m.motives_b) && rels(n) == rels(m);

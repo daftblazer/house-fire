@@ -607,6 +607,8 @@ impl<'lib> World<'lib> {
         let mut missing = 0;
         // each object's saved frames' tree ids, for the pass below
         let mut saved_ids: Vec<(i16, Vec<u16>)> = Vec::new();
+        // and each frame's tree and the file index the save names for it
+        let mut saved_files: Vec<(i16, Vec<(u16, i16)>)> = Vec::new();
         for lo in self.read_objects(lot)?.objects {
             let mut o = Object::new();
             if let Some(&guid) = guid_of.get(&(lo.kind as i32)) {
@@ -649,6 +651,7 @@ impl<'lib> World<'lib> {
                 o.current_at = lo.stack.iter().position(|sf| sf.tree as i16 == lo.current.tree && lo.current.tree != 0);
             }
             saved_ids.push((o.id(), lo.stack.iter().map(|sf| sf.tree).collect()));
+            saved_files.push((o.id(), lo.stack.iter().map(|sf| (sf.tree, sf.file)).collect()));
             // The original's +8 on a saved frame is on the frame a return comes back into (281
             // under a delivered interaction, a routing step that pushed a door's portal): such a
             // return takes no transition. Here that is the returning frame's `engine`: each
@@ -701,7 +704,8 @@ impl<'lib> World<'lib> {
         // it has the tree, else in the one below's (Sim 237: the meal's 4201, then on the counter
         // 54 8259 from food_sg, 8208 and 8207 from counter_sg). Once all objects are in (a
         // target may load after its Sim).
-        for (id, ids) in saved_ids {
+        for (id, ids) in &saved_ids {
+            let id = *id;
             let Some(k) = self.find(id) else { continue };
             let mut carried: Option<FileId> = None;
             let n = self.get(k).stack.len().min(ids.len());
@@ -722,6 +726,22 @@ impl<'lib> World<'lib> {
                     f.tree = Some(t);
                     f.file = Some(file);
                     carried = Some(file);
+                }
+            }
+        }
+        // A frame still without a tree: the file the save names for it (its index is an object
+        // type's number, `save_world::file_kinds`) has it: one the lot saved with a tree the
+        // Sim's own file lacks, or an interaction a run left called from another object's file.
+        for (id, frames) in &saved_files {
+            let Some(k) = self.find(*id) else { continue };
+            for (i, &(tree, kind)) in frames.iter().enumerate() {
+                if self.get(k).stack.get(i).is_none_or(|f| f.tree.is_some()) {
+                    continue;
+                }
+                let file = guid_of.get(&i32::from(kind)).and_then(|&g| self.lib.definition(g)).map(|d| d.file);
+                if let Some(t) = self.lib.tree(file, tree) {
+                    let f = &mut self.get_mut(k).stack[i];
+                    (f.tree, f.file) = (Some(t), file);
                 }
             }
         }
