@@ -43,8 +43,8 @@ pub enum ClipKind {
 /// A colour transform: the multiplier and the offset of red, green, blue, alpha (0 to 1).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Color {
-    pub mul: [f32; 4],
-    pub add: [f32; 4],
+    pub mul: [f64; 4],
+    pub add: [f64; 4],
 }
 
 impl Color {
@@ -62,7 +62,7 @@ impl Color {
 }
 
 /// An affine matrix (a, b, c, d, tx, ty) as the Flash format has it.
-pub type Matrix = [f32; 6];
+pub type Matrix = [f64; 6];
 pub const IDENTITY: Matrix = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
 
 /// `p` after `c`: the matrix of a child (`c`) inside a parent (`p`).
@@ -143,7 +143,7 @@ pub struct Player {
     /// What was asked of the player that it does not do (each kind once).
     pub stubs: Vec<String>,
     /// The key the game reports to `Key.getCode`.
-    pub key_code: f32,
+    pub key_code: f64,
     /// How deep scripts have called into each other (a guard against runaway scripts).
     pub(super) depth: u32,
     /// The instructions run since the last `advance` or `call` (a guard).
@@ -507,12 +507,12 @@ impl Player {
     fn apply_fields(&mut self, id: ClipId, p: &super::movie::Place) {
         let c = &mut self.clips[id];
         if p.flags & place::HAS_MATRIX != 0 {
-            c.matrix = [p.matrix[0], p.matrix[1], p.matrix[2], p.matrix[3], p.translation[0], p.translation[1]];
+            c.matrix = [p.matrix[0], p.matrix[1], p.matrix[2], p.matrix[3], p.translation[0], p.translation[1]].map(f64::from);
         }
         if p.flags & place::HAS_COLOR != 0 {
             // 0xAARRGGBB multiplier and 0x00RRGGBB offset (the alpha is the high byte: the
             // shadows are 0xFF000000 and fades 0xCCFFFFFF)
-            let ch = |v: u32, s: u32| ((v >> s) & 0xff) as f32 / 255.0;
+            let ch = |v: u32, s: u32| f64::from((v >> s) & 0xff) / 255.0;
             c.color.mul = [ch(p.color, 16), ch(p.color, 8), ch(p.color, 0), ch(p.color, 24)];
             c.color.add = [ch(p.color_add, 16), ch(p.color_add, 8), ch(p.color_add, 0), 0.0];
         }
@@ -651,8 +651,8 @@ impl Player {
     fn const_value(c: &Const) -> Value {
         match c {
             Const::Str(s) => Value::Str(s.as_str().into()),
-            Const::Float(f) => Value::Num(*f),
-            Const::Int(i) => Value::Num(*i as f32),
+            Const::Float(f) => Value::Num(f64::from(*f)),
+            Const::Int(i) => Value::Num(f64::from(*i)),
             Const::Bool(b) => Value::Bool(*b),
             Const::Undefined => Value::Undefined,
             Const::Pool(_) | Const::Register(_) | Const::Unknown(..) => Value::Undefined,

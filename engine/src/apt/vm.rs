@@ -30,7 +30,7 @@ impl Cx {
         self.stack.pop().unwrap_or(Value::Undefined)
     }
 
-    fn pop_num(&mut self) -> f32 {
+    fn pop_num(&mut self) -> f64 {
         self.pop().to_num()
     }
 }
@@ -263,7 +263,7 @@ impl Player {
             }
             StringLength | MbStringLength => {
                 let v = cx.pop();
-                cx.stack.push(Value::Num(v.to_text().chars().count() as f32));
+                cx.stack.push(Value::Num(v.to_text().chars().count() as f64));
             }
             TypeOf => {
                 let v = cx.pop();
@@ -427,10 +427,10 @@ impl Player {
 
     /// A deterministic pseudo-random number below `n` (the simulation stays reproducible; the
     /// game's own sequence is not needed).
-    fn random(&mut self, n: f32) -> f32 {
+    fn random(&mut self, n: f64) -> f64 {
         let s = self.rng.wrapping_mul(1_103_515_245).wrapping_add(12345);
         self.rng = s;
-        if n <= 0.0 { 0.0 } else { (((s >> 8) & 0xffff) as f32 / 65536.0 * n).floor() }
+        if n <= 0.0 { 0.0 } else { (((s >> 8) & 0xffff) as f64 / 65536.0 * n).floor() }
     }
 
     // ----- variables -----
@@ -533,7 +533,7 @@ impl Player {
                 match &o.kind {
                     Kind::Array(a) => {
                         if name == "length" {
-                            return Value::Num(a.len() as f32);
+                            return Value::Num(a.len() as f64);
                         }
                         if let Ok(i) = name.parse::<usize>() {
                             return a.get(i).cloned().unwrap_or_default();
@@ -541,14 +541,14 @@ impl Player {
                         Value::Undefined
                     }
                     Kind::Native(Native::Math) => match name {
-                        "PI" => Value::Num(std::f32::consts::PI),
+                        "PI" => Value::Num(std::f64::consts::PI),
                         _ => Value::Undefined,
                     },
                     Kind::Native(Native::Key) => key_const(name),
                     _ => Value::Undefined,
                 }
             }
-            Value::Str(s) if name == "length" => Value::Num(s.chars().count() as f32),
+            Value::Str(s) if name == "length" => Value::Num(s.chars().count() as f64),
             _ => Value::Undefined,
         }
     }
@@ -623,7 +623,7 @@ impl Player {
     /// The pseudo-members of a clip (`_x` and the like).
     fn clip_prop(&self, id: ClipId, name: &str) -> Option<Value> {
         let c = &self.clips[id];
-        let num = |v: f32| Some(Value::Num(v));
+        let num = |v: f64| Some(Value::Num(v));
         match name {
             "_x" => num(c.matrix[4]),
             "_y" => num(c.matrix[5]),
@@ -635,8 +635,8 @@ impl Player {
             "_name" => Some(Value::str(&c.name)),
             "_parent" => c.parent.map(Value::Clip),
             "_root" => self.root.map(Value::Clip),
-            "_currentframe" => num(c.frame as f32 + 1.0),
-            "_totalframes" => num(self.frame_count(id) as f32),
+            "_currentframe" => num(c.frame as f64 + 1.0),
+            "_totalframes" => num(self.frame_count(id) as f64),
             "_width" => num(self.extent(id).map_or(0.0, |b| b[2] - b[0])),
             "_height" => num(self.extent(id).map_or(0.0, |b| b[3] - b[1])),
             "text" | "htmlText" if c.kind == ClipKind::Text => c.text.clone().map(Value::Str),
@@ -705,20 +705,20 @@ impl Player {
     }
 
     /// The box of what a clip draws, in its parent's space: left, top, right, bottom.
-    pub fn extent(&self, id: ClipId) -> Option<[f32; 4]> {
+    pub fn extent(&self, id: ClipId) -> Option<[f64; 4]> {
         let c = &self.clips[id];
-        let local: Option<[f32; 4]> = match c.kind {
+        let local: Option<[f64; 4]> = match c.kind {
             ClipKind::Shape => match c.flash.movie.characters.get(c.ch as usize) {
-                Some(super::movie::Character::Shape { bounds, .. }) => Some(*bounds),
+                Some(super::movie::Character::Shape { bounds, .. }) => Some(bounds.map(f64::from)),
                 _ => None,
             },
             ClipKind::Text => match c.flash.movie.characters.get(c.ch as usize) {
-                Some(super::movie::Character::Text(t)) => Some(t.bounds),
+                Some(super::movie::Character::Text(t)) => Some(t.bounds.map(f64::from)),
                 _ => None,
             },
             ClipKind::Button | ClipKind::Image => None,
             ClipKind::Sprite => {
-                let mut acc: Option<[f32; 4]> = None;
+                let mut acc: Option<[f64; 4]> = None;
                 for &k in c.children.values() {
                     if let Some(b) = self.extent(k) {
                         acc = Some(match acc {
@@ -736,10 +736,10 @@ impl Player {
         let xs = pts.map(|p| p.0);
         let ys = pts.map(|p| p.1);
         Some([
-            xs.iter().copied().fold(f32::MAX, f32::min),
-            ys.iter().copied().fold(f32::MAX, f32::min),
-            xs.iter().copied().fold(f32::MIN, f32::max),
-            ys.iter().copied().fold(f32::MIN, f32::max),
+            xs.iter().copied().fold(f64::MAX, f64::min),
+            ys.iter().copied().fold(f64::MAX, f64::min),
+            xs.iter().copied().fold(f64::MIN, f64::max),
+            ys.iter().copied().fold(f64::MIN, f64::max),
         ])
     }
 
@@ -807,7 +807,7 @@ impl Player {
                 let radix = args.get(1).map_or(10, |r| r.to_num() as u32);
                 let t = s.trim();
                 let digits: String = t.chars().take_while(|c| c.is_digit(radix.clamp(2, 36))).collect();
-                i64::from_str_radix(&digits, radix.clamp(2, 36)).map_or(Value::Num(f32::NAN), |v| Value::Num(v as f32))
+                i64::from_str_radix(&digits, radix.clamp(2, 36)).map_or(Value::Num(f64::NAN), |v| Value::Num(v as f64))
             }
             "parseFloat" | "Number" => Value::Num(a0.to_num()),
             "String" => Value::Str(a0.to_text()),
@@ -884,8 +884,8 @@ impl Player {
     }
 
     fn math(&mut self, name: &str, args: &[Value]) -> Value {
-        let x = args.first().map_or(f32::NAN, Value::to_num);
-        let y = args.get(1).map_or(f32::NAN, Value::to_num);
+        let x = args.first().map_or(f64::NAN, Value::to_num);
+        let y = args.get(1).map_or(f64::NAN, Value::to_num);
         Value::Num(match name {
             "round" => (x + 0.5).floor(),
             "floor" => x.floor(),
@@ -916,7 +916,7 @@ impl Player {
         match name {
             "push" => {
                 a.extend(args.iter().cloned());
-                Value::Num(a.len() as f32)
+                Value::Num(a.len() as f64)
             }
             "pop" => a.pop().unwrap_or_default(),
             "shift" => {
@@ -930,7 +930,7 @@ impl Player {
                 for (i, v) in args.iter().enumerate() {
                     a.insert(i, v.clone());
                 }
-                Value::Num(a.len() as f32)
+                Value::Num(a.len() as f64)
             }
             "join" => {
                 let sep = args.first().map_or(Rc::from(","), Value::to_text);
@@ -1001,7 +1001,7 @@ impl Player {
                     }
                 };
             }
-            "getDepth" => return Value::Num(self.clips[id].depth as f32),
+            "getDepth" => return Value::Num(self.clips[id].depth as f64),
             "loadMovie" => {
                 let t = a(0).to_text();
                 self.request_load(&t, id);
@@ -1068,11 +1068,11 @@ fn string_method(s: &Rc<str>, name: &str, args: &[Value]) -> Option<Value> {
         "charAt" => sub(a(0).to_num() as i64, 1),
         "indexOf" => {
             let needle = a(0).to_text();
-            Value::Num(s.find(&*needle).map_or(-1.0, |i| s[..i].chars().count() as f32))
+            Value::Num(s.find(&*needle).map_or(-1.0, |i| s[..i].chars().count() as f64))
         }
         "lastIndexOf" => {
             let needle = a(0).to_text();
-            Value::Num(s.rfind(&*needle).map_or(-1.0, |i| s[..i].chars().count() as f32))
+            Value::Num(s.rfind(&*needle).map_or(-1.0, |i| s[..i].chars().count() as f64))
         }
         "toUpperCase" => Value::Str(s.to_uppercase().into()),
         "toLowerCase" => Value::Str(s.to_lowercase().into()),

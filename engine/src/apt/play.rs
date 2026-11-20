@@ -70,7 +70,7 @@ pub fn run(log: &Log, flashes: Vec<(String, Rc<Flash>)>, to: Option<u32>, timing
                 if p.trace {
                     eprintln!("apt: game frame {f}: call {}({:?})", c.name, c.args.iter().map(|a| a.1.as_str()).collect::<Vec<_>>());
                 }
-                let args: Vec<Value> = c.args.iter().map(|(w, t)| if t.is_empty() { Value::Num(*w as i32 as f32) } else { Value::str(t) }).collect();
+                let args: Vec<Value> = c.args.iter().map(|(w, t)| if t.is_empty() { Value::Num(f64::from(*w as i32)) } else { Value::str(t) }).collect();
                 if !p.call(&c.name, &args) {
                     p.note_stub(format!("call of {}: no such function", c.name));
                 }
@@ -147,12 +147,33 @@ pub fn compare(log: &Log, ours: &[Command], to: Option<u32>) -> Report {
     }
 }
 
+/// Values the game's code gives its screens' movies before calling them, which the observer does
+/// not record: (game frame it is set at, name of the `extern` member, number). Each was fitted
+/// to what the movies sent back in answer (the menu's item counts to its buttons' places, the
+/// dialogs' sizes to their title bars'); `docs/assets.md` lists them as unverified.
+const HOST_VALUES: &[(u32, &str, f32)] = &[
+    (738, "number_big_items", 1.0),
+    (738, "number_small_items", 3.0),
+    (738, "current_item", 0.0),
+    (738, "menu_disable_ID", -1.0),
+    (754, "number_big_items", 3.0),
+    (907, "mu_dialog_width", 0.375),
+    (907, "mu_dialog_height", 0.3),
+    (907, "mu_dialog_x", 0.3125),
+    (907, "mu_dialog_y", 0.145_089_29),
+];
+
 /// The layout the game hands its screens' movies (a button's place, as a fraction of the screen)
 /// is set before it calls `resetButton`; the observer does not record it, so it is taken from
 /// what the movies sent back in that frame (`docs/assets.md`).
 fn calls_feed(p: &mut Player, log: &Log, f: u32) {
+    for (at, name, v) in HOST_VALUES {
+        if *at == f {
+            p.set_extern(name, Value::Num(f64::from(*v)));
+        }
+    }
     for c in log.movie_commands.iter().filter(|c| c.frame == f) {
-        if (c.command.ends_with("_x") || c.command.ends_with("_y")) && let Ok(v) = c.argument.parse::<f32>() {
+        if (c.command.ends_with("_x") || c.command.ends_with("_y")) && let Ok(v) = c.argument.parse::<f64>() {
             p.set_extern(&c.command, Value::Num(v));
         }
     }

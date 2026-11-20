@@ -19,7 +19,7 @@ pub enum Value {
     Undefined,
     Null,
     Bool(bool),
-    Num(f32),
+    Num(f64),
     Str(Rc<str>),
     Obj(ObjRef),
     Clip(ClipId),
@@ -138,15 +138,15 @@ impl Value {
         }
     }
 
-    pub fn to_num(&self) -> f32 {
+    pub fn to_num(&self) -> f64 {
         match self {
             // the movies are of the SWF 5 generation: undefined is 0 as a number, empty as text
             Value::Undefined => 0.0,
             Value::Null => 0.0,
-            Value::Bool(b) => f32::from(u8::from(*b)),
+            Value::Bool(b) => f64::from(u8::from(*b)),
             Value::Num(n) => *n,
-            Value::Str(s) => parse_num(s).unwrap_or(f32::NAN),
-            Value::Obj(_) | Value::Clip(_) => f32::NAN,
+            Value::Str(s) => parse_num(s).unwrap_or(f64::NAN),
+            Value::Obj(_) | Value::Clip(_) => f64::NAN,
         }
     }
 
@@ -169,7 +169,7 @@ impl Value {
     }
 }
 
-pub fn num_text(n: f32) -> String {
+pub fn num_text(n: f64) -> String {
     if n.is_nan() {
         "NaN".into()
     } else if n.is_infinite() {
@@ -177,20 +177,20 @@ pub fn num_text(n: f32) -> String {
     } else if n == n.trunc() && n.abs() < 1e15 {
         format!("{}", n as i64)
     } else {
-        format!("{:.6}", f64::from(n))
+        format!("{:.6}", n)
     }
 }
 
 /// A string as a number: blanks around it are skipped; an empty string is not a number.
-pub fn parse_num(s: &str) -> Option<f32> {
+pub fn parse_num(s: &str) -> Option<f64> {
     let t = s.trim();
     if t.is_empty() {
         return None;
     }
     if let Some(h) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
-        return i64::from_str_radix(h, 16).ok().map(|v| v as f32);
+        return i64::from_str_radix(h, 16).ok().map(|v| v as f64);
     }
-    t.parse::<f32>().ok().filter(|_| t.bytes().all(|c| c.is_ascii_digit() || b"+-.eE".contains(&c)))
+    t.parse::<f64>().ok().filter(|_| t.bytes().all(|c| c.is_ascii_digit() || b"+-.eE".contains(&c)))
 }
 
 /// Equality as `==` of the scripts: numbers and strings compare as numbers when either side is
