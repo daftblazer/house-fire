@@ -73,6 +73,9 @@ impl Choice {
 #[derive(Clone, Debug)]
 pub struct Event {
     pub kind: u8,
+    /// The track's first two words: the flags (`0800828A`, `0800829A` for the voices) and the
+    /// parameters (`64001040`, ...); 0 for an event with no track.
+    pub track_words: [u32; 2],
     pub choice: Choice,
 }
 
@@ -182,7 +185,8 @@ impl SoundEvents {
             let name = String::from_utf8_lossy(name).trim().to_ascii_lowercase();
             let kind = img.data.get(row).copied().unwrap_or(0);
             let choice = img.ptr(row + 4).map_or(Choice::Silent, |track| t.track(track));
-            events.entry(name).or_insert(Event { kind, choice });
+            let track_words = img.ptr(row + 4).map_or([0, 0], |t| [img.u32(t).unwrap_or(0), img.u32(t + 4).unwrap_or(0)]);
+            events.entry(name).or_insert(Event { kind, track_words, choice });
         }
         Some(SoundEvents { events })
     }

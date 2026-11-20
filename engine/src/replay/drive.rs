@@ -118,6 +118,8 @@ pub(super) struct DriveHost<'l> {
     /// The objects the player's clicks made (the go-here markers), whose checks start with
     /// parameter 0 = 0 instead of 1.
     pub(super) player_targets: Vec<i16>,
+    /// The sound requests of a run that plays them (`Alone::set_sound`); `None` for one that does not.
+    pub(super) sound_out: Option<Vec<super::sound::SoundRequest>>,
 }
 
 impl Trees for DriveHost<'_> {
@@ -637,6 +639,14 @@ impl Host for DriveHost<'_> {
             23 | 7 | 48 => {
                 let got = present(n, &mut self.world, me_id);
                 self.world.presentation.clear();
+                // a run that plays sounds takes the request (the simulation does not wait on it)
+                if let Some(out) = &mut self.sound_out {
+                    match n.opcode {
+                        23 => out.push(super::sound::SoundRequest::Play(super::sound::ask(self.lib, &self.world, self.file_of_top, me_id, interp.top().stack_object, n.operand, self.tick))),
+                        48 => out.push(super::sound::SoundRequest::Kill { object: me_id }),
+                        _ => {}
+                    }
+                }
                 got
             }
             28 => {
@@ -692,6 +702,7 @@ pub(super) fn setup<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option
         player: false,
         asked: None,
         player_targets: Vec::new(),
+        sound_out: None,
     };
     if super::study::has("REPLAY_DRIVE_SHOW_FIRSTS") {
         let mut first: BTreeMap<i16, (u32, u16, u16)> = BTreeMap::new();

@@ -2,7 +2,7 @@
 //! with no log after its start (`housefire::replay::Alone`), drawn each frame as `view` draws it.
 //!
 //! Usage: play LOG ISO --card CARD [--lot N --hood CARD] [--seed N] [--script FILE]
-//!             [--headless] [--ticks N] [--shot TICK FILE]
+//!             [--headless] [--ticks N] [--shot TICK FILE] [--mute] [--wav FILE] [--device]
 //!
 //! The log is read for the start only (as `replay --alone`) and for the first camera. Controls:
 //!   Space pause; 1, 2, 3 speed (ticks a frame); Tab next Sim of the household; F camera to the Sim
@@ -12,7 +12,7 @@
 //!   drag / left stick pan. Gamepad: Start pauses, shoulders change the speed, A clicks at the
 //!   middle of the picture (or chooses), B closes, Y changes the Sim, D-pad moves in a menu.
 //!
-//! --script: lines of `TICK command`, applied as the input would be at that tick (`pick ID`,
+//! --script: lines of `TICK command`, applied as the input would be at that tick (`pick ID`, `zoom DISTANCE`,
 //! `floor X Y`, `focus`, `menu`, `choose N` or `choose @ACTION`, `answer N`, `speed K`, `sim ID`,
 //! `expect SIM TREE WITHIN`, `quit`); with --headless no window is made (and no GPU unless --shot
 //! is given). --shot: the picture of a tick (with the interface) saved as PNG.
@@ -25,6 +25,7 @@ use housefire::replay::{Alone, DialogAsk, MenuEntry, RunWith, Start, atoi};
 use housefire::scene::Camera;
 use housefire::tree_log::{Log, read_log};
 use housefire::world::{Object, World};
+use housefire_render::audio::Sound;
 use housefire_render::engine_scene::{self, Builder, Lot};
 use housefire_render::frame::{Frame, Mat3x4, TRANSIENT_MESH};
 use housefire_render::gpu::Gpu;
@@ -70,6 +71,17 @@ const SCRIPT_TAIL: u32 = 600;
 const HOME_HOUSE: u32 = 1;
 /// The household's Sims: person data 32 (the visitors' mark) is 0.
 const PERSON_VISITOR: usize = 32;
+/// The interface's sounds (the bank's `UI_accept` and `UI_move`): a menu opening and choosing
+/// accept, the highlight moving moves.
+const UI_OPEN: &str = "ui_accept";
+const UI_CHOOSE: &str = "ui_accept";
+const UI_MOVE: &str = "ui_move";
+/// The music of the start: the load's loop plays for this many ticks (5 s; chosen: the sandbox has
+/// no load screen to end it).
+const LOAD_MUSIC: &str = "loadloop";
+const LOAD_MUSIC_TICKS: u32 = 150;
+/// Mixed into the run's seed for the presentation's own random numbers (the sounds' variants).
+const SOUND_SEED: u64 = 0x5055_4E44;
 
 struct Args {
     log: String,
@@ -82,11 +94,18 @@ struct Args {
     headless: bool,
     ticks: Option<u32>,
     shot: Option<(u32, PathBuf)>,
+    /// No sound.
+    mute: bool,
+    /// A headless run's sound, mixed and written as a WAV (a window plays through the device).
+    wav: Option<PathBuf>,
+    /// A headless run plays through the device too (it runs faster than real time, so this only
+    /// checks that a device opens).
+    device: bool,
 }
 
 fn args() -> Option<Args> {
     let a: Vec<String> = std::env::args().collect();
-    let mut out = Args { log: a.get(1)?.clone(), iso: a.get(2)?.clone(), card: None, hood: None, lot: -1, seed: 1, script: None, headless: false, ticks: None, shot: None };
+    let mut out = Args { log: a.get(1)?.clone(), iso: a.get(2)?.clone(), card: None, hood: None, lot: -1, seed: 1, script: None, headless: false, ticks: None, shot: None, mute: false, wav: None, device: false };
     let mut i = 3;
     while i < a.len() {
         match a[i].as_str() {
@@ -96,11 +115,16 @@ fn args() -> Option<Args> {
             "--seed" => out.seed = atoi(a.get(i + 1)?) as u64,
             "--script" => out.script = Some(a.get(i + 1)?.into()),
             "--ticks" => out.ticks = Some(a.get(i + 1)?.parse().ok()?),
-            "--headless" => {
-                out.headless = true;
+            "--headless" | "--mute" | "--device" => {
+                match a[i].as_str() {
+                    "--mute" => out.mute = true,
+                    "--device" => out.device = true,
+                    _ => out.headless = true,
+                }
                 i += 1;
                 continue;
             }
+            "--wav" => out.wav = Some(a.get(i + 1)?.into()),
             "--shot" => {
                 out.shot = Some((a.get(i + 1)?.parse().ok()?, a.get(i + 2)?.into()));
                 i += 1;
@@ -131,6 +155,8 @@ enum Cmd {
     NextSim,
     SetSim(i16),
     FocusSim,
+    /// The camera's zoom set to a distance (tiles; a script's, for the sound checks).
+    Zoom(f32),
     Close,
     MenuMove(i32),
     /// Enter: the menu's or the dialog's highlighted entry.
@@ -153,6 +179,7 @@ fn parse_line(line: &str) -> Option<(u32, Cmd)> {
         "floor" => Cmd::Floor(f(&mut w)?, f(&mut w)?),
         "menu" => Cmd::Menu,
         "focus" => Cmd::FocusSim,
+        "zoom" => Cmd::Zoom(f(&mut w)?),
         "choose" => {
             let a = w.next()?;
             match a.strip_prefix('@') {
@@ -204,9 +231,19 @@ struct Game<'l> {
     last_speed: u32,
     quit: bool,
     expects: Vec<Expect>,
+    /// The sound, if there is any (`--mute`, no device and a headless run without `--wav` have none).
+    sound: Option<Sound>,
 }
 
 impl<'l> Game<'l> {
+    /// An interface sound (the menu's open, move and choose).
+    fn ui(&mut self, name: &str) {
+        let tick = self.alone.ticks();
+        if let Some(s) = &mut self.sound {
+            s.ui(tick, name);
+        }
+    }
+
     fn household(&self) -> Vec<i16> {
         let mut v: Vec<i16> = self.alone.world().objects().filter(|o| o.person && o.on_lot() && o.person_data.get(PERSON_VISITOR) == Some(&0)).map(|o| o.id()).collect();
         v.sort_unstable();
@@ -262,6 +299,7 @@ impl<'l> Game<'l> {
         println!("play: tick {} menu of object {target} for sim {sim}: [{}]", self.alone.ticks(), listed.join(", "));
         self.target = Some(target);
         self.menu = Some(MenuState { target, at, title: self.object_name(target), items, selected: 0 });
+        self.ui(UI_OPEN);
     }
 
     fn click_object(&mut self, id: i16, at: (i32, i32)) {
@@ -298,6 +336,7 @@ impl<'l> Game<'l> {
     fn choose(&mut self, i: usize) {
         let Some(m) = self.menu.take() else { return };
         let (Some(sim), Some(e)) = (self.active, m.items.get(i)) else { return };
+        self.ui(UI_CHOOSE);
         self.queue(sim, m.target, e.action, &e.name.clone());
     }
 
@@ -353,11 +392,16 @@ impl<'l> Game<'l> {
                     self.camera.target = [o.x16 as f32 / 16.0, o.y16 as f32 / 16.0, self.camera.target[2]];
                 }
             }
+            Cmd::Zoom(d) => {
+                let by = self.camera.distance - d;
+                self.camera.zoom(by, ZOOM_FAR);
+            }
             Cmd::Close => self.menu = None,
             Cmd::MenuMove(d) => {
                 if let Some(m) = &mut self.menu {
                     let n = m.items.len().max(1) as i32;
                     m.selected = (m.selected as i32 + d).rem_euclid(n) as usize;
+                    self.ui(UI_MOVE);
                 }
             }
             Cmd::Confirm => {
@@ -447,6 +491,14 @@ impl<'l> Game<'l> {
     /// One tick of the simulation (the dialog, if one opens, taken from the run).
     fn tick(&mut self) {
         self.alone.tick();
+        let now = self.alone.ticks();
+        if let Some(s) = &mut self.sound {
+            let requests = self.alone.take_sound_requests();
+            s.tick(now, &requests, &self.camera, self.alone.world());
+            if now == LOAD_MUSIC_TICKS {
+                s.music(None);
+            }
+        }
         if self.dialog.is_none()
             && let Some(ask) = self.alone.dialog()
         {
@@ -658,7 +710,7 @@ fn upload(builder: &mut Builder, renderer: &mut Renderer, mesh_ids: &mut Vec<hou
 
 fn main() -> ExitCode {
     let Some(args) = args() else {
-        eprintln!("usage: play LOG ISO --card CARD [--lot N --hood CARD] [--seed N] [--script FILE] [--headless] [--ticks N] [--shot TICK FILE]");
+        eprintln!("usage: play LOG ISO --card CARD [--lot N --hood CARD] [--seed N] [--script FILE] [--headless] [--ticks N] [--shot TICK FILE] [--mute] [--wav FILE] [--device]");
         return ExitCode::from(2);
     };
     match run(args) {
@@ -683,6 +735,30 @@ fn first_camera(log: &Log) -> Result<Camera, String> {
     Ok(Camera { target: [w[0], w[1], w[2]], distance: w[3], rotation: w[4], tilt: w[5] })
 }
 
+/// The sound of the run: through the device in a window (silent, said once, if none opens), into a
+/// WAV in a headless run that has `--wav`, none with `--mute`. The bank and the events live as
+/// long as the process (the mixer thread holds them).
+fn make_sound(disc: &Disc, args: &Args) -> Option<Sound> {
+    if args.mute || (args.headless && args.wav.is_none() && !args.device) {
+        return None;
+    }
+    let (Some(bank), Some(events)) = (housefire::sound::SoundBank::open(disc), housefire::sound_events::SoundEvents::open(disc)) else {
+        eprintln!("play: the disc's sound archives do not read; going on silent");
+        return None;
+    };
+    let (bank, events): (&'static _, &'static _) = (Box::leak(Box::new(bank)), Box::leak(Box::new(events)));
+    match &args.wav {
+        Some(path) if args.headless && !args.device => Some(Sound::wav(bank, events, args.seed ^ SOUND_SEED, path.clone())),
+        _ => match Sound::device(bank, events, args.seed ^ SOUND_SEED) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                eprintln!("play: no sound ({e}); going on silent");
+                None
+            }
+        },
+    }
+}
+
 fn run(args: Args) -> Result<bool, String> {
     let log = read_log(&args.log).ok_or("cannot read the log")?;
     let disc = Disc::open(&args.iso).map_err(|_| "cannot read the disc image")?;
@@ -698,7 +774,12 @@ fn run(args: Args) -> Result<bool, String> {
     alone.set_player(true);
     let camera = first_camera(&log)?;
     let names = engine_scene::save_file(&disc, args.card.as_deref().map(std::path::Path::new)).map(|ngh| housefire::figure::sim_names(&ngh)).unwrap_or_default();
-    let mut game = Game { alone, lib: &lib, camera, active: None, target: None, menu: None, dialog: None, names, speed: 1, last_speed: 1, quit: false, expects: Vec::new() };
+    let mut game = Game { alone, lib: &lib, camera, active: None, target: None, menu: None, dialog: None, names, speed: 1, last_speed: 1, quit: false, expects: Vec::new(), sound: None };
+    game.sound = make_sound(&disc, &args);
+    game.alone.set_sound(game.sound.is_some());
+    if let Some(s) = &mut game.sound {
+        s.music(Some(LOAD_MUSIC));
+    }
     game.next_sim();
     game.keep_on_lot();
     if std::env::var_os("PLAY_DEBUG").is_some() {
@@ -823,6 +904,9 @@ fn run(args: Args) -> Result<bool, String> {
             }
         }
         frames += 1;
+        if let Some(s) = &mut game.sound {
+            s.flush();
+        }
 
         // the picture
         if let (Some((builder, rigs, cast, skins)), Some(renderer), Some(lot)) = (&mut staged, &mut renderer, &lot_art) {
@@ -873,6 +957,9 @@ fn run(args: Args) -> Result<bool, String> {
         }
     }
     println!("play: {} frames, {} ticks", frames, game.alone.ticks());
+    if let Some(s) = game.sound.take() {
+        s.finish()?;
+    }
     drop(staged);
     if let Some(gpu) = &gpu {
         unsafe { gpu.device.device_wait_idle().ok() };

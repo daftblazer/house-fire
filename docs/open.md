@@ -236,8 +236,14 @@ as plain arrays, the multiplayer blockers, the simulation speed list, the device
   order (16 voice-frames); the loop flag is not in the calls (voicecheck reads it from the
   dump); a start's frame is anchored on the dump's (the original's threads place it within
   one AX frame, 230.7 after the game frame, spread 1.0).
-- Music: not started natively. Known: home's only stream is loadloop (the load), played as a
-  double buffer refilled from the disc every 1.5 s (loop.md 6d); the stereo's stations are
-  sbo_<station>1-5. Starting the load's and the stereo's streams goes to stage 7d.
-- Params from the world: the calls' x (position) and volume come from the log; natively they
-  come from the emitter's place against the camera (stage 7d).
+- Music: `loadloop` plays natively from the start of `play` (5 s, as a stream voice from a double
+  buffer, `docs/assets.md`, "The sound out"). Not done: the stereo's stations (`sbo_<station>1-5`):
+  the stereo's on/off and station are not an event the run sees (`radio_next_song` is a command
+  event with no sample); and `loadloop` as the original plays it (the load's own end).
+- Params from the world: native (`sound_params.rs`): of the 411 params calls of home-full-s.log,
+  213 have a known emitter and 191 of those are the rule's (exactly, or within 0.005); the 22 misses
+  are the lamp sound's (which of the five lamps is the emitter is unknown), and 198 are the
+  footsteps' and the dog's (no native emitter place). The range and the lateral scale are fitted
+  to one place (`vox_meal_good`) and bounds, not read from the game; the original's volume
+  law may not be linear in the distance. Footsteps are not made in a `play` run (the walk's foot
+  posts have no clock in `Alone::motions`).

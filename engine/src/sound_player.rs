@@ -22,6 +22,10 @@
 //!   all 65 distinct levels of the dump fit it (see [`level`]).
 
 use crate::mixer::{ARAM_SIZE, Aram, Mixer, Voice, new_aram};
+
+/// The top of the sample memory that the music's ring buffers take (`sound_run`); the samples
+/// of the plays are kept below it.
+pub const MUSIC_ARAM: usize = 0x4_0000;
 use crate::sound::{Source, SoundBank};
 use std::collections::HashMap;
 
@@ -182,6 +186,21 @@ impl<'b> SoundPlayer<'b> {
         &self.aram
     }
 
+    /// The sample memory, for the music's buffers in the top `MUSIC_ARAM` bytes.
+    pub fn aram_mut(&mut self) -> &mut Aram {
+        &mut self.aram
+    }
+
+    /// Frees the voices whose sample has played to its end (a one-shot's voice stays held by its
+    /// handle until the handle is stopped); returns their handles.
+    pub fn reap(&mut self) -> Vec<u32> {
+        let done: Vec<u32> = self.ax.iter().filter(|a| a.live && !a.v.running).map(|a| a.handle).collect();
+        for &h in &done {
+            self.stop(h);
+        }
+        done
+    }
+
     /// A handle gets a voice at its first play (the log's acquire calls reserve none: a voice
     /// first sounds when its handle first plays): the one freed last, or a new one.
     fn bind(&mut self, handle: u32) {
@@ -226,7 +245,7 @@ impl<'b> SoundPlayer<'b> {
         self.bind(handle);
         let i = self.handles[&handle];
         // The sample goes to its own region of the sample memory, 32-byte aligned.
-        if self.next_byte + src.data.len() + 32 > ARAM_SIZE {
+        if self.next_byte + src.data.len() + 32 > ARAM_SIZE - MUSIC_ARAM {
             self.next_byte = 0;
         }
         let at = self.next_byte;

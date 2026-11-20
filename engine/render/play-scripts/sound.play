@@ -1,0 +1,12 @@
+# The fridge script with the camera put on Mom in the kitchen and zoomed in, so that the object
+# sounds (the chopping, the fridge, the stove) are near the eye and heard: the sound checks' script.
+3 answer 0
+10 sim 12
+10 pick 62
+10 menu
+10 choose @8215
+10 expect 12 8215 600
+11 sim 237
+11 focus
+11 zoom 8
+900 quit

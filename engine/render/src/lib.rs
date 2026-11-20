@@ -2,6 +2,7 @@
 //! a frame of draws rendered into a picture. The simulation crate (`..`) has no GPU
 //! dependency; this crate links it only to read the game's models and textures.
 
+pub mod audio;
 pub mod frame;
 pub mod gpu;
 pub mod renderer;

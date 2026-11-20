@@ -13,6 +13,8 @@ png = "0.17"
 # the play binary: a public-domain bitmap font for the stand-in interface, and the gamepad
 font8x8 = { version = "0.3", default-features = false, features = ["unicode"] }
 gilrs = "0.11"
+# the sound device (ALSA, which PipeWire and Pulse both serve)
+cpal = { version = "=0.15.3", default-features = false }
 # the window (the `view` binary): Wayland and X11, no input extras
 winit = { version = "=0.30.13", default-features = false, features = ["rwh_06", "x11", "wayland"] }
 

@@ -16,7 +16,7 @@ use crate::FileId;
 use crate::library::Library;
 use crate::sound::SoundBank;
 use crate::sound_events::{Choice, SoundEvents, Voice};
-use crate::tree_log::Log;
+use crate::tree_log::{Log, SoundRec};
 use crate::world::World;
 
 /// The caller of `Snd_Play` for a sound an event request started (the sound objects' request
@@ -44,6 +44,16 @@ pub struct SoundAsk {
     pub voice: Voice,
     /// The asking Sim's person data (empty for an object that is no person).
     pub person_data: Vec<i16>,
+    /// The emitter's place at the request (sixteenths of a tile, level), if it is on the lot.
+    pub place: Option<(i32, i32, i32)>,
+}
+
+/// What a run's scripts ask of the sound: a sound (`ask`'s resolved request) or the end of an
+/// object's sounds (KillSounds, opcode 48).
+#[derive(Clone, Debug)]
+pub enum SoundRequest {
+    Play(SoundAsk),
+    Kill { object: i16 },
 }
 
 /// The name in the FWAV chunk `id` of one file.
@@ -69,12 +79,13 @@ pub fn ask(lib: &Library, world: &World, from: Option<FileId>, me: i16, stack_ob
     }
     tries.extend(lib.global());
     let event = tries.into_iter().find_map(|f| fwav_in(lib, f, id));
+    let place = world.find_object(emitter).filter(|o| o.on_lot()).map(|o| (o.x16, o.y16, o.level));
     let voice = match obj {
         Some(o) if o.person => Voice { female: o.person_data.get(PERSON_GENDER).map(|&g| g == 1), index: None },
         _ => Voice::default(),
     };
 
-    SoundAsk { tick, object: me, emitter, emitter_file, operand, event, voice, person_data: obj.filter(|o| o.person).map(|o| o.person_data.clone()).unwrap_or_default() }
+    SoundAsk { tick, object: me, emitter, emitter_file, operand, event, voice, person_data: obj.filter(|o| o.person).map(|o| o.person_data.clone()).unwrap_or_default(), place }
 }
 
 
@@ -153,10 +164,11 @@ pub fn figure(asks: &[SoundAsk], log: &Log, events: &SoundEvents, bank: &SoundBa
     }
     add("sounds: starts whose voice list is not known (every voice's samples taken)", starts.iter().filter(|s| s.voice_unknown).count());
 
-    let plays: Vec<_> = log.sounds.iter().filter(|s| s.call == 1 && s.caller == EVENT_PLAY).collect();
+    let plays: Vec<(usize, &SoundRec)> = log.sounds.iter().enumerate().filter(|(_, s)| s.call == 1 && s.caller == EVENT_PLAY).collect();
+    let mut matched_asks: Vec<(usize, &SoundAsk)> = Vec::new();
     add("sounds: the log's event plays", plays.len());
     let mut matched = 0;
-    for p in &plays {
+    for &(pi, p) in &plays {
         let fits = |s: &Start| {
             let tick_near = s.ask.tick == p.tick || s.ask.tick + 1 == p.tick;
             let frame_near = s.frame.is_some_and(|f| p.frame == f || p.frame == f + 1);
@@ -166,6 +178,7 @@ pub fn figure(asks: &[SoundAsk], log: &Log, events: &SoundEvents, bank: &SoundBa
         let hit = starts.iter().enumerate().filter(|(_, s)| fits(s)).min_by_key(|(_, s)| p.tick.abs_diff(s.ask.tick)).map(|(i, _)| i);
         if let Some(i) = hit {
             starts[i].used = true;
+            matched_asks.push((pi, starts[i].ask));
             matched += 1;
             continue;
         }
@@ -185,6 +198,7 @@ pub fn figure(asks: &[SoundAsk], log: &Log, events: &SoundEvents, bank: &SoundBa
         }
     }
     add("sounds: started natively (the event and tick as the log's)", matched);
+    params_figure(log, events, &matched_asks, &mut add);
 
     // The starts the log has no play for, by the likely reason.
     let handle_of = |a: &SoundAsk| (a.emitter_file, i16::from_le_bytes([a.operand[0], a.operand[1]]));
@@ -210,4 +224,82 @@ pub fn figure(asks: &[SoundAsk], log: &Log, events: &SoundEvents, bank: &SoundBa
         }
     }
     out
+}
+
+
+/// The caller of `Snd_Play` for the interface's own sounds (`fn_8006186C`): not in the world.
+const UI_PLAY: u32 = 0x8006_1940;
+
+/// How far a logged `x` or `volume` may be from the native one to count as within tolerance
+/// (five thousandths: a few of the log's own steps of 1/1024).
+const PARAM_TOLERANCE: f32 = 0.005;
+
+/// The figure of the params: each of the log's params calls ('/' call 3) of a play, against what
+/// `sound_params` gives for the emitter's place and the camera of the call's tick. A call is
+/// exact when both floats are the log's to the bit, within tolerance when each is within
+/// `PARAM_TOLERANCE`. The calls of a sound that moves are counted by kind, not hidden: the ones
+/// of a sound whose emitter is not known natively (the footsteps, the dog) are named as such.
+fn params_figure(log: &Log, events: &SoundEvents, matched: &[(usize, &SoundAsk)], add: &mut impl FnMut(&str, usize)) {
+    use crate::sound_params::{Listener, positional, range_of};
+    let total = log.sounds.iter().filter(|r| r.call == 3).count();
+    add("sound params: the log's params calls", total);
+    let show = super::study::has("REPLAY_SHOW_PARAMS");
+    if show {
+        for n in ["footstep_soft", "footstep_medium", "footstep_hard", "footstep_plant", "dognit", "dog_bark"] {
+            if let Some(e) = events.event(n) {
+                println!("params event {n}: track words {:08X} {:08X} kind {}", e.track_words[0], e.track_words[1], e.kind);
+            }
+        }
+        let mut seen = BTreeSet::new();
+        for (_, a) in matched {
+            if let Some(n) = a.event.as_ref().filter(|n| seen.insert((*n).clone())) && let Some(e) = events.event(n) {
+                println!("params event {n}: track words {:08X} {:08X} kind {}", e.track_words[0], e.track_words[1], e.kind);
+            }
+        }
+    }
+    for (k, play) in log.sounds.iter().enumerate().filter(|(_, r)| r.call == 1) {
+        let ask = matched.iter().find(|(i, _)| *i == k).map(|(_, a)| *a);
+        let flat = play.caller == UI_PLAY || ask.and_then(|a| a.event.as_ref()).and_then(|n| events.event(n)).is_some_and(|e| !positional(e.track_words[0]));
+        let known = flat || ask.is_some_and(|a| a.place.is_some());
+        let calls = log.sounds[k + 1..].iter().take_while(|r| !(r.handle == play.handle && r.call != 3)).filter(|r| r.call == 3 && r.handle == play.handle);
+        for r in calls {
+            let (lx, lv) = (f32::from_bits(r.params[1]), f32::from_bits(r.params[2]));
+            let kind = if lv == 0.0 && lx.abs() < 1e-30 {
+                "stop"
+            } else if r.params[0] & 8 != 0 {
+                "first"
+            } else {
+                "later"
+            };
+            if !known {
+                add("sound params: calls of a sound whose emitter is not known natively (footsteps, the dog)", 1);
+                continue;
+            }
+            let (nx, nv) = if kind == "stop" {
+                (0.0, 0.0)
+            } else if flat {
+                (1.0, 1.0)
+            } else {
+                let Some(c) = log.cams.iter().rfind(|c| c.tick <= r.tick) else { continue };
+                let l = Listener::new(&crate::scene::Camera { target: [c.live[0], c.live[1], c.live[2]], distance: c.live[3], rotation: c.live[4], tilt: c.live[5] });
+                let (px, py) = ask.and_then(|a| a.place).map(|(x, y, _)| (x as f32 / 16.0, y as f32 / 16.0)).unwrap_or_default();
+                let range = ask.and_then(|a| a.event.as_ref()).and_then(|n| events.event(n)).map_or(crate::sound_params::RANGE, |e| range_of(e.track_words[1]));
+                l.target([px, py, 0.0], range)
+            };
+            let exact = nx.to_bits() == lx.to_bits() && nv.to_bits() == lv.to_bits() || (kind == "stop" && nv == 0.0 && lv == 0.0 && lx.abs() < 1e-30);
+            let near = (nx - lx).abs() <= PARAM_TOLERANCE && (nv - lv).abs() <= PARAM_TOLERANCE;
+            add("sound params: calls of a known emitter", 1);
+            add(&format!("sound params: ... {kind} calls"), 1);
+            if exact {
+                add("sound params: ... the native rule's, exactly", 1);
+            } else if near {
+                add("sound params: ... the native rule's, within 0.005", 1);
+            } else {
+                add(&format!("sound params: ... {kind} calls the rule misses"), 1);
+                if show {
+                    println!("params miss: tick {} {kind} log ({lx}, {lv}) native ({nx}, {nv}) flat {flat} event {:?} place {:?} cam {:?}", r.tick, ask.and_then(|a| a.event.as_ref()), ask.and_then(|a| a.place), log.cams.iter().rfind(|c| c.tick <= r.tick).map(|c| c.live));
+                }
+            }
+        }
+    }
 }

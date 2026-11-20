@@ -475,6 +475,16 @@ impl<'l> Alone<'l> {
         self.d.host.anim.as_ref().map(|a| &a.cat)
     }
 
+    /// Whether the run keeps the scripts' sound requests for a front end (`take_sound_requests`).
+    pub fn set_sound(&mut self, on: bool) {
+        self.d.host.sound_out = on.then(Vec::new);
+    }
+
+    /// The sound requests made since the last call (PlaySound and KillSounds), in order.
+    pub fn take_sound_requests(&mut self) -> Vec<super::sound::SoundRequest> {
+        self.d.host.sound_out.as_mut().map(std::mem::take).unwrap_or_default()
+    }
+
     /// The ticks run so far.
     pub fn ticks(&self) -> u32 {
         self.tick

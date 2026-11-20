@@ -3099,3 +3099,76 @@ of words; the check's `VOICECHECK_DIFFS=1` lists each):
   (ratio 0x17FA8) are the music packet's. The mix takes the stream from the dump.
 - The `mix` figure's 151 different frames start at the first footstep (frame 11056); they come
   from the level differences above (the 16 leftover frames included). Not checked separately.
+
+### The sound out
+
+Code: `engine/src/sound_params.rs` (the params rule), `sound_front.rs` (the simulation's side),
+`sound_run.rs` (the mixer's side and the music), `engine/render/src/audio.rs` (the device and the
+WAV), `play`'s `--mute`, `--wav FILE`, `--device`. Figures: `replay home-full-s.log ISO --card CARD`
+(the `sound params:` lines; `REPLAY_SHOW_PARAMS=1` lists the misses and the events' track words).
+
+**The path.** The script's PlaySound and KillSounds (`Alone::set_sound`, `take_sound_requests`:
+the request, its object, the event its FWAV chunk names and the emitter's place, as `replay/sound.rs`
+makes them) go to `SoundFront`, which draws the sample of the event's list from the presentation's
+own numbers, applies the rules of "Sound starts" (a sounding handle is not started again, except
+`counter_chop`'s; a voice event plays 500 times in 10,000), and makes `Command`s: play, stop,
+params, music. `SoundRun` takes them between frames of 5 ms and mixes them (`SoundPlayer`, the
+voices the dump checks, and the music) into 32 kHz stereo. `play` runs it on a mixer thread that
+mixes 100 ms ahead into a ring; the device's callback (`cpal`, ALSA, which PipeWire and Pulse serve)
+takes from the ring, linear interpolation from 32 kHz to the device's rate, and allocates
+nothing (the ring is full size from the start, the lock is only tried, an empty ring is silence).
+The commands reach the mixer through a short-lock queue (1,024 commands). No device (or `--mute`,
+or a headless run without `--wav`): silent, said once. `--headless --wav FILE`: the mixer is
+run in the tick (6.67 frames a tick) and the file written at the end, with `play: sound tick T
+event E sample S` printed for each start; `--device` plays a headless run through the device
+(faster than real time: only to see that one opens).
+- The interface: `UI_accept` when a menu opens and when an entry is chosen, `UI_move` when the
+  highlight moves (a handle each, restarted in place; `x = volume = 1`).
+- The music: `loadloop` from the start for 5 s (chosen: the sandbox has no load screen). A stream
+  is decoded once and played as a voice per channel (two for a stereo stream, hard left and right)
+  from a double buffer in the top 256 KB of the sample memory, a half refilled when the voice
+  leaves it, as the original refills its stream buffers; its level is -6 dB (chosen).
+
+**The params rule** (`sound_params.rs`; the answer key is home-full-s.log's 411 params calls,
+words 1 `x` and 2 `volume`, against the object's place at the request and the camera's 'c' record
+of the call's tick):
+- A track whose flags word (the `snd::Track`'s word 0) has bit 15 clear (`0800028A` the interface's,
+  `0800029A` the `dialog_*` voices) is not in the world: `x = volume = 1`. The others
+  (`0800828A`, the footsteps' `0800800A`) are heard from the emitter's place.
+- A sound out of range has `x = volume = 1/1024`: the first call of every object sound in the log
+  but one, and the last of a fade. A sound that is stopped ends with 0, 0.
+- In range, `volume = 1 - d / range`, `d` the distance from the camera's eye (`Camera::eye`,
+  not its target) to the emitter, and `x` the offset along the camera's right-hand direction over
+  20 tiles. The range is the track's parameter word's low byte (`64001040`: 0x40, every track
+  but one; `vox_meal_good` has `640010C8`) times 0.22 tiles. Fitted, not read from the game: the
+  0.22 and the 20 come from `vox_meal_good` (0.454 and 0.328 at 24.0 tiles and 6.6 tiles of offset: the
+  one exact place with a nearby sound); that every 0x40 track is at the floor at 19.6 tiles and
+  more (the chops, the door, the chair at 24.0, the kitchen at 27.4) bounds the range from above;
+  the footsteps' 0.3 at about 10 tiles from the eye (the walker's place is only known to a few
+  tiles) fits `1 - 10 / 14.08`. The eye matters: at the default zoom (17.7 tiles) the middle of the
+  view is out of range of an ordinary track, so in the log the kitchen is silent; zoomed in (8
+  tiles) it is not.
+- Figure (home-full-s.log): of 411 params calls, **213 are of a sound with a known emitter** (the
+  interface's, the dialog voices, the objects' after the 57 starts matched), and **191 of them
+  are the rule's exactly or within 0.005** (188 exact, 3 within: `vox_meal_good`'s first call, 0.452 for
+  0.454 and 0.333 for 0.328); 22 miss, all the lamp sound's (the five lamps share one handle and
+  the log's params of it follow a lamp near the camera, which of the five is not known: the rule
+  gives the first lamp's place, 25 tiles away). The other 198 are the footsteps' and the dog's
+  (no native emitter place: the walker's follower place is in the log's 'Z' records only to the
+  tile and the Sim is not matched in them). `play` sends a sound's params each frame its values
+  change (the original's change every frame the camera moves).
+- Not modelled: the original's slew (its volume moves by 7 to 11 over 1024 a frame as the camera
+  does, which the rule gets from the camera's own motion), the pan law's use of `|x|` (so a sound
+  dead centre is hard to one side: `sound_player.rs`'s fit), `z` (objects are at height 0).
+
+**Deliberate differences** (for the lockstep and replay checks to skip): a sound starts at once
+(the original's object sounds start about 1.15 s after the request); the variant is drawn from the
+presentation's numbers, not the game's; a sound's handle is the front's own (the original's are
+the sound layer's pool); KillSounds ends the sounds the object asked.
+
+**What is missing.** Footsteps: the walk's foot posts (`Snd_Post`, `footstep_*`, the floor's event
+table at 802A8E80) come from the route follower's clock, which `Alone::motions` does not give
+(its `Walking(time)` is the stand-in's walk with no foot notes), so the run has none. The
+stereo's stations (`sbo_<station>1-5`): the stereo's state (the tuned station, on or off) is not
+an event the run sees (`radio_next_song` and `piano_play` are command events with no sample),
+so nothing starts them. The pan law's rounding (`docs/assets.md`, "The voices") is still the fit.
