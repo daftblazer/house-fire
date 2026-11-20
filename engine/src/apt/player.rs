@@ -133,10 +133,16 @@ pub struct Player {
     requests: VecDeque<LoadRequest>,
     /// Movies on their way into clips: (game frame they start at, name, clip).
     scheduled: Vec<(u32, String, ClipId)>,
+    /// Movies the game has in memory, on their way into clips: (movie frame ticks they wait
+    /// for, name, clip).
+    cached: Vec<(u64, String, ClipId)>,
+    /// The movie frames run so far, and whether one is running.
+    ticks: u64,
+    in_tick: bool,
     /// Game frames from a movie's request to its start when the game has the movie in memory,
     /// and from the game's logged load to the start (measured against the commands'
     /// frames, `docs/assets.md`).
-    pub cache_delay: u32,
+    pub cache_ticks: u64,
     pub load_delay: u32,
     /// The game's frame counter, stamped on the commands.
     pub frame: u32,
@@ -173,7 +179,10 @@ impl Player {
             queue: VecDeque::new(),
             requests: VecDeque::new(),
             scheduled: Vec::new(),
-            cache_delay: 3,
+            cached: Vec::new(),
+            ticks: 0,
+            in_tick: false,
+            cache_ticks: 3,
             load_delay: 2,
             frame: 0,
             stubs: Vec::new(),
@@ -281,7 +290,9 @@ impl Player {
     /// One movie frame: every playing clip enters its next frame (a movie's clips in tree order,
     /// parents first), then the frames' actions run.
     pub fn advance(&mut self) {
+        self.ticks += 1;
         let Some(root) = self.root else { return };
+        self.in_tick = true;
         let mut order = Vec::new();
         self.collect(root, &mut order);
         for id in order {
@@ -296,6 +307,7 @@ impl Player {
             self.goto(id, if next >= n { 0 } else { next }, true);
         }
         self.run_queue();
+        self.in_tick = false;
     }
 
     fn collect(&self, id: ClipId, out: &mut Vec<ClipId>) {
@@ -598,7 +610,8 @@ impl Player {
         // a movie the game still has in memory (loaded into another clip) is not loaded again
         let cached = self.clips.iter().any(|c| c.alive && c.loaded.as_deref() == Some(&name));
         if cached && self.flashes.contains_key(&name) {
-            self.scheduled.push((self.frame + self.cache_delay, name, target));
+            // a copy from memory takes `cache_ticks` movie frames, the running one counting
+            self.cached.push((self.ticks + self.cache_ticks - u64::from(self.in_tick), name, target));
             return;
         }
         self.requests.push_back(LoadRequest { name, target });
@@ -609,6 +622,9 @@ impl Player {
     pub fn tick_loads(&mut self) {
         let (due, later): (Vec<_>, Vec<_>) = std::mem::take(&mut self.scheduled).into_iter().partition(|(at, ..)| *at <= self.frame);
         self.scheduled = later;
+        let (copies, waiting): (Vec<_>, Vec<_>) = std::mem::take(&mut self.cached).into_iter().partition(|(at, ..)| *at <= self.ticks);
+        self.cached = waiting;
+        let due: Vec<(u32, String, ClipId)> = due.into_iter().chain(copies.into_iter().map(|(_, n, t)| (0, n, t))).collect();
         for (_, name, target) in due {
             if self.trace {
                 eprintln!("apt: start {name} in clip #{target} at game frame {}", self.frame);
