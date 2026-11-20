@@ -125,11 +125,10 @@ impl MatchTree {
         if self.dad[p] == NIL {
             return;
         }
-        let q;
-        if self.right[p] == NIL {
-            q = self.left[p];
+        let q = if self.right[p] == NIL {
+            self.left[p]
         } else if self.left[p] == NIL {
-            q = self.right[p];
+            self.right[p]
         } else {
             let mut x = self.left[p];
             if self.right[x] != NIL {
@@ -146,8 +145,8 @@ impl MatchTree {
             self.right[x] = self.right[p];
             let rp = self.right[p];
             self.dad[rp] = x;
-            q = x;
-        }
+            x
+        };
         self.dad[q] = self.dad[p];
         let d = self.dad[p];
         if self.right[d] == p {
@@ -255,7 +254,7 @@ pub fn assemble_file(template: &[u8], blocks: &[NeighbourhoodBlock]) -> Result<V
     for b in blocks {
         let at = b.offset as usize;
         let e = encode_block(b);
-        if at % BLOCK != 0 || at < end || at + e.len() > f.len() {
+        if !at.is_multiple_of(BLOCK) || at < end || at + e.len() > f.len() {
             return err("a block does not fit its place");
         }
         f[at..at + e.len()].copy_from_slice(&e);
@@ -299,10 +298,10 @@ pub fn encode_chunk_table(t: &LotChunks, big_endian: bool) -> Vec<u8> {
         }
         out.extend_from_slice(&tag);
     }
-    let mut at = HEADER + (14 * n + 3) / 4 * 4;
+    let mut at = HEADER + (14 * n).next_multiple_of(4);
     for (_, c) in &t.chunks {
         out.extend_from_slice(&word(at));
-        at += (c.len() + 3) / 4 * 4;
+        at += c.len().next_multiple_of(4);
     }
     for (_, c) in &t.chunks {
         out.extend_from_slice(&word(c.len()));
@@ -312,7 +311,7 @@ pub fn encode_chunk_table(t: &LotChunks, big_endian: bool) -> Vec<u8> {
     }
     let mut padding = t.padding.iter().copied();
     let mut pad = |out: &mut Vec<u8>| {
-        while out.len() % 4 != 0 {
+        while !out.len().is_multiple_of(4) {
             out.push(padding.next().unwrap_or(0));
         }
     };
@@ -344,7 +343,7 @@ impl SaveWriter {
     }
     fn bits(&mut self, v: u32, n: u32) {
         for k in (0..n).rev() {
-            if self.nbits % 8 == 0 {
+            if self.nbits.is_multiple_of(8) {
                 self.out.push(0);
             }
             if v >> k & 1 != 0 {
@@ -683,7 +682,7 @@ pub fn encode_object_types(types: &[ObjectType]) -> Vec<u8> {
         }
         out.extend_from_slice(t.name.as_bytes());
         out.push(0);
-        if (out.len() - 12) % 2 != 0 {
+        if !(out.len() - 12).is_multiple_of(2) {
             out.push(t.pad);
         }
     }

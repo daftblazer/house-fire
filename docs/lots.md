@@ -265,6 +265,64 @@ What the save has that the disc's lots never do:
 All 4,582 objects of the save's 16 lots read to exactly their ends (the `lots` test with
 `HOUSEFIRE_CARD`).
 
+### Writing a save back (`save_write.rs`, `tests/save_write.rs`)
+
+The file on the card (directory entry `G4ME69`, 161 card blocks of 8 KB in the block map's
+chain, 1,318,912 bytes) is, in order: the banner, icons and comment (the first 16 KB), at
+4 KB block 4 a block tagged 0xDEADBEEF (a thumbnail: its checksum is not the rule below, and in
+the cards the game wrote during the recordings its header is garbage, so nothing reads it:
+`file_blocks` keeps only sections 0-3 and the rest of the file stays as the template), then
+section 0 (block 6), section 1 (block 8), section 2 (the 17 thumbnails, blocks 18-34) and
+section 3 (the 16 lots, one in each 64 KB slot from block 66), each at a 4 KB-aligned place.
+The bytes after a packed block, to the end of its 4 KB unit or its slot, are not filled: they
+are what the game's buffer held (mostly zeros, with stale bytes among them), so a file is
+written into a template (the original file, or zeros for one made from nothing) and only the
+blocks' own bytes are replaced.
+
+- **A block**: a header of seven words (section, 28, unpacked size, packed size, checksum, 4,
+  count; big-endian on a card, little-endian on the disc) and the packed bytes. The checksum is
+  the CRC-32 (zlib's) of the header with the checksum word zeroed, then the packed bytes: it holds
+  for all 35 blocks of every card and the disc.
+- **LZSS**: the packer is the classic encoder (Okumura's) with its binary tree of the ring's
+  strings, a ring that starts as zeros, matches of 3-18 bytes (under 3 a literal), the first
+  longest match met going down the tree (a newer equal string replaces the older in the tree).
+  Measured: all 35 blocks of each of the five cards and the disc repack to the game's own
+  packed bytes. A simpler packer (longest match, nearest or farthest on a tie) does not: 0 of 35.
+- **A chunk table** (`encode_chunk_table`): the n FourCCs, n offsets from the block's start in
+  the file (header included), n sizes, then (not in the earlier description) **n 16-bit values**
+  (1 in section 0; in section 1 the families' and made Sims' numbers), the table padded to 4
+  and each chunk padded to 4. The padding bytes are stale (`LotChunks::padding` keeps them); the
+  FourCCs are stored backwards on the disc and not on a card.
+- **The save stream** (`SaveWriter`): a compressed value is written at the smallest of the four
+  widths (8-bit 2/4/6/8, 16-bit 5/8/13/16, 32-bit 6/11/21/32) that holds it as a signed number,
+  and 0 as a single 0 bit. Measured over every value of every lot of the cards and the disc: no
+  value is wider than that.
+- **ObjM** (`encode_lot_objects`): the version header (0, 80, "MjbO"), the packing byte, the
+  table, the chain of marks (each the position of the next, written by patching when the
+  section ends; the last one is kept as read), each object's section by class, the lot's part
+  and its string. What the readers had dropped, now kept: a frame's file index and its +8 word
+  (it holds more than 0 and 1), the 16-bit value before the tree stack and the stack's capacity,
+  the relationships' form (a count, or the negative head, a second value and a flag word for
+  each slot), the 32-bit value after the pairs, each object's loader int, a part's six values
+  and a door's floats, a Sim's +1136 member (and the bools of it and of +1180 as the bytes they
+  are), the string's mark and the pad byte before it.
+- **The arrays** (`encode_array`): a run of 8 or more equal bytes is a run entry (split at
+  0x7FFF), anything else is a literal, runs and literals alternate, the pad bytes are 0. No
+  run shorter than 8 is coded as a run in any of the 48 arrays of any file.
+- **The other chunks**: objt (pad byte after an odd-ended entry kept), SIMI (the globals), NGBH
+  (the words, the marks, and the bytes after them, not decoded, kept), NBRS (each slot's record,
+  the empty slots by their index, the unnamed words of the record and of each relationship),
+  FAMI (its unnamed words, and the bytes after the members), User (the names, the looks and the
+  bytes after them). HOUS, TATT and DUMP (some saved lots have a DUMP chunk the disc's lack) are
+  not decoded and are written back as the bytes they are; so is a thumbnail section.
+- **The card** (`replace_card_file`): the file's bytes go into the card's block chain; the
+  directory and the block map are not touched.
+
+The figures (`tests/save_write.rs`, with the five cards and the disc): all 35 sections of each
+(0, 1, the 17 thumbnails, the 16 lots) read into the models and written back the same, all 16
+lots' ObjM on their own, all 35 blocks repacked to the same bytes, all 35 CRCs verifying, every
+file assembled byte for byte and each card put back unchanged.
+
 ## The arrays
 
 Each lot has three Arry chunks: 0, a width and a height (64 and 64 on the disc), an element

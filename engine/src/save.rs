@@ -221,7 +221,7 @@ pub fn chunk_table(b: &NeighbourhoodBlock) -> Result<LotChunks> {
     }
     let half = |at: usize| if b.big_endian { u16::from_be_bytes([d[at], d[at + 1]]) } else { le16(d, at) };
     let mut lot = LotChunks { block: b.offset, chunks: Vec::with_capacity(n), ids: (0..n).map(|k| half(12 * n + 2 * k)).collect(), padding: Vec::new() };
-    lot.padding.extend_from_slice(&d[14 * n..(14 * n + 3) / 4 * 4]);
+    lot.padding.extend_from_slice(&d[14 * n..(14 * n).next_multiple_of(4)]);
     for k in 0..n {
         let mut tag: Vec<u8> = d[4 * k..4 * k + 4].to_vec();
         if !b.big_endian {
@@ -232,7 +232,7 @@ pub fn chunk_table(b: &NeighbourhoodBlock) -> Result<LotChunks> {
             return err("a chunk runs past its block");
         }
         let end = at - HEADER + size;
-        lot.padding.extend_from_slice(&d[end..d.len().min((end + 3) / 4 * 4)]);
+        lot.padding.extend_from_slice(&d[end..d.len().min(end.next_multiple_of(4))]);
         lot.chunks.push((String::from_utf8_lossy(&tag).into_owned(), d[at - HEADER..end].to_vec()));
     }
     Ok(lot)
@@ -313,7 +313,7 @@ pub struct LotGlobals {
 
 /// A SIMI chunk (0, a version, "IMIS", the values); `None` if it is not of that shape.
 pub fn parse_lot_globals(c: &[u8]) -> Option<LotGlobals> {
-    if c.len() < 12 || &c[8..12] != b"IMIS" || c.len() % 2 != 0 {
+    if c.len() < 12 || &c[8..12] != b"IMIS" || !c.len().is_multiple_of(2) {
         return None;
     }
     Some(LotGlobals { version: le32(c, 4), values: c[12..].as_chunks::<2>().0.iter().map(|w| i16::from_le_bytes(*w)).collect() })
@@ -1213,7 +1213,7 @@ pub fn read_lot_objects(m: &[u8], class_of: impl Fn(i16) -> SavedClass) -> Resul
     let mut mark_at = r.pos();
     let mut next = r.mark()? as usize;
     let mut sections = Vec::new();
-    let mut last_mark = next as u32;
+    let last_mark;
     loop {
         let start = mark_at + 4;
         if next <= mark_at || next + 4 > s.len() {
