@@ -715,6 +715,28 @@ pub struct MovieReadRec {
     pub value: String,
 }
 
+/// A string the game draws (0x80, ERFont::DoDraw 8003CB10): the font object, the game's frame
+/// counter, the place as fractions of the screen, the two snap words, the size word, the window
+/// word, whether its characters were 16-bit, the words at the size word, the font's first words,
+/// and the text; the tick.
+#[derive(Clone, Debug, Default)]
+pub struct TextDrawRec {
+    pub tick: u32,
+    pub font: u32,
+    pub frame: u32,
+    pub x: f32,
+    pub y: f32,
+    pub snap: [u32; 2],
+    pub size: u32,
+    pub window: u32,
+    pub wide: bool,
+    /// The four words the size word points at (0 when it does not point).
+    pub size_words: [u32; 4],
+    /// The font object's first eight words.
+    pub font_words: [u32; 8],
+    pub text: String,
+}
+
 /// A screen's Apt movie sending the game a command ('"', the screens' vtable slot +0x44): the
 /// handler, the screen, its vtable, the game's frame counter, the command and its argument; the
 /// tick.
@@ -910,6 +932,8 @@ pub struct Log {
     pub movie_loads: Vec<MovieLoadRec>,
     /// The Apt movies' reads of the game's values ('\''), in order.
     pub movie_reads: Vec<MovieReadRec>,
+    /// The strings the game draws (0x80), in order.
+    pub text_draws: Vec<TextDrawRec>,
     /// The Apt movies' commands to the game ('"'), in order.
     pub movie_commands: Vec<MovieCommandRec>,
     /// The sound messages posted ('.'), in order.
@@ -2117,6 +2141,18 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let Some(name) = r.text() else { break };
                 let Some(value) = r.text() else { break };
                 log.movie_reads.push(MovieReadRec { tick: log.ticks, handler, frame, name, value });
+            }
+            0x80 => {
+                if !r.has(33 + 48) {
+                    break;
+                }
+                let (font, frame, x, y) = (r.u32(), r.u32(), r.f32(), r.f32());
+                let snap = [r.u32(), r.u32()];
+                let (size, window, wide) = (r.u32(), r.u32(), r.u8() != 0);
+                let size_words = [0; 4].map(|_| r.u32());
+                let font_words = [0; 8].map(|_| r.u32());
+                let Some(text) = r.text() else { break };
+                log.text_draws.push(TextDrawRec { tick: log.ticks, font, frame, x, y, snap, size, window, wide, size_words, font_words, text });
             }
             b'"' => {
                 if !r.has(16) {

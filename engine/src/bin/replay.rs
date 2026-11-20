@@ -62,6 +62,9 @@ fn main() -> ExitCode {
             let args: Vec<String> = x.args.iter().map(|(w, t)| if t.is_empty() { format!("{w:#x}") } else { format!("{t:?}") }).collect();
             lines.push((x.tick, x.frame, format!("call {}({}) screen {:#x} a {:#x} b {:#x} from {:#x}", x.name, args.join(", "), x.screen, x.a, x.b, x.caller)));
         }
+        for t in &log.text_draws {
+            lines.push((t.tick, t.frame, format!("text {:?} at {:.4},{:.4} font {:#x} size {:#x} window {:#x} snap {:#x},{:#x}{} size words {:x?} font words {:x?}", t.text, t.x, t.y, t.font, t.size, t.window, t.snap[0], t.snap[1], if t.wide { " wide" } else { "" }, t.size_words, t.font_words)));
+        }
         for y in &log.movie_reads {
             lines.push((y.tick, y.frame, format!("read {:?} = {:?} handler {:#x}", y.name, y.value, y.handler)));
         }
