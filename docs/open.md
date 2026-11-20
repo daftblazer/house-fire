@@ -329,3 +329,14 @@ The walk is the planner's and the walker's now (simulation.md, "The planner's re
   floors, the bar): the original names one type of the file's objects by a rule not found.
 - The log-driven club run's Sim 57 has person data 65 = 1 (the log's variable) where the
   description sets 0 at the load.
+
+## A run resumed from the engine's save (stage 8, `eng-2000`)
+
+The game loads a card the engine wrote at tick 2000 of the home run and plays it; replaying its
+run (7000 ticks): 349,385 steps the same, 25 different and 49 where the game runs a stack the
+native has asleep; lockstep 55 differences. Nearly all are at ticks 1-3 after the load: the
+game restarts the made meal 202 at its main (4193 node 0) where the native resumes its saved
+sleep (the 49), objects 47 and 48 at tick 2, Sim 12's eating interaction (10 steps, ticks 1 to
+3052), Sim 237 once at 3440. Not found: what the game's load does to a made object's stack (its
+type is new to the lot's objt; fields 0 to 3 of a new objt entry are not known) and to a Sim's
+frames in that object's file. Not saved by the engine at all: the sleep counts, the RNG, walks.
