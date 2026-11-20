@@ -2096,3 +2096,76 @@ footsteps and 7 others not.
   plays, `r6` the foot, the message the event and a second name `footstep_plant`...); 4 of the
   dog's (no request of the simulation); 3 others (the original played them late).
 
+
+## The run alone (`replay --alone`, 2026-11-19)
+
+`replay LOG ISO [--card CARD | --lot N --hood CARD] --alone [TICKS] [--seed N]`
+(`engine/src/replay/alone.rs`): the simulation runs by itself for TICKS ticks (default 54,000,
+30 minutes at 30 a tick-second) and prints what it still cannot do natively. It shares the driven
+run's start (`drive::setup`: the lot loaded, the host, the load pass, the sleeps) and its host
+(`DriveHost`, whose `tally` is set in this mode); `--free` of `replay` is another thing (the log
+debt's order) and is not this.
+
+**What it reads from the log**, only at the start and only this: (1) the log's object list and the
+Sims' addresses (`Replay::new`: which object is which stack, and whether it has an animation
+archive: the log has track records); (2) the load pass, the log's tick-0 runs (which function of
+which object, with which parameters and stack object: not derived yet, see "The driven run"), run
+natively; (3) the sleeps the saves lack (a stack saved at an Idle sleeps until its first step in the
+log; one the log never runs wakes at the first tick, where `--drive` keeps it asleep for ever).
+After the start no log is read: no comparison, no pauses, no commands, no dialog answers, no
+parting (the load's own, if any, is printed and the run goes on). Random numbers are the world's
+own generator (`World::rng`, xorshift64*), seeded from `--seed` (default 1; splitmix64 of it).
+Nothing else is taken from the log; the clock is the native frame clock at the normal speed.
+Not from the log but inferred: a household Sim's autonomy level (person data 36) is 50 where the
+save holds 0 (the logs show 50 at home and the original reads it in its engine code, not in a
+script; the club's saved 1 is kept).
+
+**Native for this run** (alone only, so that `--drive`'s figures stand): the walk (GotoRoutingSlot 45,
+GotoRelativePosition 27: `Walls::route` over the lot's tiles, the Sim stepping along it at the
+walker's top speed, 0.83 sixteenths a tick, facing its way and then the object; no object blocks,
+no door's portal function is pushed, no frames, no ramp; 27's operand is not read, it goes to the
+tile in front of the stack object; a slot with no direction, the club's dance floor, is its
+object's own place); LookTowards 22 mode 2; the autonomy evaluation (opcode 3: the candidates'
+checks, scores, `autonomy_list`, a pick by the world's generator) and Find Best Action (30: the
+chosen action pushed); FindBestObjectForFunction 14 (`primitives::find_best_object`, the replay's
+rule without the log); Animate 44 stepped by the native frame clock through the animator, an
+animation the archive lacks answering true at once; Dialog 36: nobody answers, so the object waits
+at it for ever and the pass goes on.
+
+**Containment.** A script error, a primitive's stop and a runaway loop (the interpreter's iteration
+limit; a check's loop is limited too, `--drive` resets it every step) end that stack only and are
+counted by tree and node (`REPLAY_ALONE_SHOW_ERRORS=1` prints each with its last steps); a panic
+inside a turn is caught (`catch_unwind`) and counted as error 1103. A Sim whose stack ended starts
+again from its bottom frame (none has needed it yet). Fixed at their cause: an object that removed
+itself in its turn (`Simulator::tick` ended its turn on a dead key); the check host's file for the
+trees a call names (`file_of_top`); a script stack of a removed object.
+
+**Figures** (master 6ad6782 plus this; home `--card`, club `--lot 15 --hood`; 54,000 ticks, each
+run 1.7 s home, 2.2 s club, the same hash on two runs):
+
+| | before (all neutral; 3,000 ticks home) | after, home | after, club |
+|---|---|---|---|
+| ticks | 3000 of 3000 | 54000 of 54000 | 54000 of 54000 |
+| errors | 19 (stacks of the lot's objects at tick 1-2) | 3 | 2 |
+| neutral answers | 6,006 (27 and 45 3,000 each, yields for ever) | 21 | 64 |
+
+Home after: Sim 12 starts 4 interactions and finishes 3 (walked 40.7 tiles), Sim 237 starts 1,
+the paper girl (197) walks 19.9 tiles and leaves the lot; the club's 9 Sims start one each and walk
+0 to 6 tiles (dancing). The ranked neutral answers and errors after, home: TestInteractingWith 37
+(6, tree 410), AlterBudget 25 (7, trees 8216, 8249, 8209, 8215), primitives 1, 15, 16, 21 (a few
+each), Animate 44 (1), the stopped stacks (280's Idle on two removed objects, the expression at
+4127:1); club: Find Best Action with no action chosen (57: the evaluation chose nothing, the reason
+not looked into), primitive 1, 16, the two stops (4104:3, 4127:1).
+
+**What is left, and why the Sims are not yet living.** The Sims do start interactions, but each
+ends up waiting for something that does not come: home's 12 is in 8223 (on object 114) at its
+281:1 wait for ever, 237 in 4177 on the trash pile 201 at 4215's Idle loop, the motives sink (237's
+to -100): the other side of those waits (an object's stack answering a notify, an animation event,
+a flag another stack sets) is not running right, so the household eats and sleeps only in the
+first minutes. Not native: the planner (the walk is a tile staircase, not the original's lines; no
+obstacles, no portal functions, no asking a Sim to move), the sit and the seat functions, the
+walker's ramp, the autonomy's visitor and "takes best" cases, TestInteractingWith 37, AlterBudget
+25 (the family's funds are not read from the save), primitives 1, 15, 16, 21 (unnamed here).
+Checks to add to `docs/checks.txt` (the figures only go up in the sense of fewer errors): the
+`alone:` line and `alone: hash` twice on home and club, and `cargo test` (`engine/tests/alone.rs`,
+HOUSEFIRE_BUSTIN_ISO, HOUSEFIRE_HOME_LOG, HOUSEFIRE_CARD).

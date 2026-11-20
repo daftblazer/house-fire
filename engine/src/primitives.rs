@@ -819,6 +819,50 @@ pub fn function_entry(function: u8) -> Option<(i16, usize)> {
     })
 }
 
+/// FindBestObjectForFunction (opcode 14), as the original's fn_8020CC8C (`docs/primitives.md`):
+/// each object (not the Sim, not one in use: data 25 above 0) whose function table (OBJf) has an
+/// action for the function's entry, and whose rating (its datum, -1 for 50) is not 0, has its test
+/// tree (if any) run as a check on it; its score is the rating less three times the distance in
+/// tiles, at least 1; the best (the first of equals) becomes the stack object, true; none, false.
+/// Checked against the logs by the replay's own version, `ReplayHost::find_best_object`.
+pub fn find_best_object<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &mut H, me: ObjectKey, n: &Node) -> PrimResult {
+    let Some((datum, entry)) = function_entry(n.operand[0]) else { return PrimResult::Stop };
+    let world = host.world();
+    let lib = world.library();
+    let (my_id, mx, my) = (world.get(me).id(), world.get(me).x16 as f32 / 16.0, world.get(me).y16 as f32 / 16.0);
+    let candidates: Vec<(i16, Option<crate::FileId>, u16, f32, f32, f32)> = world
+        .objects()
+        .filter(|o| o.id() != my_id && o.data.get(25).is_none_or(|&u| u <= 0))
+        .filter_map(|o| {
+            let f = o.file?;
+            let &(test, action) = lib.file(f).functions.values().next()?.get(entry)?;
+            if action == 0 {
+                return None;
+            }
+            let rating = if datum < 0 { 50 } else { *o.data.get(datum as usize)? };
+            (rating != 0).then_some((o.id(), Some(f), test, f32::from(rating), o.x16 as f32 / 16.0, o.y16 as f32 / 16.0))
+        })
+        .collect();
+    let defaults = interp.defaults().to_vec();
+    let mut best: Option<(i16, f32)> = None;
+    for (id, file, test, rating, x, y) in candidates {
+        if test != 0 && lib.tree(file, test).and_then(|t| host.run_check(t, file, id, &defaults)) != Some(true) {
+            continue;
+        }
+        let score = (rating - 3.0 * f32::hypot(x - mx, y - my)).max(1.0);
+        if best.is_none_or(|(_, b)| score > b) {
+            best = Some((id, score));
+        }
+    }
+    match best {
+        Some((id, _)) => {
+            interp.top().stack_object = id;
+            PrimResult::True
+        }
+        None => PrimResult::False,
+    }
+}
+
 /// RunFunctionalTree (opcode 20): the stack object's function (operand byte 0, `function_entry`)
 /// run: its function table's action tree pushed with the Sim's temps as its parameters, the stack
 /// object and its file the frame's; the node stays (Continue) and the tree's return takes its true

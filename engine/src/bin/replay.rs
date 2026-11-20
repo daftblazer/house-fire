@@ -28,7 +28,7 @@
 
 use housefire::disc::Disc;
 use housefire::library::Library;
-use housefire::replay::{Bench, RunWith, Start, alone, atoi, drive, env, has, run};
+use housefire::replay::{Bench, RunWith, Start, AloneRun, alone, atoi, drive, env, has, run};
 use housefire::save::read_lot_arrays;
 use housefire::tree_log::read_log;
 use std::process::ExitCode;
@@ -142,7 +142,7 @@ fn main() -> ExitCode {
     }
     if let Some(ticks) = alone_ticks {
         let with = RunWith { card_lot, goals: start.goals.clone(), neighbourhood: start.neighbourhood.clone(), cat: (!log.tracks.is_empty()).then(|| housefire::anim::Catalog::read(&d, house_number)) };
-        let Some(_) = alone(&log, &lib, (the_lot, house), the_globals, neighbours, with, ticks, seed) else { return ExitCode::from(1) };
+        let Some(_) = alone(&log, &lib, (the_lot, house), the_globals, neighbours, with, AloneRun { ticks, seed }) else { return ExitCode::from(1) };
         return ExitCode::SUCCESS;
     }
     if driven {

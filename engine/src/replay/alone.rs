@@ -34,11 +34,17 @@ pub(super) struct SimStats {
 /// What a run alone counts.
 #[derive(Default)]
 pub struct Tally {
-    neutral: BTreeMap<(u16, &'static str), u32>,
+    neutral: BTreeMap<(u16, &'static str, i32), u32>,
     errors: BTreeMap<String, u32>,
     sims: BTreeMap<i16, SimStats>,
+    /// The objects waiting at a Dialog nobody answers.
+    pub(super) waiting: std::collections::BTreeSet<i16>,
+    /// Stacks of Sims restarted at their bottom frame after an error.
+    pub(super) restarted: u32,
+    /// The turns going on (LookTowards): the ticks left and the direction it ends in.
+    turns: BTreeMap<i16, (u32, i16)>,
     /// The walks going on, by the walking object.
-    walks: BTreeMap<i16, Walk>,
+    pub(super) walks: BTreeMap<i16, Walk>,
     /// Walks planned, arrived, and asked for with no way.
     pub(super) planned: u32,
     pub(super) arrived: u32,
@@ -47,7 +53,7 @@ pub struct Tally {
 
 /// One walk: the points of its line in sixteenths and the one it goes to; where it ends it
 /// faces `face`.
-struct Walk {
+pub(super) struct Walk {
     path: Vec<(f32, f32)>,
     to: usize,
     at: (f32, f32),
@@ -86,7 +92,11 @@ impl DriveHost<'_> {
                 Some(t) if n.opcode == 45 => {
                     let slot = t.file.and_then(|file| lib.routing_slot(file, self.world.definition(t), n.operand16(1), n.operand16(0), &interp.top().params));
                     match slot {
-                        Some(slot) => crate::routing::slot_places(slot, t.x16, t.y16, t.facing()).into_iter().map(|p| p.1).collect(),
+                        // (a slot that names no direction, the club's dance floor: its object's own place)
+                        Some(slot) => match crate::routing::slot_places(slot, t.x16, t.y16, t.facing()) {
+                            places if places.is_empty() => vec![(t.x16, t.y16)],
+                            places => places.into_iter().map(|p| p.1).collect(),
+                        },
                         None => return PrimResult::True,
                     }
                 }
@@ -96,6 +106,9 @@ impl DriveHost<'_> {
                 }
             };
             let tile = |p: (i32, i32)| (p.0 >> 4, p.1 >> 4);
+            if super::study::has("REPLAY_ALONE_SHOW_NO_WAY") {
+                println!("goals of object {id} tick {}: {goals:?} (me {from:?} room {}, size {:?})", self.tick, self.world.walls.room(from.0 >> 4, from.1 >> 4), self.world.walls.size());
+            }
             let mut best: Option<(Vec<crate::routing::Tile>, (i32, i32))> = None;
             for g in goals {
                 if g.0 < 0 || g.1 < 0 {
@@ -109,6 +122,9 @@ impl DriveHost<'_> {
             let t = self.tally.as_mut().expect("alone");
             let Some((route, goal)) = best else {
                 t.no_way += 1;
+                if super::study::has("REPLAY_ALONE_SHOW_NO_WAY") {
+                    println!("no way: tick {} object {id} at {from:?} (tile {:?}) to object {so} opcode {}", self.tick, tile(from), n.opcode);
+                }
                 return PrimResult::False;
             };
             t.planned += 1;
@@ -153,8 +169,8 @@ impl DriveHost<'_> {
 }
 
 impl Tally {
-    pub(super) fn neutral(&mut self, opcode: u16, why: &'static str) {
-        *self.neutral.entry((opcode, why)).or_default() += 1;
+    pub(super) fn neutral(&mut self, opcode: u16, why: &'static str, tree: i32) {
+        *self.neutral.entry((opcode, why, tree)).or_default() += 1;
     }
 
     pub(super) fn error(&mut self, tree: i32, node: u16, kind: &str, _object: i16) {
@@ -255,6 +271,12 @@ fn world_hash(d: &mut Driven) -> u64 {
     h.0
 }
 
+/// How long a run alone goes and the seed of its random numbers.
+pub struct AloneRun {
+    pub ticks: u32,
+    pub seed: u64,
+}
+
 /// What a run alone found.
 pub struct AloneReport {
     pub ticks: u32,
@@ -295,7 +317,8 @@ fn watch(host: &mut DriveHost) {
 }
 
 /// The run alone, `ticks` ticks from the loaded start, printing its figures.
-pub fn alone<'l>(log: &crate::tree_log::Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l LotChunks>), globals: &[i16], neighbours: &[Neighbour], with: RunWith, ticks: u32, seed: u64) -> Option<AloneReport> {
+pub fn alone<'l>(log: &crate::tree_log::Log, lib: &'l Library, lot: (&'l LotChunks, Option<&'l LotChunks>), globals: &[i16], neighbours: &[Neighbour], with: RunWith, run: AloneRun) -> Option<AloneReport> {
+    let AloneRun { ticks, seed } = run;
     let mut d = setup(log, lib, lot, globals, neighbours, with, Some(Tally::default()))?;
     // (a panic in a stack's turn is counted, not printed, unless studied)
     if !super::study::has("REPLAY_ALONE_SHOW_ERRORS") {
@@ -334,6 +357,20 @@ pub fn alone<'l>(log: &crate::tree_log::Log, lib: &'l Library, lot: (&'l LotChun
         d.sim.tick(&mut d.host);
         d.host.world.clock_pass(d.host.stopped);
         watch(&mut d.host);
+        if let Some(every) = super::study::env("REPLAY_ALONE_SHOW_SIMS").map(|v| super::study::atoi(&v) as u32)
+            && every > 0
+            && t % every == 0
+        {
+            // study: each Sim's stack every N ticks
+            let sims: Vec<i16> = d.host.world.objects().filter(|o| o.person).map(|o| o.id()).collect();
+            for id in sims {
+                let Some(k) = d.host.world.find(id) else { continue };
+                let i = d.sim.stack_of(&d.host.world, k);
+                let frames: Vec<String> = i.stack().iter().map(|f| format!("{}:{}", f.tree.map_or(-1, |t| lib.tree_at(t).id as i32), f.node)).collect();
+                let top = i.stack().last().map(|f| (f.tree.and_then(|t| lib.tree_at(t).nodes.get(f.node as usize)).map(|n| (n.opcode, n.operand)), f.params.clone(), f.locals.clone()));
+                println!("tick {t} sim {id}: {} {}{} top {top:?}", frames.join(" "), if i.asleep() { "asleep " } else { "" }, if i.done() { "DONE" } else { "" });
+            }
+        }
         done = t;
     }
     let hash = world_hash(&mut d);
@@ -341,7 +378,7 @@ pub fn alone<'l>(log: &crate::tree_log::Log, lib: &'l Library, lot: (&'l LotChun
     let neutral_total: u32 = t.neutral.values().sum();
     let error_total: u32 = t.errors.values().sum();
     println!("alone: ticks {done} of {ticks}, errors {error_total}, neutral answers {neutral_total}");
-    let mut kinds: Vec<(u32, String)> = t.neutral.iter().map(|(&(op, why), &n)| (n, format!("neutral {}: {why}", primitive_name(op)))).collect();
+    let mut kinds: Vec<(u32, String)> = t.neutral.iter().map(|(&(op, why, tree), &n)| (n, format!("neutral {}: {why}, in tree {tree}", primitive_name(op)))).collect();
     kinds.extend(t.errors.iter().map(|(k, &n)| (n, k.clone())));
     kinds.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
     for (n, k) in kinds.iter().take(15) {
@@ -357,7 +394,7 @@ pub fn alone<'l>(log: &crate::tree_log::Log, lib: &'l Library, lot: (&'l LotChun
         });
         println!("sim {id} {name}: interactions started {} finished {}, walked {:.1} tiles, motives low [{}] last [{}], {at}", s.started, s.finished, s.walked, f(&s.low), f(&s.last));
     }
-    println!("alone: walks planned {}, arrived {}, no way {}", t.planned, t.arrived, t.no_way);
+    println!("alone: walks planned {}, arrived {}, no way {}; Sim stacks restarted after an error {}; objects waiting at a Dialog {}", t.planned, t.arrived, t.no_way, t.restarted, t.waiting.len());
     println!("alone: hash {hash:016x}");
     Some(AloneReport { ticks: done, of: ticks, hash })
 }
@@ -403,5 +440,43 @@ impl DriveHost<'_> {
             self.chosen = lib.tree(c.object_file, c.interaction(lib).action).map(|t| (c.id, t, c.object_file));
         }
         crate::interp::PrimResult::True
+    }
+}
+
+impl DriveHost<'_> {
+    /// LookTowards (22), mode 2 (the only one the logs use): the Sim turns to face the stack
+    /// object at the walker's turn rate (`turn_frames`, in the frames of the original's clock:
+    /// 33 ms a frame, 42 a tick), yielding until it has, then true. Other modes: neutral.
+    pub(super) fn look_towards(&mut self, interp: &mut crate::interp::Interpreter, n: &crate::bhav::Node) -> crate::interp::PrimResult {
+        use crate::interp::PrimResult;
+        let me = self.me;
+        let id = self.world.get(me).id();
+        if n.operand16(0) != 2 {
+            return self.neutral(n, "mode not modelled");
+        }
+        let t = self.tally.as_mut().expect("alone");
+        if let Some(turn) = t.turns.get_mut(&id) {
+            if turn.0 > 0 {
+                turn.0 -= 1;
+                return PrimResult::Yield;
+            }
+            let dir = turn.1;
+            t.turns.remove(&id);
+            if let Some(v) = self.world.get_mut(me).data.get_mut(crate::world::DATA_FACING) {
+                *v = dir;
+            }
+            return PrimResult::True;
+        }
+        let (me_o, so) = (self.world.get(me), self.world.find_object(interp.top().stack_object));
+        let Some(so) = so else { return PrimResult::False };
+        let (dx, dy) = ((so.x16 - me_o.x16) as f32, (so.y16 - me_o.y16) as f32);
+        if dx == 0.0 && dy == 0.0 {
+            return PrimResult::True;
+        }
+        let (from, to) = (crate::routing::direction_angle(me_o.facing()), f32::atan2(-dx, dy));
+        let diff = (to - from + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+        let ticks = (crate::routing::turn_frames(diff.abs()) as f32 * crate::routing::FRAME_MS / crate::routing::TICK_MS).ceil() as u32;
+        t.turns.insert(id, (ticks, direction_of(dx, dy)));
+        PrimResult::Yield
     }
 }

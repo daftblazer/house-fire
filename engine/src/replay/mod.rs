@@ -95,7 +95,7 @@ mod study;
 mod variables;
 mod walks;
 
-pub use alone::alone;
+pub use alone::{AloneRun, alone};
 pub use counts::{Bench, Counts};
 pub use drive::{DriveReport, Parting, drive};
 pub use run::{Replay, run};

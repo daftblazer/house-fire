@@ -24,7 +24,7 @@ use crate::bhav::Node;
 use crate::interp::{Error, Host, Interpreter, Mode, PrimResult, Step, Trees};
 use crate::library::Library;
 use crate::primitives::{
-    balloon_or_string, call_named_tree, change_suit, complete_goal, create_object, dialog, direction_to, distance_to, drop_onto, grab, idle, idle_for_input,
+    balloon_or_string, call_named_tree, find_best_object, change_suit, complete_goal, create_object, dialog, direction_to, distance_to, drop_onto, grab, idle, idle_for_input,
     idle_for_input_waiting, may_sleep, notify_stack_object, present, push_action, random, relationship, relationship_old, remove_object, run_functional_tree, set_motive_delta,
     set_to_next, snap, test_object_type,
 };
@@ -106,6 +106,8 @@ pub(super) struct DriveHost<'l> {
     pub(super) tally: Option<Tally>,
     /// The action the last evaluation chose: its object, tree and the object's file.
     pub(super) chosen: Option<(i16, TreeId, Option<FileId>)>,
+    /// The tree of the step being taken (a run alone, for the counts).
+    at_tree: i32,
 }
 
 impl Trees for DriveHost<'_> {
@@ -134,12 +136,14 @@ impl<'l> SimHost<'l> for DriveHost<'l> {
             Ok(steps) => {
                 if interp.done() {
                     self.note_error(interp);
+                    self.restart(interp);
                 }
                 steps
             }
             Err(_) => {
                 interp.abort(Error::Panicked);
                 self.note_error(interp);
+                self.restart(interp);
                 1
             }
         }
@@ -157,6 +161,9 @@ impl DriveHost<'_> {
             }
             let r = if self.tally.is_some() { self.step_alone(interp) } else { self.step_checked(interp) };
             steps += 1;
+            if self.tally.is_some() && super::study::env("REPLAY_ALONE_TRACE").is_some_and(|v| super::study::atoi(&v) == i64::from(self.me_id()) && self.tick >= 20000 && self.tick < 20003) {
+                println!("trace tick {} object {} step {steps}: {:?} trail {:?} params {:?} queue {}", self.tick, self.me_id(), r, self.trail.back(), interp.stack().last().map(|f| f.params.clone()), self.world.get(self.me).queue.len());
+            }
             match r {
                 Step::Go => {}
                 Step::Yield => {
@@ -188,6 +195,24 @@ impl DriveHost<'_> {
             }
         }
         steps
+    }
+
+    /// A Sim whose stack ended (an error, a script stop) goes on from its bottom frame, its main
+    /// tree from the start with no interaction: a Sim never stops living (a run alone). Other
+    /// objects stay as they ended.
+    fn restart(&mut self, interp: &mut Interpreter) {
+        let Some(o) = self.world.get_live(self.me).filter(|o| o.person) else { return };
+        let id = o.id();
+        let Some(mut bottom) = interp.stack().first().cloned() else { return };
+        bottom.node = 0;
+        bottom.stack_object = 0;
+        interp.restore(vec![bottom]);
+        self.world.end_interaction(self.me);
+        if let Some(t) = &mut self.tally {
+            t.restarted += 1;
+            t.walks.remove(&id);
+            t.sim(id).open.clear();
+        }
     }
 
     /// A stack that ended in an error, counted by its tree and the error.
@@ -228,8 +253,9 @@ impl DriveHost<'_> {
         if self.trail.len() >= 8 {
             self.trail.pop_front();
         }
+        let at = interp.stack().last().map_or((-1, 0), |f| (f.tree.map_or(-1, |t| lib.tree_at(t).id as i32), f.node));
+        self.at_tree = at.0;
         if super::study::has("REPLAY_ALONE_SHOW_ERRORS") {
-            let at = interp.stack().last().map_or((-1, 0), |f| (f.tree.map_or(-1, |t| lib.tree_at(t).id as i32), f.node));
             self.trail.push_back(format!("{}:{} op {op} so {}", at.0, at.1, interp.stack().last().map_or(0, |f| f.stack_object)));
         }
         // (the trees a call names are the top frame's file's)
@@ -245,6 +271,10 @@ impl DriveHost<'_> {
             if now == depth + 1 && (op == 17 || op == 30) {
                 s.started += 1;
                 s.open.push(now);
+                if super::study::has("REPLAY_ALONE_SHOW_STARTS") {
+                    let f = interp.stack().last();
+                    println!("start tick {} sim {id}: tree {} on object {}", self.tick, f.and_then(|f| f.tree).map_or(-1, |t| lib.tree_at(t).id as i32), f.map_or(0, |f| f.stack_object));
+                }
             }
             while s.open.last().is_some_and(|&d| d > now) {
                 s.open.pop();
@@ -343,12 +373,14 @@ impl DriveHost<'_> {
     /// A primitive the engine cannot answer yet, the frame as it is (named in the parting):
     /// an animation or a walk (Animate 44, GotoRelativePosition 27, GotoRoutingSlot 45) is still
     /// going on, a yield; any other is true.
-    fn neutral(&mut self, n: &Node, why: &'static str) -> PrimResult {
+    pub(super) fn neutral(&mut self, n: &Node, why: &'static str) -> PrimResult {
         *self.neutral.entry(n.opcode).or_default() += 1;
         if let Some(t) = &mut self.tally {
-            t.neutral(n.opcode, why);
+            t.neutral(n.opcode, why, self.at_tree);
         }
         match n.opcode {
+            // (a run alone has no animation to wait for where the archive lacks it)
+            44 if self.tally.is_some() => PrimResult::True,
             44 | 27 | 45 => PrimResult::Yield,
             _ => PrimResult::True,
         }
@@ -361,7 +393,7 @@ impl Host for DriveHost<'_> {
         self.world.end_interaction(me);
     }
     fn tree(&mut self, id: u16) -> Option<TreeId> {
-        let f = self.file_of_top.or(self.world.get(self.me).file);
+        let f = self.file_of_top.or(self.world.get_live(self.me).and_then(|o| o.file));
         self.lib.tree(f, id)
     }
 
@@ -370,7 +402,7 @@ impl Host for DriveHost<'_> {
     }
 
     fn default_params(&mut self) -> Option<[i16; 8]> {
-        Some(self.world.get(self.me).temps)
+        self.world.get_live(self.me).map(|o| o.temps)
     }
 
     /// A check tree the engine runs, stepped natively and compared with the log's steps of it
@@ -439,6 +471,8 @@ impl Host for DriveHost<'_> {
                 }
                 _ => self.neutral(n, "no action chosen"),
             },
+            22 if self.tally.is_some() => self.look_towards(interp, n),
+            14 if self.tally.is_some() => find_best_object(interp, self, me, n),
             // the walks of a run alone: the engine's own (the log has no say)
             27 | 45 if self.tally.is_some() => self.go(interp, n),
             // Idle
@@ -514,13 +548,17 @@ impl Host for DriveHost<'_> {
             17 if person => idle_for_input(interp, self, me),
             // Dialog: the player's answer is the input (the log's, where its step is this one);
             // 1 a wait the pass goes on after, 2 a wait that stops it
+            36 if self.tally.is_some() => {
+                // no player to answer: the object waits at its Dialog for ever, and the pass goes
+                // on (counted when it begins to wait)
+                let at = self.at_tree;
+                if self.tally.as_mut().is_some_and(|t| t.waiting.insert(me_id)) {
+                    self.tally.as_mut().unwrap().neutral(36, "no player to answer (waits)", at);
+                }
+                PrimResult::Yield
+            }
             36 => {
                 let s = self.log_step_here(n, interp).map(|s| (s.result, s.after == n.true_target as u16));
-                if self.tally.is_some() {
-                    // no player: the answer is yes, counted
-                    self.world.dialog_answer = Some(true);
-                    self.tally.as_mut().unwrap().neutral(36, "no player to answer");
-                }
                 if let Some((0, yes)) = s {
                     self.world.dialog_answer = Some(yes);
                 }
@@ -613,6 +651,7 @@ pub(super) fn setup<'l>(log: &Log, lib: &'l Library, lot: (&'l LotChunks, Option
         sim_of: ids.iter().map(|(&sim, &id)| (id, sim)).collect(),
         tally,
         chosen: None,
+        at_tree: -1,
     };
     if super::study::has("REPLAY_DRIVE_SHOW_FIRSTS") {
         let mut first: BTreeMap<i16, (u32, u16, u16)> = BTreeMap::new();
