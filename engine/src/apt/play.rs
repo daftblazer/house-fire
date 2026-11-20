@@ -100,7 +100,7 @@ pub fn run(log: &Log, flashes: Vec<(String, Rc<Flash>)>, to: Option<u32>, timing
             host.after_calls(&mut p, f);
         }
     }
-    let cmds = p.take_commands();
+    let cmds = host.as_heard(p.take_commands());
     (p, cmds)
 }
 

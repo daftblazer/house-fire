@@ -3,7 +3,9 @@
 //! commands the movies sent back (`docs/assets.md`, "The player"): none of it is verified
 //! against the game, only against what it makes the movies say.
 
-use super::player::Player;
+use std::collections::{BTreeMap, BTreeSet};
+
+use super::player::{Command, Player};
 use super::value::Value;
 use crate::tree_log::Log;
 
@@ -27,6 +29,8 @@ const FITTED: &[(u32, &str, f64)] = &[
 pub struct Host {
     sets: Vec<(u32, String, Option<f64>)>,
     clears: Vec<(u32, String)>,
+    /// How many screens heard the commands of a game frame (frames not listed: one).
+    listeners: BTreeMap<u32, usize>,
 }
 
 impl Host {
@@ -54,7 +58,14 @@ impl Host {
                 _ => {}
             }
         }
-        let mut host = Host { sets: Vec::new(), clears: Vec::new() };
+        // Every screen the game has up hears a command a movie sends, and the observer logs each
+        // hearing: the commands of a frame come once for each screen that logs any in it.
+        let mut screens: BTreeMap<u32, BTreeSet<u32>> = BTreeMap::new();
+        for c in &log.movie_commands {
+            screens.entry(c.frame).or_default().insert(c.screen);
+        }
+        let listeners = screens.into_iter().map(|(f, s)| (f, s.len())).collect();
+        let mut host = Host { sets: Vec::new(), clears: Vec::new(), listeners };
         for (i, c) in log.movie_commands.iter().enumerate() {
             let Some((base, v)) = [c.command.strip_suffix("_x"), c.command.strip_suffix("_y")].into_iter().flatten().next().zip(c.argument.parse::<f64>().ok()) else { continue };
             // a button taken off the screen reports -512 pixels: that is no place it was given
@@ -91,6 +102,11 @@ impl Host {
                 p.set_extern(name, v.map_or(Value::Undefined, Value::Num));
             }
         }
+    }
+
+    /// The commands as the game's observer logs them: each one once for every screen that heard it.
+    pub fn as_heard(&self, commands: Vec<Command>) -> Vec<Command> {
+        commands.into_iter().flat_map(|c| std::iter::repeat_n(c.clone(), self.listeners.get(&c.frame).copied().unwrap_or(1))).collect()
     }
 
     /// What goes once the frame's calls are done.
