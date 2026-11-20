@@ -333,7 +333,7 @@ The walk is the planner's and the walker's now (simulation.md, "The planner's re
 ### The HUD's feed (stage 9, packet U3, 2026-11-20)
 
 `LOCKSTEP_HUD=1` on ui-play.log: calls, text strings and the HUD's own text places (funds, clock,
-AM) are the log's; 567 differences are left (3 reads, 564 text places of the dialog), all of the
+AM) are the log's; 284 differences are left after U4 (0 reads, 284 text places of the dialog; it was 567: 3 reads, 564 places), all of the
 game's font measure (`ERFont::DoDraw`, 0x8003CB10, with `SetSize` 0x8003C95C choosing a size
 variant of the font by the requested size):
 
@@ -361,3 +361,19 @@ sleep (the 49), objects 47 and 48 at tick 2, Sim 12's eating interaction (10 ste
 3052), Sim 237 once at 3440. Not found: what the game's load does to a made object's stack (its
 type is new to the lot's objt; fields 0 to 3 of a new objt entry are not known) and to a Sim's
 frames in that object's file. Not saved by the engine at all: the sleep counts, the RNG, walks.
+
+### The sandbox's interface (stage 9, packet U4, 2026-11-20)
+
+- The game's pie menu (the "Go Here" pill, the A and the label) is drawn outside Apt, into the
+  world picture; its pieces and a multi-entry layout are not known (no log has one). Stands in:
+  the wrapper's pause-screen pill on a list.
+- The pause screen's second funds line ("$ 45,566", the family's) is not drawn: the source is not
+  read (the home family's save record has 45,551 as its second word, 15 short; unverified).
+- `dialog_box_height`, `dialog_title_bar_width`, `UI_button_width` and the title and label sizes
+  are fitted to Mom's dialog; the pause strings' widths are the log's numbers. Other dialogs in
+  play are laid out by those fits.
+- The pause screen's title is the first section's; moving in the icon row and choosing a
+  section is the movies' own (keys reach them), the game's response (the section's data, the
+  buy and build modes) is not there.
+- The HUD's house icon in the pause screen's icon row is not drawn (the log-fed picture has the
+  same hole).

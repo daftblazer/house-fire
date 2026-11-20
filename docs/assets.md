@@ -3587,7 +3587,7 @@ what the game gives the HUD's and the dialog's movies each presentation frame; t
 `LOCKSTEP_HUD=1 lockstep LOG ISO --card CARD` (`bin/lockstep/hud.rs`: the replay's world frame by
 frame against the log's calls, reads and text records; the log gives it only the frames' ticks,
 the movies' commands and the speed setting, which the tracks' speeds stand for). On ui-play.log
-(1,317 frames in play): calls 0 differences, read answers 3, text strings 0, text places 564.
+(1,317 frames in play): calls 0 differences, read answers 3, text strings 0, text places 564 (U4 answers the three reads with measures fitted to Mom's dialog and draws the title and label at their measured sizes: reads 0, text places 284; "In the sandbox (U4)").
 
 Where the game computes each value:
 
@@ -3639,6 +3639,93 @@ What does not reach the log's places: the dialog's title and button label (the f
 other `SetSize` sizes) and its second and third lines (the game's line pitch is 19.26 pixels
 after the first line and 20.0 after the second: the line's height is not in the font records
 read); the first line matches to 1e-4.
+
+### In the sandbox (U4)
+
+The play bin shows the game's own interface and no stand-in (`standin.rs`, the CPU overlay and its
+shaders are gone). `engine/src/apt/ui.rs` (`Ui`, GPU-free) runs the movies from the engine's feed;
+`engine/render` draws them (`Renderer::interface()` is an `AptPass` over the scene, `play.rs` gives
+it the display list of `Ui::display_list()` and the lines of `game_text::native_lines`).
+
+**One frame** (`Ui::step`, one for each presentation frame, the order the log-run has): the
+movies advance, the movies' starts and the game's loads (a movie that asked for another with
+`loadMovie` is loaded in the frame after its call, in the same frame if the request came from a
+movie's own frame: `Player::pending_loads`), the commands the movies sent go to the `Hud`
+(`Hud::command`: the places of the bars, `hud_ready`, `dialog_ready`, `dialog_key_press`), the
+`Hud`'s calls (update then draw: `showHUD`, `showDialog`, the speed buttons, the mood meter, the
+layers), the pause screen's and the menu's calls, and the lines of text come back
+(`hud::Text`: top left, shadow pass, the width and height the game measured, plain or not). What
+the movies read of the game is answered by the host each frame (`Player::set_answers`): the
+HUD's `om ma ra ct two_player`, the dialog's `number_of_buttons dialog_x ...`, and the pause
+screen's `pause_mode`, `pause_enable_buy_build`, `title_bar_width`. The start is what the game does
+at a lot's start: the wrapper, the front end's `createButton` calls whose stale `orientation`
+("center") the dialog's button inherits (without them the dialog's button is placed by a
+different rule and the OK pill is 57 pixels right of the game's: found by comparing the commands),
+`loadFunctions("hud")`, and `showHUD` (`Ui::begin_play`: the sandbox has no load bar, so 6 frames
+in, the dump's 39).
+
+**How input reaches the movies.** The wrapper's `keys` clip has actions for key down (0x40) and
+key up (0x80) on its place item; they test `Key.getCode` (37 to 40 the arrows, 88 A, 79 B, 84
+the triangle, 83 the square, 306 and the L and R codes) and call `keyPress_*` of the clip the
+wrapper's `targetClip` names (`keyPress_x` of the dialog or `p_main` movie). `Player::key(code,
+down)` runs the actions of every clip placed with them with `Key.getCode` the code; `Ui::press`
+is a down and an up. The game's own path to the movies is not logged (the log has the effects: the
+dialog's movie says `extern.dialog_key_press = "accept"` for A, which the `Hud` keeps for the
+sandbox to answer the dialog; the pause screen's keys have no command in the log). The pad's A and
+B and D-pad, Enter, Esc and the arrows go through it when the dialog or the pause screen has the
+focus (`Cmd::Key`); a click on the dialog's pills is A or B (`Ui::dialog_hit`, the places the
+movie reported).
+
+**The pause screen** (Space or the pad's Start opens it, Space, Esc or B closes it; `speed` stays
+0): `Ui::open_pause` makes the calls of the log's frame 2061 (`hideHUD`, `showPause`, the eight
+`drawButton(name, "-1", "-1", ".1")`); the movies load `pause` and `p_main`, `draw_main` is
+heard and 2 frames later the two buttons are drawn (`drawButton` SELECT at 0.4, BACK at 0.7, y
+0.905); closing is `hidePause`, `destroyButton` of the eight, `showHUD`. The commands the movies
+send in these frames are the log's (checked: 2064 to 2066 the same, in the same frames). The
+screen's own lines (title "GOALS", the labels, the funds line) are drawn by the game: their
+widths are the log's numbers (the title bar's `title_bar_width` 0.102652, the buttons'
+`drawButton` widths 0.093525 and 0.070360, the label drawn that wide and centred on the button),
+not a measure (the glyph columns do not give them). The title is always the first section's.
+
+**The interaction menu.** Its pill is not a movie's piece and has no movie traffic: the log's
+only record of the floor menu is the 0x80 text "Go Here" (a plain draw, no shadow pass, dark
+navy, at 0.14, 0.29), and the pill, its A and the text are in the game's *world* picture
+(`frames/menu/world_01920.png`, recorded with the port's own interface off) as they are in its
+frame: the game draws the pie menu itself in its 3D/2D pass, not through Apt. Its pieces cannot
+be sourced from the movies; what the sandbox draws for it stands in: the wrapper's own button
+pill (the pause screen's A pill, `drawButton("accept", x, y, w)` in a "menu" context, the same
+artwork family) on the highlighted entry of a vertical list of plain navy labels
+(`Ui::show_menu`, `menu_hit`: rows 44 pixels apart; the pill reaches 43 pixels left of the label's
+middle and 18 right of it as the pause screen's does). A multi-entry pie menu is not in any log,
+so the list is a stand-in in layout too.
+
+**The check** (`ui-check LOG ISO --native --card CARD FRAME...`, with `HF_UI_DIR` the frames'
+folder under `HF_FRAMES`): `native_pictures` runs a replay of the log's world (`Replay`, as
+`LOCKSTEP_HUD` does) and the `Ui` over it; the log gives the frames' ticks and, as a player's
+presses, the lot's start (the frames of `loadFunctions` and the first `showHUD`) and the pause's
+open and close (`showPause`, `hidePause`); the dialog opens and closes with the world's Dialog
+node. `HF_UI_COMMANDS=1` prints the commands the native movies sent (to diff against the log's),
+`HF_UI_TEXTS=1` the native lines and the log's records, `HF_UI_LOGREADS=1` answers the reads
+from the log. Figures (within 4 on the 2D layer, 640 by 448; native against the log-fed run on
+the same frame):
+
+| frame | what | native | log-fed |
+|---|---|---|---|
+| 1300 (ui-dump) | Mom's dialog | 88.23% | 88.45% |
+| 1390 (ui-dump) | HUD | 89.89% | 90.49% |
+| 1920 (ui-menu) | the "Go Here" menu | 70.67% | 71.10% |
+| 2100 (ui-menu) | the pause screen | 84.34% | 85.07% |
+
+What is left of the native gap: 1920's pill and text are in the world picture (the log-fed run
+draws its text over the game's, `over` 585; the native run draws nothing for the menu, `over` 5);
+2100's second funds line "$ 45,566" (the family's funds in the pause screen, at the clock's place)
+is not drawn: the save's family record of the home (house 1) has 16,727 and 45,551 as its first two
+words, 45,551 15 less than the game's number, unverified as the source and not used; the
+dialog's title, button and box measures (`dialog_title_bar_width`, `UI_button_width`,
+`dialog_box_height`) are fitted to Mom's dialog, the one the logs read in play (named in
+`hud.rs`). The commands of 1209 to 1340 match the log's except `wrapper_ready` (before the log's
+handler exists), `done_loading` (the load bar's end, not in the sandbox) and a late
+`hud_draw_info_text`.
 
 ### Left over
 

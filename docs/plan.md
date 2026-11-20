@@ -214,19 +214,24 @@ and the run waits for the answer; the first button answers the primitive's true 
 its false way (an engine rule: the logs' dialogs have one button; with no player a run alone takes
 the first at once). The HUD names a Sim by the save's made Sim of its neighbour record.
 
-**The HUD, the pie menu (a list) and the dialog box are stand-ins** (`standin.rs`, drawn by the CPU
-into `overlay.rs`'s picture with the public-domain `font8x8`, laid over the frame by
-`overlay_pass.rs`); the original's own menus and HUD replace `standin` and the overlay's source
-whole, the renderer's overlay pass stays. `--headless --script FILE` runs the same Game with no
-window; `render/play-scripts/` has the checks, `render/tests/play_script.rs` runs them (HF_ISO,
-HF_HOME_LOG, HF_HOME_CARD).
+**The interface is the game's own** (`engine/src/apt/ui.rs`, `hud.rs`; `assets.md`, "In the sandbox
+(U4)"): the HUD, the dialog and the pause screen are the Apt movies run from the engine's own
+feed (`Hud`'s calls, answers and lines of text) and drawn by the renderer's interface pass;
+Space or Start opens the pause screen (arrows, Enter and Esc go to it as the pad's keys), a
+dialog is answered with A or B or a click on its pills, `answer` stays a script command. The
+interaction menu's pieces are the game's own draw outside the movies and cannot be sourced: a list
+of the wrapper's button pills (the highlighted entry has the A pill) stands in, and the pad's
+cursor of the old sandbox is gone. `--headless --script FILE` runs the same Game with no window
+(`pause` and `key CODE` are script commands; a script's ticks count the frames the pause screen
+stands for); `render/play-scripts/` has the checks, `render/tests/play_script.rs` runs them
+(HF_ISO, HF_HOME_LOG, HF_HOME_CARD).
 
 Deliberate differences of the played run, for lockstep to skip: the checks run on a target the
 player's click made (the go-here marker) start with parameter 0 = 0 (every other check's is 1: the
 marker's "Go here test" 4109 is false for 1, and the original delivers the player's go-here);
 the Sims' walk plays the walk cycle at the stand-in's constant speed (no ramp, no turns in
 place) and an idle Sim its standing loop (`Alone::motions`); the camera is the player's, not the
-log's. What the Sims do of themselves in a run alone is "The run alone" in `simulation.md`
+log's; the interaction menu is a list of pills, not the game's pie menu; the pause screen's family funds line is not drawn; the dialog's box height and the title and button widths are fitted to one dialog. What the Sims do of themselves in a run alone is "The run alone" in `simulation.md`
 (social is the one need still not met).
 
 ## What does not come over from Bustin' Out's port

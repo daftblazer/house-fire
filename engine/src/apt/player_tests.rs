@@ -259,3 +259,30 @@ fn a_with_block_names_its_end() {
     assert!(matches!(v[0], Instr::With { until: 3, .. }), "{v:?}");
     assert_eq!(v.len(), 4);
 }
+
+#[test]
+fn a_key_runs_the_key_actions_of_a_placed_clip_with_its_code() {
+    // a clip placed with actions on key down (0x40) and key up (0x80): each says which code it saw
+    let on_down = send("down", vec![push(vec![C::Int(0), s("Key")]), op(Op::GetVariable), push(vec![s("getCode")]), op(Op::CallMethod)]);
+    let on_up = send("up", vec![push(vec![C::Int(0), s("Key")]), op(Op::GetVariable), push(vec![s("getCode")]), op(Op::CallMethod)]);
+    let mut keys = place_char(1, 1, Some("keys"), [0.0, 0.0], 1.0);
+    if let Item::Place(p) = &mut keys {
+        use super::movie::ClipAction;
+        p.clip_actions = vec![ClipAction { events: 0x40, key: 0, actions: on_down }, ClipAction { events: 0x80, key: 0, actions: on_up }];
+    }
+    let mut p = Player::new([("root".to_string(), flash("root", one_frame(vec![keys]), vec![Character::Sprite { frames: Vec::new() }]))]);
+    p.load("root");
+    p.take_commands();
+    p.key(88, true);
+    p.key(88, false);
+    assert_eq!(sent(&mut p), vec![("down".into(), "88".into()), ("up".into(), "88".into())]);
+}
+
+#[test]
+fn a_read_without_a_logged_answer_gets_the_hosts() {
+    let code = send("c", vec![push(vec![s("extern")]), op(Op::GetVariable), push(vec![s("om")]), op(Op::GetMember)]);
+    let mut p = Player::new([("root".to_string(), flash("root", one_frame(vec![Item::Action(code)]), Vec::new()))]);
+    p.set_answers([("om".to_string(), "19".to_string())]);
+    p.load("root");
+    assert_eq!(sent(&mut p), vec![("c".into(), "19".into())]);
+}

@@ -15,7 +15,7 @@
 //!   middle of the picture (or chooses), B closes, Y changes the Sim, D-pad moves in a menu.
 //!
 //! --script: lines of `TICK command`, applied as the input would be at that tick (`pick ID`, `zoom DISTANCE`,
-//! `floor X Y`, `focus`, `menu`, `choose N` or `choose @ACTION`, `answer N`, `speed K`, `sim ID`,
+//! `floor X Y`, `focus`, `menu`, `choose N` or `choose @ACTION`, `answer N`, `pause` (the pause screen opens or closes), `key CODE` (a key to the dialog's or pause screen's movie: 37 to 40 the arrows, 88 A, 79 B), `speed K`, `sim ID`,
 //! `expect SIM TREE WITHIN`, `quit`); with --headless no window is made (and no GPU unless --shot
 //! is given). --shot: the picture of a tick (with the interface) saved as PNG.
 //! Each command queued is printed: `play: tick T sim S target O action A (name)`.
@@ -190,6 +190,8 @@ fn parse_line(line: &str) -> Option<(u32, Cmd)> {
         "pick" => Cmd::Pick(n(&mut w)? as i16),
         "floor" => Cmd::Floor(f(&mut w)?, f(&mut w)?),
         "menu" => Cmd::Menu,
+        "pause" => Cmd::TogglePause,
+        "key" => Cmd::Key(n(&mut w)? as u32),
         "focus" => Cmd::FocusSim,
         "zoom" => Cmd::Zoom(f(&mut w)?),
         "choose" => {
@@ -251,6 +253,9 @@ struct Game<'l> {
     texts: Vec<housefire::hud::Text>,
     /// The presentation frames run (the interface's clock).
     frames: u32,
+    /// The frames run with the simulation standing still (the pause screen up): a script's and
+    /// a shot's ticks count them too, so a script can press keys in the pause screen.
+    paused_frames: u32,
 }
 
 impl<'l> Game<'l> {
@@ -404,6 +409,11 @@ impl<'l> Game<'l> {
             }
             self.speed = 0;
         }
+    }
+
+    /// The script's clock: the simulation's ticks and the frames the pause screen stood for.
+    fn clock(&self) -> u32 {
+        self.alone.ticks() + self.paused_frames
     }
 
     /// Whether the dialog or the pause screen has the keys.
@@ -858,7 +868,7 @@ fn run(args: Args) -> Result<bool, String> {
     let interface = AptAssets::new(&disc);
     let font = interface.fonts.iter().find(|(n, _)| housefire::shader::name_hash(n) == INTERFACE_FONT).map(|(_, f)| f.clone()).ok_or("the interface's font")?;
     let ui = Ui::new(interface.flashes.clone());
-    let mut game = Game { alone, lib: &lib, camera, active: None, target: None, menu: None, dialog: None, names, speed: 1, last_speed: 1, quit: false, expects: Vec::new(), sound: None, ui, hud: Hud::new(1), font, texts: Vec::new(), frames: 0 };
+    let mut game = Game { alone, lib: &lib, camera, active: None, target: None, menu: None, dialog: None, names, speed: 1, last_speed: 1, quit: false, expects: Vec::new(), sound: None, ui, hud: Hud::new(1), font, texts: Vec::new(), frames: 0, paused_frames: 0 };
     game.sound = make_sound(&disc, &args);
     game.alone.set_sound(game.sound.is_some());
     if let Some(s) = &mut game.sound {
@@ -965,16 +975,16 @@ fn run(args: Args) -> Result<bool, String> {
         let ticks_now = if args.headless && staged.is_none() { 1 } else { game.speed };
         let mut ran = 0;
         loop {
-            while next_script < script.len() && script[next_script].0 <= game.alone.ticks() {
+            while next_script < script.len() && script[next_script].0 <= game.clock() {
                 let c = script[next_script].1.clone();
                 next_script += 1;
                 game.apply(c);
             }
-            if game.quit || limit.is_some_and(|l| game.alone.ticks() >= l) {
+            if game.quit || limit.is_some_and(|l| game.clock() >= l) {
                 break 'frames;
             }
             // (the frame of a shot is drawn before its tick runs)
-            if args.shot.as_ref().is_some_and(|s| s.0 == game.alone.ticks()) && !shot_done {
+            if args.shot.as_ref().is_some_and(|s| s.0 == game.clock()) && !shot_done {
                 break;
             }
             if ran >= ticks_now {
@@ -988,6 +998,10 @@ fn run(args: Args) -> Result<bool, String> {
             }
         }
         frames += 1;
+        let shown_at = game.clock();
+        if ran == 0 && game.speed == 0 {
+            game.paused_frames += 1;
+        }
         game.frame_ui();
         if let Some(s) = &mut game.sound {
             s.flush();
@@ -1011,7 +1025,7 @@ fn run(args: Args) -> Result<bool, String> {
             pass.set(&drawing.vertices, &drawing.batches);
             renderer.show_interface(true);
             if let Some((at, path)) = &args.shot
-                && *at == tick
+                && *at == shown_at
                 && !shot_done
             {
                 let picture = renderer.render(&frame);

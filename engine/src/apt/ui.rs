@@ -296,7 +296,7 @@ impl Ui {
         if self.player.trace {
             eprintln!("ui: frame {} call {}({:?})", self.frame, c.name, c.args);
         }
-        if !self.player.call(&c.name, &a) {
+        if !self.player.call(c.name, &a) {
             self.player.note_stub(format!("call of {}: no such function", c.name));
         }
     }

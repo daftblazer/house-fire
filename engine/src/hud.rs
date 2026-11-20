@@ -543,4 +543,26 @@ mod tests {
         v.motives[motive::BLADDER] = -91.0;
         assert_eq!(h.answer("ma", &v).as_deref(), Some("true"));
     }
+
+    #[test]
+    fn the_pause_screen_takes_the_hud_and_gives_it_back_with_showhud_alone() {
+        let mut h = Hud::new(1);
+        h.show(&view(0.0));
+        assert_eq!(h.update(&view(0.0), Speed::Normal, true).iter().map(|c| c.name).collect::<Vec<_>>(), ["showHUD", "setPlayerMode"]);
+        h.pause();
+        // the speed buttons still follow the setting, the mood meter does not
+        let names: Vec<_> = h.update(&view(9.0), Speed::Paused, false).iter().map(|c| c.name).collect();
+        assert_eq!(names, ["hideFastForward", "hideSuperFastForward", "showRuntimePause"]);
+        h.resume(&view(9.0));
+        let names: Vec<_> = h.update(&view(9.0), Speed::Normal, false).iter().map(|c| c.name).collect();
+        assert_eq!(names, ["showHUD", "hideRuntimePause", "hideFastForward", "hideSuperFastForward"]);
+    }
+
+    #[test]
+    fn the_dialogs_key_press_is_taken_once() {
+        let mut h = Hud::new(1);
+        h.command("dialog_key_press", "accept");
+        assert_eq!(h.take_dialog_key().as_deref(), Some("accept"));
+        assert_eq!(h.take_dialog_key(), None);
+    }
 }

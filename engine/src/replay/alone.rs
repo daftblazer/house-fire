@@ -701,12 +701,12 @@ impl<'l> Alone<'l> {
     }
 
     /// The text a dialog shows and its buttons' labels: the dialog object's STR# 301, the text at
-    /// operand byte 2, a button at each of bytes 3 and 4 that is set, else one "OK".
+    /// operand byte 2 (the strings counted from 1, as `hud::Dialog::opened` has them), a button at each of bytes 3 and 4 that is set, else one "OK".
     /// Its tokens: `$NameLocal:N` the name (`name`) of the object whose id is the frame's local N,
     /// `$Local:N` that local's value.
     pub fn dialog_text(&self, ask: &DialogAsk, name: &dyn Fn(i16) -> String) -> (String, Vec<String>) {
         let strings = self.d.host.world.find_object(ask.object).and_then(|o| o.file).and_then(|f| self.lib.file(f).strings.get(&301));
-        let get = |i: u8| strings.and_then(|s| s.get(usize::from(i))).filter(|t| !t.is_empty()).map(|t| dialog_tokens(t, &ask.locals, name));
+        let get = |i: u8| strings.and_then(|s| s.get(usize::from(i.checked_sub(1)?))).filter(|t| !t.is_empty()).map(|t| dialog_tokens(t, &ask.locals, name));
         if std::env::var_os("REPLAY_SHOW_DIALOG").is_some() {
             println!("dialog: operand {:02x?} locals {:?}", ask.operand, ask.locals);
             for (i, t) in strings.into_iter().flatten().enumerate() {
