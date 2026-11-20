@@ -95,7 +95,7 @@ const BODY_MARK: [u32; 2] = [0x9876_5432, 0x1234_5678];
 /// Reads the zero bytes up to the next word boundary.
 fn align(m: &mut Img, p: usize) -> usize {
     let mut q = p;
-    while q % 4 != 0 {
+    while !q.is_multiple_of(4) {
         if m.peek(q) == Some(0) {
             let _ = m.u8(q);
         }

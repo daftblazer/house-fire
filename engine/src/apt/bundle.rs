@@ -58,7 +58,7 @@ impl Bundle {
         seen[header..].fill(false);
         // zero bytes pad the header to a word, as they pad each file
         let mut q = header;
-        while q % 4 != 0 && data.get(q) == Some(&0) {
+        while !q.is_multiple_of(4) && data.get(q) == Some(&0) {
             seen[q] = true;
             q += 1;
         }
@@ -66,7 +66,7 @@ impl Bundle {
             seen[f.offset..f.offset + f.size].fill(true);
             // zero bytes pad a file to a word
             let mut q = f.offset + f.size;
-            while q % 4 != 0 && data.get(q) == Some(&0) {
+            while !q.is_multiple_of(4) && data.get(q) == Some(&0) {
                 seen[q] = true;
                 q += 1;
             }

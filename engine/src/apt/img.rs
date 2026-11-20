@@ -78,7 +78,7 @@ impl<'a> Img<'a> {
         let len = rest.iter().position(|&c| c == 0).ok_or_else(|| format!("string at {p:#x} has no end"))?;
         self.take(p, len + 1)?;
         let mut end = p + len + 1;
-        while end % 4 != 0 && self.b.get(end) == Some(&0) {
+        while !end.is_multiple_of(4) && self.b.get(end) == Some(&0) {
             self.seen[end] = true;
             end += 1;
         }

@@ -3172,3 +3172,181 @@ table at 802A8E80) come from the route follower's clock, which `Alone::motions` 
 stereo's stations (`sbo_<station>1-5`): the stereo's state (the tuned station, on or off) is not
 an event the run sees (`radio_next_song` and `piano_play` are command events with no sample),
 so nothing starts them. The pan law's rounding (`docs/assets.md`, "The voices") is still the fit.
+
+## Menus and HUD (Apt)
+
+`flashes.arc` (61 entries) holds the menus' and HUD's movies, `fonts.arc` (6) their text fonts.
+Read natively by `engine/src/apt/` (read only: no player yet); `assets ISO apt` reads all 67 and
+ends with `apt: movies 61, fonts 6, unknown 0`, where *unknown* counts every byte nothing read,
+every character kind, item kind, opcode, constant type, geometry record and texture header
+this reader has no meaning for (`Flash::unknown`, `Font::read` failing). `assets ISO apt NAME`
+lists one movie (its characters with their shapes, each frame's items, each action's
+instructions with the constant pool's strings in place) or one font. The formats are those of
+the PC games' Apt (the open-source OpenSAGE project reads them) except that these are
+big-endian, with binary geometry, and the memory-image layout below.
+
+### Bundle (a `flashes.arc` entry)
+
+| Offset | |
+|---|---|
+| 0 | `BIGF` |
+| 4 | the whole size, little-endian |
+| 8 | the file count, big-endian |
+| 12 | the header's size (16 + the entries) |
+| 16 | per file: offset, size (32 bits each), the NUL-ended name |
+
+Zero bytes pad the header and each file to a word. A bundle has `NAME.apt`, `NAME.const`,
+`NAME.geo`, one `NNN.tgq` for each image character (793 in all), and a placeholder `*.wav` (at the
+bundle's end, size 0xFFFFFFFF: no file).
+
+### The constants (`NAME.const`)
+
+| Offset | |
+|---|---|
+| 0 | `Apt constant file`, 0x1a, 2 zero bytes |
+| 0x14 | where the movie is in the `.apt` |
+| 0x18 | the count, then at 0x1c the table's offset (always 0x20) |
+| 0x20 | per constant: type, value (32 bits each); the strings follow, NUL-ended, word-padded |
+
+Types: 1 a string (the value is its offset in this file; 9,126), 3 undefined (232, value 0), 4 a
+register (10, value 0), 5 a boolean (886), 6 a float (1,915, the bits), 7 an integer (3,932), 8 a
+constant-pool index (27,760). The first constants of a movie are the strings of its first
+`ConstantPool`; every later one is one value of one `Push`, in the order the code has them.
+
+### The movie (`NAME.apt`)
+
+A memory image: records point to each other by file offset (from the file's start); an array is
+a count and a pointer (an empty one points at whatever comes next); a string is NUL-ended and
+word-padded; every record starts with its kind word and the signature 0x09876543 (items have no
+signature). The file starts with `Apt Data`, 0x1a and 3 zero bytes (12 bytes); the movie is where
+the `.const` says (not always right after: six movies keep their exports first).
+
+| Movie, word | |
+|---|---|
+| 0, 1 | 9, the signature |
+| 2, 3 | the frame count, the frames' pointer |
+| 4 | 0 |
+| 5, 6 | the character count, the characters' pointer (an array of record pointers) |
+| 7, 8, 9 | the stage width, height (640 x 448; 550 x 400 in the five `f_*`; 16 x 16 in `bt_*`), the milliseconds a frame lasts (27, 32, 33, 41, 50 or 83) |
+| 10, 11 | the import count (always 0), a pointer |
+| 12, 13 | the export count, the pointer: pairs of (name pointer, character id), 65 in all: `buildSim` 2, `dialog` 1, `muDialog` 7, `options` 41, `p_goals` 6, `trans` 8 |
+| 14 | 0 |
+
+Character 0 is the movie. A frame is (item count, pointer to the item pointers); a sprite's
+and the movie's frames are alike.
+
+| Character | Words after kind and signature |
+|---|---|
+| 1 shape (803) | bounds (4 floats: left, top, right, bottom), the geometry id |
+| 2 text (2) | bounds, font character id, alignment, colour 0xRRGGBBAA, height (float), read only, multiline, word wrap (3 words), initial text pointer, variable pointer |
+| 3 font (1) | name pointer (a `fonts.arc` entry), 0, 0 |
+| 4 button (2) | is-menu word, bounds, triangle count, vertex count, vertices (2 floats), triangles (3 half words each), record count, records, action count (0 in both), actions pointer (an empty array), 0 |
+| 5 sprite (1,530) | frame count, frames pointer, 0 |
+| 7 image (793) | the image id (the `NNN.tgq`) |
+| 9 movie (61) | only character 0 |
+
+A button record is 17 words: flags, character, depth, 2 by 2 matrix (4 floats), translation (2),
+colour multiplier (4 floats), colour offset (4 floats).
+
+| Item (a pointer in the frame's array) | Words after the kind |
+|---|---|
+| 1 action (1,183) | the instruction stream's pointer |
+| 2 frame label (579) | name pointer, flags (always 7), frame number |
+| 3 place object (19,235), 16 words | flags, depth, character id (-1 for none), matrix a, b, c, d (4 floats), translation (2), colour multiplier 0xRRGGBBAA, colour offset 0x00RRGGBB, ratio (float), name pointer, clip depth (-1 for none), clip actions pointer |
+| 4 remove object (1,123) | depth |
+| 5 background colour (61) | 0xRRGGBBAA |
+
+Place flags: 1 move, 2 has character, 4 has matrix, 8 has colour (the multiplier and offset), 0x10
+has ratio, 0x20 has name, 0x40 has clip depth, 0x80 has clip actions. A field its flag does not
+name holds its default (matrix identity, colour 0xFFFFFFFF, the rest 0 or -1). Clip actions (4
+items name them, one with any): a pointer to (count, pointer to records of event flags, key
+code, stream pointer); the one set has 2 records with events 0x40 and 0x80 and key 0.
+
+### Actions
+
+Flash's ActionScript bytecode. A stream is opcode bytes one after another up to a 0 (then zero
+bytes to the word); an opcode of 0x80 or more has operand words, which start on the next word
+boundary after it. 47 different opcodes are used (counts over all movies):
+
+- no operands: Add2 1,379, CallFunction 164, CallMethod 1,912, CloneSprite 6, Decrement 51,
+  DefineLocal 450, DefineLocal2 82, Delete 135, Divide 738, Enumerate2 5, Equals2 841,
+  GetMember 5,835, GetUrl2 77 (no operand word here, not even a flags byte), GetVariable 12,735,
+  Greater 239, Increment 154, InitArray 65, InitObject 37, Less2 176, Modulo 2, Multiply 406,
+  NewObject 5, Not 1,617, Play 112, Pop 2,261, PushDuplicate 197, RandomNumber 2, RemoveSprite 4,
+  Return 176, SetMember 3,405, SetVariable 2,046, Stop 636, StrictEquals 64, StringAdd 39,
+  StringEquals 11, Subtract 588, ToNumber 321, Trace 5;
+- 0x81 GotoFrame (175): the frame; 0x9f GotoFrame2 (16): a flags word (always 0); 0x87
+  SetRegister (10): the register (always 0); 0x94 With (1): the body's size in bytes (the body
+  follows in the same stream);
+- 0x88 ConstantPool (407) and 0x96 Push (25,766): a count and a pointer to that many constant
+  indices (the `.const`'s table: each gives the value's type and value);
+- 0x99 BranchAlways (614) and 0x9d BranchIfTrue (1,627): a signed byte offset from the end of the
+  instruction (landing on an instruction's first byte, or the stream's End);
+- 0x9b DefineFunction (991): name pointer (0 for none), parameter count, pointer to that many
+  string pointers (0 in every one), the body's size, the words 0x98765432 and 0x12345678, then
+  the body's bytes in line (decoded as its own list; a branch in it stays in it).
+
+The decoder is `apt::actions::decode`; all 66,585 instructions of the 61 movies decode with every
+branch landing on an instruction. The movies call into the engine through `_root`, `extern`,
+`controller` and the like by name; what those names do is the player's (U2's) business.
+
+### Shapes (`NAME.geo`)
+
+| Offset | |
+|---|---|
+| 0 | `Apt PCGL geometry file`, 0x1a, 0 (24 bytes) |
+| 0x18 | the shape count; 0x1c the table's offset (0x20) |
+| table | per shape (12 bytes): the geometry id, the fill count, a pointer to the fill pointers |
+
+A fill record is (kind, count, vertices' pointer, colour 0xRRGGBBAA, ...): kind 1 solid
+(5 fills): `count` triangles; kind 5 textured (840): the same, then a 4 by 4 matrix (16 floats,
+translation in the last row's first two) and the image id and a 0: a vertex times the matrix is
+the point in the image, in texels (checked: all 840 stay inside their images); kind 6 lines (1):
+`count` segments. Vertices are 2 floats each, 3 (or 2) per triangle (segment). 803 shapes,
+846 fills, 1,777 triangles.
+
+### Images (`NNN.tgq`)
+
+Little-endian words, unlike the rest: `TXFL`, 16 zero bytes, width and height (16 bits each,
+powers of two), the bytes 00 01 00 00 00 02 08 20 (256 colours, 8 bits a texel, 32 bits a
+palette entry), 4 zero bytes (the header is 36 bytes), then width * height palette indices in
+rows from the top (checked by drawing a ring), 256 palette entries of R, G, B, A, then 8 bytes: the
+picture's own width and height as 32-bit words (it sits in the top left of the stored size, as
+the 8 by 48 rectangles in 8 by 64 images). Every file is exactly 44 + width * height + 1,024
+bytes. 793 images, 2,226,048 texels. The text's pictures are not here but in `textures.arc`
+(below).
+
+### Fonts (`fonts.arc`)
+
+An entry is the name, a NUL, then big-endian words that are *not* word-aligned (they start
+right after the name's NUL):
+
+| | |
+|---|---|
+| 3 words | 0, 1 for Latin fonts and 0 for CJK, the record count (pages and glyphs, 96 in `systemfont`) |
+| 36 bytes | a signature, the same in all six except byte 29, the page count |
+| 6 words | the code count N, the text size (12, or 24), a second size (21, or 37, not placed), 1, the highest code plus one (0x7f, 0xff, 0xfff, 0x7ff), N again |
+| N pairs | (character code, glyph number), glyph numbers rising |
+| 1 + P words | the page count P, then the page numbers 2 to P + 1 |
+| records | each a 0xb7 byte and 3 words: P page records (the CRC-32 of the page texture's name in capitals, its width, height), then glyph records (x0, x1 on the page, a word: the page in its low half, a row in its high) |
+| 6 words | the tail: 55, -2, 67, 30, 1, 0 in `systemfont`; 44, 3, 0, 17, 1, 0 in the others (not placed) |
+
+The page textures are `textures.arc` entries named `font_NAME_sSIZE_pN`: all 34 page hashes match
+(`systemfont` 1 page of 256 by 128, `frankfur` and `onestroke_script` 1 of 512 by 512 and 512 by
+256, `china` 15, `korea` 6, `japan` 10, 512 by 512). A code's glyph is `glyphs[number - pages -
+2]` (checked in the Latin fonts: 'I' is narrower than 'A'); the last glyph record has no code.
+Counts: 94, 206, 173, 2,938, 1,359 and 1,995 codes; 6,771 glyph records in all. The vertical
+metrics (the glyph's height and its offsets) are not in the entry: `shaders.arc` has a small
+`font_NAME_sSIZE_pN` entry for each page (34 in all) that was not read; they may be what the
+text draw needs besides these.
+
+### Left over
+
+Read but not placed: the font's second size word and tail, the glyph row, the last record's
+page word; a place object's colour offset and ratio (they fit the flags 8 and 0x10; the ratios
+are tiny floats such as 1.0e-4); the clip actions' events 0x40 and 0x80 and the key word; the
+`GetUrl2` and `GotoFrame2` flags (no operand / always 0: the player will find what the movies
+mean by them, `FSCommand:` and `loadMovie` style calls with the target on the stack); the
+button's is-menu word and its record words; the `.tgq` header's 00 02 pair. The movies' own
+text strings are in the constant pools, not in a table: the HUD's and menus' wording comes from
+the game's strings and the text characters' variables (2 text characters only).

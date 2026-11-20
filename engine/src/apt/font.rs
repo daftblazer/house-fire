@@ -16,14 +16,16 @@ pub struct Page {
     pub height: u32,
 }
 
-/// A glyph: the columns it takes on its page, and a row word.
+/// A glyph: the columns it takes on its page, which page and which row of it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Glyph {
     pub x0: u32,
     pub x1: u32,
-    /// The third word of the record: 0 for the first rows of a page, up to 7 in
-    /// `systemfont`'s 128-high page (a row of 16 texels?), not placed against the original.
-    pub row: u32,
+    /// The page's number (the third word's low half).
+    pub page: u16,
+    /// The band of the page, 0 at the top (the third word's high half; not placed against the
+    /// original, but it counts up as a page fills and `x0` starts again from 0).
+    pub row: u16,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -40,7 +42,9 @@ pub struct Font {
     /// (character code, glyph number), in the order the glyphs are laid out.
     pub map: Vec<(u32, u32)>,
     pub pages: Vec<Page>,
-    /// The glyph records after the pages' (the file's count of both is `pages + glyphs`).
+    /// The glyph records after the pages'. A code's glyph number `n` (in `map`) is
+    /// `glyphs[n - pages - 2]`; the last record has no code (its page word is 6 or 7: not
+    /// placed).
     pub glyphs: Vec<Glyph>,
     /// The six words that end the entry (`systemfont`: 0x37, -2, 0x43, 0x1e, 1, 0), not placed.
     pub tail: [i32; 6],
@@ -53,6 +57,12 @@ const SIGNATURE: [u8; 36] = [
 ];
 
 impl Font {
+    /// The glyph a character code has.
+    pub fn glyph(&self, code: u32) -> Option<&Glyph> {
+        let n = self.map.iter().find(|m| m.0 == code)?.1 as usize;
+        self.glyphs.get(n.checked_sub(self.pages.len() + 2)?)
+    }
+
     /// Reads an entry that its fields fill exactly.
     pub fn read(data: &[u8]) -> Res<Font> {
         let mut m = Img::new(data);
@@ -105,7 +115,7 @@ impl Font {
             if i < pages_n {
                 pages.push(Page { texture: a, width: b, height: c });
             } else {
-                glyphs.push(Glyph { x0: a, x1: b, row: c });
+                glyphs.push(Glyph { x0: a, x1: b, page: c as u16, row: (c >> 16) as u16 });
             }
         }
         let mut tail = [0i32; 6];

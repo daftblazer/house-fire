@@ -93,7 +93,6 @@ fn fonts_are_read_in_full_and_their_pages_are_textures() {
     let entries = crate::arc::entries(&textures).unwrap();
     for (name, r) in &fonts {
         let f = r.as_ref().unwrap_or_else(|e| panic!("{name}: {e}"));
-        assert_eq!(f.pages.len() + f.glyphs.len(), f.pages.len() + f.glyphs.len());
         for (i, p) in f.pages.iter().enumerate() {
             let want = format!("font_{}_s{}_p{i}", f.name, f.size);
             assert_eq!(crate::shader::name_hash(&want), p.texture, "{name}: page {i}");
@@ -104,8 +103,13 @@ fn fonts_are_read_in_full_and_their_pages_are_textures() {
         for g in &f.glyphs {
             assert!(g.x0 <= g.x1 && g.x1 <= f.pages[0].width, "{name}: glyph columns {}..{}", g.x0, g.x1);
         }
-        for &(_, glyph) in &f.map {
-            assert!(glyph as usize <= f.pages.len() + f.glyphs.len(), "{name}: glyph {glyph}");
+        for &(code, _) in &f.map {
+            assert!(f.glyph(code).is_some(), "{name}: code {code}");
+        }
+        // in the Latin fonts the capital I is narrower than the A
+        if f.latin == 1 {
+            let w = |c: char| f.glyph(c as u32).map(|g| g.x1 - g.x0).unwrap();
+            assert!(w('I') < w('A'), "{name}");
         }
     }
 }
