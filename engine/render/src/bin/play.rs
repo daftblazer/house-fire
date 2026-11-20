@@ -197,6 +197,8 @@ struct Game<'l> {
     target: Option<i16>,
     menu: Option<MenuState>,
     dialog: Option<(DialogAsk, String, Vec<String>, usize)>,
+    /// The made Sims' names by neighbour id (the save's).
+    names: std::collections::HashMap<i16, String>,
     /// Ticks a frame: 0 paused.
     speed: u32,
     last_speed: u32,
@@ -211,12 +213,13 @@ impl<'l> Game<'l> {
         v
     }
 
+    /// A Sim's own name: the save's made Sim of its neighbour record, else its record's name.
     fn sim_name(&self, id: i16) -> String {
         let w = self.alone.world();
-        w.find_object(id)
-            .and_then(|o| o.person_data.get(housefire::world::PERSON_NEIGHBOUR_ID).copied())
-            .and_then(|n| w.neighbours.iter().find(|x| x.id == n))
-            .map_or_else(|| format!("Sim {id}"), |n| n.name.clone())
+        let neighbour = w.find_object(id).and_then(|o| o.person_data.get(housefire::world::PERSON_NEIGHBOUR_ID).copied());
+        neighbour
+            .and_then(|n| self.names.get(&n).cloned().or_else(|| w.neighbours.iter().find(|x| x.id == n).map(|x| x.name.clone())))
+            .unwrap_or_else(|| format!("Sim {id}"))
     }
 
     fn object_name(&self, id: i16) -> String {
@@ -694,7 +697,8 @@ fn run(args: Args) -> Result<bool, String> {
     let mut alone = Alone::new(&log, &lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, with, args.seed).ok_or("the log does not start with the lot loaded")?;
     alone.set_player(true);
     let camera = first_camera(&log)?;
-    let mut game = Game { alone, lib: &lib, camera, active: None, target: None, menu: None, dialog: None, speed: 1, last_speed: 1, quit: false, expects: Vec::new() };
+    let names = engine_scene::save_file(&disc, args.card.as_deref().map(std::path::Path::new)).map(|ngh| housefire::figure::sim_names(&ngh)).unwrap_or_default();
+    let mut game = Game { alone, lib: &lib, camera, active: None, target: None, menu: None, dialog: None, names, speed: 1, last_speed: 1, quit: false, expects: Vec::new() };
     game.next_sim();
     game.keep_on_lot();
     if std::env::var_os("PLAY_DEBUG").is_some() {

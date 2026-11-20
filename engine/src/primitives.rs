@@ -126,15 +126,16 @@ fn relate(vars: &mut ScriptVariables, r: Relate) -> PrimResult {
     let pair = if neighbours {
         Some((a, b))
     } else {
-        let (Some(oa), Some(ob)) = (w.find_object(a), w.find_object(b)) else { return PrimResult::Stop };
+        // (no such object: no relationship, the false way; an engine rule, the logs never meet it)
+        let (Some(oa), Some(ob)) = (w.find_object(a), w.find_object(b)) else { return PrimResult::False };
         if oa.person && ob.person { nid(a).zip(nid(b)) } else { None }
     };
     let values: Option<&mut Vec<i32>> = match pair {
         Some((na, nb)) => {
             if !w.neighbours.iter().any(|x| x.id == nb) {
-                return PrimResult::Stop;
+                return PrimResult::False;
             }
-            let Some(x) = vars.world.neighbours.iter_mut().find(|x| x.id == na) else { return PrimResult::Stop };
+            let Some(x) = vars.world.neighbours.iter_mut().find(|x| x.id == na) else { return PrimResult::False };
             match x.relationships.iter().position(|r| r.with == nb) {
                 Some(k) => Some(&mut x.relationships[k].values),
                 None if create => {
@@ -145,7 +146,7 @@ fn relate(vars: &mut ScriptVariables, r: Relate) -> PrimResult {
             }
         }
         None => {
-            let Some(ka) = w.find(a) else { return PrimResult::Stop };
+            let Some(ka) = w.find(a) else { return PrimResult::False };
             let x = vars.world.get_mut(ka);
             match x.relationships.iter().position(|r| r.with == b as i32) {
                 Some(k) => Some(&mut x.relationships[k].values),

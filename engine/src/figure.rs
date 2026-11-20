@@ -94,6 +94,17 @@ impl Cast {
     }
 }
 
+/// The names the save gives its made Sims ("First Last"), by neighbour id (a Sim's person data 31).
+/// A neighbour's own record names only its object ("template_person").
+pub fn sim_names(ngh: &[u8]) -> HashMap<i16, String> {
+    let made = crate::save::read_created_sims(ngh).unwrap_or_default();
+    crate::save::read_neighbours(ngh)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|n| made.iter().find(|m| m.guid == n.guid).map(|m| (n.id, format!("{} {}", m.first_name, m.last_name).trim().to_string())))
+        .collect()
+}
+
 /// A Sim's root matrix: its place on the lot (tiles) and its heading, a turn of `heading` eighths
 /// about the vertical.
 pub fn root(x: f32, y: f32, heading: u8) -> Mat4 {
