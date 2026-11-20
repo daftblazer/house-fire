@@ -644,6 +644,7 @@ impl Host for ReplayHost<'_> {
                 interp.top().stack_object = id;
                 interp.top().file = file;
                 self.world.get_mut(me).current.c = self.world.push_priority(0, me);
+                self.world.get_mut(me).current_at = Some(interp.top_index());
                 let next = self.log.steps[self.step + 1..].iter().find(|x| x.sim == s.sim);
                 self.counts.note(if next.is_some_and(|x| x.tree == self.lib.tree_at(t).id as u16 && x.node == 0 && x.stack_object == id) {
                     "primitives: GosubFoundAction natively, the log's action"

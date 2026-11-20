@@ -107,6 +107,12 @@ pub const ENTRY_INTERRUPTS: i32 = 2;
 /// The priority of the player's command: above any pushed one (an engine rule: the original's
 /// player commands do not come through PushAction; nothing logged shows one cancelling another).
 pub const PLAYER_PRIORITY: i32 = i32::MAX;
+/// The motives whose failure interrupts what a Sim does (ShouldInterrupt's floats at the person's
+/// +188, +196 and +204): energy, hunger and bladder, if the person keeps motive k at +168 + 4k
+/// (an assumption that fits the three offsets; not yet checked by the observer).
+pub const FAILING_MOTIVES: [usize; 3] = [5, 7, 9];
+/// Below this a failing motive interrupts (-99.0, the constant at 0x802CBDCC).
+pub const MOTIVE_FAILING: f32 = -99.0;
 /// Global 10: the lot's house number (16 the club, 1 the home save's).
 pub const GLOBAL_HOUSE: usize = 10;
 
@@ -147,6 +153,10 @@ pub struct Object {
     /// A Sim's interaction queue as the lot saved it: the entry it was on, the rest queued.
     pub current: SavedQueueEntry,
     pub queue: Vec<SavedQueueEntry>,
+    /// Where on its stack the current interaction runs (the frame's index), while it does: a
+    /// Sim waiting below it (its main loop's Wait For Notify) has no current interaction, and
+    /// takes what is queued (`should_interrupt_at`). None: not known or none.
+    pub current_at: Option<usize>,
     /// The person a routing Sim last asked to move out of a slot's places (`ask_to_move_tree`):
     /// asked again while they stay, the Sim waits instead ("Asked to move").
     pub asked_to_move: Option<i16>,
@@ -497,6 +507,19 @@ impl<'lib> World<'lib> {
     pub fn should_interrupt(&self, sim: ObjectKey) -> bool {
         let o = self.get(sim);
         o.queue.first().is_some_and(|e| e.c > o.current.c || e.flags & ENTRY_INTERRUPTS != 0)
+            || FAILING_MOTIVES.iter().any(|&m| o.motives.get(m).is_some_and(|&v| v < MOTIVE_FAILING))
+    }
+
+    /// `should_interrupt` for a wait at stack index `at`: a Sim waiting below its current
+    /// interaction's frame (or with none) is between interactions, and anything queued is taken
+    /// (an engine rule: in the original the main loop's Wait For Notify delivers the queue's front
+    /// whatever its priority, as the run alone's queues show; the +150/+1100 tests unread).
+    pub fn should_interrupt_at(&self, sim: ObjectKey, at: usize) -> bool {
+        let o = self.get(sim);
+        if o.current_at.is_none_or(|c| at < c) {
+            return !o.queue.is_empty();
+        }
+        self.should_interrupt(sim)
     }
 
     /// The player's command to a Sim (the front end's: a click on an object's menu, or the floor's
@@ -618,6 +641,7 @@ impl<'lib> World<'lib> {
                 o.motive_deltas = lo.motive_deltas;
                 o.current = lo.current;
                 o.queue = lo.queue;
+                o.current_at = lo.stack.iter().position(|sf| sf.tree as i16 == lo.current.tree && lo.current.tree != 0);
             }
             saved_ids.push((o.id(), lo.stack.iter().map(|sf| sf.tree).collect()));
             // The original's +8 on a saved frame is on the frame a return comes back into (281

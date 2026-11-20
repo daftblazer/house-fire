@@ -61,7 +61,7 @@ engineering of the original's code, not more fitting. The list below this sectio
      the planner run natively in the driven run, with that ask;
    - IdleForInput's +0x240 test (`fn_80225D98`, read 2026-11-19): the priorities (entry +40
      against the person's +74) and the entry's flag 2 are modelled since packet M (simulation.md,
-     "Mom's meal"); the +150 and +1100 fields and the motives below -99 are not. Fitted, no source
+     "Mom's meal"), the motives below -99 and a wait below the current interaction since 2026-11-20 ("The queue between interactions": the motives' offsets assumed); the +150 and +1100 fields are not. Fitted, no source
      in the game: the player's command priority (`PLAYER_PRIORITY`, above any), the priority of an
      unknown PushAction kind (1), and an autonomy pick's priority (the Sim's person data 33, read
      from Mom's saved meal, 50 = her data 33; no other saved autonomous entry to confirm it);

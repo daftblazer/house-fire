@@ -805,6 +805,7 @@ pub fn idle_for_input<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &mut H
     if !interp.push(lib, action, &[]) {
         return PrimResult::Stop;
     }
+    host.world().get_mut(me).current_at = Some(interp.top_index());
     interp.top().stack_object = tid;
     interp.top().file = tfile;
     PrimResult::Continue

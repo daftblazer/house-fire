@@ -2245,6 +2245,22 @@ interaction is dropped, the wait ends true (an engine rule, `idle_for_input`; it
 stack at 281:4 from tick ~49,900: 1,918 errors), and `Tally::note_entry` of the run alone no longer
 reads a Sim that removed itself in its turn.
 
+**The queue between interactions (2026-11-20).** With the priorities alone the queues of the run
+alone grew for ever (Sim 12: 108 entries by tick 54,000): the main loop's Wait For Notify (281
+under person main) is the same waiting IdleForInput, and an idle Sim's current priority (0) never
+beat an entry's (0). Now each Sim keeps where on its stack its current interaction runs
+(`Object::current_at`: the frame IdleForInput delivered, autonomy's pick, or at the load the saved
+frame of the saved current entry's tree); a wait below that frame is between interactions, its
+current is cleared, and anything queued is taken (`World::should_interrupt_at`; an engine rule
+read off the queues, the +150/+1100 tests unread). And ShouldInterrupt's motive test: any of the
+person's +188, +196, +204 below -99.0 interrupts, taken as motives 5, 7 and 9 (energy, hunger,
+bladder: motive k at +168 + 4k, an assumption the three offsets fit; `FAILING_MOTIVES`). Home
+`--alone 54000`: Sim 12's queue 0 at tick 18,000 (13 before), errors 135 -> 87; hash 72e1d23ea089ce36.
+Left: Mom dances at the radio from tick 2627 to 25070 (the stereo's Dance, stereo_sg 0x2006): its
+exit, Exit fun object (Global 0x0195), takes fun >= its parameter 0, passed from her temps (all
+0xFFFF arguments), and her temp 0 holds 194 there; her fun stays at 20, the target of Set Dance
+Motives' change (tuning 0x0201). Queues still build up after ~30,000 (Sim 12: 21 at 54,000).
+
 The figure (`alone: Sim 237's meal in the log's tree order`): the trees Sim 237 enters (a step at
 node 0, a yield on node 0 not counted again) against the log's, from tick 1 to the first return of
 Serve Regular Group Meal (4201, the log's tick 1481): N of M trees equal in order, the first
