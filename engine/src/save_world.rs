@@ -20,7 +20,7 @@ use crate::save::{
 use crate::save_write::{
     assemble_file, encode_chunk_table, encode_lot_globals, encode_lot_objects, encode_neighbours, encode_ngbh, encode_object_types, file_blocks, replace_card_file,
 };
-use crate::world::{ObjectKey, World};
+use crate::world::{DATA_CONTAINER, DATA_SLOT, ObjectKey, World};
 use crate::{FileId, save};
 
 /// The game's save file on a card.
@@ -73,7 +73,29 @@ fn saved_frames(lib: &Library, frames: &[Frame], loaded: &[SavedFrame], own: (Op
 }
 
 /// The save's record of one object: what the engine has, over what the lot loaded with it.
-fn saved_object(world: &World, k: ObjectKey, frames: &[Frame], types: &mut Vec<ObjectType>, kinds: &BTreeMap<FileId, i16>, serial: &mut i32) -> LotObject {
+/// Which of the header's six place words are x (the others y): x, y, x, y, then y, x (every
+/// object of the home and club cards: the last two are the box's middle, y first).
+const HEADER_X: [bool; 6] = [true, false, true, false, false, true];
+
+/// The object's slots as the save holds them (`pairs`, Castaway's `ReconSlots`): entry s + 1
+/// names the object in slot s (`DATA_SLOT`) of it (`DATA_CONTAINER`), 0 if none (all 176
+/// contained objects of the home and club cards' 32 lots are there, and every other entry past
+/// the first is empty); the first entry is another thing, kept as loaded. The count is the
+/// type's (`new_object`), and more if the contents need them.
+fn saved_slots(s: &mut LotObject, contents: &[(i16, i16)]) {
+    let need = contents.iter().map(|&(slot, _)| slot as usize + 2).max().unwrap_or(0);
+    if s.pairs.len() < need.max(1) {
+        s.pairs.resize(need.max(1), (0, 0));
+    }
+    for p in s.pairs.iter_mut().skip(1) {
+        p.1 = 0;
+    }
+    for &(slot, id) in contents {
+        s.pairs[slot as usize + 1].1 = id;
+    }
+}
+
+fn saved_object(world: &World, k: ObjectKey, frames: &[Frame], types: &mut Vec<ObjectType>, kinds: &BTreeMap<FileId, i16>, serial: &mut i32, contents: &[(i16, i16)]) -> LotObject {
     let lib = world.library();
     let o = world.get(k);
     let mut s = match &o.loaded {
@@ -85,8 +107,9 @@ fn saved_object(world: &World, k: ObjectKey, frames: &[Frame], types: &mut Vec<O
     // then two more points, then y and x of a third: a translation keeps what the lot saved)
     let (dx, dy) = (o.x16 - s.header[0], o.y16 - s.header[1]);
     for (i, v) in s.header[..6].iter_mut().enumerate() {
-        *v += if i % 2 == 0 { dx } else { dy };
+        *v += if HEADER_X[i] { dx } else { dy };
     }
+    saved_slots(&mut s, contents);
     s.attributes = o.attributes.clone();
     s.temps = o.temps.to_vec();
     s.data = o.data.clone();
@@ -127,10 +150,13 @@ fn object_type(world: &World, o: &crate::world::Object, types: &mut Vec<ObjectTy
         None if guid == 0 => 0, // (no type to name: the entry stays unnamed)
         Some(t) => t.fields[4] as i16,
         None => {
-            // a new type: the next number after the lot's, its other fields those of the last
+            // a new type: the next number after the lot's; field 5 is the definition's field 7
+            // (1,855 of 1,855 types of the home and club cards); fields 0 to 3 differ between
+            // lots for one type (figures the game keeps as it runs, not the file's), and 0 is
+            // among the values the game saves (the home card's AnimTester 0, 0, 14, 0)
             let next = types.iter().map(|t| t.fields[4]).max().map_or(1, |m| m + 1);
-            let mut fields = types.last().map_or([0; 6], |t| t.fields);
-            fields[4] = next;
+            let kind = world.definition(o).and_then(|d| d.fields.get(7).copied()).unwrap_or_else(|| types.last().map_or(0, |t| t.fields[5]));
+            let fields = [0, 0, 0, 0, next, kind];
             types.push(ObjectType { guid, fields, name: String::new(), pad: 0 });
             next as i16
         }
@@ -161,7 +187,7 @@ fn new_object(world: &World, k: ObjectKey, types: &mut Vec<ObjectType>, serial: 
     // the header relative to its own place (`saved_object` moves it to the object's)
     let (tx, ty) = (s.header[0], s.header[1]);
     for (i, v) in s.header[..6].iter_mut().enumerate() {
-        *v -= if i % 2 == 0 { tx } else { ty };
+        *v -= if HEADER_X[i] { tx } else { ty };
     }
     s.id = o.id();
     s.kind = kind;
@@ -169,10 +195,22 @@ fn new_object(world: &World, k: ObjectKey, types: &mut Vec<ObjectType>, serial: 
     (s.a, s.b, s.after_pairs) = (*serial, *serial + 1, *serial);
     *serial += 2;
     s.extra.clear();
-    s.pairs.clear();
+    // the slot count: a loaded object's of the type, else one more than the container slots
+    // (kind 0) of its definition's SLOT (616 of the 617 types with one on the home and club
+    // cards; the 197 without have 1; the game's own meal and trash pile of the home run have
+    // 2, probed at +240, the table of 36-byte entries the room walk reads at load, fn_801FCF04)
+    let slots = same_type.map_or_else(
+        || {
+            let table = world.definition(o).zip(o.file).and_then(|(d, f)| world.library().file(f).slots.get(&d.slot_table()));
+            1 + table.map_or(0, |t| t.iter().filter(|x| x.kind == 0).count())
+        },
+        |(_, l)| l.pairs.len(),
+    );
+    s.pairs = vec![(0, 0); slots];
     s.shorts.clear();
     s.list_1180.clear();
-    s.relationship_form = RelationshipForm::Counted;
+    // (the form every object of the disc's and the cards' lots has with no relationships)
+    s.relationship_form = RelationshipForm::Sparse { head: -1, second: -2, flags: Vec::new() };
     if matches!(saved_class, SavedClass::Part | SavedClass::Door) {
         s.leader = if o.leader == o.id() { 0 } else { o.leader };
     }
@@ -195,9 +233,17 @@ pub fn lot_objects(world: &World, template: &LotObjects, types: &mut Vec<ObjectT
     }
     let mut out = LotObjects { objects: Vec::new(), ..template.clone() };
     let mut serial = world.objects().filter_map(|o| o.loaded.as_ref()).map(|l| l.a.max(l.b)).max().unwrap_or(0) + 1;
+    let mut contents: BTreeMap<i16, Vec<(i16, i16)>> = BTreeMap::new();
+    for o in world.objects() {
+        let (container, slot) = (o.data[DATA_CONTAINER], o.data[DATA_SLOT]);
+        if container != 0 && slot >= 0 {
+            contents.entry(container).or_default().push((slot, o.id()));
+        }
+    }
     for &k in world.order() {
         let frames = stacks(k);
-        out.objects.push(saved_object(world, k, &frames, types, &kinds, &mut serial));
+        let inside = contents.get(&world.get(k).id()).map_or(&[][..], |v| v.as_slice());
+        out.objects.push(saved_object(world, k, &frames, types, &kinds, &mut serial, inside));
     }
     out
 }

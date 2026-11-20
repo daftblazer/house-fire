@@ -89,6 +89,19 @@ pub const DATA_FACING: usize = 1;
 pub const DATA_CONTAINER: usize = 2;
 /// The slot of its container it is in.
 pub const DATA_SLOT: usize = 3;
+/// The object data field the game's slot code keeps with `DATA_CONTAINER`: every one of the 88
+/// objects in a slot on the home and club cards has its container there too. The room walk at
+/// load (fn_80243C24) finds a held object's container through it, and faults on 0.
+pub const DATA_HOLDER: usize = 26;
+
+/// Puts the object (its data) in a container (0: none): `DATA_CONTAINER` and `DATA_HOLDER`.
+pub fn set_container(data: &mut Vec<i16>, container: i16) {
+    if data.len() <= DATA_HOLDER {
+        data.resize(DATA_HOLDER + 1, 0);
+    }
+    data[DATA_CONTAINER] = container;
+    data[DATA_HOLDER] = container;
+}
 /// The object data field of its flags (0x4: no extent, not an obstacle; 0x10: may be walked
 /// through, an obstacle at a small cost; `docs/simulation.md`, "Which objects block").
 pub const DATA_FLAGS: usize = 8;

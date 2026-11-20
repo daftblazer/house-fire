@@ -386,7 +386,7 @@ pub fn place_made(n: &Node, w: &mut World, k: ObjectKey, me: i16, stack_object: 
         let o = w.get_mut(k);
         (o.x16, o.y16, o.level) = (x, y, level);
         if let Some(h) = held {
-            o.data[crate::world::DATA_CONTAINER] = h;
+            crate::world::set_container(&mut o.data, h);
         }
     }
 }
@@ -409,7 +409,7 @@ pub fn drop_onto(w: &mut World, me: i16, stack_object: i16) -> Option<(i16, i32,
     o.y16 = y;
     o.level = level;
     // now in the stack object's slot 0 (scope 16 reads it there)
-    o.data[crate::world::DATA_CONTAINER] = stack_object;
+    crate::world::set_container(&mut o.data, stack_object);
     if o.data.len() > crate::world::DATA_SLOT {
         o.data[crate::world::DATA_SLOT] = 0;
     }
@@ -427,10 +427,7 @@ pub fn grab(w: &mut World, me: i16, stack_object: i16) -> Option<(i16, i32, i32,
     o.x16 = x;
     o.y16 = y;
     o.level = level;
-    if o.data.len() <= crate::world::DATA_CONTAINER {
-        o.data.resize(crate::world::DATA_CONTAINER + 1, 0);
-    }
-    o.data[crate::world::DATA_CONTAINER] = me;
+    crate::world::set_container(&mut o.data, me);
     Some((stack_object, x, y, level))
 }
 
@@ -464,7 +461,7 @@ pub fn snap(n: &Node, w: &mut World, me: i16, stack_object: i16) -> Option<(i32,
         o.level = level;
         // the actor is now in the stack object's slot 0 (its slot-0 reads, scope 20, find it)
         if o.id() == me && o.data.len() > crate::world::DATA_SLOT {
-            o.data[crate::world::DATA_CONTAINER] = stack_object;
+            crate::world::set_container(&mut o.data, stack_object);
             o.data[crate::world::DATA_SLOT] = 0;
         }
     }

@@ -471,3 +471,31 @@ showed what the game does with a saved stack: it takes each frame as the card sa
   stepwise where the native wakes it, 202 restarted at 4193 node 0) and Sim 237's tick-4 steps
   (313:18 against 313:29). They follow Sim 12's cancelled interaction (the objects it used) in the
   old log; whether they remain with a log of the corrected card is not known.
+
+### A card the game can load: slots, holders, new types (S3, `eng-2000`)
+
+The corrected card made the game fault at load, then hang in the same place; what the save got
+wrong, each checked on the game's saves and on its memory in the home run (`BUSTIN_TREE_PROBE`):
+- **Slots** (`pairs`, `saved_slots`): entry s + 1 names the object in slot s; all 176 held
+  objects of the home and club cards are there, nothing else past the first entry. They were
+  written as loaded, so the card had 198 still in Sim 237's hand (it was on counter 54) and the
+  meal 202 in no one's (Sim 12 held it). A type's count is its slot table's (+240, 36-byte
+  entries, filled from the saved pairs by fn_801F22D0; 206 of 207 objects of the home run): one
+  more than the kind-0 entries of the SLOT that OBJD field 18 names (616 of 617 types; 197 of
+  197 with none have 1). The game's meal and trash pile have 2.
+- **The holder** (`DATA_HOLDER`, data field 26): the game keeps the container there too (88 of 88
+  held objects; the meal 202 in the home run at tick 1766: container 12, field 26 12). The
+  engine left it 0; the load's room walk (fn_80243C24, through fn_801FCF04, the slot tree's
+  next) then found no holder and faulted. Kept with the container now (`world::set_container`).
+  This changes the home run alone (hash 0f9a65d4409162e0): its scripts read the field.
+- **The header's last two words** are y then x (the box's middle): moved as x, y before.
+- **A new objt type**: field 5 is the OBJD's field 7 (1,855 of 1,855); fields 0 to 3 differ
+  between lots for one type (run-time figures), written 0 (a value the game's saves have).
+- **A made object's relationships**: the form every saved object has (-1, -2, none).
+
+Left open: with all of these the game's load no longer faults but spends minutes in the slot
+walk (fn_801FCF04 and fn_801EF09C, from the room walk) and never reaches the lot. Without the
+meal in Sim 12's slots it loads (and faults at tick 1, in Sim 12's slot test reaching the
+meal). The group meal 198 held by Sim 237 on the home card loads; the single meal (a type new
+to the lot) held by Sim 12 does not. Tried without effect: the new types' fields 0 to 3 as the
+group meal's, 8 slots for the made objects.
