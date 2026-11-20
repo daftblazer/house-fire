@@ -756,14 +756,22 @@ pub fn idle_for_input<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &mut H
     if let Some(fl) = world.get_mut(me).data.get_mut(crate::world::DATA_FLAGS) {
         *fl |= IDLE_DELIVERED;
     }
-    let Some(target) = world.find(entry.objects[1]) else { return PrimResult::Stop };
+    // an entry whose target is gone is dropped and the wait ends true (an engine rule, as for a
+    // failed check; a run alone restarted the Sim's stack at it for ever)
+    let Some(target) = world.find(entry.objects[1]) else {
+        world.get_mut(me).queue.remove(0);
+        return PrimResult::True;
+    };
     if lib.global().is_none() {
         return PrimResult::Stop;
     }
     let t = world.get(target);
     let (tfile, tid, tperson, tdef) = (t.file, t.id(), t.person, world.definition(t));
-    let Some(action) = lib.tree(tfile, entry.tree as u16) else { return PrimResult::Stop };
-    let Some(tf) = tfile else { return PrimResult::Stop };
+    // (likewise an entry whose interaction the target no longer has)
+    let (Some(action), Some(tf)) = (lib.tree(tfile, entry.tree as u16), tfile) else {
+        world.get_mut(me).queue.remove(0);
+        return PrimResult::True;
+    };
     // The checks, each as the target's file names it: the tree its interaction table names to
     // run first (the club's: Global 463, "Dream Sequence - Prefix Check Tree"), then the
     // interaction's guard, where the table has them. An entry the engine queued knows its place
@@ -902,7 +910,7 @@ pub fn run_functional_tree<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &
 /// Operand byte 2 the priority (1 maximum: ahead of everything queued; 2 ahead of saved
 /// entries only; `SavedQueueEntry::rank`). Not modelled yet:
 /// byte 3 (0x0a), a target whose file has several TTABs: Stop. A repeat the Sim refuses: false.
-pub fn push_action<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &mut H, n: &Node) -> PrimResult {
+pub fn push_action<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &mut H, me: ObjectKey, n: &Node) -> PrimResult {
     let top = interp.top_index();
     let target_id = interp.local(host, top, n.operand[1] as usize);
     let so = interp.stack()[top].stack_object;
@@ -929,10 +937,14 @@ pub fn push_action<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &mut H, n
             return PrimResult::False;
         }
     }
+    // the priority (operand byte 2: `World::push_priority`) and the flag that interrupts (byte 3, 4)
+    let (c, flags) = (world.push_priority(n.operand[2], me), if n.operand[3] & 4 != 0 { crate::world::ENTRY_INTERRUPTS } else { 0 });
     let entry = SavedQueueEntry {
         objects: [world.get(sim).id(), t.id(), 0],
         tree: e.action as i16,
         interaction: Some(n.operand[0] as usize),
+        c,
+        flags,
         ..Default::default()
     };
     // operand byte 2 the priority: 1 (maximum) goes ahead of everything waiting (the club's

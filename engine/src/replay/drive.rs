@@ -103,7 +103,7 @@ pub(super) struct DriveHost<'l> {
     /// animation records.
     pub(super) anim: Option<AnimReplay>,
     /// Each object's animator key (the Sim's address in the log), by object id.
-    sim_of: BTreeMap<i16, u32>,
+    pub(super) sim_of: BTreeMap<i16, u32>,
     /// A run alone (no log): its counts of what was answered neutrally and of the errors.
     pub(super) tally: Option<Tally>,
     /// The action the last evaluation chose: its object, tree and the object's file.
@@ -178,6 +178,10 @@ impl DriveHost<'_> {
             }
             let r = if self.tally.is_some() { self.step_alone(interp) } else { self.step_checked(interp) };
             steps += 1;
+            let (id, tick, at) = (self.world.get_live(me).map(|o| o.id()), self.tick, self.at_trace);
+            if let (Some(t), Some(id)) = (&mut self.tally, id) {
+                t.note_entry(id, tick, at.0, at.1);
+            }
             // study: REPLAY_ALONE_TRACE=OBJECT,FROM,TO prints each step of the object in the ticks
             if self.tally.is_some()
                 && let Some(v) = super::study::env("REPLAY_ALONE_TRACE")
@@ -495,6 +499,8 @@ impl Host for DriveHost<'_> {
                 Some((id, t, file)) if interp.push(lib, t, &[]) => {
                     interp.top().stack_object = id;
                     interp.top().file = file;
+                    // autonomy's pick is the Sim's current interaction at its own priority (kind 0)
+                    self.world.get_mut(me).current.c = self.world.push_priority(0, me);
                     PrimResult::Continue
                 }
                 _ => self.neutral(n, "no action chosen"),
@@ -562,7 +568,7 @@ impl Host for DriveHost<'_> {
             }
             // RunFunctionalTree, PushAction
             20 => run_functional_tree(interp, self, n),
-            13 => push_action(interp, self, n),
+            13 => push_action(interp, self, me, n),
             29 => set_motive_delta(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())).unwrap_or_else(|| self.neutral(n, "form not modelled")),
             49 => notify_stack_object(&mut ScriptVariables::new(&mut self.world, me, interp.top())),
             11 => distance_to(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())),
@@ -572,7 +578,7 @@ impl Host for DriveHost<'_> {
             56 => complete_goal(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())).unwrap_or_else(|| self.neutral(n, "new form not modelled")),
             32 => test_object_type(n, &mut ScriptVariables::new(&mut self.world, me, interp.top())),
             // IdleForInput: a Sim waits, or delivers what is queued for it
-            17 if person && (self.world.get(me).queue.is_empty() || n.operand16(1) == 0) => { let mut fl = self.world.get(me).data.get(crate::world::DATA_FLAGS).copied().unwrap_or(0); let r = idle_for_input_waiting(n, interp.top(), &mut fl, !self.world.get(me).queue.is_empty()); if let Some(d) = self.world.get_mut(me).data.get_mut(crate::world::DATA_FLAGS) { *d = fl; } r },
+            17 if person && (self.world.get(me).queue.is_empty() || n.operand16(1) == 0) => { let mut fl = self.world.get(me).data.get(crate::world::DATA_FLAGS).copied().unwrap_or(0); let r = idle_for_input_waiting(n, interp.top(), &mut fl, self.world.should_interrupt(me)); if let Some(d) = self.world.get_mut(me).data.get_mut(crate::world::DATA_FLAGS) { *d = fl; } r },
             17 if person => idle_for_input(interp, self, me),
             // Dialog: the player's answer is the input (the log's, where its step is this one);
             // 1 a wait the pass goes on after, 2 a wait that stops it

@@ -98,6 +98,15 @@ pub const PERSON_NEIGHBOUR_ID: usize = 31;
 pub const PERSON_FEMALE: usize = 65;
 /// Person data 32: 1 for a Sim not of the player's family (`World::mark_visitors`).
 pub const PERSON_VISITOR: usize = 32;
+/// A Sim's own priority (person data 33): the priority of what it pushes with PushAction's kind 0
+/// (Mom's saved 50 is her current meal's).
+pub const PERSON_PRIORITY: usize = 33;
+/// A queue entry's flag (the original's +68 bit 2, set by PushAction's operand byte 3 bit 4): it
+/// interrupts whatever the Sim is doing, whatever the priorities.
+pub const ENTRY_INTERRUPTS: i32 = 2;
+/// The priority of the player's command: above any pushed one (an engine rule: the original's
+/// player commands do not come through PushAction; nothing logged shows one cancelling another).
+pub const PLAYER_PRIORITY: i32 = i32::MAX;
 /// Global 10: the lot's house number (16 the club, 1 the home save's).
 pub const GLOBAL_HOUSE: usize = 10;
 
@@ -465,6 +474,31 @@ impl<'lib> World<'lib> {
         semi.tree_by_name.get(name).and_then(|id| semi.trees.get(id)).copied()
     }
 
+    /// The priority a pushed interaction gets (PushAction's operand byte 2, the original's
+    /// fn_80208338): 1 is 100, 2 is 2, 3 is 50, and 0 the pushing script's own Sim's person data 33
+    /// (1 if it is no Sim). Other kinds are a script error there; here the lowest, 1.
+    pub fn push_priority(&self, kind: u8, pusher: ObjectKey) -> i32 {
+        match kind {
+            0 => {
+                let o = self.get(pusher);
+                if o.person { o.person_data.get(PERSON_PRIORITY).copied().map_or(1, i32::from) } else { 1 }
+            }
+            1 => 100,
+            2 => 2,
+            3 => 50,
+            _ => 1,
+        }
+    }
+
+    /// The test IdleForInput asks the Sim (`ShouldInterrupt`, the original's fn_80225D98), as far as
+    /// it is read: the queue's front entry has a higher priority than the Sim's current interaction
+    /// (the entry's +40 against the Sim's +74, here `current.c`), or is flagged to interrupt (+68
+    /// bit 2). Not modelled: the Sim's own cancel flags (+150, +1100) and a motive below -99.
+    pub fn should_interrupt(&self, sim: ObjectKey) -> bool {
+        let o = self.get(sim);
+        o.queue.first().is_some_and(|e| e.c > o.current.c || e.flags & ENTRY_INTERRUPTS != 0)
+    }
+
     /// The player's command to a Sim (the front end's: a click on an object's menu, or the floor's
     /// "go here" marker): the target's interaction with that action tree queued at the back of
     /// the Sim's queue, its place in the target's table known, for IdleForInput to deliver with
@@ -480,6 +514,7 @@ impl<'lib> World<'lib> {
             objects: [me, target, 0],
             tree: action as i16,
             interaction: Some(k),
+            c: PLAYER_PRIORITY,
             ..Default::default()
         });
         true

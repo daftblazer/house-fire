@@ -584,7 +584,7 @@ impl Host for ReplayHost<'_> {
         }
         if n.opcode == 17 && self.world.get(me).person && (self.world.get(me).queue.is_empty() || n.operand16(1) == 0) {
             // IdleForInput with nothing queued, or a wait that does not deliver: the wait's count
-            let got = { let mut fl = self.world.get(me).data.get(crate::world::DATA_FLAGS).copied().unwrap_or(0); let r = idle_for_input_waiting(n, interp.top(), &mut fl, !self.world.get(me).queue.is_empty()); if let Some(d) = self.world.get_mut(me).data.get_mut(crate::world::DATA_FLAGS) { *d = fl; } r };
+            let got = { let mut fl = self.world.get(me).data.get(crate::world::DATA_FLAGS).copied().unwrap_or(0); let r = idle_for_input_waiting(n, interp.top(), &mut fl, self.world.should_interrupt(me)); if let Some(d) = self.world.get_mut(me).data.get_mut(crate::world::DATA_FLAGS) { *d = fl; } r };
             let want = self.logged(s, n);
             if got == want {
                 note!(self.counts, "primitives: IdleForInput waiting: the same natively, {}", if got == PrimResult::True { "true" } else { "a tick more" });
@@ -643,6 +643,7 @@ impl Host for ReplayHost<'_> {
             if interp.push(self.lib, t, &[]) {
                 interp.top().stack_object = id;
                 interp.top().file = file;
+                self.world.get_mut(me).current.c = self.world.push_priority(0, me);
                 let next = self.log.steps[self.step + 1..].iter().find(|x| x.sim == s.sim);
                 self.counts.note(if next.is_some_and(|x| x.tree == self.lib.tree_at(t).id as u16 && x.node == 0 && x.stack_object == id) {
                     "primitives: GosubFoundAction natively, the log's action"
@@ -855,7 +856,7 @@ impl Host for ReplayHost<'_> {
         }
         if n.opcode == 13 {
             // PushAction
-            let got = push_action(interp, self, n);
+            let got = push_action(interp, self, me, n);
             if has("REPLAY_SHOW_PUSHACTION") {
                 let so = interp.top().stack_object;
                 let q: Vec<(i16, i16, i32)> = self.world.find(so).map(|k| self.world.get(k).queue.iter().map(|q| (q.tree, q.objects[1], q.c)).collect()).unwrap_or_default();

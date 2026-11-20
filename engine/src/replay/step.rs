@@ -702,6 +702,9 @@ impl<'l> Replay<'l> {
                     if p.len() == 3 && (p[0] == o_id as i64 || p[0] == -1) && (p[1]..=p[2]).contains(&(t as i64)) {
                         let op = lib.tree_at(tree).nodes.get(s.node as usize).map_or(-1, |n| n.opcode as i32);
                         println!("log step: tick {t} object {o_id} {}:{} op {op} -> {} look {} res {} frame {:x} so {} params {:?}", s.tree, s.node, s.after, if s.look != 0 { s.look as char } else { '-' }, s.result, s.frame & 0xFFFF, s.stack_object, s.params);
+                        if let Some(e) = &s.expr {
+                            println!("    expr: lhs {}/{} = {} (float {:08x}), rhs {}/{} = {}, op {}, after {}", e.lhs_scope, e.lhs_data, e.lhs, e.lhs_float, e.rhs_scope, e.rhs_data, e.rhs, e.op, e.lhs_after);
+                        }
                     }
                 }
                 if has("REPLAY_SHOW_MADE_DEFS") && matches!(o_id, 197 | 201 | 202) && h.shown.next(&format!("made def {o_id}"), 1) {

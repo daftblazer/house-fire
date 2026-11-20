@@ -73,6 +73,92 @@ pub struct Tally {
     /// Walks of a door's crossing step (through its portal) that end in another room.
     crossings: usize,
     through_wall: u32,
+    /// The trees the subject Sim (`SUBJECT`) entered, in order, as (tick, tree id): a step at a
+    /// tree's node 0 that is not the tree's own yield repeating (the figure of its meal's order).
+    pub(super) entered: Vec<(u32, i32)>,
+    /// The subject's last step's place, to tell a yield repeating from an entry.
+    subject_at: Option<(i32, u16)>,
+}
+
+/// The tree the log's meal of the subject is (Serve Regular Group Meal), whose end ends the compared order.
+const MEAL_TREE: u16 = 4201;
+
+/// The trees the log's subject entered from the start to its first meal's end (its first return
+/// from `MEAL_TREE`): (tick, tree id) of each, as `Tally::note_entry` counts them.
+fn logged_meal_order(log: &crate::tree_log::Log, sim: u32) -> Vec<(u32, i32)> {
+    let mut order = Vec::new();
+    let mut at = None;
+    let mut in_meal = false;
+    for s in log.steps.iter().filter(|s| s.sim == sim && s.tick > 0) {
+        let place = (i32::from(s.tree), s.node);
+        let again = at.replace(place) == Some(place);
+        if s.node == 0 && !again {
+            order.push((s.tick, i32::from(s.tree)));
+        }
+        in_meal |= s.tree == MEAL_TREE;
+        if in_meal && s.tree == MEAL_TREE && s.node >= 254 {
+            break;
+        }
+    }
+    order
+}
+
+/// The length of the longest common subsequence of two tree orders.
+fn common_subsequence(a: &[(u32, i32)], b: &[(u32, i32)]) -> usize {
+    let mut row = vec![0usize; b.len() + 1];
+    for x in a {
+        let mut diag = 0;
+        for (j, y) in b.iter().enumerate() {
+            let up = row[j + 1];
+            row[j + 1] = if x.1 == y.1 { diag + 1 } else { row[j + 1].max(row[j]) };
+            diag = up;
+        }
+    }
+    row[b.len()]
+}
+
+/// The run's figure of the subject's meal: how many of the log's trees, in the log's order, the
+/// run entered before it first differed.
+fn meal_order_figure(log: &crate::tree_log::Log, sim: Option<u32>, entered: &[(u32, i32)]) -> Option<String> {
+    let logged = logged_meal_order(log, sim?);
+    if logged.is_empty() {
+        return None;
+    }
+    if super::study::has("REPLAY_ALONE_SHOW_ORDER") {
+        // study: both orders, one tree a line (tick, tree), side by side
+        for k in 0..logged.len().max(entered.len()).min(2000) {
+            let f = |v: &[(u32, i32)]| v.get(k).map_or(String::from("-"), |e| format!("{}:{}", e.0, e.1));
+            println!("order {k}: run {} log {}", f(entered), f(&logged));
+        }
+    }
+    let same = logged.iter().zip(entered).take_while(|(l, e)| l.1 == e.1).count();
+    let first = match (logged.get(same), entered.get(same)) {
+        (Some(l), Some(e)) => format!("first different at tick {} (tree {}, the log's {})", e.0, e.1, l.1),
+        (Some(l), None) => format!("then the run entered no more trees (the log's {} at tick {})", l.1, l.0),
+        _ => "none different".to_string(),
+    };
+    // (the run's own entries up to where it has entered as many trees as the log's order and a margin)
+    let run = &entered[..entered.len().min(logged.len() * 3)];
+    let kept = common_subsequence(&logged, run);
+    Some(format!("alone: Sim {SUBJECT}'s meal in the log's tree order: {same} of {} trees, {first}; in order with trees added or left out: {kept} of {}", logged.len(), logged.len()))
+}
+
+/// The Sim whose order of trees is compared with the log's (Mom, on the home lot).
+const SUBJECT: i16 = 237;
+/// The most trees the subject's record keeps (a run's first 100,000 entries cover any meal).
+const ENTERED_LIMIT: usize = 100_000;
+
+impl Tally {
+    /// Note a step of the subject: at `tree`'s `node` (an entry is node 0, unless the same step again).
+    pub(super) fn note_entry(&mut self, id: i16, tick: u32, tree: i32, node: u16) {
+        if id != SUBJECT {
+            return;
+        }
+        let again = self.subject_at.replace((tree, node)) == Some((tree, node));
+        if node == 0 && !again && self.entered.len() < ENTERED_LIMIT {
+            self.entered.push((tick, tree));
+        }
+    }
 }
 
 /// The direction (object data 1) of a step.
@@ -717,7 +803,7 @@ impl<'l> Alone<'l> {
                 let i = d.sim.stack_of(&d.host.world, k);
                 let frames: Vec<String> = i.stack().iter().map(|f| format!("{}:{}", f.tree.map_or(-1, |t| lib.tree_at(t).id as i32), f.node)).collect();
                 let top = i.stack().last().map(|f| (f.tree.and_then(|t| lib.tree_at(t).nodes.get(f.node as usize)).map(|n| (n.opcode, n.operand)), f.params.clone(), f.locals.clone()));
-                let (queue, motives) = (d.host.world.get(k).queue.len(), d.host.world.get(k).motives.iter().skip(5).map(|m| format!("{m:.0}")).collect::<Vec<_>>().join(" "));
+                let (queue, motives) = (format!("{} {:?} current {}:{} pd33 {:?}", d.host.world.get(k).queue.len(), d.host.world.get(k).queue.iter().map(|q| (q.tree, q.c, q.rank)).collect::<Vec<_>>(), d.host.world.get(k).current.tree, d.host.world.get(k).current.c, d.host.world.get(k).person_data.get(33)), d.host.world.get(k).motives.iter().skip(5).map(|m| format!("{m:.0}")).collect::<Vec<_>>().join(" "));
                 println!("tick {t} sim {id}: {} {}{} queue {queue} motives {motives} deltas {:?} m9 {} top {top:?}", frames.join(" "), if i.asleep() { "asleep " } else { "" }, if i.done() { "DONE" } else { "" }, d.host.world.get(k).motive_deltas, d.host.world.get(k).motives[9]);
             }
         }
@@ -757,6 +843,9 @@ impl<'l> Alone<'l> {
         println!("alone: walks planned {}, arrived {}, no way {}; Sim stacks restarted after an error {}", t.planned, t.arrived, t.no_way, t.restarted);
         println!("alone: walks to a place outside its object's room {} (not counting {} portal crossing steps, which end in the next room)", t.outside_room, t.crossings);
         println!("alone: walk legs through a wall {}", t.through_wall);
+        if let Some(line) = meal_order_figure(&d.log, d.host.sim_of.get(&SUBJECT).copied(), &t.entered) {
+            println!("{line}");
+        }
         println!("alone: hash {hash:016x}");
         AloneReport { ticks: done, of, hash }
     }
