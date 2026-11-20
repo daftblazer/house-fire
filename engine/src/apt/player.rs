@@ -17,7 +17,7 @@ use std::rc::Rc;
 
 use super::Flash;
 use super::actions::Value as Const;
-use super::movie::{Character, Frame, Item, place};
+use super::movie::{Character, ClipAction, Frame, Item, place};
 use super::value::{ClipId, Kind, Native, ObjRef, Object, Props, Value};
 
 /// A command a movie sent the game: what the game's handler is given.
@@ -103,6 +103,8 @@ pub struct Clip {
     pub loaded: Option<String>,
     /// A text field's contents once a script set them.
     pub text: Option<Rc<str>>,
+    /// The actions the clip's place item runs on events (keys: `events` 0x40 down, 0x80 up).
+    pub clip_actions: Vec<ClipAction>,
 }
 
 /// An action stream waiting to run: where it is in its movie, and the clip it belongs to.
@@ -162,6 +164,8 @@ pub struct Player {
     /// What the game answered when a movie read a value of it by name, per name in the game's
     /// frame order: (the game's frame, the value as text).
     reads: HashMap<(u32, String), Rc<str>>,
+    /// What the game answers a read by name in a run with no log (`set_answers`).
+    answers: HashMap<String, Rc<str>>,
     /// Prints each member and local variable a script sets (`APT_TRACE=2`).
     pub(super) trace_sets: bool,
 }
@@ -195,6 +199,7 @@ impl Player {
             rng: 1,
             send_lag: 0,
             reads: HashMap::new(),
+            answers: HashMap::new(),
             trace: std::env::var_os("APT_TRACE").is_some(),
             trace_sets: std::env::var("APT_TRACE").is_ok_and(|v| v == "2"),
         };
@@ -218,9 +223,49 @@ impl Player {
         }
     }
 
-    /// The value a movie reading `name` of the game gets from the game's logged answers.
+    /// The value a movie reading `name` of the game gets: the game's logged answer of this
+    /// frame, else the answer the host gives (`set_answers`).
     pub(super) fn read_value(&self, name: &str) -> Option<Value> {
-        self.reads.get(&(self.frame, name.to_string())).map(|v| Value::Str(v.clone()))
+        self.reads.get(&(self.frame, name.to_string())).or_else(|| self.answers.get(name)).map(|v| Value::Str(v.clone()))
+    }
+
+    /// The answers the game gives the movies' reads by name, replacing the last set (a run
+    /// with no log: the game's own values, as the host works them out each frame).
+    pub fn set_answers(&mut self, answers: impl IntoIterator<Item = (String, String)>) {
+        self.answers = answers.into_iter().map(|(k, v)| (k, v.into())).collect();
+    }
+
+    /// The names of the movies that asked to be loaded and wait for the game to load them.
+    pub fn pending_loads(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for r in &self.requests {
+            if self.clips[r.target].alive && !out.contains(&r.name) {
+                out.push(r.name.clone());
+            }
+        }
+        out
+    }
+
+    /// A key goes down or up: every clip whose place item has actions for the event runs them
+    /// with `Key.getCode` the code (the wrapper's `keys` clip turns them into the `keyPress_*`
+    /// calls of the movie that has the focus). Codes: 37 to 40 the arrows, 88 A, 79 B, 84 the
+    /// triangle, 83 the square (read from the wrapper's actions).
+    pub fn key(&mut self, code: u32, down: bool) {
+        let event = if down { 0x40 } else { 0x80 };
+        self.key_code = f64::from(code);
+        let runs: Vec<(ClipId, Vec<super::actions::Instr>)> = self
+            .clips
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.alive)
+            .flat_map(|(id, c)| c.clip_actions.iter().filter(move |a| a.events & event != 0).map(move |a| (id, a.actions.clone())))
+            .collect();
+        for (id, code) in runs {
+            self.depth = 0;
+            self.run_top(id, &code);
+        }
+        self.run_queue();
+        self.key_code = 0.0;
     }
 
     pub fn note_stub(&mut self, what: String) {
@@ -390,6 +435,7 @@ impl Player {
             placed_ch: ch,
             loaded: None,
             text: None,
+            clip_actions: Vec::new(),
         });
         id
     }
@@ -529,6 +575,7 @@ impl Player {
             self.clips[id].children.insert(p.depth, nid);
             self.clips[nid].placed = frame;
             self.apply_fields(nid, p);
+            self.clips[nid].clip_actions = p.clip_actions.clone();
             if kind == ClipKind::Sprite {
                 self.enter_frame(nid, 0, true);
             }

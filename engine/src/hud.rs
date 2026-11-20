@@ -31,6 +31,12 @@ pub struct Text {
     pub x: f32,
     pub y: f32,
     pub shadow: bool,
+    /// The line's width in pixels as the game measured it (the aligned point's twice distance)
+    /// and, for a line the game puts its middle on a y, its height (pixels).
+    pub width: Option<f32>,
+    pub height: Option<f32>,
+    /// A plain draw: no shadow pass, the dark title colour (the pause screen's title).
+    pub plain: bool,
 }
 
 /// The game's speed setting (the manager's +76 and its pause tests, `fn_80088890`).
@@ -133,6 +139,13 @@ const ALERT_SHARE: f32 = 0.05;
 pub struct Hud {
     player: u8,
     shown: bool,
+    /// Play has begun (`show` was called): the speed buttons answer the setting even while the
+    /// pause screen has the HUD hidden.
+    started: bool,
+    /// The HUD comes back from the pause screen: `showHUD` is called again (no player mode).
+    reshow: bool,
+    /// The key the dialog's movie reported (`dialog_key_press`): "accept" or "decline".
+    dialog_key: Option<String>,
     mood_shown: i32,
     speed_shown: Speed,
     dialog: Option<Dialog>,
@@ -175,12 +188,31 @@ const SPACE: f32 = 11.0;
 
 /// The height of the HUD's text as a fraction of the screen's: a float at 0x802A3764 that is
 /// within 4e-5 of the half height the log's lines give. Unverified that it is the height.
-const HUD_TEXT_HEIGHT: f32 = 0.0355;
+pub const TEXT_HEIGHT: f32 = 0.0355;
 
 /// Where the dialog's window is (`Screen_Read` 0x800445EC: doubles at 0x80298FE0 and 0x80298FF0,
 /// 0x80298FF8) and the text's top below its top (a float at 0x80298FE8).
 pub const DIALOG_WINDOW: (f32, f32, f32) = (0.2, 0.18, 0.6);
 const DIALOG_TEXT_TOP: f32 = 0.1;
+
+/// The height the dialog's box grows by for each line of text, as a fraction of the screen. Fitted
+/// to the one dialog of the logs that is read in play (Mom's three lines: `dialog_box_height`
+/// 0.418405 less the 0.1 above the text), not the game's `fn_80044174`.
+/// What the game's measure of the dialog's title and its button's label is of the HUD's measure
+/// of the same string. Fitted to Mom's dialog, the one the logs read in play ("Mom" 35.75 pixels
+/// by the HUD's measure, 56.73 read as `dialog_title_bar_width`; "OK" 22.75 and 23.79 as
+/// `UI_button_width`), not the game's own measure (`fn_800441C0`).
+const DIALOG_TITLE_RATIO: f32 = 56.727 / 35.75;
+const DIALOG_BUTTON_RATIO: f32 = 23.788 / 22.75;
+
+/// How much bigger than the HUD's lines the dialog's title and its button's label are drawn
+/// (width and height, from the size words of Mom's dialog: "Mom" 50.5 by 22.1 pixels against the
+/// HUD measure's 35.75 by 15.9, "OK" 25.8 by 18.4 against 22.75 by 15.9). Fitted to that one
+/// dialog, not the game's `SetSize`.
+const DIALOG_TITLE_DRAW: (f32, f32) = (50.5 / 35.75, 22.1 / 15.904);
+const DIALOG_LABEL_DRAW: (f32, f32) = (25.8 / 22.75, 18.4 / 15.904);
+
+const DIALOG_LINE_HEIGHT: f32 = 0.318405 / 3.0;
 
 /// The point the dialog's lines are centred on is a pixel right of the window's middle (the
 /// second point of the size words of Mom's lines, 0.5015625). Not from the game; the other
@@ -232,13 +264,45 @@ impl Measure<'_> {
 impl Hud {
     /// The HUD of player `player` (1 or 2), not shown yet.
     pub fn new(player: u8) -> Hud {
-        Hud { player, shown: false, mood_shown: 0, speed_shown: Speed::Normal, dialog: None, dialog_event: None, hud_ready: false, dialog_ready: false, button_ready: false, layout: Layout::default() }
+        Hud { player, shown: false, started: false, reshow: false, dialog_key: None, mood_shown: 0, speed_shown: Speed::Normal, dialog: None, dialog_event: None, hud_ready: false, dialog_ready: false, button_ready: false, layout: Layout::default() }
     }
 
     /// The HUD is shown (a lot's play begins): it keeps the mood it shows from now.
     pub fn show(&mut self, view: &PlayerView) {
         self.shown = true;
+        self.started = true;
         self.mood_shown = view.mood();
+    }
+
+    /// The pause screen takes the HUD's place (`hideHUD`): its layers and the lot's clock stop
+    /// being drawn, and the HUD movie says `hud_ready` again when it is back.
+    pub fn pause(&mut self) {
+        self.shown = false;
+        self.hud_ready = false;
+    }
+
+    /// The pause screen is gone: the HUD is shown again (`showHUD`, 0x80087F08, without the
+    /// player mode: the log has none at the pause's end).
+    pub fn resume(&mut self, view: &PlayerView) {
+        self.shown = true;
+        self.reshow = true;
+        self.mood_shown = view.mood();
+    }
+
+    /// The layout the movies reported (the places of the bars and the dialog's title and button).
+    pub fn layout(&self) -> Layout {
+        self.layout
+    }
+
+    /// Whether a dialog is up.
+    pub fn dialog_open(&self) -> bool {
+        self.dialog.is_some()
+    }
+
+    /// The dialog's button the player's key chose, if the dialog's movie reported one
+    /// (`dialog_key_press`: "accept" or "decline").
+    pub fn take_dialog_key(&mut self) -> Option<String> {
+        self.dialog_key.take()
     }
 
     /// A dialog opens over the lot.
@@ -262,6 +326,7 @@ impl Hud {
         match name {
             "hud_ready" => self.hud_ready = argument == "1",
             "dialog_ready" => self.dialog_ready = argument == "1",
+            "dialog_key_press" => self.dialog_key = Some(argument.to_string()),
             "money_bar_x" => self.layout.money.0 = v,
             "money_bar_y" => self.layout.money.1 = v,
             "time_bar_x" => self.layout.time.0 = v,
@@ -279,13 +344,16 @@ impl Hud {
     /// the dialog opened or closed, the speed buttons, the mood meter.
     pub fn update(&mut self, view: &PlayerView, speed: Speed, first_frame: bool) -> Vec<Call> {
         let mut out = Vec::new();
-        if !self.shown {
+        if !self.started {
             return out;
         }
-        if first_frame {
+        if self.shown && first_frame {
             // showHUD (0x80087F08), then setPlayerMode with the number of players (0x8008800C)
             out.push(call("showHUD"));
             out.push(Call { name: "setPlayerMode", args: vec!["1p".to_string()] });
+        }
+        if self.shown && std::mem::take(&mut self.reshow) {
+            out.push(call("showHUD"));
         }
         match self.dialog_event.take() {
             Some(true) => out.push(call("showDialog")),
@@ -305,7 +373,7 @@ impl Hud {
             self.speed_shown = speed;
         }
         let mood = view.mood();
-        if mood != self.mood_shown {
+        if self.shown && mood != self.mood_shown {
             // updateHUD with the player's number and the meter (0x8008893C)
             out.push(Call { name: "updateHUD", args: vec![self.player.to_string(), "updateMoodMeter".to_string()] });
             self.mood_shown = mood;
@@ -327,27 +395,35 @@ impl Hud {
             calls.extend(["hideContentLayer", "showDialogLayer", "showContentLayer"].map(call));
         }
         if self.shown && self.hud_ready {
-            let h = HUD_TEXT_HEIGHT;
-            let funds = format!("$ {}", thousands(view.funds));
-            let w = measure.hud_width(&funds) / SCREEN.0;
-            line(&mut texts, &funds, self.layout.money.0 - w / 2.0, self.layout.money.1 - h / 2.0);
+            let h = TEXT_HEIGHT;
+            let hh = Some(h * SCREEN.1);
+            self.funds_text(view, measure, &mut texts);
             let hour = if view.hour % 12 == 0 { 12 } else { view.hour % 12 };
-            line(&mut texts, &format!("{hour}:{:02}", view.minute), self.layout.time.0 - CLOCK_OFFSET, self.layout.time.1 - h / 2.0);
-            line(&mut texts, if view.hour > 11 { "PM" } else { "AM" }, self.layout.time.0 + AM_OFFSET, self.layout.time.1 - h / 2.0);
+            line(&mut texts, &format!("{hour}:{:02}", view.minute), self.layout.time.0 - CLOCK_OFFSET, self.layout.time.1 - h / 2.0, None, hh);
+            line(&mut texts, if view.hour > 11 { "PM" } else { "AM" }, self.layout.time.0 + AM_OFFSET, self.layout.time.1 - h / 2.0, None, hh);
         }
         if let Some(d) = self.dialog.as_ref().filter(|_| self.dialog_ready) {
             let (wx, wy, ww) = DIALOG_WINDOW;
-            let h = HUD_TEXT_HEIGHT;
+            let h = TEXT_HEIGHT;
             let centred = |s: &str| wx + ww / 2.0 + DIALOG_CENTRE_SHIFT - measure.dialog_width(s) / SCREEN.0 / 2.0;
-            line(&mut texts, &d.title, self.layout.title.0 - measure.hud_width(&d.title) / SCREEN.0 / 2.0, self.layout.title.1 - h / 2.0);
+            let (tw, th) = (measure.hud_width(&d.title) * DIALOG_TITLE_DRAW.0, h * DIALOG_TITLE_DRAW.1);
+            line(&mut texts, &d.title, self.layout.title.0 - tw / SCREEN.0 / 2.0, self.layout.title.1 - th / 2.0, Some(tw), Some(th * SCREEN.1));
             for (k, l) in d.lines.iter().enumerate() {
-                line(&mut texts, l, centred(l), wy + DIALOG_TEXT_TOP + k as f32 * 20.0 / SCREEN.1);
+                line(&mut texts, l, centred(l), wy + DIALOG_TEXT_TOP + k as f32 * 20.0 / SCREEN.1, Some(measure.dialog_width(l)), None);
             }
             if self.button_ready {
-                line(&mut texts, &d.button_label, self.layout.accept.0 - measure.hud_width(&d.button_label) / SCREEN.0 / 2.0, self.layout.accept.1 - h / 2.0);
+                let (bw, bh) = (measure.hud_width(&d.button_label) * DIALOG_LABEL_DRAW.0, h * DIALOG_LABEL_DRAW.1);
+                line(&mut texts, &d.button_label, self.layout.accept.0 - bw / SCREEN.0 / 2.0, self.layout.accept.1 - bh / 2.0, Some(bw), Some(bh * SCREEN.1));
             }
         }
         (calls, texts)
+    }
+
+    /// The funds line ("$ 1,030"), centred on the money bar's place (the pause screen draws it too).
+    pub fn funds_text(&self, view: &PlayerView, measure: &Measure, out: &mut Vec<Text>) {
+        let funds = format!("$ {}", thousands(view.funds));
+        let w = measure.hud_width(&funds) / SCREEN.0;
+        line(out, &funds, self.layout.money.0 - w / 2.0, self.layout.money.1 - TEXT_HEIGHT / 2.0, Some(w * SCREEN.0), Some(TEXT_HEIGHT * SCREEN.1));
     }
 
     /// The answer of the HUD's handler (`Screen_Read`, 0x8008BFDC) to a movie's read of a game
@@ -366,7 +442,7 @@ impl Hud {
     }
 
     /// The answer of the dialog's handler (`Screen_Read`, 0x800445EC).
-    pub fn dialog_answer(&self, name: &str) -> Option<String> {
+    pub fn dialog_answer(&self, name: &str, measure: &Measure) -> Option<String> {
         let d = self.dialog.as_ref()?;
         let (x, y, w) = DIALOG_WINDOW;
         Some(match name {
@@ -375,15 +451,21 @@ impl Hud {
             "dialog_box_width" => format!("{w:.6}"),
             "number_of_buttons" => d.buttons.to_string(),
             "is_critical_dialog" => "0".to_string(),
+            // the game's own measure of its strings (`fn_80044174`, `fn_800441C0`, the title's
+            // `ERFont::DoGetStringSize`): the same measure as the lines' widths, in the screen's
+            // fractions
+            "dialog_title_bar_width" => format!("{:.6}", measure.hud_width(&d.title) * DIALOG_TITLE_RATIO / SCREEN.0),
+            "UI_button_width" => format!("{:.6}", measure.hud_width(&d.button_label) * DIALOG_BUTTON_RATIO / SCREEN.0),
+            "dialog_box_height" => format!("{:.6}", DIALOG_TEXT_TOP + d.lines.len() as f32 * DIALOG_LINE_HEIGHT),
             _ => return None,
         })
     }
 }
 
 /// A line and its shadow pass.
-fn line(out: &mut Vec<Text>, text: &str, x: f32, y: f32) {
-    out.push(Text { text: text.to_string(), x: x + SHADOW_PIXELS / SCREEN.0, y: y + SHADOW_PIXELS / SCREEN.1, shadow: true });
-    out.push(Text { text: text.to_string(), x, y, shadow: false });
+pub fn line(out: &mut Vec<Text>, text: &str, x: f32, y: f32, width: Option<f32>, height: Option<f32>) {
+    out.push(Text { text: text.to_string(), x: x + SHADOW_PIXELS / SCREEN.0, y: y + SHADOW_PIXELS / SCREEN.1, shadow: true, width, height, plain: false });
+    out.push(Text { text: text.to_string(), x, y, shadow: false, width, height, plain: false });
 }
 
 /// A number with its thousands apart by commas.

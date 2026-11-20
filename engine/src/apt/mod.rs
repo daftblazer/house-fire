@@ -17,6 +17,7 @@ pub mod movie;
 pub mod play;
 pub mod player;
 pub mod texture;
+pub mod ui;
 pub mod value;
 mod vm;
 

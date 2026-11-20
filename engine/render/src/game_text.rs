@@ -70,3 +70,36 @@ fn scale(assets: &AptAssets, font: &str, r: &TextDrawRec) -> [f32; 2] {
         (None, None) => [PLAIN_SCALE; 2],
     }
 }
+
+/// The lines the engine's own feed draws (`hud::Text`) as lines for the pass. The game's rules
+/// are the logged lines' (above): a line with a width is as wide as the game measured it, one
+/// with a height has its middle on its y, a plain one has no shadow pass.
+pub fn native_lines(assets: &AptAssets, texts: &[housefire::hud::Text]) -> Vec<TextRun> {
+    let Some(font) = assets.fonts.keys().find(|n| name_hash(n) == FONT_HASH) else { return Vec::new() };
+    let f = &assets.fonts[font];
+    texts
+        .iter()
+        .map(|t| {
+            let texels: f32 = t.text.chars().map(|c| advance(f, c)).sum();
+            let down = t.height.map(|h| h / CENTRED_HEIGHT);
+            let across = t.width.filter(|_| texels > 0.0).map(|w| w / texels);
+            let scale = match (across, down) {
+                (Some(a), Some(d)) => [a, d],
+                (Some(a), None) => [a, a],
+                (None, Some(d)) => [d, d],
+                (None, None) => [PLAIN_SCALE; 2],
+            };
+            let color = if t.shadow {
+                0x0000_00ff
+            } else if t.plain {
+                PLAIN_COLOR
+            } else {
+                0xffff_ffff
+            };
+            TextRun { text: t.text.clone(), font: font.clone(), x: t.x * STAGE.0, y: t.y * STAGE.1 + TOP_OFFSET, scale, color, shadow: t.shadow }
+        })
+        .collect()
+}
+
+/// The hash of the one font the interface draws in (`FRANKFUR`, the CRC-32 of its name).
+const FONT_HASH: u32 = 0x67f6_64fb;

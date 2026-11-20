@@ -160,7 +160,7 @@ pub fn hud(log: &Log, d: &Disc, lib: &Library, ngh: &[u8], card: Option<&str>, l
             tally.miss(f.first_tick, format!("frame {n} calls ours {ours:?}, the log's {:?}", f.calls));
         }
         for (handler, name, value) in &f.reads {
-            let mine = if *handler == 0x8008bfdc { hud.answer(name, &view) } else { hud.dialog_answer(name) }.unwrap_or_default();
+            let mine = if *handler == 0x8008bfdc { hud.answer(name, &view) } else { hud.dialog_answer(name, &measure) }.unwrap_or_default();
             if &mine != value {
                 tally.reads += 1;
                 tally.miss(f.first_tick, format!("frame {n} read {name} (handler {handler:x}) ours {mine:?}, the log's {value:?}"));
