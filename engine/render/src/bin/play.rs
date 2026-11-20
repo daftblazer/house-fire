@@ -1,11 +1,13 @@
 //! The sandbox: a window in which the player plays the lot, the engine's own simulation running
-//! with no log after its start (`housefire::replay::Alone`), drawn each frame as `view` draws it.
+//! with no log after its start (`housefire::replay::Alone`), drawn each frame as `view` draws it,
+//! with the game's own interface over it: the HUD, the dialog and the pause screen are the Apt
+//! movies run by the engine's feed (`housefire::apt::ui`), the interaction menu its pills.
 //!
 //! Usage: play LOG ISO --card CARD [--lot N --hood CARD] [--seed N] [--script FILE]
 //!             [--headless] [--ticks N] [--shot TICK FILE] [--mute] [--wav FILE] [--device]
 //!
 //! The log is read for the start only (as `replay --alone`) and for the first camera. Controls:
-//!   Space pause; 1, 2, 3 speed (ticks a frame); Tab next Sim of the household; F camera to the Sim
+//!   Space pause (the pause screen: arrows and Enter move in it, Space or Esc closes it); 1, 2, 3 speed (ticks a frame); Tab next Sim of the household; F camera to the Sim
 //!   Left click: a Sim of the household selects it; another object opens its menu for the active
 //!   Sim; the floor makes a "go here" marker. Click an entry (or Up/Down and Enter), Esc closes.
 //!   Camera: Q/E or the right stick turn, wheel / +/- / triggers zoom, WASD / arrows / middle
@@ -19,7 +21,9 @@
 //! Each command queued is printed: `play: tick T sim S target O action A (name)`.
 
 use ash::vk;
+use housefire::apt::ui::{DialogButton, Feed, Ui, keys};
 use housefire::disc::Disc;
+use housefire::hud::{Dialog, Hud, Measure, PlayerView, Speed};
 use housefire::library::Library;
 use housefire::replay::{Alone, DialogAsk, MenuEntry, RunWith, Start, atoi};
 use housefire::scene::Camera;
@@ -29,12 +33,12 @@ use housefire_render::audio::Sound;
 use housefire_render::engine_scene::{self, Builder, Lot};
 use housefire_render::frame::{Frame, Mat3x4, TRANSIENT_MESH};
 use housefire_render::gpu::Gpu;
-use housefire_render::overlay::Overlay;
+use housefire_render::apt_draw::{AptAssets, Painter};
+use housefire_render::game_text;
 use housefire_render::pick::{self, Pick};
 use housefire_render::renderer::{Present, Renderer};
 use housefire_render::scene::Assets;
 use housefire_render::sims::{self, SimSkins, Wardrobe};
-use housefire_render::standin;
 use housefire_render::window::{self, App, Swapchain};
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -69,6 +73,12 @@ const DEAD_ZONE: f32 = 0.2;
 const SCRIPT_TAIL: u32 = 600;
 /// The home lot's house number when the save names none (as `view`'s).
 const HOME_HOUSE: u32 = 1;
+/// The presentation frame the HUD is shown at (`showHUD`): the sandbox has no load screen to wait
+/// out, so the wrapper has its few frames to start and `f_hud` to load (the game's load bar takes
+/// the 39 frames between `loadFunctions` and `showHUD` in the ui-dump log).
+const HUD_FRAME: u32 = 6;
+/// The font the interface's text is drawn in (`FRANKFUR`, the CRC-32 of its name).
+const INTERFACE_FONT: u32 = 0x67f6_64fb;
 /// The household's Sims: person data 32 (the visitors' mark) is 0.
 const PERSON_VISITOR: usize = 32;
 /// The interface's sounds (the bank's `UI_accept` and `UI_move`): a menu opening and choosing
@@ -161,6 +171,8 @@ enum Cmd {
     MenuMove(i32),
     /// Enter: the menu's or the dialog's highlighted entry.
     Confirm,
+    /// A key code for the dialog's or the pause screen's movie (an arrow).
+    Key(u32),
     Quit,
     /// A check of the run: the Sim's stack must enter the tree within so many ticks of now.
     Expect(i16, i32, u32),
@@ -200,8 +212,6 @@ fn parse_line(line: &str) -> Option<(u32, Cmd)> {
 /// A menu that is open.
 struct MenuState {
     target: i16,
-    at: (i32, i32),
-    title: String,
     items: Vec<MenuEntry>,
     selected: usize,
 }
@@ -233,6 +243,14 @@ struct Game<'l> {
     expects: Vec<Expect>,
     /// The sound, if there is any (`--mute`, no device and a headless run without `--wav` have none).
     sound: Option<Sound>,
+    /// The interface: the movies, what the game feeds them, the font its text is measured in, and
+    /// the lines it drew in the last frame.
+    ui: Ui,
+    hud: Hud,
+    font: housefire::apt::font::Font,
+    texts: Vec<housefire::hud::Text>,
+    /// The presentation frames run (the interface's clock).
+    frames: u32,
 }
 
 impl<'l> Game<'l> {
@@ -306,14 +324,29 @@ impl<'l> Game<'l> {
         let listed: Vec<String> = items.iter().map(|e| format!("{} {}", e.action, e.name)).collect();
         println!("play: tick {} menu of object {target} for sim {sim}: [{}]", self.alone.ticks(), listed.join(", "));
         self.target = Some(target);
-        self.menu = Some(MenuState { target, at, title: self.object_name(target), items, selected: 0 });
+        let names: Vec<String> = self.menu_names(&items);
+        self.ui.show_menu(names, 0, (at.0 as f32, at.1 as f32));
+        self.menu = Some(MenuState { target, items, selected: 0 });
         self.ui(UI_OPEN);
+    }
+
+    /// The entries' names as the menu shows them.
+    fn menu_names(&self, items: &[MenuEntry]) -> Vec<String> {
+        if items.is_empty() {
+            return vec!["(nothing)".to_string()];
+        }
+        items.iter().map(|e| e.name.clone()).collect()
+    }
+
+    fn close_menu(&mut self) {
+        self.menu = None;
+        self.ui.hide_menu();
     }
 
     fn click_object(&mut self, id: i16, at: (i32, i32)) {
         if self.household().contains(&id) {
             self.active = Some(id);
-            self.menu = None;
+            self.close_menu();
         } else {
             self.open_menu(id, at);
         }
@@ -343,6 +376,7 @@ impl<'l> Game<'l> {
 
     fn choose(&mut self, i: usize) {
         let Some(m) = self.menu.take() else { return };
+        self.ui.hide_menu();
         let (Some(sim), Some(e)) = (self.active, m.items.get(i)) else { return };
         self.ui(UI_CHOOSE);
         self.queue(sim, m.target, e.action, &e.name.clone());
@@ -352,6 +386,54 @@ impl<'l> Game<'l> {
         if self.dialog.take().is_some() {
             println!("play: tick {} dialog answered with button {button}", self.alone.ticks());
             self.alone.answer_dialog(button == 0);
+            self.hud.hide_dialog();
+        }
+    }
+
+    /// The pause screen opens or closes (Space, Start); the simulation stands still while it is up.
+    fn toggle_pause(&mut self) {
+        let Some(view) = self.view_of_player() else { return };
+        if self.ui.paused() {
+            self.ui.close_pause(&mut self.hud, &view);
+            self.speed = self.last_speed.max(1);
+        } else {
+            self.close_menu();
+            self.ui.open_pause(&mut self.hud);
+            if self.speed > 0 {
+                self.last_speed = self.speed;
+            }
+            self.speed = 0;
+        }
+    }
+
+    /// Whether the dialog or the pause screen has the keys.
+    fn focus(&self) -> bool {
+        self.dialog.is_some() || self.ui.paused()
+    }
+
+    /// What the HUD shows of the active Sim.
+    fn view_of_player(&self) -> Option<PlayerView> {
+        PlayerView::of(self.alone.world(), self.active?)
+    }
+
+    /// One frame of the interface: the movies run, the game feeds them, and a button the player
+    /// pressed on the dialog is answered. Keeps the lines of text the game drew.
+    fn frame_ui(&mut self) {
+        self.frames += 1;
+        let Some(view) = self.view_of_player() else { return };
+        if self.frames == HUD_FRAME {
+            self.ui.begin_play(&mut self.hud, &view);
+        }
+        let speed = match self.speed {
+            0 => Speed::Paused,
+            1 => Speed::Normal,
+            2 => Speed::Fast,
+            _ => Speed::Fastest,
+        };
+        let measure = Measure { font: &self.font };
+        self.texts = self.ui.step(&mut Feed { hud: &mut self.hud, view: &view, speed, measure: &measure });
+        if let Some(key) = self.hud.take_dialog_key() {
+            self.answer(usize::from(key != "accept"));
         }
     }
 
@@ -360,19 +442,29 @@ impl<'l> Game<'l> {
         if self.dialog.is_some() {
             match cmd {
                 Cmd::Answer(b) => self.answer(b),
-                Cmd::Confirm => {
-                    let b = self.dialog.as_ref().map_or(0, |d| d.3);
-                    self.answer(b);
-                }
-                Cmd::Click(x, y) => {
-                    let d = self.dialog.as_ref().expect("open");
-                    let view = standin::Dialog { text: &d.1, buttons: &d.2, selected: d.3 };
-                    if let Some(b) = standin::dialog_button_at((WIDTH as i32, HEIGHT as i32), &view, x as i32, y as i32) {
-                        self.answer(b);
-                    }
-                }
+                // the keys as the pad passes them to the dialog's movie, which reports the button
+                Cmd::Confirm => self.ui.press(keys::A),
+                Cmd::Close => self.ui.press(keys::B),
+                Cmd::Key(k) => self.ui.press(k),
+                Cmd::Click(x, y) => match self.ui.dialog_hit(&self.hud, x, y) {
+                    Some(DialogButton::Accept) => self.ui.press(keys::A),
+                    Some(DialogButton::Decline) => self.ui.press(keys::B),
+                    None => {}
+                },
                 Cmd::Quit => self.quit = true,
                 Cmd::Speed(k) => self.speed = k.min(3),
+                _ => {}
+            }
+            return;
+        }
+        if self.ui.paused() {
+            // the pause screen has the keys: the pad's to its movie, B closes it
+            match cmd {
+                Cmd::Quit => self.quit = true,
+                Cmd::Close | Cmd::TogglePause => self.toggle_pause(),
+                Cmd::Confirm | Cmd::Click(..) => self.ui.press(keys::A),
+                Cmd::Key(k) => self.ui.press(k),
+                Cmd::Speed(k) if k > 0 => self.last_speed = k.min(3),
                 _ => {}
             }
             return;
@@ -385,14 +477,7 @@ impl<'l> Game<'l> {
                     self.last_speed = self.speed;
                 }
             }
-            Cmd::TogglePause => {
-                if self.speed == 0 {
-                    self.speed = self.last_speed.max(1);
-                } else {
-                    self.last_speed = self.speed;
-                    self.speed = 0;
-                }
-            }
+            Cmd::TogglePause => self.toggle_pause(),
             Cmd::NextSim => self.next_sim(),
             Cmd::SetSim(id) => self.active = Some(id),
             Cmd::FocusSim => {
@@ -404,11 +489,13 @@ impl<'l> Game<'l> {
                 let by = self.camera.distance - d;
                 self.camera.zoom(by, ZOOM_FAR);
             }
-            Cmd::Close => self.menu = None,
+            Cmd::Close => self.close_menu(),
             Cmd::MenuMove(d) => {
                 if let Some(m) = &mut self.menu {
                     let n = m.items.len().max(1) as i32;
                     m.selected = (m.selected as i32 + d).rem_euclid(n) as usize;
+                    let selected = m.selected;
+                    self.ui.menu_select(selected);
                     self.ui(UI_MOVE);
                 }
             }
@@ -425,7 +512,7 @@ impl<'l> Game<'l> {
                     println!("play: tick {} no entry for action {a} in the menu", self.alone.ticks());
                 }
             }
-            Cmd::Answer(_) => {}
+            Cmd::Answer(_) | Cmd::Key(_) => {}
             Cmd::Menu => {
                 if let Some(t) = self.target {
                     let at = self.screen_of(t);
@@ -446,13 +533,11 @@ impl<'l> Game<'l> {
     }
 
     fn click(&mut self, x: f32, y: f32) {
-        if let Some(m) = &self.menu {
-            let view = standin::Menu { at: m.at, title: &m.title, items: &[], selected: m.selected };
-            let names: Vec<String> = m.items.iter().map(|e| e.name.clone()).collect();
-            let view = standin::Menu { items: &names, ..view };
-            match standin::menu_item_at((WIDTH as i32, HEIGHT as i32), &view, x as i32, y as i32) {
+        if self.menu.is_some() {
+            let measure = Measure { font: &self.font };
+            match self.ui.menu_hit(&measure, x, y) {
                 Some(i) => self.choose(i),
-                None => self.menu = None,
+                None => self.close_menu(),
             }
             return;
         }
@@ -512,6 +597,11 @@ impl<'l> Game<'l> {
         {
             let (text, buttons) = self.alone.dialog_text(&ask, &|id| self.object_name(id));
             println!("play: tick {} dialog from object {}: {text} {buttons:?}", self.alone.ticks(), ask.object);
+            let world = self.alone.world();
+            let strings: Vec<String> = world.find_object(ask.object).and_then(|o| o.file).and_then(|f| self.lib.file(f).strings.get(&301)).cloned().unwrap_or_default();
+            let measure = Measure { font: &self.font };
+            let shown = Dialog::opened(&strings, ask.operand, &ask.locals, &|id| self.object_name(id), &measure);
+            self.hud.show_dialog(shown);
             self.dialog = Some((ask, text, buttons, 0));
         }
         let now = self.alone.ticks();
@@ -521,30 +611,6 @@ impl<'l> Game<'l> {
                 println!("play: tick {now} sim {} entered tree {} ({} ticks after the command)", e.sim, e.tree, now - e.asked);
                 self.expects[k].seen = Some(now);
             }
-        }
-    }
-
-    /// The interface for this moment, into the overlay.
-    fn draw(&self, o: &mut Overlay, cursor: Option<(i32, i32)>) {
-        o.clear();
-        let world = self.alone.world();
-        if let Some(sim) = self.active.and_then(|a| world.find_object(a)) {
-            let name = self.sim_name(sim.id());
-            let motives = standin::MOTIVE_BARS.map(|(_, i)| sim.motives.get(i).copied().unwrap_or(0.0));
-            let clock = format!("{:02}:{:02}", world.globals.first().copied().unwrap_or(0), world.globals.get(5).copied().unwrap_or(0));
-            standin::draw_hud(o, &standin::Hud { name: &name, motives, speed: self.speed, tick: self.alone.ticks(), clock });
-        }
-        if let Some(m) = &self.menu {
-            let names: Vec<String> = m.items.iter().map(|e| e.name.clone()).collect();
-            standin::draw_menu(o, &standin::Menu { at: m.at, title: &m.title, items: &names, selected: m.selected });
-        }
-        if let Some((_, text, buttons, selected)) = &self.dialog {
-            standin::draw_dialog(o, &standin::Dialog { text, buttons, selected: *selected });
-        }
-        if let Some((x, y)) = cursor {
-            // the pad's cursor: the middle of the picture
-            o.rect(x - 4, y, 9, 1, [255, 255, 255, 200]);
-            o.rect(x, y - 4, 1, 9, [255, 255, 255, 200]);
         }
     }
 }
@@ -560,7 +626,6 @@ struct Input {
     left_stick: (f32, f32),
     right_stick: (f32, f32),
     triggers: (f32, f32),
-    pad_seen: bool,
 }
 
 fn dead(v: f32) -> f32 {
@@ -588,7 +653,8 @@ impl Input {
                     if event.repeat {
                         continue;
                     }
-                    let menu = game.menu.is_some() || game.dialog.is_some();
+                    let menu = game.menu.is_some();
+                    let focus = game.focus();
                     match code {
                         KeyCode::Space => cmds.push(Cmd::TogglePause),
                         KeyCode::Digit1 | KeyCode::Numpad1 => cmds.push(Cmd::Speed(1)),
@@ -598,6 +664,10 @@ impl Input {
                         KeyCode::KeyF => cmds.push(Cmd::FocusSim),
                         KeyCode::Escape => cmds.push(Cmd::Close),
                         KeyCode::Enter | KeyCode::NumpadEnter => cmds.push(Cmd::Confirm),
+                        KeyCode::ArrowUp if focus => cmds.push(Cmd::Key(keys::UP)),
+                        KeyCode::ArrowDown if focus => cmds.push(Cmd::Key(keys::DOWN)),
+                        KeyCode::ArrowLeft if focus => cmds.push(Cmd::Key(keys::LEFT)),
+                        KeyCode::ArrowRight if focus => cmds.push(Cmd::Key(keys::RIGHT)),
                         KeyCode::ArrowUp if menu => cmds.push(Cmd::MenuMove(-1)),
                         KeyCode::ArrowDown if menu => cmds.push(Cmd::MenuMove(1)),
                         _ => {}
@@ -659,7 +729,6 @@ fn pad_events(pad: &mut Option<gilrs::Gilrs>, input: &mut Input, game: &Game) ->
     let mut cmds = Vec::new();
     let Some(g) = pad else { return cmds };
     while let Some(ev) = g.next_event() {
-        input.pad_seen = true;
         match ev.event {
             EventType::AxisChanged(axis, v, _) => match axis {
                 Axis::LeftStickX => input.left_stick.0 = v,
@@ -675,10 +744,14 @@ fn pad_events(pad: &mut Option<gilrs::Gilrs>, input: &mut Input, game: &Game) ->
                 Button::RightTrigger => cmds.push(Cmd::Speed((game.speed + 1).min(3))),
                 Button::North | Button::West => cmds.push(Cmd::NextSim),
                 Button::East => cmds.push(Cmd::Close),
+                Button::DPadUp if game.focus() => cmds.push(Cmd::Key(keys::UP)),
+                Button::DPadDown if game.focus() => cmds.push(Cmd::Key(keys::DOWN)),
+                Button::DPadLeft if game.focus() => cmds.push(Cmd::Key(keys::LEFT)),
+                Button::DPadRight if game.focus() => cmds.push(Cmd::Key(keys::RIGHT)),
                 Button::DPadUp => cmds.push(Cmd::MenuMove(-1)),
                 Button::DPadDown => cmds.push(Cmd::MenuMove(1)),
                 Button::South => {
-                    if game.menu.is_some() || game.dialog.is_some() {
+                    if game.menu.is_some() || game.focus() {
                         cmds.push(Cmd::Confirm);
                     } else {
                         cmds.push(Cmd::Click(WIDTH as f32 / 2.0, HEIGHT as f32 / 2.0));
@@ -782,7 +855,10 @@ fn run(args: Args) -> Result<bool, String> {
     alone.set_player(true);
     let camera = first_camera(&log)?;
     let names = engine_scene::save_file(&disc, args.card.as_deref().map(std::path::Path::new)).map(|ngh| housefire::figure::sim_names(&ngh)).unwrap_or_default();
-    let mut game = Game { alone, lib: &lib, camera, active: None, target: None, menu: None, dialog: None, names, speed: 1, last_speed: 1, quit: false, expects: Vec::new(), sound: None };
+    let interface = AptAssets::new(&disc);
+    let font = interface.fonts.iter().find(|(n, _)| housefire::shader::name_hash(n) == INTERFACE_FONT).map(|(_, f)| f.clone()).ok_or("the interface's font")?;
+    let ui = Ui::new(interface.flashes.clone());
+    let mut game = Game { alone, lib: &lib, camera, active: None, target: None, menu: None, dialog: None, names, speed: 1, last_speed: 1, quit: false, expects: Vec::new(), sound: None, ui, hud: Hud::new(1), font, texts: Vec::new(), frames: 0 };
     game.sound = make_sound(&disc, &args);
     game.alone.set_sound(game.sound.is_some());
     if let Some(s) = &mut game.sound {
@@ -852,7 +928,7 @@ fn run(args: Args) -> Result<bool, String> {
         let skins = log_scene.as_ref().map_or_else(SimSkins::default, SimSkins::from_scene).with_disc(&disc);
         staged = Some((Builder::new(&assets, lot), rigs, cast, skins));
     }
-    let mut overlay = Overlay::new(WIDTH, HEIGHT);
+    let mut painter = Painter::new(&interface);
     let mut input = Input::default();
     let mut pad = if args.headless { None } else { gilrs::Gilrs::new().ok() };
     let (mut mesh_ids, mut texture_ids) = (Vec::new(), Vec::new());
@@ -912,6 +988,7 @@ fn run(args: Args) -> Result<bool, String> {
             }
         }
         frames += 1;
+        game.frame_ui();
         if let Some(s) = &mut game.sound {
             s.flush();
         }
@@ -924,9 +1001,15 @@ fn run(args: Args) -> Result<bool, String> {
             let figures = sims::figures_of(game.alone.world(), cast, &plays);
             builder.build_with(game.alone.world(), tick, game.view(), Some((&wardrobe, &figures, None)));
             let frame = upload(builder, renderer, &mut mesh_ids, &mut texture_ids);
-            let cursor = input.pad_seen.then_some((WIDTH as i32 / 2, HEIGHT as i32 / 2));
-            game.draw(&mut overlay, cursor);
-            renderer.set_overlay(Some(overlay.pixels()));
+            // the interface: the movies' pieces and the game's own lines of text over the scene
+            let list = game.ui.display_list();
+            let pass = renderer.interface();
+            let mut drawing = painter.draw(pass, &list);
+            for run in &game_text::native_lines(&interface, &game.texts) {
+                painter.text(pass, &mut drawing, run);
+            }
+            pass.set(&drawing.vertices, &drawing.batches);
+            renderer.show_interface(true);
             if let Some((at, path)) = &args.shot
                 && *at == tick
                 && !shot_done

@@ -4,7 +4,7 @@
 
 use crate::frame::*;
 use crate::gpu::{Buffer, Gpu, Image};
-use crate::overlay_pass::OverlayPass;
+use crate::apt_pass::AptPass;
 use ash::vk;
 use std::collections::HashMap;
 
@@ -152,8 +152,9 @@ pub struct Renderer<'g> {
     /// Bytes uploaded for good: textures (RGBA8, every level) and meshes (vertices and indices).
     resident: (usize, usize),
     /// The interface laid over the scene, and whether the next frame has one.
-    overlay: Option<OverlayPass<'g>>,
-    overlay_on: bool,
+    /// The interface (the Apt movies' and the game's text) drawn over the scene.
+    interface: Option<AptPass<'g>>,
+    interface_on: bool,
 }
 
 /// What a frame costs the GPU, for the budget (`docs/assets.md`, "The budget").
@@ -303,10 +304,10 @@ impl<'g> Renderer<'g> {
             textures: Vec::new(),
             resident: (0, 0),
             white: TextureId(0),
-            overlay: None,
-            overlay_on: false,
+            interface: None,
+            interface_on: false,
         };
-        r.overlay = Some(OverlayPass::new(gpu, r.colour.view, COLOUR_FORMAT, width, height));
+        r.interface = Some(AptPass::new(gpu, r.colour.view, COLOUR_FORMAT, width, height));
         // the transient meshes' set is the first, its buffers the host's to write each frame
         let empty = || r.gpu.buffer(0, vk::BufferUsageFlags::VERTEX_BUFFER, vk::MemoryPropertyFlags::HOST_VISIBLE);
         let set = MeshSet { vertices: empty(), indices: empty(), skin: None };
@@ -335,13 +336,15 @@ impl<'g> Renderer<'g> {
         }
     }
 
-    /// The interface for the frames that follow (`width * height * 4` bytes, premultiplied
-    /// RGBA, over the scene), or none.
-    pub fn set_overlay(&mut self, rgba: Option<&[u8]>) {
-        self.overlay_on = rgba.is_some();
-        if let (Some(pass), Some(rgba)) = (&self.overlay, rgba) {
-            pass.set(rgba);
-        }
+    /// The interface's pass: the caller makes its triangles (`apt_draw::Painter`) and gives them
+    /// with `AptPass::set`; they are drawn over every frame that follows while the interface is on.
+    pub fn interface(&mut self) -> &mut AptPass<'g> {
+        self.interface.as_mut().expect("the interface pass lives as long as the renderer")
+    }
+
+    /// Whether the frames that follow have the interface over the scene.
+    pub fn show_interface(&mut self, on: bool) {
+        self.interface_on = on;
     }
 
     /// The frame's draws and triangles, and what is resident.
@@ -765,7 +768,7 @@ impl<'g> Renderer<'g> {
                 d.cmd_draw_indexed(cb, mesh.index_count, 1, mesh.first_index, mesh.vertex_offset, i as u32);
             }
             d.cmd_end_render_pass(cb);
-            if let (true, Some(pass)) = (self.overlay_on, &self.overlay) {
+            if let (true, Some(pass)) = (self.interface_on, &self.interface) {
                 pass.record(cb);
             }
             match present {
@@ -824,7 +827,7 @@ impl Drop for Renderer<'_> {
         let gpu = self.gpu;
         let d = &gpu.device;
         // (the interface pass over the colour image goes first)
-        self.overlay = None;
+        self.interface = None;
         unsafe {
             d.device_wait_idle().ok();
             for (_, p) in self.pipelines.drain() {

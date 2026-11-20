@@ -22,9 +22,7 @@ use housefire::tree_log::TextDrawRec;
 /// 32.6 texels in 6 of 6 (against the font's 37).
 const CENTRED_HEIGHT: f32 = 32.6;
 
-/// The scale of a plain draw (no size words) across and down in pixels per texel. Fitted to the
-/// width of "Customize A Sim" in frames 1050 and 1122 (sweep 0.58 to 0.64 on the within-4 share).
-const PLAIN_SCALE: f32 = 0.62;
+use housefire::hud::PLAIN_SCALE;
 
 /// The colour of a plain draw, 0xRRGGBBAA: the darkest plateau of the strokes of "Customize A
 /// Sim" in frame 1050 of the game's picture, (21, 17, 50).

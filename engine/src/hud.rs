@@ -86,6 +86,7 @@ pub struct Layout {
     pub time: (f32, f32),
     pub title: (f32, f32),
     pub accept: (f32, f32),
+    pub decline: (f32, f32),
 }
 
 /// What the HUD shows of the lot for one player: their Sim's motives (the overall mood is
@@ -224,6 +225,10 @@ const DIALOG_CENTRE_SHIFT: f32 = 1.0 / 640.0;
 /// has it.
 pub const WRAP_WIDTH: f32 = 300.0;
 
+/// The scale of a plain draw (no size words), pixels a texel. Fitted to the width of "Customize A
+/// Sim" in frames 1050 and 1122 of ui-dump.log (sweep 0.58 to 0.64 on the within-4 share).
+pub const PLAIN_SCALE: f32 = 0.62;
+
 /// The line the game's text is measured in: texels of the font's pages.
 pub struct Measure<'a> {
     pub font: &'a Font,
@@ -243,6 +248,12 @@ impl Measure<'_> {
     pub fn dialog_width(&self, text: &str) -> f32 {
         let texels: f32 = text.chars().map(|c| if c == ' ' { DIALOG_SPACE } else { self.font.glyph(c as u32).map_or(0.0, |g| (g.x1 - g.x0) as f32) } + DIALOG_PAD).sum();
         texels * DIALOG_SCALE
+    }
+
+    /// The width in pixels of a plain draw (no shadow pass: the interaction menu's labels): the
+    /// glyph columns at `PLAIN_SCALE`.
+    pub fn plain_width(&self, text: &str) -> f32 {
+        text.chars().map(|c| if c == ' ' { SPACE } else { self.font.glyph(c as u32).map_or(0.0, |g| (g.x1 - g.x0) as f32) }).sum::<f32>() * PLAIN_SCALE
     }
 
     /// The text broken into lines at `WRAP_WIDTH` pixels, a word at a time.
@@ -335,6 +346,8 @@ impl Hud {
             "dialog_title_bar_y" => self.layout.title.1 = v,
             "dialog_button_accept_x" => self.layout.accept.0 = v,
             "dialog_button_accept_y" => self.layout.accept.1 = v,
+            "dialog_button_decline_x" => self.layout.decline.0 = v,
+            "dialog_button_decline_y" => self.layout.decline.1 = v,
             "dialog_button_accept_ready" => self.button_ready = argument == "true",
             _ => {}
         }
