@@ -9,7 +9,8 @@
 use housefire::apt::play;
 use housefire::disc::Disc;
 use housefire::tree_log::read_log;
-use housefire_render::apt_draw::{Align, AptAssets, Painter, TextRun};
+use housefire_render::apt_draw::{AptAssets, Painter};
+use housefire_render::game_text;
 use housefire_render::apt_pass::{self, AptPass};
 use housefire_render::gpu::Gpu;
 use std::path::{Path, PathBuf};
@@ -44,27 +45,6 @@ fn portrait_box(frame: u32) -> Option<[usize; 4]> {
     (frame >= 1300).then_some([48, 345, 106, 405])
 }
 
-/// The words the game draws itself (not in the movies): `$HF_FRAMES/ui/texts.txt`, a line for each
-/// run, `FRAME|FONT|X|Y|l, c or r|SCALE|WIDTH|RRGGBBAA|SHADOW|TEXT`. They are the game's own strings,
-/// so the file is not in the repository.
-fn read_texts(path: &Path) -> Vec<(u32, TextRun)> {
-    let Ok(text) = std::fs::read_to_string(path) else { return Vec::new() };
-    text.lines()
-        .filter_map(|l| {
-            let f: Vec<&str> = l.splitn(10, '|').collect();
-            if f.len() < 10 {
-                return None;
-            }
-            let align = match f[4] {
-                "c" => Align::Center,
-                "r" => Align::Right,
-                _ => Align::Left,
-            };
-            Some((f[0].parse().ok()?, TextRun { text: f[9].into(), font: f[1].into(), x: f[2].parse().ok()?, y: f[3].parse().ok()?, align, scale: f[5].parse().ok()?, width: f[6].parse().ok()?, color: u32::from_str_radix(f[7], 16).ok()?, shadow: f[8].parse().ok()? }))
-        })
-        .collect()
-}
-
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     let frames: Vec<u32> = args.iter().skip(3).filter_map(|a| a.parse().ok()).collect();
@@ -89,8 +69,7 @@ fn main() -> ExitCode {
     let out_dir = std::env::var_os("HF_UI_OUT").map_or_else(|| frames_dir.join("ui-out"), PathBuf::from);
     std::fs::create_dir_all(&out_dir).expect("the output folder");
     let lag: u32 = std::env::var("HF_UI_LAG").ok().and_then(|v| v.parse().ok()).unwrap_or(2);
-    let texts = read_texts(&std::env::var_os("HF_UI_TEXTS").map_or_else(|| frames_dir.join("ui").join("texts.txt"), PathBuf::from));
-    let (mut total, mut total_within, mut scored) = (0usize, 0usize, 0usize);
+    let (mut total, mut total_within, mut total_over, mut scored) = (0usize, 0usize, 0usize, 0usize);
     for &frame in &frames {
         let ui = frames_dir.join("ui");
         let (Some(world), Some(game)) = (read_png(&ui.join(format!("world_{frame:05}.png"))), read_png(&ui.join(format!("frame_{frame:05}.png")))) else {
@@ -100,10 +79,10 @@ fn main() -> ExitCode {
         // a world picture that is all black (frames 760 and 1390 of the dump) has no picture to
         // lay the layer over: the 2D layer is then the whole frame, not the movies' alone
         let black = world.chunks(4).all(|p| p[..3].iter().all(|&c| c < 8));
-        let (player, _) = play::run(&log, assets.flashes.clone(), Some(frame.saturating_sub(lag)), play::Timing { picture: true, ..play::Timing::default() });
+        let (player, _) = play::run(&log, assets.flashes.clone(), Some(frame.saturating_sub(lag)), play::Timing::default());
         let list = player.display_list();
         let mut drawing = painter.draw(&mut pass, &list);
-        for run in texts.iter().filter(|(f, _)| *f == frame).map(|(_, r)| r) {
+        for run in &game_text::lines(&assets, &log.text_draws, frame.saturating_sub(lag)) {
             painter.text(&mut pass, &mut drawing, run);
         }
         pass.set(&drawing.vertices, &drawing.batches);
@@ -113,7 +92,7 @@ fn main() -> ExitCode {
             let (x, y) = (i % WIDTH as usize, i / WIDTH as usize);
             portrait_box(frame).is_some_and(|b| x >= b[0] && x < b[2] && y >= b[1] && y < b[3])
         };
-        let (mut layer, mut within, mut sq) = (0usize, 0usize, 0f64);
+        let (mut layer, mut within, mut over, mut sq) = (0usize, 0usize, 0usize, 0f64);
         let mut hist = [0usize; 9];
         let mut diff = vec![0u8; ours.len()];
         for i in 0..(WIDTH * HEIGHT) as usize {
@@ -131,6 +110,7 @@ fn main() -> ExitCode {
                 continue;
             }
             layer += usize::from(on_layer);
+            over += usize::from(!on_layer);
             if on_layer {
                 within += usize::from(worst <= 4);
                 hist[(32 - u32::from(worst).leading_zeros()) as usize] += 1;
@@ -148,16 +128,17 @@ fn main() -> ExitCode {
         let mse = sq / (layer.max(1) * 3) as f64;
         let psnr = if mse == 0.0 { 99.0 } else { 10.0 * (255.0f64 * 255.0 / mse).log10() };
         let note = if black { " (world picture black: not scored)" } else { "" };
-        println!("ui: frame {frame}, layer {layer} pixels, within 4 {within} ({:.2}%), beyond {}, PSNR {psnr:.2} dB{note}", 100.0 * within as f64 / layer.max(1) as f64, layer - within);
+        println!("ui: frame {frame}, layer {layer} pixels, within 4 {within} ({:.2}%), beyond {}, over {over}, PSNR {psnr:.2} dB{note}", 100.0 * within as f64 / layer.max(1) as f64, layer - within);
         if std::env::var_os("HF_UI_HIST").is_some() {
             println!("    worst channel error, pixels by error bit length (0, 1, 2-3, 4-7, 8-15, 16-31, 32-63, 64-127, 128+): {hist:?}");
         }
         if !black {
             total += layer;
             total_within += within;
+            total_over += over;
             scored += 1;
         }
     }
-    println!("ui: frames {scored}, layer {total}, within 4 {:.2}%", 100.0 * total_within as f64 / total.max(1) as f64);
+    println!("ui: frames {scored}, layer {total}, within 4 {:.2}%, over {total_over}", 100.0 * total_within as f64 / total.max(1) as f64);
     ExitCode::SUCCESS
 }

@@ -42,9 +42,9 @@ impl AptAssets {
         AptAssets { flashes, fonts, textures_arc, pages }
     }
 
-    /// A font page's picture, premultiplied white: the page is 4-bit indices into the first of
-    /// the entry's two IA8 palettes, whose intensity is its alpha (`docs/assets.md`, "Drawing
-    /// the movies (U2b)").
+    /// A font page's picture, premultiplied white: the page is 4-bit indices into the first of the
+    /// entry's two IA8 palettes, whose intensity is its alpha (`docs/assets.md`,
+    /// "Drawing the movies (U2b)").
     fn page(&self, hash: u32) -> Option<(u32, u32, Vec<u8>)> {
         let at = *self.pages.get(&hash)?;
         let b = &self.textures_arc[at..];
@@ -68,43 +68,30 @@ pub struct Painter<'a> {
     pages: HashMap<u32, (TextureId, u32, u32)>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Align {
-    Left,
-    Center,
-    Right,
-}
-
-/// A piece of text: the game draws the dialogs' and menus' words itself, at places the movies
-/// report, with a font of `fonts.arc`.
+/// One line of the game's own text: the game draws the dialogs' and menus' words itself
+/// (`ERFont::DoDraw`), a line at a time, with a font of `fonts.arc`.
 #[derive(Clone, Debug)]
 pub struct TextRun {
     pub text: String,
     /// The font's name in `fonts.arc` (`frankfur`).
     pub font: String,
-    /// The stage point the first line's top (left, centre or right by `align`) is at.
+    /// The stage point the line's top left is at (the game's own place, as logged).
     pub x: f32,
     pub y: f32,
-    pub align: Align,
-    /// Pixels of the stage for each texel of the font's page.
-    pub scale: f32,
-    /// Lines wrap at spaces when wider than this (0: they do not).
-    pub width: f32,
+    /// Pixels of the stage for each texel of the font's page, across and down.
+    pub scale: [f32; 2],
     /// 0xRRGGBBAA, the glyphs' tint.
     pub color: u32,
-    /// The offset in stage pixels of the black copy drawn under the glyphs (0: an edge only).
-    pub shadow: f32,
 }
 
 /// The advance of a space in the font's texels (a glyph's record is its columns on the page; a
-/// space has none). Fitted to the dialogs' pictures: the lines' widths are within a pixel or two
-/// over 9 (the other values tried, 6 to 8, fit less).
-const SPACE: f32 = 9.0;
+/// space has none): fitted to the widths of the game's logged lines (`game_text.rs`).
+pub const SPACE: f32 = 11.0;
 
 /// The wrapper's layers the game's pictures show nothing of: the key pictures and the D-pad,
 /// and the buttons the wrapper makes for each screen (`dialog_button_accept`...): the movies
 /// report where their buttons are and the game draws those itself.
-const HIDDEN_LAYERS: [&str; 2] = ["keys", "dpad"];
+const HIDDEN_LAYERS: [&str; 1] = ["keys"];
 
 /// The triangles and runs of one frame.
 #[derive(Default)]
@@ -147,63 +134,31 @@ impl<'a> Painter<'a> {
         Some(t)
     }
 
-    /// Lays out a run's glyphs and adds their triangles.
+    /// Lays out a line's glyphs and adds their triangles.
     pub fn text(&mut self, pass: &mut AptPass, out: &mut Drawing, run: &TextRun) {
         let assets = self.assets;
         let Some(font) = assets.fonts.get(&run.font) else { return };
         let (sx, sy) = (2.0 / STAGE.0, 2.0 / STAGE.1);
-        let advance = |c: char| -> f32 { if c == ' ' { SPACE } else { font.glyph(c as u32).map_or(0.0, |g| (g.x1 - g.x0) as f32) } };
-        // lines: breaks at newlines, then at the last space that fits
-        let mut lines: Vec<Vec<char>> = Vec::new();
-        for para in run.text.split('\n') {
-            let mut line: Vec<char> = Vec::new();
-            let mut w = 0.0;
-            for word in para.split(' ') {
-                let ww: f32 = word.chars().map(advance).sum();
-                let add = if line.is_empty() { ww } else { SPACE + ww };
-                if run.width > 0.0 && !line.is_empty() && (w + add) * run.scale > run.width {
-                    lines.push(std::mem::take(&mut line));
-                    w = 0.0;
-                }
-                if !line.is_empty() {
-                    line.push(' ');
-                    w += SPACE;
-                }
-                line.extend(word.chars());
-                w += ww;
+        let tint = unpack(run.color);
+        let band = font.line as f32;
+        let top = run.y;
+        let mut x = run.x;
+        for c in run.text.chars() {
+            let advance = if c == ' ' { SPACE } else { font.glyph(c as u32).map_or(0.0, |g| (g.x1 - g.x0) as f32) };
+            if let Some(g) = font.glyph(c as u32)
+                && let Some(page) = font.pages.get(g.page as usize)
+                && let Some((tex, pw, ph)) = self.page(pass, page.texture)
+            {
+                let (u0, u1) = (g.x0 as f32 / pw as f32, g.x1 as f32 / pw as f32);
+                // the page is stored upside down: the band's last row is the glyph's top
+                let (v_top, v_bot) = (((g.row as f32 + 1.0) * band) / ph as f32, (g.row as f32 * band) / ph as f32);
+                let (x1, y1) = (x + advance * run.scale[0], top + band * run.scale[1]);
+                let corner = |px: f32, py: f32, u: f32, v: f32| Vertex { pos: [px * sx - 1.0, py * sy - 1.0], uv: [u, v], tint, mul: [1.0; 4], add: [0.0; 4], premultiplied: 1.0, _pad: 0.0 };
+                let (tl, tr, bl, br) = (corner(x, top, u0, v_top), corner(x1, top, u1, v_top), corner(x, y1, u0, v_bot), corner(x1, y1, u1, v_bot));
+                out.push(tex, [tl, tr, bl]);
+                out.push(tex, [tr, br, bl]);
             }
-            lines.push(line);
-        }
-        // a black copy `shadow` pixels down and right, then the colour
-        for (offset, tint) in [(run.shadow, [0.0, 0.0, 0.0, 1.0]), (0.0, unpack(run.color))] {
-            for (n, line) in lines.iter().enumerate() {
-                let width: f32 = line.iter().map(|&c| advance(c)).sum::<f32>() * run.scale;
-                let mut x = offset
-                    + match run.align {
-                        Align::Left => run.x,
-                        Align::Center => run.x - width / 2.0,
-                        Align::Right => run.x - width,
-                    };
-                let top = run.y + offset + n as f32 * font.line as f32 * run.scale;
-                for &c in line {
-                    let a = advance(c);
-                    if let Some(g) = font.glyph(c as u32)
-                        && let Some(page) = font.pages.get(g.page as usize)
-                        && let Some((tex, pw, ph)) = self.page(pass, page.texture)
-                    {
-                        let (u0, u1) = (g.x0 as f32 / pw as f32, g.x1 as f32 / pw as f32);
-                        // the page is stored upside down: the band's last row is the glyph's top
-                        let band = font.line as f32;
-                        let (v_top, v_bot) = (((g.row as f32 + 1.0) * band) / ph as f32, (g.row as f32 * band) / ph as f32);
-                        let (x1, y1) = (x + a * run.scale, top + band * run.scale);
-                        let corner = |px: f32, py: f32, u: f32, v: f32| Vertex { pos: [px * sx - 1.0, py * sy - 1.0], uv: [u, v], tint, mul: [1.0; 4], add: [0.0; 4], premultiplied: 1.0, _pad: 0.0 };
-                        let (tl, tr, bl, br) = (corner(x, top, u0, v_top), corner(x1, top, u1, v_top), corner(x, y1, u0, v_bot), corner(x1, y1, u1, v_bot));
-                        out.push(tex, [tl, tr, bl]);
-                        out.push(tex, [tr, br, bl]);
-                    }
-                    x += a * run.scale;
-                }
-            }
+            x += advance * run.scale[0];
         }
     }
 
@@ -233,12 +188,15 @@ impl<'a> Painter<'a> {
         let (sx, sy) = (2.0 / STAGE.0, 2.0 / STAGE.1);
         let clip = |p: [f32; 2]| [p[0] * sx - 1.0, p[1] * sy - 1.0];
         for item in list {
-            if HIDDEN_LAYERS.contains(&&*item.layer) || item.layer.contains("_button_") {
+            if HIDDEN_LAYERS.contains(&&*item.layer) {
                 continue;
             }
             let Some(flash) = self.flashes.get(&*item.movie).copied() else { continue };
             let mul = item.color.mul.map(|v| v as f32);
-            let add = item.color.add.map(|v| v as f32);
+            // The game's draw uses a clip's colour multiplier and not its offset: the HUD's pills
+            // are placed with a multiplier of (0.65, 0.65, 1) and a blue offset of 254, and the
+            // game shows the picture's own blue (the offset would make it white-blue).
+            let add = [0.0; 4];
             // (the text items of the movies' own text characters are not drawn yet: the dialogs'
             // words are the game's, `text`)
             if let (ItemKind::Shape, Some(Character::Shape { geometry, .. })) = (item.kind, flash.movie.characters.get(item.character as usize)) {

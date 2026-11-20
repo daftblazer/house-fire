@@ -13,6 +13,7 @@ pub mod overlay;
 pub mod overlay_pass;
 pub mod apt_pass;
 pub mod apt_draw;
+pub mod game_text;
 pub mod pick;
 pub mod window;
 pub mod standin;
