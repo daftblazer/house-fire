@@ -398,7 +398,7 @@ impl<'l> Alone<'l> {
         let Some(v) = super::study::env("REPLAY_ALONE_SHOW_TREE") else { return };
         for item in v.split(',') {
             let Some((o, t)) = item.split_once(':') else { continue };
-            let file = self.d.host.world.find_object(super::study::atoi(o) as i16).and_then(|o| o.file);
+            let file = if o == "g" { self.lib.global() } else { self.d.host.world.find_object(super::study::atoi(o) as i16).and_then(|o| o.file) };
             if t == "i" {
                 if let Some(k) = self.d.host.world.find(super::study::atoi(o) as i16) {
                     let (lib, i) = (self.lib, self.d.sim.stack_of(&self.d.host.world, k));
@@ -413,6 +413,18 @@ impl<'l> Alone<'l> {
                 }
                 if let Some(ob) = self.d.host.world.find_object(super::study::atoi(o) as i16) {
                     println!("object {o}: person {} file {:?} at ({}, {}) on lot {} data {:?} person data {:?}", ob.person, file.map(|f| self.lib.file(f).path.clone()), ob.x16, ob.y16, ob.on_lot(), ob.data, ob.person_data);
+                }
+                continue;
+            }
+            if let Some(m) = t.strip_prefix('m') {
+                // the trees of the file with an expression on motive M (scope 14 or 15), written to
+                let (m, Some(f)) = (super::study::atoi(m) as u16, file) else { continue };
+                for (id, &tid) in &self.lib.file(f).trees {
+                    for (i, n) in self.lib.tree_at(tid).nodes.iter().enumerate() {
+                        if n.opcode == 2 && [14, 15].contains(&n.operand[6]) && n.operand16(0) == m && n.operand[5] != 0 {
+                            println!("tree {id} node {i}: {:?}", n.operand);
+                        }
+                    }
                 }
                 continue;
             }
