@@ -744,7 +744,8 @@ pub fn idle_for_input_waiting(n: &Node, f: &mut Frame, flags: &mut i16, queued: 
 /// with the target as stack object and zero parameters; the entry leaves the queue, and the
 /// step goes on into it (Continue; this node stays, and the interaction's return comes back to
 /// it). `docs/simulation.md`, "Where a Sim's interactions come in". Not modelled yet: nothing
-/// queued (autonomy's, or a wait), a check that fails, a host that cannot run checks: Stop.
+/// queued (autonomy's, or a wait), a host that cannot run checks: Stop. An entry whose check
+/// fails is dropped and the wait ends true (an engine rule: nothing in the logs fails there).
 pub fn idle_for_input<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &mut H, me: ObjectKey) -> PrimResult {
     let world = host.world();
     let lib = world.library();
@@ -782,7 +783,9 @@ pub fn idle_for_input<'l, H: SimHost<'l>>(interp: &mut Interpreter, host: &mut H
         // As the object's own file names it.
         let ok = lib.tree(tfile, id).and_then(|t| host.run_check(t, tfile, tid, &defaults));
         if ok != Some(true) {
-            return PrimResult::Stop;
+            // an entry whose target no longer allows it is dropped (the Sim's wait goes on)
+            host.world().get_mut(me).queue.remove(0);
+            return PrimResult::True;
         }
     }
     // the entry leaves the queue and is the Sim's current interaction (what an evaluation's join

@@ -160,6 +160,11 @@ impl<'l> SimHost<'l> for DriveHost<'l> {
     }
 }
 
+/// The animator's key for an object of a run alone (no log's addresses there): its id on the high bit.
+pub(super) fn alone_sim(id: i16) -> u32 {
+    0x8000_0000 + id as u32
+}
+
 impl DriveHost<'_> {
     /// The turn, a step at a time (each compared with the log's unless alone).
     fn turn(&mut self, interp: &mut Interpreter) -> u32 {
@@ -464,7 +469,7 @@ impl Host for DriveHost<'_> {
             // Animate: natively, the answer the animator gives (yield, true, false with an event);
             // where the archive lacks the animation, neutral
             44 if self.anim.is_some() => {
-                let sim = self.sim_of.get(&me_id).copied().unwrap_or(if self.tally.is_some() { 0x8000_0000 + me_id as u32 } else { 0 });
+                let sim = if self.tally.is_some() { alone_sim(me_id) } else { self.sim_of.get(&me_id).copied().unwrap_or(0) };
                 let ar = self.anim.as_mut().expect("checked");
                 if self.tally.is_none() {
                     ar.animating.entry(self.tick).or_default().insert(sim);

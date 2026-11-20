@@ -824,7 +824,8 @@ fn run(args: Args) -> Result<bool, String> {
         if let (Some((builder, rigs, cast, skins)), Some(renderer), Some(lot)) = (&mut staged, &mut renderer, &lot_art) {
             let tick = game.alone.ticks();
             let wardrobe = Wardrobe { rigs, cast, catalog: &catalog, skins, models: &lot.models, shaders: &lot.shaders };
-            let figures = sims::figures_of(game.alone.world(), cast, &[]);
+            let plays = game.alone.catalog().map(|c| sims::plays_of(game.alone.world(), cast, c, &game.alone.motions())).unwrap_or_default();
+            let figures = sims::figures_of(game.alone.world(), cast, &plays);
             builder.build_with(game.alone.world(), tick, game.view(), Some((&wardrobe, &figures, None)));
             let frame = upload(builder, renderer, &mut mesh_ids, &mut texture_ids);
             let cursor = input.pad_seen.then_some((WIDTH as i32 / 2, HEIGHT as i32 / 2));

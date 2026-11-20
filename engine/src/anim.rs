@@ -278,6 +278,8 @@ pub struct Play {
     /// +1 (the original's, kept). Its place then runs back toward 0 (the animation's end).
     turned: bool,
     done: bool,
+    /// The play has answered true (a call after it starts the animation anew).
+    answered: bool,
 }
 
 impl Play {
@@ -292,7 +294,7 @@ impl Play {
             .filter(|n| n.0 <= last)
             .map(|(t, v)| (if backward { last - t } else { t }, v))
             .collect();
-        Play { last, place: 0.0, still_first: backward, notes, next: 0, wanted, counted: 0, backward, turned: false, done: false }
+        Play { last, place: 0.0, still_first: backward, notes, next: 0, wanted, counted: 0, backward, turned: false, done: false, answered: false }
     }
 
     /// How far along the animation the play is, in frames.
@@ -333,6 +335,7 @@ impl Play {
     pub fn poll(&mut self) -> Poll {
         const EPS: f32 = 1e-3;
         if self.done {
+            self.answered = true;
             return Poll::Done;
         }
         if self.turned {
@@ -341,6 +344,7 @@ impl Play {
                 return Poll::Pending;
             }
             self.done = true;
+            self.answered = true;
             return Poll::Done;
         }
         while let Some(&(at, value)) = self.notes.get(self.next) {
@@ -371,7 +375,13 @@ impl Play {
             return Poll::Event(e);
         }
         self.done = true;
+        self.answered = true;
         Poll::Done
+    }
+
+    /// Whether the play has answered true (a call after it starts the animation anew).
+    pub fn answered(&self) -> bool {
+        self.answered
     }
 }
 
@@ -1331,7 +1341,7 @@ impl Animator {
     /// An Animate step of `sim` at `tick` for the animation `id` (`anim` its data), played
     /// `backward` and asking `wanted` counted events. Pending while it waits to be in memory.
     pub fn animate(&mut self, sim: u32, id: u32, anim: &Anim, backward: bool, wanted: i32, tick: u32) -> Poll {
-        if self.plays.0.get(&sim).is_some_and(|p| p.0 != id || p.1.finished()) {
+        if self.plays.0.get(&sim).is_some_and(|p| p.0 != id || p.1.answered()) {
             self.plays.0.remove(&sim);
         }
         if !self.plays.0.contains_key(&sim) {
@@ -1413,6 +1423,11 @@ impl Catalog {
         let set = format!("housepre{house:02}");
         let sets = crate::arc::entries(&ds).unwrap_or_default().iter().filter(|e| e.name == "House1Preload" || e.name == set).map(|e| crate::arc::bytes(&ds, e).to_vec()).collect();
         Catalog { by_id, exact, lower, notes, sets }
+    }
+
+    /// The id of the animation of a name as written.
+    pub fn id_of(&self, name: &str) -> Option<u32> {
+        self.exact.get(name).copied()
     }
 
     /// The animation of a name as written.

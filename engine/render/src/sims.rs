@@ -423,6 +423,43 @@ pub fn figures_of(world: &housefire::world::World, cast: &Cast, plays: &[(i16, u
         .collect()
 }
 
+/// The animations a Sim shows with none of its own playing, by the description's kind: the
+/// walking loop (the adult woman has her own) and the standing loop.
+fn base_animation(d: &housefire::outfit::Description, walking: bool) -> [&'static str; 2] {
+    match (d.adult, d.male, walking) {
+        (true, true, true) => ["a2o-walking-loop", "a2o-standing-loop"],
+        (true, false, true) => ["a2o-walking-female-loop", "a2o-walking-loop"],
+        (false, _, true) => ["c2o-walking-loop", "a2o-walking-loop"],
+        (true, _, false) => ["a2o-standing-loop", "a2o-standing-loop"],
+        (false, _, false) => ["c2o-standing-loop", "a2o-standing-loop"],
+    }
+}
+
+/// The plays (Sim, animation id, frames along it, backward) of the Sims of a run alone
+/// (`Alone::motions`): an animation played as it is; a walker the walk cycle of its kind at its
+/// time in it; any other Sim its standing loop (held at its first frame).
+pub fn plays_of(world: &housefire::world::World, cast: &Cast, catalog: &housefire::anim::Catalog, motions: &[(i16, housefire::replay::Motion)]) -> Vec<(i16, u32, f32, bool)> {
+    use housefire::replay::Motion;
+    motions
+        .iter()
+        .filter_map(|&(id, motion)| {
+            if let Motion::Playing(anim, place, backward) = motion {
+                return Some((id, anim, place, backward));
+            }
+            let description = cast.description(world.find_object(id)?.person_data.get(31).copied()?)?;
+            let walking = matches!(motion, Motion::Walking(_));
+            let names = base_animation(description, walking);
+            let (anim, id_of) = names.iter().find_map(|n| Some((catalog.by_name(n)?, catalog.id_of(n)?)))?;
+            // a loop: the walk's frames come round at the animation's own rate
+            let at = match motion {
+                Motion::Walking(seconds) => (seconds * anim.rate) % anim.frames.saturating_sub(1).max(1) as f32,
+                _ => 0.0,
+            };
+            Some((id, id_of, at, false))
+        })
+        .collect()
+}
+
 /// The Sim whose portrait a log-mode frame shows: the one whose outfit holds the most of the
 /// overlay draws' parts (the engine has no player: the caller names the Sim shown).
 pub fn portrait_sim(scene: &Scene, w: &Wardrobe, figures: &[Figure]) -> Option<i16> {

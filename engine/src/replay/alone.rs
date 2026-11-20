@@ -15,7 +15,7 @@ use crate::interp::Host;
 use crate::library::Library;
 use crate::save::{LotChunks, Neighbour};
 use crate::world::{ObjectKey, World};
-use super::drive::{DriveHost, Driven, setup};
+use super::drive::{DriveHost, Driven, alone_sim, setup};
 use super::start::RunWith;
 
 /// What one Sim did.
@@ -32,6 +32,18 @@ pub(super) struct SimStats {
     last: Vec<f32>,
 }
 
+/// What a Sim shows of itself (`Alone::motions`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Motion {
+    /// An animation the Sim's Animate plays (or last played, held, while its interaction goes on):
+    /// the animation's id, how many frames along it is and whether it plays backward.
+    Playing(u32, f32, bool),
+    /// Walking: seconds into the walk cycle (the walk's animation is the figure's to choose).
+    Walking(f32),
+    /// Standing about, in no animation of its own.
+    Idle,
+}
+
 /// What a run alone counts.
 #[derive(Default)]
 pub struct Tally {
@@ -46,6 +58,8 @@ pub struct Tally {
     turns: BTreeMap<i16, (u32, i16)>,
     /// The walks going on, by the walking object.
     pub(super) walks: BTreeMap<i16, Walk>,
+    /// How long each walker has walked, in seconds of the walk cycle (the figure's phase).
+    walk_time: BTreeMap<i16, f32>,
     /// Walks planned, arrived, and asked for with no way.
     pub(super) planned: u32,
     pub(super) arrived: u32,
@@ -392,6 +406,12 @@ impl<'l> Alone<'l> {
                     let (lib, i) = (self.lib, self.d.sim.stack_of(&self.d.host.world, k));
                     let frames: Vec<String> = i.stack().iter().map(|f| format!("{}:{}", f.tree.map_or(-1, |t| lib.tree_at(t).id as i32), f.node)).collect();
                     println!("object {o}: stack {} asleep {} done {}", frames.join(" "), i.asleep(), i.done());
+                    let key = alone_sim(super::study::atoi(o) as i16);
+                    if let Some(ar) = &self.d.host.anim
+                        && let Some((id, play)) = ar.m.play(key)
+                    {
+                        println!("object {o}: plays animation {id} ({}) at {} finished {} backward {} play {play:?}", ar.cat.by_id.get(&id).map_or("?", |a| &a.name), play.place(), play.finished(), play.backward());
+                    }
                 }
                 if let Some(ob) = self.d.host.world.find_object(super::study::atoi(o) as i16) {
                     println!("object {o}: person {} file {:?} at ({}, {}) on lot {} data {:?} person data {:?}", ob.person, file.map(|f| self.lib.file(f).path.clone()), ob.x16, ob.y16, ob.on_lot(), ob.data, ob.person_data);
@@ -413,6 +433,36 @@ impl<'l> Alone<'l> {
                 None => println!("tree {t} of object {o}: not found"),
             }
         }
+    }
+
+    /// What each Sim on the lot shows, for the picture: a Sim walking (the stand-in's walk) is
+    /// `Walking`; one whose Animate plays an animation, or whose interaction goes on after the
+    /// last one ended (it holds the last pose), `Playing`; any other stands (`Idle`).
+    pub fn motions(&self) -> Vec<(i16, Motion)> {
+        let (host, ar) = (&self.d.host, self.d.host.anim.as_ref());
+        let Some(t) = host.tally.as_ref() else { return Vec::new() };
+        host.world
+            .objects()
+            .filter(|o| o.person && o.on_lot())
+            .map(|o| {
+                let id = o.id();
+                let motion = if t.walks.contains_key(&id) {
+                    Motion::Walking(t.walk_time.get(&id).copied().unwrap_or(0.0))
+                } else {
+                    let open = t.sims.get(&id).is_some_and(|s| !s.open.is_empty());
+                    match ar.and_then(|a| a.m.play(alone_sim(id))) {
+                        Some((anim, play)) if open || !play.answered() => Motion::Playing(anim, play.place(), play.backward()),
+                        _ => Motion::Idle,
+                    }
+                };
+                (id, motion)
+            })
+            .collect()
+    }
+
+    /// The catalog of the animations (a figure's walk and stand are found in it by name).
+    pub fn catalog(&self) -> Option<&crate::anim::Catalog> {
+        self.d.host.anim.as_ref().map(|a| &a.cat)
     }
 
     /// The ticks run so far.
@@ -543,8 +593,16 @@ impl<'l> Alone<'l> {
         d.host.tick = t;
         // the animations' frames the tick follows, by the native clock at the normal speed
         if let Some(ar) = &mut d.host.anim {
-            for _ in 0..self.clock.frames_to_tick_at(1.0) {
+            let frames = self.clock.frames_to_tick_at(1.0);
+            for _ in 0..frames {
                 ar.m.frame(|_| 1.0);
+            }
+            if let Some(tally) = &mut d.host.tally {
+                let walkers: Vec<i16> = tally.walks.keys().copied().collect();
+                tally.walk_time.retain(|id, _| walkers.contains(id));
+                for id in walkers {
+                    *tally.walk_time.entry(id).or_default() += frames as f32 * crate::routing::WALK_FRAME;
+                }
             }
         }
         d.host.stopped = false;
@@ -587,7 +645,7 @@ impl<'l> Alone<'l> {
         let mut kinds: Vec<(u32, String)> = t.neutral.iter().map(|(&(op, why, tree), &n)| (n, format!("neutral {}: {why}, in tree {tree}", primitive_name(op)))).collect();
         kinds.extend(t.errors.iter().map(|(k, &n)| (n, k.clone())));
         kinds.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
-        for (n, k) in kinds.iter().take(15) {
+        for (n, k) in kinds.iter().take(40) {
             println!("  {n:>8}  {k}");
         }
         for (id, s) in &t.sims {
