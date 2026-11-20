@@ -21,6 +21,9 @@
 //!                                    checked against the strips the original plays from them
 //!        assets ISO texcheck LOG     the textures the original set up (the log's 'x' records)
 //!                                    against textures.arc's: each by its first level's hash
+//!        assets ISO apt [NAME]       flashes.arc's movies and fonts.arc's fonts read (the menus'
+//!                                    and HUD's Apt movies): a line each and the totals; with
+//!                                    NAME a readable listing of that movie, or of that font
 
 use std::io::Write;
 use std::process::ExitCode;
@@ -140,6 +143,7 @@ fn main() -> ExitCode {
             }
             println!("archives read {read}, not {not}");
         }
+        "apt" => return apt(&d, &args[3..]),
         "sounds" => return sounds(&d, &args[3..]),
         "sound-calls" => return sound_calls(&d, &args[3..]),
         "textures" => {
@@ -4223,4 +4227,69 @@ fn sound_calls(d: &Disc, args: &[String]) -> ExitCode {
     let plays = log.sounds.iter().filter(|s| s.call == 1).count();
     println!("sound calls {}, plays {}, plays not in the bank {}", log.sounds.len(), plays, unknown);
     ExitCode::SUCCESS
+}
+
+/// `assets ISO apt [NAME]`: the movies of flashes.arc and the fonts of fonts.arc, read (see
+/// `housefire::apt`); the last line counts what could not be read.
+fn apt(d: &Disc, args: &[String]) -> ExitCode {
+    use housefire::apt;
+    type Kinds = BTreeMap<&'static str, usize>;
+    fn kinds(m: &Kinds) -> String {
+        m.iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join(", ")
+    }
+    let flashes = apt::read_flashes(&d.read("flashes.arc").unwrap_or_default());
+    let fonts = apt::read_fonts(&d.read("fonts.arc").unwrap_or_default());
+    if let Some(name) = args.first() {
+        if let Some((_, Ok(f))) = flashes.iter().find(|(n, _)| n == name) {
+            print!("{}", apt::dump::dump(f));
+            return ExitCode::SUCCESS;
+        }
+        if let Some((_, Ok(f))) = fonts.iter().find(|(n, _)| n == name) {
+            println!("{f:#?}");
+            return ExitCode::SUCCESS;
+        }
+        println!("no movie or font {name}");
+        return ExitCode::from(1);
+    }
+    let (mut total, mut unknown) = (apt::Stats::default(), 0);
+    for (name, r) in &flashes {
+        match r {
+            Ok(f) => {
+                let s = f.stats();
+                println!(
+                    "{name}: {}x{}, characters [{}], frames {}, items [{}], instructions {}, shapes {}, triangles {}, images {} ({} texels), unknown {}",
+                    f.movie.width, f.movie.height, kinds(&s.characters), s.frames, kinds(&s.items), s.instructions, s.shapes, s.triangles, s.images, s.image_texels, s.unknown
+                );
+                for u in &f.unknown {
+                    println!("  unknown: {u}");
+                }
+                unknown += s.unknown;
+                total.add(&s);
+            }
+            Err(e) => {
+                println!("{name}: NOT read: {e}");
+                unknown += 1;
+            }
+        }
+    }
+    let mut glyphs = 0;
+    for (name, r) in &fonts {
+        match r {
+            Ok(f) => {
+                println!("font {name}: size {}, {} codes, {} pages, {} glyphs", f.size, f.map.len(), f.pages.len(), f.glyphs.len());
+                glyphs += f.glyphs.len();
+            }
+            Err(e) => {
+                println!("font {name}: NOT read: {e}");
+                unknown += 1;
+            }
+        }
+    }
+    println!(
+        "totals: characters [{}], frames {}, items [{}], instructions {}, shapes {}, fills {}, triangles {}, images {} ({} texels), glyphs {glyphs}",
+        kinds(&total.characters), total.frames, kinds(&total.items), total.instructions, total.shapes, total.fills, total.triangles, total.images, total.image_texels
+    );
+    println!("opcodes used: {}", total.opcodes.iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join(", "));
+    println!("apt: movies {}, fonts {}, unknown {unknown}", flashes.iter().filter(|(_, r)| r.is_ok()).count(), fonts.iter().filter(|(_, r)| r.is_ok()).count());
+    if unknown == 0 { ExitCode::SUCCESS } else { ExitCode::from(1) }
 }
