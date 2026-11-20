@@ -432,9 +432,9 @@ impl Player {
         let ch = self.clips[id].ch;
         let Some(f) = Self::frames_of(&flash, ch).get(frame) else { return };
         self.clips[id].frame = frame;
-        // the clips placed here start before the frame's own script runs (a script finds its
-        // clips, as in Flash where the script tag follows the placements)
-        let mut own = Vec::new();
+        // The items run in their order, and a frame lists its script first: the script runs
+        // before the scripts of the clips the frame places (the HUD's bars report their place
+        // after the HUD has set its mode).
         for (i, item) in f.items.iter().enumerate() {
             match item {
                 Item::Place(p) => self.place(id, &flash, p, frame),
@@ -443,12 +443,9 @@ impl Player {
                         self.kill(c);
                     }
                 }
-                Item::Action(_) if actions => own.push(i),
+                Item::Action(_) if actions => self.queue.push_back(Pending { clip: id, flash: flash.clone(), ch, frame, item: i }),
                 _ => {}
             }
-        }
-        for i in own {
-            self.queue.push_back(Pending { clip: id, flash: flash.clone(), ch, frame, item: i });
         }
     }
 
