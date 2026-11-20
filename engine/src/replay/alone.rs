@@ -120,7 +120,8 @@ impl DriveHost<'_> {
             };
             let tile = |p: (i32, i32)| (p.0 >> 4, p.1 >> 4);
             if super::study::has("REPLAY_ALONE_SHOW_NO_WAY") {
-                println!("goals of object {id} tick {}: {goals:?} (me {from:?} room {}, size {:?})", self.tick, self.world.walls.room(from.0 >> 4, from.1 >> 4), self.world.walls.size());
+                if let Some(t) = self.world.find_object(so) { println!("  target {so}: place ({}, {}) facing {} guid {:08x} file {:?} tile indoors {}", t.x16, t.y16, t.facing(), t.guid, t.file, self.world.walls.indoors(t.x16 >> 4, t.y16 >> 4)); }
+                println!("goals of object {id} tick {} to object {so} opcode {} operand {:02x?}: {goals:?} (me {from:?} room {}, indoors {}, goal rooms {:?})", self.tick, n.opcode, n.operand, self.world.walls.room(from.0 >> 4, from.1 >> 4), self.world.walls.indoors(from.0 >> 4, from.1 >> 4), goals.iter().map(|g| (self.world.walls.room(g.0 >> 4, g.1 >> 4), self.world.walls.indoors(g.0 >> 4, g.1 >> 4))).collect::<Vec<_>>());
             }
             let mut best: Option<(Vec<crate::routing::Tile>, (i32, i32))> = None;
             for g in goals {
