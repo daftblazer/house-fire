@@ -59,9 +59,15 @@ engineering of the original's code, not more fitting. The list below this sectio
      Allow Intersection (OBJf 5), run by the planner's obstacle loop (fn_8024C5DC from 8024C8D0,
      `Route_SkipObstacle` 802499DC, the watch build's backtrace) for the walker planning; needs
      the planner run natively in the driven run, with that ask;
-   - IdleForInput's +0x240 test (`fn_80225D98`, read 2026-11-19): the engine has only its
-     queue part ("something queued"); the priorities (entry +40 against the person's +74), the
-     entry's flag 2, the +150 and +1100 fields and the motives below -99 are not modelled;
+   - IdleForInput's +0x240 test (`fn_80225D98`, read 2026-11-19): the priorities (entry +40
+     against the person's +74) and the entry's flag 2 are modelled since packet M (simulation.md,
+     "Mom's meal"); the +150 and +1100 fields and the motives below -99 are not. Fitted, no source
+     in the game: the player's command priority (`PLAYER_PRIORITY`, above any), the priority of an
+     unknown PushAction kind (1), and an autonomy pick's priority (the Sim's person data 33, read
+     from Mom's saved meal, 50 = her data 33; no other saved autonomous entry to confirm it);
+   - the run alone's Sim 237 meal against the log (`alone: Sim 237's meal in the log's tree order`,
+     66 of 158, 124 in order with additions): the rest is the generator's (the prepare loop's pass
+     count and the event chances) and two checks the log runs inside an Expression (8199);
    - person data 22, 23, 32, 33 at the club 24 (the routing states' and the load's), 27 for
      one dancer (178) 6;
    - Budget 25 9 (the family's funds are not read from the save), TestInteractingWith 37 6

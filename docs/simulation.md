@@ -2220,6 +2220,49 @@ with no parameter slot, `idle_for_input_waiting`), which the stand-in's run reac
 binary with `--seed 2`: 7,701 of them): not the walk's. The rest as before (the 280 Idle of removed
 made objects, 4174's BadTransition).
 
+**Mom's meal (packet M, 2026-11-20).** The user's "Mom yields for ever at the stove's 8195:14" was
+the window's clock stopped by a dialog (the scenario object 194's goal text, "$NameLocal:1", at tick
+1043 where the log's goal is at 1220): the Animate runs on as the log's (8195:14 a run of 48 ticks
+with one event at +22, a true end; `play --headless` with the dialog answered goes on to the log's
+serve, 4201's return and the next autonomy pick at 1179, the trees in the log's order). What the
+user saw, her meal dropped for a restart at the chopping, was an interruption: Sim 12's autonomy
+picked "Talk" to Mom at tick 179 (seed 1; seeds 3 to 8 pick other things and Mom is not touched) and
+IdleForInput's wait in her prepare loop (counter_sg 0x2011, "Wait For Notify" 281 node 1) took
+"something queued" for a yes, ended the interaction and ran the social (4177 at tick 291).
+The original's test is `ShouldInterrupt` (`fn_80225D98`): the queue's front entry's priority (+40)
+above the Sim's current one (+74), or its flag 2 (+68). Both numbers are now modelled
+(`World::should_interrupt`, `push_priority`): PushAction's operand byte 2 is the priority (read in
+`fn_80208338`: 1 is 100, 2 is 2, 3 is 50, 0 the pushing Sim's person data 33, a Sim's own level:
+Mom's 50, the paper girl's 25, Sim 12's 0), byte 3 bit 4 the entry's flag 2; a saved entry's
+priority is its `c` (100 for the club's, Mom's meal 50); Find Best Action's pick takes the Sim's
+person data 33 as its current priority (what the saved 50 of Mom's autonomous meal is); the player's
+command is above any (an engine rule, `PLAYER_PRIORITY`: the original's commands do not come
+through PushAction, no log shows one). So Sim 12's Talk (priority 0) waits for Mom's meal (50), and a
+script's priority-1 push (100) still breaks it. The log-driven checks all hold (replay, lockstep,
+the log debt: home 4,239 and club 28,033, the same as with "something queued"), the club's
+`--alone` hash is the same. Two side fixes: an entry whose target is gone or has no such
+interaction is dropped, the wait ends true (an engine rule, `idle_for_input`; it restarted Sim 237's
+stack at 281:4 from tick ~49,900: 1,918 errors), and `Tally::note_entry` of the run alone no longer
+reads a Sim that removed itself in its turn.
+
+The figure (`alone: Sim 237's meal in the log's tree order`): the trees Sim 237 enters (a step at
+node 0, a yield on node 0 not counted again) against the log's, from tick 1 to the first return of
+Serve Regular Group Meal (4201, the log's tick 1481): N of M trees equal in order, the first
+different (tick, tree, the log's), and the longest common subsequence (trees added or left out).
+Before (`--alone 3000`): 35 of 158, first different at tick 290 (tree 8227, the log's 8219: the
+social). After: 66 of 158, first different at tick 422 (8214, the log's 281), 124 of 158 in order.
+The rest is the world's generator (a deliberate difference): the prepare loop (8209) ends when
+"tweak prepare finished" (8219) counts its tweak below zero, and each pass's events draw (282,
+"chance") whether 8214 lowers it: the original's draws gave three passes (events at 8209 +23, +31,
++38, +96, ... +133, end +168 each time, the animation's timing is the log's to the tick), the run
+two or three by its own. After that the log's order holds trees for trees (8208, 8220, 8227, 8206,
+363, 8254, 8197, 8237, 8200, 8195, 8205, 8224, 8199, 8204, 8231, 8198, 8232, 8234 ... 8241), except
+two 8199 the log runs inside an Expression (a check, not a frame of the stack). `REPLAY_ALONE_SHOW_ORDER=1`
+prints both orders a line each. Home `--alone 54000`: errors 2,182 -> 135, Sim 12 starts 157 and finishes
+143 (448 and 447 before: the queue broke every wait), Sim 237 63 and 43 (209, 96); hash
+`d9287bc5873d9e9c` (two runs the same; was `56063379c97bb6c3`), club unchanged
+(`04b26b2a669cc63c`).
+
 **As a stepper.** `replay::Alone` is the same run a tick at a time (`Alone::new`, `tick`, `world`,
 `hash`, `report`; `alone()` is a loop over it, its hash unchanged) with the hooks a front end
 needs: `queue_command` (`World::queue_player_command`), `menu` (the menu's checks of a target for a

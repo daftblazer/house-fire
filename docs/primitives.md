@@ -318,7 +318,10 @@ where the engine has not): the test itself (`ShouldInterrupt`: the action cancel
 one of higher priority, a low motive, the queue) is the next thing to read for it.
 Read since (2026-11-19, simulation.md, end of "The driven run"): `fn_80225D98`; the engine
 takes it as "something queued", with the Sim refusing a repeated push and its current entry
-ending on the interaction's return.
+ending on the interaction's return. The priorities are modelled since 2026-11-20
+(simulation.md, "Mom's meal"): the queue's front entry above the current one, or flagged;
+PushAction's operand byte 2 is the priority (1: 100, 2: 2, 3: 50, 0 the Sim's person data 33),
+byte 3 bit 4 the flag.
 
 ## Random (opcode 8)
 
