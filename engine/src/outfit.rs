@@ -182,7 +182,7 @@ mod tests {
         let mut looks = [0u8; 20];
         looks[..2].copy_from_slice(&[1, 1]);
         looks[2..6].copy_from_slice(&[1, 29, 14, 31]);
-        assert_eq!(d, Description::from_save(&CreatedSim { guid: 0, first_name: String::new(), last_name: String::new(), looks }));
+        assert_eq!(d, Description::from_save(&CreatedSim { looks, ..Default::default() }));
     }
 
     #[test]

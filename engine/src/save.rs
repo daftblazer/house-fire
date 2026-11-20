@@ -259,9 +259,69 @@ pub fn read_lot_globals(file: &[u8]) -> Result<Vec<Vec<i16>>> {
     Ok(out)
 }
 
+/// How many 16-bit words the NGBH chunk's first array and its goal marks have at a version
+/// (fn_801DB408): 16, 64, 128 or 192, and none before version 0x4B, 34 words at it, 39 after.
+fn ngbh_sizes(version: u32) -> (usize, usize) {
+    let first = match version {
+        ..=0x45 => 16,
+        0x46..=0x48 => 64,
+        0x49 => 128,
+        _ => 192,
+    };
+    let marks = match version {
+        ..=0x4A => 0,
+        0x4B => 34,
+        _ => 39,
+    };
+    (first, marks)
+}
+
+/// The neighbourhood's NGBH chunk: its header (0, a version, "HBGN"), the array of 16-bit words
+/// (little-endian, as on the disc; the original's neighbourhood object keeps it at +0x168, the
+/// goal marks after it), the goal marks and what follows them (to be named).
+#[derive(Clone, Debug, Default)]
+pub struct NeighbourhoodChunk {
+    pub version: u32,
+    pub words: Vec<i16>,
+    pub marks: Vec<u16>,
+    pub tail: Vec<u8>,
+}
+
+pub fn parse_ngbh(c: &[u8]) -> Result<NeighbourhoodChunk> {
+    if c.len() < 12 || &c[8..12] != b"HBGN" {
+        return err("not an NGBH");
+    }
+    let version = le32(c, 4);
+    let (first, marks) = ngbh_sizes(version);
+    let at = 12 + 2 * first;
+    let Some(d) = c.get(12..at + 2 * marks) else { return err("NGBH runs past its chunk") };
+    let half = |b: &[u8]| -> Vec<u16> { b.as_chunks::<2>().0.iter().map(|w| u16::from_le_bytes(*w)).collect() };
+    Ok(NeighbourhoodChunk {
+        version,
+        words: half(&d[..2 * first]).into_iter().map(|w| w as i16).collect(),
+        marks: half(&d[2 * first..]),
+        tail: c[at + 2 * marks..].to_vec(),
+    })
+}
+
+/// A lot's SIMI chunk: its version and its globals.
+#[derive(Clone, Debug, Default)]
+pub struct LotGlobals {
+    pub version: u32,
+    pub values: Vec<i16>,
+}
+
+/// A SIMI chunk (0, a version, "IMIS", the values); `None` if it is not of that shape.
+pub fn parse_lot_globals(c: &[u8]) -> Option<LotGlobals> {
+    if c.len() < 12 || &c[8..12] != b"IMIS" || c.len() % 2 != 0 {
+        return None;
+    }
+    Some(LotGlobals { version: le32(c, 4), values: c[12..].as_chunks::<2>().0.iter().map(|w| i16::from_le_bytes(*w)).collect() })
+}
+
 /// The neighbourhood's data (the scripts' scope 34), from the neighbourhood's NGBH chunk: the
-/// array of 16-bit words after its header (16, 64, 128 or 192 by the version; the original's
-/// neighbourhood object keeps it at +0x168, the goal marks after it). Empty if there is no NGBH.
+/// array of 16-bit words after its header (16, 64, 128 or 192 by the version). Empty if there
+/// is no NGBH.
 pub fn read_neighbourhood_data(file: &[u8]) -> Result<Vec<i16>> {
     for b in read_neighbourhood(file)?.iter().filter(|b| b.section == 1) {
         let t = chunk_table(b)?;
@@ -269,12 +329,7 @@ pub fn read_neighbourhood_data(file: &[u8]) -> Result<Vec<i16>> {
         if c.len() < 12 || &c[8..12] != b"HBGN" {
             return err("not an NGBH");
         }
-        let words = match le32(c, 4) {
-            ..=0x45 => 16,
-            0x46..=0x48 => 64,
-            0x49 => 128,
-            _ => 192,
-        };
+        let (words, _) = ngbh_sizes(le32(c, 4));
         let Some(d) = c.get(12..12 + 2 * words) else { return err("NGBH runs past its chunk") };
         return Ok(d.as_chunks::<2>().0.iter().map(|w| i16::from_le_bytes(*w)).collect());
     }
@@ -283,8 +338,7 @@ pub fn read_neighbourhood_data(file: &[u8]) -> Result<Vec<i16>> {
 
 /// The goals the player has met (`goals::Goals::met`), from the neighbourhood's NGBH chunk: its
 /// header (0, a version, "HBGN"), then little-endian 16-bit words as the original's goal manager
-/// streams them (fn_801DB408): a first array (16, 64, 128 or 192 words by the version), then the
-/// marks (none before version 0x4B, 34 words at it, 39 after). Empty if there is no NGBH.
+/// streams them (fn_801DB408): a first array, then the marks. Empty if there is no NGBH.
 pub fn read_goal_marks(file: &[u8]) -> Result<Vec<u16>> {
     for b in read_neighbourhood(file)?.iter().filter(|b| b.section == 1) {
         let t = chunk_table(b)?;
@@ -292,18 +346,7 @@ pub fn read_goal_marks(file: &[u8]) -> Result<Vec<u16>> {
         if c.len() < 12 || &c[8..12] != b"HBGN" {
             return err("not an NGBH");
         }
-        let version = le32(c, 4);
-        let first = match version {
-            ..=0x45 => 16,
-            0x46..=0x48 => 64,
-            0x49 => 128,
-            _ => 192,
-        };
-        let marks = match version {
-            ..=0x4A => 0,
-            0x4B => 34,
-            _ => 39,
-        };
+        let (first, marks) = ngbh_sizes(le32(c, 4));
         let at = 12 + 2 * first;
         let Some(words) = c.get(at..at + 2 * marks) else { return err("NGBH runs past its chunk") };
         return Ok(words.as_chunks::<2>().0.iter().map(|w| u16::from_le_bytes(*w)).collect());
@@ -373,46 +416,44 @@ pub struct LotArray {
 
 /// A lot's arrays; an error if one does not read to its chunk's end.
 pub fn read_lot_arrays(lot: &LotChunks) -> Result<Vec<LotArray>> {
-    let mut out = Vec::new();
-    for (kind, c) in &lot.chunks {
-        if kind != "Arry" {
-            continue;
+    lot.chunks.iter().filter(|(kind, _)| kind == "Arry").map(|(_, c)| parse_array(c)).collect()
+}
+
+/// An Arry chunk's array.
+pub fn parse_array(c: &[u8]) -> Result<LotArray> {
+    if c.len() < 20 {
+        return err("Arry: no header");
+    }
+    let mut a = LotArray { width: le32(c, 4), height: le32(c, 8), element_size: le32(c, 12), bytes: Vec::new() };
+    let need = a.width as usize * a.height as usize * a.element_size as usize;
+    if need > 1 << 24 {
+        return err("Arry: too large");
+    }
+    let mut p = 20;
+    while a.bytes.len() < need {
+        if p + 2 > c.len() {
+            return err("Arry: runs past its chunk");
         }
-        if c.len() < 20 {
-            return err("Arry: no header");
-        }
-        let mut a = LotArray { width: le32(c, 4), height: le32(c, 8), element_size: le32(c, 12), bytes: Vec::new() };
-        let need = a.width as usize * a.height as usize * a.element_size as usize;
-        if need > 1 << 24 {
-            return err("Arry: too large");
-        }
-        let mut p = 20;
-        while a.bytes.len() < need {
-            if p + 2 > c.len() {
+        let h = le16(c, p) as usize;
+        p += 2;
+        if h & 0x8000 != 0 {
+            // that many copies of one byte (padded to 2)
+            let Some(&v) = c.get(p) else { return err("Arry: runs past its chunk") };
+            a.bytes.resize(a.bytes.len() + (h & 0x7FFF), v);
+            p += 2;
+        } else {
+            // that many bytes as they are (padded to even)
+            if p + h > c.len() {
                 return err("Arry: runs past its chunk");
             }
-            let h = le16(c, p) as usize;
-            p += 2;
-            if h & 0x8000 != 0 {
-                // that many copies of one byte (padded to 2)
-                let Some(&v) = c.get(p) else { return err("Arry: runs past its chunk") };
-                a.bytes.resize(a.bytes.len() + (h & 0x7FFF), v);
-                p += 2;
-            } else {
-                // that many bytes as they are (padded to even)
-                if p + h > c.len() {
-                    return err("Arry: runs past its chunk");
-                }
-                a.bytes.extend_from_slice(&c[p..p + h]);
-                p += h + (h & 1);
-            }
+            a.bytes.extend_from_slice(&c[p..p + h]);
+            p += h + (h & 1);
         }
-        if a.bytes.len() != need || p != c.len() {
-            return err("Arry: does not end at its chunk's end");
-        }
-        out.push(a);
     }
-    Ok(out)
+    if a.bytes.len() != need || p != c.len() {
+        return err("Arry: does not end at its chunk's end");
+    }
+    Ok(a)
 }
 
 /// A neighbour of the neighbourhood (its NBRS chunk, the PC's layout: `docs/objects.md`, "The
@@ -432,12 +473,35 @@ pub struct Neighbour {
     pub motives_b: Vec<f32>,
     /// The house of the neighbour's family (`read_families`; 0: none, the player's family's).
     pub house: Option<i32>,
+    /// The record's place among the NBRS chunk's slots (the empty ones are not neighbours), and
+    /// the values the record has that are not named, as saved.
+    pub slot: usize,
+    pub slot_flag: i32,
+    pub record_version: i32,
+    /// The pad byte after the name when the name ends at an odd place in the chunk.
+    pub name_pad: u8,
+    pub word_a: i32,
+    /// Whether person data follows, as saved (0: none).
+    pub person_data_flag: i32,
+    pub word_b: i32,
+    pub word_c: i32,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct NeighbourRelationship {
     pub with: i16,
     pub values: Vec<i32>,
+    /// The word before the relationship's other neighbour, as saved.
+    pub word_d: i32,
+}
+
+/// The NBRS chunk as saved: its version, how many slots it has (the neighbours' records are in
+/// some of them), and the neighbours.
+#[derive(Clone, Debug, Default)]
+pub struct NeighbourTable {
+    pub version: u32,
+    pub slots: usize,
+    pub neighbours: Vec<Neighbour>,
 }
 
 /// A cursor over a chunk's little-endian values.
@@ -475,6 +539,22 @@ pub fn read_neighbours(file: &[u8]) -> Result<Vec<Neighbour>> {
         }
     }
     let Some(c) = table.as_ref().and_then(|t| t.find("NBRS")) else { return err("the neighbourhood has no NBRS") };
+    let mut out = parse_neighbours(c)?.neighbours;
+    let described = table.as_ref().map(read_descriptions).unwrap_or_default();
+    for n in &mut out {
+        n.female = described.iter().find(|d| d.0 == n.guid).map(|d| d.1);
+    }
+    for f in read_families(file)? {
+        for n in out.iter_mut().filter(|n| f.members.contains(&n.guid)) {
+            n.house = Some(f.house);
+        }
+    }
+    Ok(out)
+}
+
+/// An NBRS chunk's neighbours (without the descriptions' and families' parts); an error if it
+/// does not read to its end.
+pub fn parse_neighbours(c: &[u8]) -> Result<NeighbourTable> {
     let mut r = Cursor { c, p: 0, what: "NBRS runs past its chunk" };
     r.need(16)?;
     if &c[8..12] != b"SRBN" {
@@ -485,19 +565,25 @@ pub fn read_neighbours(file: &[u8]) -> Result<Vec<Neighbour>> {
     if !(0..=4096).contains(&slots) {
         return err("NBRS: slots out of range");
     }
-    let mut out = Vec::new();
-    for _ in 0..slots {
-        if r.i32()? == 0 {
+    let mut table = NeighbourTable { version: le32(c, 4), slots: slots as usize, neighbours: Vec::new() };
+    for slot in 0..slots as usize {
+        let slot_flag = r.i32()?;
+        if slot_flag == 0 {
             continue; // an empty slot
         }
-        let mut n = Neighbour::default();
-        r.i32()?; // the record's version (4)
+        let mut n = Neighbour { slot, slot_flag, ..Default::default() };
+        n.record_version = r.i32()?; // (4)
         let Some(len) = c[r.p..].iter().position(|&b| b == 0) else { return err("NBRS: a name has no end") };
         n.name = String::from_utf8_lossy(&c[r.p..r.p + len]).into_owned();
         r.p += len + 1;
-        r.p += r.p & 1;
-        r.i32()?;
-        if r.i32()? != 0 {
+        if r.p & 1 != 0 {
+            r.need(1)?;
+            n.name_pad = c[r.p];
+            r.p += 1;
+        }
+        n.word_a = r.i32()?;
+        n.person_data_flag = r.i32()?;
+        if n.person_data_flag != 0 {
             // set: the person data follows
             for _ in 0..80 {
                 n.person_data.push(r.i16()?);
@@ -515,37 +601,28 @@ pub fn read_neighbours(file: &[u8]) -> Result<Vec<Neighbour>> {
         r.p += 128;
         n.id = r.i16()?;
         n.guid = r.i32()? as u32;
-        r.i32()?;
-        r.i32()?;
+        n.word_b = r.i32()?;
+        n.word_c = r.i32()?;
         let rels = r.i32()?;
         if !(0..=4096).contains(&rels) {
             return err("NBRS: relationships out of range");
         }
         for _ in 0..rels {
-            r.i32()?;
+            let word_d = r.i32()?;
             let with = r.i32()? as i16;
             let k = r.i32()?;
             if !(0..=64).contains(&k) {
                 return err("NBRS: a relationship's values out of range");
             }
             let values = (0..k).map(|_| r.i32()).collect::<Result<_>>()?;
-            n.relationships.push(NeighbourRelationship { with, values });
+            n.relationships.push(NeighbourRelationship { with, values, word_d });
         }
-        out.push(n);
+        table.neighbours.push(n);
     }
     if r.p != c.len() {
         return err("NBRS does not end at its chunk's end");
     }
-    let described = table.as_ref().map(read_descriptions).unwrap_or_default();
-    for n in &mut out {
-        n.female = described.iter().find(|d| d.0 == n.guid).map(|d| d.1);
-    }
-    for f in read_families(file)? {
-        for n in out.iter_mut().filter(|n| f.members.contains(&n.guid)) {
-            n.house = Some(f.house);
-        }
-    }
-    Ok(out)
+    Ok(table)
 }
 
 /// A family of the neighbourhood (section 1's `FAMI` chunks): its house number (0: none), its id
@@ -556,6 +633,31 @@ pub struct Family {
     pub house: i32,
     pub id: i32,
     pub members: Vec<u32>,
+    /// The chunk's version (8), the words after the id (to be named), and the words after the
+    /// members, as bytes (the chunk has room for more members than it has).
+    pub version: u32,
+    pub words: [i32; 4],
+    pub tail: Vec<u8>,
+}
+
+/// A FAMI chunk's family; `None` if it is not one.
+pub fn parse_family(c: &[u8]) -> Option<Family> {
+    if c.len() < 40 || &c[8..12] != b"IMAF" {
+        return None;
+    }
+    let w = |k: usize| le32(c, 4 * k) as i32;
+    let count = w(9).clamp(0, 16) as usize;
+    if c.len() < 40 + 4 * count {
+        return None;
+    }
+    Some(Family {
+        house: w(3),
+        id: w(4),
+        members: (0..count).map(|k| le32(c, 40 + 4 * k)).collect(),
+        version: le32(c, 4),
+        words: [w(5), w(6), w(7), w(8)],
+        tail: c[40 + 4 * count..].to_vec(),
+    })
 }
 
 pub fn read_families(file: &[u8]) -> Result<Vec<Family>> {
@@ -566,19 +668,7 @@ pub fn read_families(file: &[u8]) -> Result<Vec<Family>> {
             break;
         }
     }
-    let mut out = Vec::new();
-    for (_, c) in table.iter().flat_map(|t| t.chunks.iter()).filter(|(tag, _)| tag == "FAMI") {
-        if c.len() < 40 || &c[8..12] != b"IMAF" {
-            continue;
-        }
-        let w = |k: usize| le32(c, 4 * k) as i32;
-        let count = w(9).clamp(0, 16) as usize;
-        if c.len() < 40 + 4 * count {
-            continue;
-        }
-        out.push(Family { house: w(3), id: w(4), members: (0..count).map(|k| le32(c, 40 + 4 * k)).collect() });
-    }
-    Ok(out)
+    Ok(table.iter().flat_map(|t| t.chunks.iter()).filter(|(tag, _)| tag == "FAMI").filter_map(|(_, c)| parse_family(c)).collect())
 }
 
 /// The characters' descriptions (section 1's `User` chunks, one a character): its id (the
@@ -626,6 +716,9 @@ pub struct CreatedSim {
     pub first_name: String,
     pub last_name: String,
     pub looks: [u8; 20],
+    /// The chunk's version (4), and the bytes after the looks (to be named).
+    pub version: u32,
+    pub rest: Vec<u8>,
 }
 
 /// A User chunk's string: a byte order mark (ff fe) then 16-bit characters, high byte first,
@@ -646,6 +739,18 @@ fn read_user_string(c: &[u8], mut p: usize) -> Option<(String, usize)> {
     }
 }
 
+/// A User chunk's Sim; `None` if the chunk is not of that shape.
+pub fn parse_created_sim(c: &[u8]) -> Option<CreatedSim> {
+    if c.get(8..12) != Some(b"resU".as_slice()) {
+        return None;
+    }
+    let guid = le32(c, 12);
+    let (first_name, p) = read_user_string(c, 16)?;
+    let (last_name, p) = read_user_string(c, p)?;
+    let looks = <[u8; 20]>::try_from(c.get(p..p + 20)?).ok()?;
+    Some(CreatedSim { guid, first_name, last_name, looks, version: le32(c, 4), rest: c[p + 20..].to_vec() })
+}
+
 /// The neighbourhood's made Sims, in file order (its "User" chunks, each: 0, the version (4),
 /// a "resU" mark, the GUID, the first and the last name, the looks); one that does not read is
 /// left out.
@@ -655,16 +760,7 @@ pub fn read_created_sims(file: &[u8]) -> Result<Vec<CreatedSim>> {
         if b.section != 1 {
             continue;
         }
-        for (tag, c) in chunk_table(&b)?.chunks {
-            if tag != "User" || c.get(8..12) != Some(b"resU".as_slice()) {
-                continue;
-            }
-            let Some(guid) = c.get(12..16).map(|g| le32(g, 0)) else { continue };
-            let Some((first_name, p)) = read_user_string(&c, 16) else { continue };
-            let Some((last_name, p)) = read_user_string(&c, p) else { continue };
-            let Some(looks) = c.get(p..p + 20).and_then(|l| <[u8; 20]>::try_from(l).ok()) else { continue };
-            out.push(CreatedSim { guid, first_name, last_name, looks });
-        }
+        out.extend(chunk_table(&b)?.chunks.iter().filter(|(tag, _)| tag == "User").filter_map(|(_, c)| parse_created_sim(c)));
     }
     Ok(out)
 }
@@ -676,6 +772,8 @@ pub struct ObjectType {
     pub guid: u32,
     pub fields: [u16; 6],
     pub name: String,
+    /// The pad byte after the name when the entry ends at an odd place in the chunk.
+    pub pad: u8,
 }
 
 pub fn read_object_types(c: &[u8]) -> Result<Vec<ObjectType>> {
@@ -702,10 +800,12 @@ pub fn read_object_types(c: &[u8]) -> Result<Vec<ObjectType>> {
         let Some(len) = c[p + 16..].iter().position(|&b| b == 0) else { return err("objt name has no end") };
         let name = String::from_utf8_lossy(&c[p + 16..p + 16 + len]).into_owned();
         p += 16 + len + 1;
+        let mut pad = 0;
         if (p - 12) % 2 != 0 {
+            pad = c.get(p).copied().unwrap_or(0);
             p += 1;
         }
-        out.push(ObjectType { guid, fields, name });
+        out.push(ObjectType { guid, fields, name, pad });
     }
 }
 

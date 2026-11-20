@@ -139,7 +139,7 @@ fn relate(vars: &mut ScriptVariables, r: Relate) -> PrimResult {
             match x.relationships.iter().position(|r| r.with == nb) {
                 Some(k) => Some(&mut x.relationships[k].values),
                 None if create => {
-                    x.relationships.push(NeighbourRelationship { with: nb, values: Vec::new() });
+                    x.relationships.push(NeighbourRelationship { with: nb, values: Vec::new(), ..Default::default() });
                     x.relationships.last_mut().map(|r| &mut r.values)
                 }
                 None => None,

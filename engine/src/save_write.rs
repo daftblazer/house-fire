@@ -4,8 +4,9 @@
 
 use crate::iff::FormatError;
 use crate::save::{
-    LotChunks, LotObject, LotObjects, LotStringForm, NeighbourhoodBlock, RelationshipForm, SavedClass, SavedQueueEntry, SavedRelationship, VERSION,
-    memory_card_file_blocks,
+    CreatedSim, Family, LotArray, LotChunks, LotGlobals, LotObject, LotObjects, LotStringForm, NeighbourTable, NeighbourhoodBlock, NeighbourhoodChunk,
+    ObjectType, RelationshipForm, SavedClass, SavedQueueEntry, SavedRelationship, VERSION, chunk_table, memory_card_file_blocks, parse_array,
+    parse_created_sim, parse_family, parse_lot_globals, parse_neighbours, parse_ngbh, read_object_types,
 };
 
 type Result<T> = std::result::Result<T, FormatError>;
@@ -621,4 +622,217 @@ pub fn encode_lot_objects(l: &LotObjects) -> Vec<u8> {
     out.extend_from_slice(b"MjbO");
     out.extend_from_slice(&w.into_bytes());
     out
+}
+
+/// A run of equal bytes this long or longer is a run in an array's coding, a shorter one is
+/// kept in the literal bytes around it (measured: the shortest run in the arrays of the cards
+/// and the disc is 8, and no shorter one is ever left out of a literal).
+const MIN_RUN: usize = 8;
+
+/// An Arry chunk from its array (`save::parse_array`'s inverse): 0, the width and height, the
+/// element size, a 1, then the bytes as runs (a 16-bit header with its top bit set, that many
+/// copies of the byte after it, padded to 2) and literals (a header, that many bytes, padded to
+/// even), alternating.
+pub fn encode_array(a: &LotArray) -> Vec<u8> {
+    let mut out = Vec::new();
+    for v in [0, a.width, a.height, a.element_size, 1] {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    let d = &a.bytes;
+    let literal = |out: &mut Vec<u8>, bytes: &[u8]| {
+        for part in bytes.chunks(0x7FFF) {
+            out.extend_from_slice(&(part.len() as u16).to_le_bytes());
+            out.extend_from_slice(part);
+            if part.len() & 1 != 0 {
+                out.push(0);
+            }
+        }
+    };
+    let (mut i, mut lit_from) = (0, 0);
+    while i < d.len() {
+        let mut j = i + 1;
+        while j < d.len() && d[j] == d[i] {
+            j += 1;
+        }
+        if j - i >= MIN_RUN {
+            literal(&mut out, &d[lit_from..i]);
+            let mut left = j - i;
+            while left > 0 {
+                let n = left.min(0x7FFF);
+                out.extend_from_slice(&(0x8000 | n as u16).to_le_bytes());
+                out.extend_from_slice(&[d[i], 0]);
+                left -= n;
+            }
+            lit_from = j;
+        }
+        i = j;
+    }
+    literal(&mut out, &d[lit_from..]);
+    out
+}
+
+/// An objt chunk from its types (`save::read_object_types`'s inverse): 0, the version (2), the
+/// mark "tjbo", then for each type its GUID, six 16-bit fields and its name, ended by a zero,
+/// the entries padded to even, and a zero GUID.
+pub fn encode_object_types(types: &[ObjectType]) -> Vec<u8> {
+    let mut out = header(2, b"tjbo");
+    for t in types {
+        out.extend_from_slice(&t.guid.to_le_bytes());
+        for f in t.fields {
+            out.extend_from_slice(&f.to_le_bytes());
+        }
+        out.extend_from_slice(t.name.as_bytes());
+        out.push(0);
+        if (out.len() - 12) % 2 != 0 {
+            out.push(t.pad);
+        }
+    }
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out
+}
+
+fn header(version: u32, mark: &[u8; 4]) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&version.to_le_bytes());
+    out.extend_from_slice(mark);
+    out
+}
+
+/// A SIMI chunk from a lot's globals.
+pub fn encode_lot_globals(g: &LotGlobals) -> Vec<u8> {
+    let mut out = header(g.version, b"IMIS");
+    out.extend(g.values.iter().flat_map(|v| v.to_le_bytes()));
+    out
+}
+
+/// An NGBH chunk from the neighbourhood's data.
+pub fn encode_ngbh(n: &NeighbourhoodChunk) -> Vec<u8> {
+    let mut out = header(n.version, b"HBGN");
+    out.extend(n.words.iter().flat_map(|v| v.to_le_bytes()));
+    out.extend(n.marks.iter().flat_map(|v| v.to_le_bytes()));
+    out.extend_from_slice(&n.tail);
+    out
+}
+
+/// A FAMI chunk from a family.
+pub fn encode_family(f: &Family) -> Vec<u8> {
+    let mut out = header(f.version, b"IMAF");
+    for v in [f.house, f.id, f.words[0], f.words[1], f.words[2], f.words[3], f.members.len() as i32] {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    for &m in &f.members {
+        out.extend_from_slice(&m.to_le_bytes());
+    }
+    out.extend_from_slice(&f.tail);
+    out
+}
+
+fn user_string(out: &mut Vec<u8>, s: &str) {
+    out.extend_from_slice(&[0xFF, 0xFE]);
+    for u in s.encode_utf16().chain([0]) {
+        out.extend_from_slice(&u.to_be_bytes());
+    }
+}
+
+/// A User chunk from a made Sim.
+pub fn encode_created_sim(c: &CreatedSim) -> Vec<u8> {
+    let mut out = header(c.version, b"resU");
+    out.extend_from_slice(&c.guid.to_le_bytes());
+    user_string(&mut out, &c.first_name);
+    user_string(&mut out, &c.last_name);
+    out.extend_from_slice(&c.looks);
+    out.extend_from_slice(&c.rest);
+    out
+}
+
+/// An NBRS chunk from the neighbour table (`save::parse_neighbours`'s inverse): a slot for each
+/// of the table's, empty (a zero word) or a neighbour's record.
+pub fn encode_neighbours(t: &NeighbourTable) -> Vec<u8> {
+    let mut out = header(t.version, b"SRBN");
+    let w32 = |out: &mut Vec<u8>, v: i32| out.extend_from_slice(&v.to_le_bytes());
+    w32(&mut out, t.slots as i32);
+    for slot in 0..t.slots {
+        let Some(n) = t.neighbours.iter().find(|n| n.slot == slot) else {
+            w32(&mut out, 0);
+            continue;
+        };
+        w32(&mut out, n.slot_flag);
+        w32(&mut out, n.record_version);
+        out.extend_from_slice(n.name.as_bytes());
+        out.push(0);
+        if out.len() & 1 != 0 {
+            out.push(n.name_pad);
+        }
+        w32(&mut out, n.word_a);
+        w32(&mut out, n.person_data_flag);
+        if n.person_data_flag != 0 {
+            for k in 0..80 {
+                out.extend_from_slice(&n.person_data.get(k).copied().unwrap_or(0).to_le_bytes());
+            }
+        }
+        // the motives as the original keeps them: each word's bytes big-endian
+        for v in n.motives.iter().chain(&n.motives_b) {
+            out.extend_from_slice(&v.to_bits().to_be_bytes());
+        }
+        out.extend_from_slice(&n.id.to_le_bytes());
+        w32(&mut out, n.guid as i32);
+        w32(&mut out, n.word_b);
+        w32(&mut out, n.word_c);
+        w32(&mut out, n.relationships.len() as i32);
+        for r in &n.relationships {
+            w32(&mut out, r.word_d);
+            w32(&mut out, r.with as i32);
+            w32(&mut out, r.values.len() as i32);
+            for &v in &r.values {
+                w32(&mut out, v);
+            }
+        }
+    }
+    out
+}
+
+/// A block's data written back from the models of what the engine reads: the chunk table with
+/// each chunk with a reader (the arrays, the object types, the objects, the lots' globals, the
+/// neighbourhood's data, the neighbours, the families, the made Sims) encoded from its model and
+/// the others (HOUS, TATT, DUMP: not decoded) as the bytes they are; a thumbnail block (section
+/// 2) as it is. `objects` reads a lot's ObjM (it needs the library's classes).
+pub fn rewrite_block(b: &NeighbourhoodBlock, objects: impl Fn(&LotChunks) -> Result<LotObjects>) -> Result<Vec<u8>> {
+    if b.section == 2 {
+        return Ok(b.data.clone());
+    }
+    let mut t = chunk_table(b)?;
+    let lot = t.clone();
+    for (tag, c) in &mut t.chunks {
+        let bytes = match tag.as_str() {
+            "Arry" => Some(encode_array(&parse_array(c)?)),
+            "objt" => Some(encode_object_types(&read_object_types(c)?)),
+            "ObjM" => Some(encode_lot_objects(&objects(&lot)?)),
+            "SIMI" => parse_lot_globals(c).map(|g| encode_lot_globals(&g)),
+            "NGBH" => Some(encode_ngbh(&parse_ngbh(c)?)),
+            "NBRS" => Some(encode_neighbours(&parse_neighbours(c)?)),
+            "FAMI" => parse_family(c).map(|f| encode_family(&f)),
+            "User" => parse_created_sim(c).map(|s| encode_created_sim(&s)),
+            _ => None,
+        };
+        if let Some(bytes) = bytes {
+            *c = bytes;
+        }
+    }
+    Ok(encode_chunk_table(&t, b.big_endian))
+}
+
+/// Whether the block at `offset` of a file has the checksum its header states (the header read
+/// as `save::read_neighbourhood` does, big-endian in a save).
+pub fn verify_block(f: &[u8], offset: usize) -> bool {
+    let Some(h) = f.get(offset..offset + HEADER) else { return false };
+    let big = u32::from_le_bytes([h[4], h[5], h[6], h[7]]) as usize != HEADER;
+    let w = |i: usize| {
+        let b = [h[4 * i], h[4 * i + 1], h[4 * i + 2], h[4 * i + 3]];
+        if big { u32::from_be_bytes(b) } else { u32::from_le_bytes(b) }
+    };
+    let Some(packed) = f.get(offset + HEADER..offset + HEADER + w(3) as usize) else { return false };
+    let mut zeroed = h.to_vec();
+    zeroed[16..20].fill(0);
+    crc32(&[&zeroed, packed]) == w(4)
 }

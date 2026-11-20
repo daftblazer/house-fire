@@ -271,7 +271,7 @@ fn relationship_reads_writes_and_creates() {
     make(7, None, Vec::new());
     make(14, Some(5), Vec::new());
     w.neighbours = vec![
-        Neighbour { id: 3, relationships: vec![NeighbourRelationship { with: 5, values: vec![40] }], ..Neighbour::default() },
+        Neighbour { id: 3, relationships: vec![NeighbourRelationship { with: 5, values: vec![40], ..Default::default() }], ..Neighbour::default() },
         Neighbour { id: 5, ..Neighbour::default() },
     ];
     let mut f = Frame { locals: vec![0], ..Frame::default() };
