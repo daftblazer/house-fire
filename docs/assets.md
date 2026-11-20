@@ -3176,7 +3176,7 @@ so nothing starts them. The pan law's rounding (`docs/assets.md`, "The voices") 
 ## Menus and HUD (Apt)
 
 `flashes.arc` (61 entries) holds the menus' and HUD's movies, `fonts.arc` (6) their text fonts.
-Read natively by `engine/src/apt/` (read only: no player yet); `assets ISO apt` reads all 67 and
+Read natively by `engine/src/apt/` (the player is in "The player (U2a)" below); `assets ISO apt` reads all 67 and
 ends with `apt: movies 61, fonts 6, unknown 0`, where *unknown* counts every byte nothing read,
 every character kind, item kind, opcode, constant type, geometry record and texture header
 this reader has no meaning for (`Flash::unknown`, `Font::read` failing). `assets ISO apt NAME`
@@ -3340,13 +3340,120 @@ metrics (the glyph's height and its offsets) are not in the entry: `shaders.arc`
 `font_NAME_sSIZE_pN` entry for each page (34 in all) that was not read; they may be what the
 text draw needs besides these.
 
+### The player (U2a)
+
+`engine/src/apt/player.rs` (clips and timelines), `vm.rs` (the script machine), `value.rs`,
+`display.rs` (the display list), `host.rs` (the game's side), `play.rs` (the driver over a log).
+No drawing and no GPU: `Player::display_list()` is what the drawing (U2b) takes. The game drives
+it as it drives its movies: `load(path)` (the first load is the root, the wrapper; the others
+fill the clip a movie asked for), `call(name, args)`, `advance()` (one movie frame),
+`set_extern(name, value)` (what the game gives the movies), `take_commands()` (what the movies
+sent back: `(command, argument)` text). `assets ISO apt-play LOG [--to FRAME] [--list] [--diff]
+[--probe CLIP.PATH] [--rate R]` runs it over a log's loads and calls and prints
+`apt-play: commands N, the same S, first different F (frame, ours, the log's)`; `--list` prints
+the display list at the end, `--diff` each command as the same, missing or extra, `--probe` a
+clip's frame and variables; `APT_TRACE=1` (`=2` with each variable set) prints what ran.
+
+**Figure** (home run, `ui-dump.log` and `ui-3000.log` give the same, the first 1,400 frames):
+commands 244, the same 228, first different frame 741. All but one of the 228 are sent in the
+very frame the game logged them (the other is a frame early). What is left, and why:
+
+- the 10 menu item places `button0..3_x` and `button3_y` (twice): the game's values have a last
+  digit more than ours (0.499688 against 0.499687; the sums 320 + -0.2 and 121.5 + 119.75 in
+  single or double precision both print the lower one). Not found; the logic is the same;
+- 3 key presses (`selected_item` at 842 and 866, `menu_command` at 1100): the game sends keys to
+  the movies by its own path, not logged; the player has no input (`Key.getCode` is 0, the clips'
+  key events 0x40 and 0x80 do not run);
+- `done_loading` (the load bar's last animation frame says it): ours comes one frame before the
+  game's, so the second screen's copy at the game's frame is not ours; `dialog_button_accept_x`
+  at 1109 differs in the sixth decimal (a fitted number, below); one `hud_draw_info_text` at
+  1336 (the game's HUD says it once more after its dialog is gone).
+
+**The rate.** One movie frame for each game frame, in every movie whatever its own
+milliseconds (27 to 83; 33 in all the menus): the dialog says `dialog_ready` in its frame 5, 7
+game frames after its load, which is 5 frames and the 2 below. Measured over all 244 commands
+(`frame offsets` line of `apt-play`). Inside a game frame the order is: `advance`, the movies
+that start now, the game's loads, the game's values, the game's calls (the log keeps no order
+among them; a load is taken as soon as a movie has asked for it, so a call after a load of
+the same frame finds the movie, as `loadMainMenu` after `f_menu` does).
+
+**Loads.** A movie asks for another with `loadMovie` (the script's `GetUrl2`: URL and target
+clip; an empty URL unloads the target). The request waits until the game logs the load of that
+name (case aside); then every clip waiting for it is filled, and the movie starts **2 game
+frames after the log's load**, except `f_*` (the functions movies: at once, but what their start
+sends reaches the game 2 frames late). A movie the game still has in memory (another clip holds
+it) is not logged again: the copy takes 3 movie frames (the running one counting), and loading
+an `f_` movie finishes the copies waiting (all fitted to the frames of the commands: `bt_GC`
+into the `key` of every button, 4 frames from a button's `createButton` to its first report,
+1 when `f_menu` loads in the same frame).
+
+**How a call finds its movie.** `Player::call` looks for a function of that name in the
+variables of the root (the wrapper) and then of each clip in it (the loaded movies). The wrapper
+has the layers and buttons (`showContentLayer`, `showDialogLayer`, `createButton`,
+`showDialog`, `showLoadBar`, `mu_showDialogBox`, `loadFunctions(name)`, which loads `f_NAME` into
+`controller`); `f_menu` defines `loadMainMenu`, `unloadMainMenu`, `resetMenu` on `_root`,
+`f_create` `showCAS`, `hideCAS`, `f_hud` `showHUD`, `updateHUD`, `setPlayerMode`; the loaded
+`mudialog` has `reset`. The wrapper's layers are clips of the root (`load_bar`, `content`,
+`controller`, `dialog`, `mu_dialog`, `anim`, `keys`, `dpad`, and the hidden `button_template`
+that `createButton` duplicates); `showContentLayer` and its kind set a layer's `_visible`.
+
+**Commands.** A movie sends one by setting a member of `extern`: the player sends
+`(member, value as text)`, whole numbers as integers, others with six decimals, booleans as
+`true`/`false`; the value is not stored (what the movies read from `extern` is only what the
+game set). Names with a leading underscore are the wrapper's own (`_debug`, `_f`, `_r`) and not
+sent: the game's observer shows none. Every screen the game has up hears every command and the
+observer logs each hearing, so a command comes once for each screen that logs any in its frame
+(`Host::as_heard`; 2 in the frames where the create or load-bar screen is up beside the
+dialog's).
+
+**Where it differs from Flash** (each needed for the game's commands):
+the movies are of the SWF 5 generation: `undefined` is 0 as a number and empty as text;
+a parameter a call does not pass is not declared, so its name reads and writes the clip's
+variable (`createButton("accept")` leaves `orientation` set for every later button);
+a frame's script runs before the scripts of the clips the frame places (items in file order);
+going to the frame a clip is at does nothing, going back keeps what the same item placed (a
+loaded `key` stays loaded); `gotoAndPlay(n)` counts from 1, `GotoFrame` from 0; numbers are
+double precision (positions are read from the file's single-precision matrices); the colour in
+a place item is 0xAARRGGBB (shadows `0xFF000000`, fades `0xCCFFFFFF`), not the
+0xRRGGBBAA of the reader's note; `GetUrl2` is `loadMovie` (no `FSCommand:` target is used);
+`Math.random` and `random` use a fixed sequence (the simulation stays reproducible).
+
+**The game's side (`host.rs`), unverified.** The observer records neither the numbers the game
+sets in `extern` before it calls a movie nor which screens are up. So: (1) a button's place
+(`<context>_button_<name>_x`/`_y`, fractions of the screen) is set at the last `createButton` or
+`resetButton` of that button before its report and removed at its `destroyButton`, with the
+value the report carries (not verified: it echoes the answer); (2) a short table of fitted
+numbers: the menu's item counts (1 big then 3: the small items' place), the dialogs' places and
+sizes (`dialog_x`, `dialog_box_width`, `UI_button_width`... fitted to the title bars' and
+buttons' reports), the mu dialog's, the load bar's `current_load` (100 from frame 1209 makes it
+say `done_loading`); (3) the screens' hearing counts above. These make the figure; none is
+known from the game.
+
+**Not done.** Key and mouse input and the clips' event handlers; text is not laid out (the
+display list gives each text field's string: a script's `text`, the variable it is bound to, or
+its own initial text, and the drawing of glyphs is U2b's); `hitTest` is false; `getBounds`,
+`createEmptyMovieClip`, sounds are not there; a clip's `_width` and `_height` are its shapes'
+and texts' bounds (not the glyphs'); `With` is done. Every call or member the player does not
+know is listed once by `apt-play` as `stub:` (here: `toggleKey` on a clip that does not exist yet,
+`reset`/`update`/`init`/`gotoAndStop`/`forceUpdate` on clips or `undefined`, `positionOfButtons`
+(a method the menu names wrongly), `setPlayerMode` on the HUD before it is there): the movies
+call them and the original does nothing too.
+
+**The display list** (`display_list()`): shapes and texts back to front (a clip's children by
+depth), each with its movie, character id, the matrix to the stage (a, b, c, d, tx, ty as the
+Flash format has it), the colour transform (multiplier and offset, 0 to 1, from the clip's
+place item and `_alpha`, composed down the tree), the string of a text, its depth and its clip
+depth (a masking layer's end). Hidden clips (`_visible`) and clips not in the tree are left
+out; buttons and images are not items (the wrapper's buttons are hit areas only; a button's up state
+is not drawn yet).
+
 ### Left over
 
 Read but not placed: the font's second size word and tail, the glyph row, the last record's
 page word; a place object's colour offset and ratio (they fit the flags 8 and 0x10; the ratios
-are tiny floats such as 1.0e-4); the clip actions' events 0x40 and 0x80 and the key word; the
-`GetUrl2` and `GotoFrame2` flags (no operand / always 0: the player will find what the movies
-mean by them, `FSCommand:` and `loadMovie` style calls with the target on the stack); the
+are tiny floats such as 1.0e-4; the colour is 0xAARRGGBB, found by the player); the clip actions' events 0x40 and 0x80 and the key word; the
+`GetUrl2` and `GotoFrame2` flags (no operand / always 0: the player found `GetUrl2` is
+`loadMovie` with the URL and the target on the stack, `GotoFrame2` a frame by number or label); the
 button's is-menu word and its record words; the `.tgq` header's 00 02 pair. The movies' own
 text strings are in the constant pools, not in a table: the HUD's and menus' wording comes from
 the game's strings and the text characters' variables (2 text characters only).
