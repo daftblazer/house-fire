@@ -4277,6 +4277,17 @@ fn apt_play(d: &Disc, args: &[String]) -> ExitCode {
         format!("frame {}, ours {near}, the log's {} {}", c.frame, c.command, c.argument)
     });
     println!("apt-play: commands {}, the same {}, first different {}", rep.total, rep.same, first.unwrap_or_else(|| "none".into()));
+    {
+        // how many frames ours came before (negative) or after the log's, over the matches
+        let mut hist: BTreeMap<i64, usize> = BTreeMap::new();
+        let cmds: Vec<_> = log.movie_commands.iter().filter(|c| to.is_none_or(|t| c.frame <= t)).collect();
+        for (k, c) in cmds.iter().enumerate() {
+            if rep.matched[k] {
+                *hist.entry(i64::from(rep.ours_frame[k]) - i64::from(c.frame)).or_default() += 1;
+            }
+        }
+        println!("  frame offsets (ours - log's): {}", hist.iter().map(|(d, n)| format!("{d}:{n}")).collect::<Vec<_>>().join(" "));
+    }
     if diff {
         let cmds: Vec<_> = log.movie_commands.iter().filter(|c| to.is_none_or(|t| c.frame <= t)).collect();
         for (k, c) in cmds.iter().enumerate() {

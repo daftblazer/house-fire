@@ -54,15 +54,18 @@ pub fn run(log: &Log, flashes: Vec<(String, Rc<Flash>)>, to: Option<u32>, timing
     let mut owed = 0.0f32;
     for f in 0..=last {
         p.frame = f;
-        p.tick_loads();
+        // The game loads a movie when a movie has asked for it, and its log does not say
+        // whether a call of the same frame came before or after: a load is taken as soon as the
+        // request is there.
         let loads = |p: &mut Player, li: &mut usize| {
-            while *li < log.movie_loads.len() && log.movie_loads[*li].frame <= f {
+            while *li < log.movie_loads.len() && log.movie_loads[*li].frame <= f && p.can_load(&log.movie_loads[*li].path) {
                 p.load(&log.movie_loads[*li].path);
                 *li += 1;
             }
         };
-        let calls = |p: &mut Player, ci: &mut usize| {
+        let calls = |p: &mut Player, ci: &mut usize, li: &mut usize| {
             while *ci < log.movie_calls.len() && log.movie_calls[*ci].frame <= f {
+                loads(p, li);
                 let c = &log.movie_calls[*ci];
                 if p.trace {
                     eprintln!("apt: game frame {f}: call {}({:?})", c.name, c.args.iter().map(|a| a.1.as_str()).collect::<Vec<_>>());
@@ -73,23 +76,25 @@ pub fn run(log: &Log, flashes: Vec<(String, Rc<Flash>)>, to: Option<u32>, timing
                 }
                 *ci += 1;
             }
+            loads(p, li);
         };
-        loads(&mut p, &mut li);
         if p.trace {
             eprintln!("apt: game frame {f}");
         }
         if timing.calls_first {
             calls_feed(&mut p, log, f);
-            calls(&mut p, &mut ci);
+            calls(&mut p, &mut ci, &mut li);
         }
         owed += timing.rate;
         while owed >= 1.0 {
             owed -= 1.0;
             p.advance();
         }
+        p.tick_loads();
+        loads(&mut p, &mut li);
         if !timing.calls_first {
             calls_feed(&mut p, log, f);
-            calls(&mut p, &mut ci);
+            calls(&mut p, &mut ci, &mut li);
         }
     }
     let cmds = p.take_commands();

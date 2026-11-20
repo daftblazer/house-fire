@@ -131,10 +131,13 @@ pub struct Player {
     pub commands: Vec<Command>,
     queue: VecDeque<Pending>,
     requests: VecDeque<LoadRequest>,
-    /// Loads of movies already in memory: (game frame due, name, clip).
-    cached: Vec<(u32, String, ClipId)>,
-    /// How many game frames a load from memory takes (measured: `docs/assets.md`).
+    /// Movies on their way into clips: (game frame they start at, name, clip).
+    scheduled: Vec<(u32, String, ClipId)>,
+    /// Game frames from a movie's request to its start when the game has the movie in memory,
+    /// and from the game's logged load to the start (measured against the commands'
+    /// frames, `docs/assets.md`).
     pub cache_delay: u32,
+    pub load_delay: u32,
     /// The game's frame counter, stamped on the commands.
     pub frame: u32,
     /// What was asked of the player that it does not do (each kind once).
@@ -167,8 +170,9 @@ impl Player {
             commands: Vec::new(),
             queue: VecDeque::new(),
             requests: VecDeque::new(),
-            cached: Vec::new(),
-            cache_delay: 4,
+            scheduled: Vec::new(),
+            cache_delay: 3,
+            load_delay: 2,
             frame: 0,
             stubs: Vec::new(),
             key_code: 0.0,
@@ -204,6 +208,13 @@ impl Player {
         base.to_ascii_lowercase()
     }
 
+    /// Whether `load` of this path would load something: the first movie always, later ones when
+    /// a movie has asked for them.
+    pub fn can_load(&self, path: &str) -> bool {
+        let name = Self::stem(path);
+        self.root.is_none() || self.requests.iter().any(|r| r.name == name && self.clips[r.target].alive)
+    }
+
     /// The game loads a movie. The first one becomes the root; later ones fill the clip a movie
     /// asked to load them into. Returns false when no movie asked for it (nothing is loaded).
     pub fn load(&mut self, path: &str) -> bool {
@@ -226,12 +237,18 @@ impl Player {
         // one load of the game serves every clip that asked for the movie
         let waiting: Vec<ClipId> = self.requests.iter().filter(|r| r.name == name).map(|r| r.target).collect();
         self.requests.retain(|r| r.name != name);
+        // The movie starts a little after the game's load: `load_delay` game frames (none for
+        // the `f_` movies, which only hold functions the game calls at once).
+        let delay = if name.starts_with("f_") { 0 } else { self.load_delay };
+        if self.trace {
+            eprintln!("apt: load {name} at game frame {} (start at {})", self.frame, self.frame + delay);
+        }
         for t in waiting {
             if self.clips[t].alive {
-                self.fill(t, flash.clone(), &name);
+                self.scheduled.push((self.frame + delay, name.clone(), t));
             }
         }
-        self.run_queue();
+        self.tick_loads();
         true
     }
 
@@ -581,7 +598,7 @@ impl Player {
         // a movie the game still has in memory (loaded into another clip) is not loaded again
         let cached = self.clips.iter().any(|c| c.alive && c.loaded.as_deref() == Some(&name));
         if cached && self.flashes.contains_key(&name) {
-            self.cached.push((self.frame + self.cache_delay, name, target));
+            self.scheduled.push((self.frame + self.cache_delay, name, target));
             return;
         }
         self.requests.push_back(LoadRequest { name, target });
@@ -590,9 +607,12 @@ impl Player {
     /// Fills the clips that asked for a movie the game had in memory, once their time is up
     /// (call at the start of a game frame, after setting `frame`).
     pub fn tick_loads(&mut self) {
-        let (due, later): (Vec<_>, Vec<_>) = std::mem::take(&mut self.cached).into_iter().partition(|(at, ..)| *at <= self.frame);
-        self.cached = later;
+        let (due, later): (Vec<_>, Vec<_>) = std::mem::take(&mut self.scheduled).into_iter().partition(|(at, ..)| *at <= self.frame);
+        self.scheduled = later;
         for (_, name, target) in due {
+            if self.trace {
+                eprintln!("apt: start {name} in clip #{target} at game frame {}", self.frame);
+            }
             if self.clips[target].alive
                 && let Some(flash) = self.flashes.get(&name).cloned()
             {
@@ -604,6 +624,11 @@ impl Player {
 
     /// A command to the game.
     pub(super) fn send(&mut self, name: &str, v: &Value) {
+        // names with a leading underscore are the wrapper's own (its debug messages and its
+        // flags); the game's observer shows no command of them
+        if name.starts_with('_') {
+            return;
+        }
         let argument = v.to_text().to_string();
         self.commands.push(Command { frame: self.frame, name: name.to_string(), argument });
     }

@@ -141,7 +141,7 @@ impl Player {
                         scope: cx.target,
                     };
                     let v = obj(Kind::Func(Rc::new(f)));
-                    match name {
+                    match name.as_deref().filter(|n| !n.is_empty()) {
                         Some(n) => self.set_variable(cx, n, v, true),
                         None => cx.stack.push(v),
                     }
