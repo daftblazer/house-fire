@@ -124,8 +124,6 @@ pub struct WalkFrame {
     /// walk ends, as `walk_step` takes it for the stopping distance; infinite when the walk runs
     /// on (the walker does not brake) or ends past the log.
     pub left: f32,
-    /// The gap before the frame not wrapped: the direction's of the turn animation.
-    pub raw_before: f32,
 }
 
 impl<'l> Replay<'l> {
@@ -215,9 +213,8 @@ impl<'l> Replay<'l> {
             if let (Some(trace), Some(person)) = (&mut self.walk_trace, heading.person) {
                 let age = self.h.world.get(key).file.and_then(|fi| self.lib.file(fi).strings.get(&200)).and_then(|t| t.first()).map(String::as_str);
                 let gap = |angle| way.map_or(0.0, |w| turn_gap(angle, w));
-                let raw = way.map_or(0.0, |(dx, dy)| if dx.abs() < 0.001 && dy.abs() < 0.001 { 0.0 } else { (-dx).atan2(dy) - angle_before });
                 let step = ((f.after.x - f.before.x).powi(2) + (f.after.y - f.before.y).powi(2)).sqrt();
-                trace.push(WalkFrame { tick: f.tick, follower: f.follower, person, before: f.before.state, after: f.after.state, factor: f.before.factor, step, top: walk_top(age), gap_before: gap(angle_before), gap_after: gap(heading.angle), raw_before: raw, left: heading.walk_end.map_or(f32::INFINITY, |(end, runs_on)| if runs_on { f32::INFINITY } else { path_left(&heading.route, place, end) }) });
+                trace.push(WalkFrame { tick: f.tick, follower: f.follower, person, before: f.before.state, after: f.after.state, factor: f.before.factor, step, top: walk_top(age), gap_before: gap(angle_before), gap_after: gap(heading.angle), left: heading.walk_end.map_or(f32::INFINITY, |(end, runs_on)| if runs_on { f32::INFINITY } else { path_left(&heading.route, place, end) }) });
             }
         }
     }

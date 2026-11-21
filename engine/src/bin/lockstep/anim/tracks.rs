@@ -138,6 +138,7 @@ pub fn animator_tracks(log: &housefire::tree_log::Log, d: &Disc, lib: &Library, 
             println!("  speed t{} owner {:x} {} -> {} state {:x?}", r.tick, r.owner, r.before, r.after, r.state);
         }
     }
+    let mut carry_seen: BTreeMap<i16, bool> = BTreeMap::new();
     let mut animators: BTreeMap<i16, FigureAnimator> = BTreeMap::new();
     let mut walk_state: BTreeMap<u32, u32> = BTreeMap::new();
     let mut walk_speed: BTreeMap<u32, f32> = BTreeMap::new();
@@ -190,12 +191,20 @@ pub fn animator_tracks(log: &housefire::tree_log::Log, d: &Disc, lib: &Library, 
             };
                         let mine: Vec<&WalkFrame> = walks.iter().filter(|w| w.person == id).collect();
             let frames = frame_plays.len();
+            if std::env::var_os("TRACKS_CARRY").is_some() && carry_seen.insert(id, carrying) != Some(carrying) {
+                println!("  carry tick {tick} Sim {id}: {carrying}");
+            }
             let mut made: Vec<Vec<Posed>> = Vec::new();
-            for j in 0..frames {
+            // (tick 0 holds the load's frames, a hundred and more: the Sims' tracks begin with the
+            // last of them, the ones the log poses)
+            let from = if tick == 0 { frames.saturating_sub(logged.map_or(0, Vec::len)) } else { 0 };
+            for j in from..frames {
                 let walker = mine.get(j).map(|w| {
                     let starts = w.before == 1 && walk_state.get(&w.follower).is_none_or(|s| *s != 1);
                     walk_state.insert(w.follower, w.after);
-                    let gap = w.raw_before;
+                    // (a walk whose route the log has not gives no gap: past the arrival frame it
+                    // turned clockwise)
+                    let gap = w.gap_before;
                     WalkerFrame { starts, speed_fraction: speed_fraction(w, walk_speed.entry(w.follower).or_default()), turn: (w.after == 1 || w.after == 3).then(|| Turn::of_gap(gap)) }
                 });
                 let action = frame_plays[j].0.iter().find(|p| p.0 == id).map(|p| ActionPlay { anim: p.1, place: p.2, backward: p.3, serial: p.4 });
