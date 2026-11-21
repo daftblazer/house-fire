@@ -1753,6 +1753,63 @@ blend flag is left over in memory until its first window step sets it. With them
 states of the 39,999 poses on home-a28.log come out to the bit: 474,452 copies, 22,587 blends,
 1,354 layers and 120,662 at weight 0 (`LOCKSTEP_ANIM_POSES`). The weights come from the track's
 SetWeight (fn_80159D9C, clamped) and a mask's array (fn_80162F7C).
+The figure animator (T1, `animator::FigureAnimator`, `LOCKSTEP_ANIM_TRACKS`, home-tracks.log,
+which has every pose's track weight, flags and animation for the whole session: the '=' records
+after the first 40,000 carry no node states, only these). A Sim's tracks, in the order they are
+posed: the standing loop (+224), the walking loop (+188), the turn (+184), the current action
+(+164), the action before it still fading (+212), the carrying loop (+220) and the face layer.
+The study runs the log-driven replay and gives the animator each frame's input from the
+replay alone (`Replay::take_walk_frames` for the route followers' frames, `Replay::frame_plays`
+for the Animate plays and the speed each frame ran the animators at, the frames of a tick coming
+after its steps), never the logged weights, and compares the tracks it makes with the logged
+ones per Sim and frame: the same animations in the same order, places within 0.01, weights
+within 1e-3. The rules, as measured:
+- The standing loop (rate 30, +0.99 frames a frame) and the walking loop (rate 60, +1.98) play
+  every frame, wrapping at their last frame; a track below the topmost unmasked one at weight 1
+  is not posed (the carrying loop and the face have node weights and hide nothing).
+- The walking loop's weight is the walker's speed over its top (`routing::walk_step` run along:
+  grows by `walk_rates` growth a frame, brakes within its stopping distance of the walk's end
+  unless the walk runs on into state 5, the factor 5 goes at the top). It is set by the frames
+  that move the walker (state 2, and the first frame out of state 1) and kept after the walk (the
+  speed the walk ended at, 0.0301 after one) until the Sim starts an action; the next walk
+  starts the walker at the speed the last left. The loop starts at place 0 when its weight is set
+  after having been 0.
+- The turn on the spot (`a2o-standing-turn-90-cw` or `-ccw`, the 45 and 180 do not appear in the
+  home session; the child's are `c2o-`) plays while the follower is in state 1 (turning to the
+  walk's first leg) or 3 (arrived, turning to what it faces): its weight is the smoothstep
+  s(x) = 3x^2 - 2x^3 of x, which grows 0.033 / 0.2 a frame while the follower waits to turn and
+  falls by as much otherwise (so the fade out starts where the fade in stopped: 0.9188 then
+  0.7318 on an interrupted fade in), and the track is gone when x is not above 0. The place starts
+  at 0 and plays at +1.98 (the child's +0.99) a frame, wrapping; the animation is chosen by the
+  sign of the wrapped gap to the follower's target (positive ccw, negative or none cw), and a
+  direction that flips starts the place over.
+- A new Animate (`anim::Plays::serial`: a play that starts anew, the same animation or not)
+  starts at weight 1 on its first frame's place and puts the action before it at its last place,
+  fading by 1 - s(n * 0.033 / 0.1) (0.7452, 0.2682, 0.0003 and gone). The first frame of a route
+  also lets the action go the same way, and a new action clears the walking loop's weight.
+- The pose at the end of a backward play held on its first frame (`anim::Play`'s turned) takes
+  the last frame, not past it (`figure::pose_place`).
+- Tick 0 holds the load's 148 frames; the Sims' tracks begin with the last four of them.
+On home-tracks.log: the same 16,522 of 17,188 Sim poses (96.1%). What is left:
+- standing loop place 395: one frame of the first ticks (the third of tick 0) holds the Sims'
+  loops where the replay's frame speeds run them (the '#' records show a dip only at tick 1);
+  every later pose with the standing loop is 0.99 off.
+- the carrying loop 198: the loop starts at the walk's first frame after a Sim takes something
+  from the fridge (container set at tick 823, logged at 931) and ends where the action that puts
+  it down starts (tick 1335, container cleared at 1382); a pick up from the table starts it
+  at once. The container the world holds is not the track's switch.
+- the action's fade 39: about one in six new actions starts with no fade of the one before
+  (tick 19, 190, 741, 902, 1008, 1554, 1619 and others); it does not follow from how long the old
+  play has run (0 to 3 frames past its end either way).
+- turn direction 28: a gap of exactly pi (the sign of its float) and arrivals of walks whose
+  route the log has no plan for (no gap: ccw on the arrival frame, then either).
+- action place 3, walking animation 1, standing loop 2: single frames.
+Not measured: the 45 and 180 turns, the walk's start, stop and turn animations (none posed in the
+session), the fade timers at the fast-forward (the fast frames are 5 x 0.033, taken as such).
+In `play` the animator takes `Alone::sim_frames` (the frames each tick held, the walker's last
+frame and the Animate play) a tick at a time (`sims::Animators`), the walker's angle drives the
+figure while it walks or turns (`figure::root_angle`); the run alone has no state 1 (a walk starts
+walking), so its turns are the arrival's only.
 A Sim's tracks from the engine's state (A1, `figure::tracks`; the numbers are in "The Sims from
 the engine's state"). The animator's tracks that pose a Sim at ticks 1,039 and 1,040 are its
 action (weight 1, the base), its carrying loop (weight 1, node weights 1 on nodes 47 to 51)

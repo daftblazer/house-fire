@@ -62,6 +62,10 @@ pub struct Replay<'l> {
     pub(super) t: u32,
 }
 
+/// A Sim's Animate play after a frame (`Replay::frame_plays`): the Sim's object id, its animation's
+/// id, the play's place, whether it runs backward and the play's number (`anim::Plays::serial`).
+pub type FramePlay = (i16, u32, f32, bool, u32);
+
 /// The run as `Replay` makes it, to its end.
 /// One run of the club over the log: with bench, timed and not counted. The counts, or `None`
 /// if the log does not start with the lot loaded.
@@ -522,7 +526,7 @@ impl<'l> Replay<'l> {
     /// play's place, whether it runs backward and the number of the play (`Plays::serial`); and the
     /// speed that frame ran each Sim's animator at (the game's: 0 paused or while a Sim's animations
     /// load, 5 fast-forward), by object id. The run itself is not moved.
-    pub fn frame_plays(&self, tick: u32) -> Vec<(Vec<(i16, u32, f32, bool, u32)>, Vec<(i16, f32)>)> {
+    pub fn frame_plays(&self, tick: u32) -> Vec<(Vec<FramePlay>, Vec<(i16, f32)>)> {
         let Some(ar) = &self.h.anim else { return Vec::new() };
         let (mut m, mut next) = (ar.m.plays_copy(), ar.next);
         ar.run_frames(&mut m, &mut next, |f| f.0 < tick);
