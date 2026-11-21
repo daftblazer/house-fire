@@ -55,8 +55,9 @@ use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 const WIDTH: u32 = 640;
 const HEIGHT: u32 = 448;
 const WINDOW_SCALE: u32 = 2;
-/// The simulation's ticks a second, a frame each.
-const TICKS_PER_SECOND: f64 = 30.0;
+/// The pictures a second: the original's frames (`routing::FRAME_MS`), a tick every one or two
+/// of them (`routing::TICK_MS`), so a walk shows a step a picture.
+const FRAMES_PER_SECOND: f64 = 30.0;
 /// How long before a frame's time the wait turns from sleeping into spinning.
 const SPIN: Duration = Duration::from_micros(1500);
 /// The farthest the zoom goes: the farthest distance in the home log's camera records (their
@@ -230,8 +231,12 @@ struct Expect {
 /// The player's state around the simulation: the active Sim, the menu, the speed, the camera.
 struct Game<'l> {
     alone: Alone<'l>,
-    /// What the Sims did in the ticks since the last picture, for their figure animators.
-    sim_frames: Vec<Vec<housefire::replay::SimFrame>>,
+    /// What the Sims did in the ticks whose frames are not all shown yet, for their figure
+    /// animators, and how many of the first's frames are shown.
+    sim_frames: std::collections::VecDeque<(u32, Vec<housefire::replay::SimFrame>)>,
+    first_shown: u32,
+    /// The frames of the ticks run not yet shown.
+    frames_ready: u32,
     animators: sims::Animators,
     /// Whether the pictures take the Sims' figures (else `sim_frames` is not kept).
     figures: bool,
@@ -599,8 +604,9 @@ impl<'l> Game<'l> {
     /// One tick of the simulation (the dialog, if one opens, taken from the run).
     fn tick(&mut self) {
         self.alone.tick();
+        self.frames_ready += self.alone.tick_frames();
         if self.figures {
-            self.sim_frames.push(self.alone.sim_frames());
+            self.sim_frames.push_back((self.alone.tick_frames(), self.alone.sim_frames()));
         }
         let now = self.alone.ticks();
         if let Some(s) = &mut self.sound {
@@ -876,7 +882,7 @@ fn run(args: Args) -> Result<bool, String> {
     let interface = AptAssets::new(&disc);
     let font = interface.fonts.iter().find(|(n, _)| housefire::shader::name_hash(n) == INTERFACE_FONT).map(|(_, f)| f.clone()).ok_or("the interface's font")?;
     let ui = Ui::new(interface.flashes.clone());
-    let mut game = Game { alone, sim_frames: Vec::new(), animators: sims::Animators::default(), figures: false, lib: &lib, camera, active: None, target: None, menu: None, dialog: None, names, speed: 1, last_speed: 1, quit: false, expects: Vec::new(), sound: None, ui, hud: Hud::new(1), font, texts: Vec::new(), frames: 0, paused_frames: 0 };
+    let mut game = Game { alone, sim_frames: Default::default(), first_shown: 0, frames_ready: 0, animators: sims::Animators::default(), figures: false, lib: &lib, camera, active: None, target: None, menu: None, dialog: None, names, speed: 1, last_speed: 1, quit: false, expects: Vec::new(), sound: None, ui, hud: Hud::new(1), font, texts: Vec::new(), frames: 0, paused_frames: 0 };
     game.sound = make_sound(&disc, &args);
     game.alone.set_sound(game.sound.is_some());
     if let Some(s) = &mut game.sound {
@@ -951,7 +957,7 @@ fn run(args: Args) -> Result<bool, String> {
     let mut input = Input::default();
     let mut pad = if args.headless { None } else { gilrs::Gilrs::new().ok() };
     let (mut mesh_ids, mut texture_ids) = (Vec::new(), Vec::new());
-    let frame_length = Duration::from_secs_f64(1.0 / TICKS_PER_SECOND);
+    let frame_length = Duration::from_secs_f64(1.0 / FRAMES_PER_SECOND);
     let begin = Instant::now();
     let mut frames = 0u32;
     let mut shot_done = false;
@@ -975,13 +981,14 @@ fn run(args: Args) -> Result<bool, String> {
             for c in cmds {
                 game.apply(c);
             }
-            input.camera(&mut game, 1.0 / TICKS_PER_SECOND as f32);
+            input.camera(&mut game, 1.0 / FRAMES_PER_SECOND as f32);
             if app.closed {
                 break;
             }
         }
-        // the script's lines due now, and the ticks of the frame
-        let ticks_now = if args.headless && staged.is_none() { 1 } else { game.speed };
+        // the script's lines due now, and the ticks of the picture: in a window, enough for its
+        // frames (the speed's, a frame a picture at the normal speed); headless, a tick a picture
+        let frames_now = (!args.headless).then_some(game.speed);
         let mut ran = 0;
         loop {
             while next_script < script.len() && script[next_script].0 <= game.clock() {
@@ -996,8 +1003,10 @@ fn run(args: Args) -> Result<bool, String> {
             if args.shot.as_ref().is_some_and(|s| s.0 == game.clock()) && !shot_done {
                 break;
             }
-            if ran >= ticks_now {
-                break;
+            match frames_now {
+                Some(want) if game.frames_ready >= want => break,
+                None if ran >= 1 => break,
+                _ => {}
             }
             game.tick();
             ran += 1;
@@ -1007,6 +1016,8 @@ fn run(args: Args) -> Result<bool, String> {
             }
         }
         frames += 1;
+        let show = frames_now.map_or(game.frames_ready, |want| want.min(game.frames_ready));
+        game.frames_ready -= show;
         let shown_at = game.clock();
         if ran == 0 && game.speed == 0 {
             game.paused_frames += 1;
@@ -1021,10 +1032,16 @@ fn run(args: Args) -> Result<bool, String> {
             let tick = game.alone.ticks();
             let wardrobe = Wardrobe { rigs, cast, catalog: &catalog, skins, models: &lot.models, shaders: &lot.shaders };
             let mut figures = sims::figures_of(game.alone.world(), cast, &[]);
-            // the Sims' animators: stepped by the frames of the ticks since the last picture
+            // the Sims' animators: stepped by the picture's frames
             if let Some(c) = game.alone.catalog() {
-                for frames in std::mem::take(&mut game.sim_frames) {
-                    game.animators.step(c, game.alone.world(), cast, &frames);
+                for _ in 0..show {
+                    let Some((held, tick)) = game.sim_frames.front() else { break };
+                    game.animators.step_frame(c, game.alone.world(), cast, tick, game.first_shown);
+                    game.first_shown += 1;
+                    if game.first_shown >= *held {
+                        game.sim_frames.pop_front();
+                        game.first_shown = 0;
+                    }
                 }
                 game.animators.apply(c, &mut figures);
             }

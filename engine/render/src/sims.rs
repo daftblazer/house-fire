@@ -446,8 +446,10 @@ pub fn figures_of(world: &housefire::world::World, cast: &Cast, plays: &[(i16, u
         .collect()
 }
 
-/// The Sims' figure animators of a run alone (`play`): one for each Sim, stepped by the frames
-/// each tick held (`Alone::sim_frames`), and the angle each Sim faces while it walks or turns.
+/// The Sims' figure animators of a run alone (`play`): one for each Sim, stepped a frame at a
+/// time by what each tick held (`Alone::sim_frames`), the angle each Sim faces while it walks or
+/// turns and, while it walks, the place its walker had after the frame (the world holds only the
+/// tick's last, rounded).
 #[derive(Default)]
 pub struct Animators {
     by_id: HashMap<i16, SimAnimation>,
@@ -457,40 +459,52 @@ struct SimAnimation {
     animator: Option<FigureAnimator>,
     walking: bool,
     angle: Option<f32>,
+    place: Option<[f32; 2]>,
 }
 
 impl Animators {
-    /// Steps the Sims' animators by the frames of one tick (`frames`: what each Sim did in it).
+    /// Steps the Sims' animators by all the frames of one tick (`frames`: what each Sim did in it).
     pub fn step(&mut self, catalog: &housefire::anim::Catalog, world: &housefire::world::World, cast: &Cast, frames: &[SimFrame]) {
+        let most = frames.iter().map(|sf| sf.frames).max().unwrap_or(0);
+        for k in 0..most {
+            self.step_frame(catalog, world, cast, frames, k);
+        }
+    }
+
+    /// Steps the Sims' animators by frame `k` of one tick (a picture a frame, as the original
+    /// draws them: a tick holds one or two of them).
+    pub fn step_frame(&mut self, catalog: &housefire::anim::Catalog, world: &housefire::world::World, cast: &Cast, frames: &[SimFrame], k: u32) {
         let holders: std::collections::HashSet<i16> = world.objects().filter_map(|h| h.data.get(housefire::world::DATA_CONTAINER).copied()).collect();
-        for sf in frames {
+        for sf in frames.iter().filter(|sf| k < sf.frames) {
             let Some(o) = world.find_object(sf.id) else { continue };
             let Some(description) = o.person_data.get(31).and_then(|n| cast.description(*n)) else { continue };
-            let state = self.by_id.entry(sf.id).or_insert_with(|| SimAnimation { animator: FigureAnimator::new(catalog, Body { adult: description.adult, male: description.male }), walking: false, angle: None });
-            let walker = sf.walker.map(|w| WalkerFrame { starts: w.starts || !state.walking, speed_fraction: w.speed_fraction, turn: w.turn_gap.map(Turn::of_gap) });
+            let state = self.by_id.entry(sf.id).or_insert_with(|| SimAnimation { animator: FigureAnimator::new(catalog, Body { adult: description.adult, male: description.male }), walking: false, angle: None, place: None });
+            let step = sf.steps.get(k as usize).copied().flatten();
+            let w = step.map(|s| s.walker);
+            let walker = w.map(|w| WalkerFrame { starts: w.starts || !state.walking, speed_fraction: w.speed_fraction, turn: w.turn_gap.map(Turn::of_gap) });
             state.walking = walker.is_some();
+            state.place = step.map(|s| s.place);
             // the angle held after a walk while the world's direction still is the eighth it is in
-            state.angle = match sf.walker {
+            state.angle = match w {
                 Some(w) => Some(w.angle),
                 None => state.angle.filter(|a| (a / std::f32::consts::FRAC_PI_4).round().rem_euclid(8.0) as u8 % 8 == figure::heading_of_facing(o.facing())),
             };
             let action = sf.action.map(|a| ActionPlay { anim: a.anim, place: a.place, backward: a.backward, serial: a.serial });
             let (carrying, mood) = (holders.contains(&sf.id), o.motives.get(figure::FACE_MOTIVE).copied().unwrap_or(0.0));
             let Some(animator) = &mut state.animator else { continue };
-            for k in 0..sf.frames {
-                // (the walk's start and a new route's counts once, in the tick's first frame)
-                let walker = walker.map(|w| WalkerFrame { starts: w.starts && k == 0, ..w });
-                animator.frame(&Frame { speed: 1.0, walker, action, carrying, mood });
-            }
+            animator.frame(&Frame { speed: 1.0, walker, action, carrying, mood });
         }
     }
 
-    /// Gives each figure the tracks and the angle its animator has.
+    /// Gives each figure the tracks, the angle and (while it walks) the place its animator has.
     pub fn apply(&self, catalog: &housefire::anim::Catalog, figures: &mut [Figure]) {
         for f in figures {
             if let Some(state) = self.by_id.get(&f.id) {
                 f.posed = state.animator.as_ref().map(|a| a.poses(catalog));
                 f.facing = state.angle;
+                if let Some(p) = state.place {
+                    f.place = p;
+                }
             }
         }
     }

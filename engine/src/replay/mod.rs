@@ -95,7 +95,7 @@ mod study;
 mod variables;
 mod walks;
 
-pub use alone::{Alone, AloneReport, AloneRun, DialogAsk, MenuEntry, Motion, SimAction, SimFrame, SimWalker, alone, dialog_tokens};
+pub use alone::{Alone, AloneReport, AloneRun, DialogAsk, MenuEntry, Motion, SimAction, SimFrame, SimStep, SimWalker, alone, dialog_tokens};
 pub use counts::{Bench, Counts};
 pub use drive::{DriveReport, Parting, drive};
 pub use run::{FramePlay, FrameState, Replay, run};

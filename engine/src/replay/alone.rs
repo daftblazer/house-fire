@@ -46,7 +46,7 @@ pub enum Motion {
 }
 
 /// What one Sim did in a tick, as its figure shows it (`Alone::sim_frames`).
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SimFrame {
     /// The Sim's object id.
     pub id: i16,
@@ -54,6 +54,16 @@ pub struct SimFrame {
     pub frames: u32,
     pub walker: Option<SimWalker>,
     pub action: Option<SimAction>,
+    /// Its walker after each of the tick's frames (`frames` of them; none where it had no
+    /// walker): a picture a frame shows the walk as the original's does, a step at a time.
+    pub steps: Vec<Option<SimStep>>,
+}
+
+/// A Sim's walker after one frame: where it stands (tiles, unrounded) and how it walks.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SimStep {
+    pub place: [f32; 2],
+    pub walker: SimWalker,
 }
 
 /// A Sim's walker at the end of a tick.
@@ -91,6 +101,10 @@ pub struct Tally {
     turns: BTreeMap<i16, (u32, i16)>,
     /// The walks going on, by the walking object.
     pub(super) walks: BTreeMap<i16, Walker>,
+    /// The walkers after each frame of the tick in hand, by object (for the pictures only), and
+    /// the frames of it run so far.
+    steps: BTreeMap<i16, Vec<Option<SimStep>>>,
+    steps_run: u32,
     /// The speed each walker's last walk left it (the next starts at it).
     speeds: BTreeMap<i16, f32>,
     /// The way (a unit step) a Sim's route crosses at the door whose portal it was sent through.
@@ -344,9 +358,15 @@ impl DriveHost<'_> {
     /// walker gives it (the route follower's frame, `docs/simulation.md`, "The walker's step").
     pub(super) fn walker_frames(&mut self, n: u32) {
         let Some(t) = self.tally.as_mut() else { return };
+        let first = t.steps_run as usize;
+        t.steps_run += n;
         for (&id, w) in t.walks.iter_mut() {
-            for _ in 0..n {
+            let steps = t.steps.entry(id).or_default();
+            for k in 0..n as usize {
                 w.frame();
+                steps.resize(first + k, None);
+                let walker = SimWalker { starts: w.just_started(), speed_fraction: w.speed_fraction(), turn_gap: w.turn_gap(), angle: w.angle() };
+                steps.push(Some(SimStep { place: [w.at.0 / 16.0, w.at.1 / 16.0], walker }));
             }
             if let Some(k) = self.world.find(id) {
                 let o = self.world.get_mut(k);
@@ -703,7 +723,9 @@ impl<'l> Alone<'l> {
                     let (anim, play) = a.m.play(sim)?;
                     (open || !play.answered()).then(|| SimAction { anim, place: play.place(), backward: play.backward(), serial: a.m.serial(sim).unwrap_or(0) })
                 });
-                SimFrame { id, frames: self.frames, walker, action }
+                let mut steps = t.steps.get(&id).cloned().unwrap_or_default();
+                steps.resize(self.frames as usize, None);
+                SimFrame { id, frames: self.frames, walker, action, steps }
             })
             .collect()
     }
@@ -871,6 +893,10 @@ impl<'l> Alone<'l> {
         // the route followers' frames: all but the last of the tick's frames before it, the last
         // after it (the frame whose time makes the tick due runs the tick, then its followers)
         let frames = self.frames;
+        if let Some(t) = d.host.tally.as_mut() {
+            t.steps.clear();
+            t.steps_run = 0;
+        }
         d.host.walker_frames(frames.saturating_sub(1));
         d.sim.tick(&mut d.host);
         d.host.walker_frames(frames.min(1));
@@ -892,6 +918,11 @@ impl<'l> Alone<'l> {
                 println!("tick {t} sim {id}: {} {}{} queue {queue} motives {motives} deltas {:?} m9 {} top {top:?}", frames.join(" "), if i.asleep() { "asleep " } else { "" }, if i.done() { "DONE" } else { "" }, d.host.world.get(k).motive_deltas, d.host.world.get(k).motives[9]);
             }
         }
+    }
+
+    /// The animation frames the last tick held (one or two at the normal speed).
+    pub fn tick_frames(&self) -> u32 {
+        self.frames
     }
 
     /// The generator's state (what a resumed run of this world needs for the same run: the save does not hold it).
