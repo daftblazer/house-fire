@@ -47,8 +47,6 @@ impl Turn {
 pub struct WalkerFrame {
     /// The route's first frame: the Sim's action ends (it fades out).
     pub starts: bool,
-    /// Its first frame that moves: the walking loop starts over.
-    pub moves_off: bool,
     /// The walker's speed over its top, when it walks this frame (the weight of the walking loop).
     pub speed_fraction: Option<f32>,
     /// The turn on the spot it waits for, when it does (before its walk and after its arrival).
@@ -224,7 +222,8 @@ impl FigureAnimator {
     pub fn frame(&mut self, cat: &Catalog, f: &Frame) {
         let dt = WALK_FRAME * f.speed;
         self.stand_place = self.stand.step(self.stand_place, f.speed);
-        if f.walker.is_some_and(|w| w.moves_off) {
+        // (the walking loop starts over when the walker first sets its weight)
+        if f.walker.is_some_and(|w| w.speed_fraction.is_some()) && self.walk_weight == 0.0 {
             self.walk_place = 0.0;
         }
         self.walk_place = self.walk.step(self.walk_place, f.speed);

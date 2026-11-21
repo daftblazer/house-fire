@@ -517,18 +517,21 @@ impl<'l> Replay<'l> {
         m.iter().filter_map(|(sim, id, play)| Some((*self.ids.get(&sim)?, id, play.place(), play.backward()))).collect()
     }
 
-    /// The Sims' plays after each frame of `tick` (the frames the log's clock puts in it, as
-    /// `sim_plays` takes the first): per frame, the Sim's object id, its animation's id, the
-    /// play's place, whether it runs backward and the number of the play (`Plays::serial`). The
-    /// run itself is not moved.
-    pub fn frame_plays(&self, tick: u32) -> Vec<Vec<(i16, u32, f32, bool, u32)>> {
+    /// The Sims' plays after each frame of `tick` (the frames the log's clock puts in it, which
+    /// run after the tick's steps): per frame, per Sim the object id, its animation's id, the
+    /// play's place, whether it runs backward and the number of the play (`Plays::serial`); and the
+    /// speed that frame ran each Sim's animator at (the game's: 0 paused or while a Sim's animations
+    /// load, 5 fast-forward), by object id. The run itself is not moved.
+    pub fn frame_plays(&self, tick: u32) -> Vec<(Vec<(i16, u32, f32, bool, u32)>, Vec<(i16, f32)>)> {
         let Some(ar) = &self.h.anim else { return Vec::new() };
         let (mut m, mut next) = (ar.m.plays_copy(), ar.next);
         ar.run_frames(&mut m, &mut next, |f| f.0 < tick);
         let mut out = Vec::new();
         while ar.frames.get(next).is_some_and(|f| f.0 == tick) {
-            ar.run_frames_up_to(&mut m, &mut next, 1, |f| f.0 == tick);
-            out.push(m.iter().filter_map(|(sim, id, play)| Some((*self.ids.get(&sim)?, id, play.place(), play.backward(), m.serial(sim)?))).collect());
+            ar.run_frames_each(&mut m, &mut next, 1, |f| f.0 == tick, |plays, speed| {
+                let playing = plays.iter().filter_map(|(sim, id, play)| Some((*self.ids.get(&sim)?, id, play.place(), play.backward(), plays.serial(sim)?))).collect();
+                out.push((playing, ar.owner_of.keys().filter_map(|sim| Some((*self.ids.get(sim)?, speed(*sim)))).collect()));
+            });
         }
         out
     }

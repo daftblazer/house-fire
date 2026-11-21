@@ -144,6 +144,11 @@ pub fn animator_tracks(log: &housefire::tree_log::Log, d: &Disc, lib: &Library, 
     for r in &log.speeds {
         speeds.entry((r.owner, r.tick)).or_default().push(r.after.abs());
     }
+    if std::env::var_os("TRACKS_SPEEDS").is_some() {
+        for r in log.speeds.iter().filter(|r| r.tick <= 2) {
+            println!("  speed t{} owner {:x} {} -> {} state {:x?}", r.tick, r.owner, r.before, r.after, r.state);
+        }
+    }
     let mut animators: BTreeMap<i16, FigureAnimator> = BTreeMap::new();
     let mut walk_state: BTreeMap<u32, u32> = BTreeMap::new();
     let mut walk_speed: BTreeMap<u32, f32> = BTreeMap::new();
@@ -194,8 +199,7 @@ pub fn animator_tracks(log: &housefire::tree_log::Log, d: &Disc, lib: &Library, 
                     None => continue,
                 },
             };
-            let speeds = speeds.get(&(owner, tick));
-            let mine: Vec<&WalkFrame> = walks.iter().filter(|w| w.person == id).collect();
+                        let mine: Vec<&WalkFrame> = walks.iter().filter(|w| w.person == id).collect();
             let frames = frame_plays.len();
             let mut made: Vec<Vec<Posed>> = Vec::new();
             for j in 0..frames {
@@ -203,13 +207,13 @@ pub fn animator_tracks(log: &housefire::tree_log::Log, d: &Disc, lib: &Library, 
                     let starts = w.before == 1 && walk_state.get(&w.follower).is_none_or(|s| *s != 1);
                     walk_state.insert(w.follower, w.after);
                     let gap = w.raw_before;
-                    WalkerFrame { starts, moves_off: w.before == 1 && w.after == 2, speed_fraction: speed_fraction(w, walk_speed.entry(w.follower).or_default()), turn: (w.after == 1 || w.after == 3).then(|| Turn::of_gap(gap)) }
+                    WalkerFrame { starts, speed_fraction: speed_fraction(w, walk_speed.entry(w.follower).or_default()), turn: (w.after == 1 || w.after == 3).then(|| Turn::of_gap(gap)) }
                 });
-                let action = frame_plays[j].iter().find(|p| p.0 == id).map(|p| ActionPlay { anim: p.1, place: p.2, backward: p.3, serial: p.4 });
+                let action = frame_plays[j].0.iter().find(|p| p.0 == id).map(|p| ActionPlay { anim: p.1, place: p.2, backward: p.3, serial: p.4 });
                 if std::env::var("TRACKS_DEBUG").is_ok_and(|v| v.parse() == Ok(id)) && (std::env::var("TRACKS_LO").ok().and_then(|v| v.parse().ok()).unwrap_or(0)..=std::env::var("TRACKS_HI").ok().and_then(|v| v.parse().ok()).unwrap_or(0)).contains(&tick) {
                     println!("  dbg tick {tick} frame {j}/{frames} walker {walker:?} z {:?} action {action:?}", mine.get(j));
                 }
-                let speed = speeds.and_then(|v| v.get(j).or(v.last())).copied().unwrap_or(1.0);
+                let speed = frame_plays[j].1.iter().find(|p| p.0 == id).map_or(1.0, |p| p.1);
                 animator.frame(&catalog, &Frame { speed, walker, action, carrying, mood });
                 made.push(animator.poses(&catalog));
             }

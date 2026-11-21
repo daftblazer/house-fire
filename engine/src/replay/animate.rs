@@ -183,6 +183,12 @@ impl AnimReplay {
 
     /// `run_frames`, at most `most` of them.
     pub(super) fn run_frames_up_to(&self, m: &mut crate::anim::Plays, next: &mut usize, most: usize, due: impl Fn(&(u32, usize)) -> bool) {
+        self.run_frames_each(m, next, most, due, |_, _| {});
+    }
+
+    /// `run_frames_up_to`, telling `each` the plays after each frame and the speed the frame ran
+    /// each Sim at.
+    pub(super) fn run_frames_each(&self, m: &mut crate::anim::Plays, next: &mut usize, most: usize, due: impl Fn(&(u32, usize)) -> bool, mut each: impl FnMut(&crate::anim::Plays, &dyn Fn(u32) -> f32)) {
         let mut done = 0;
         while done < most
             && let Some(&(tick, at)) = self.frames.get(*next).filter(|f| due(f))
@@ -191,7 +197,9 @@ impl AnimReplay {
             done += 1;
             if let Some(own) = &self.own {
                 let owner_of = &self.owner_of;
-                m.frame(|sim| owner_of.get(&sim).and_then(|o| own.get(o)).and_then(|v| v[..v.partition_point(|r| r.0 <= at)].last()).map_or(1.0, |r| r.1));
+                let speed = |sim: u32| owner_of.get(&sim).and_then(|o| own.get(o)).and_then(|v| v[..v.partition_point(|r| r.0 <= at)].last()).map_or(1.0, |r| r.1);
+                m.frame(speed);
+                each(m, &speed);
                 continue;
             }
             let stopped = self.misses.get(&tick);
@@ -202,7 +210,7 @@ impl AnimReplay {
             if env("REPLAY_SHOW_FRAME_SPEED").and_then(|v| v.split_once(',').map(|(a, b)| (atoi(a) as u32, atoi(b) as u32))).is_some_and(|(a, b)| (a..=b).contains(&tick)) {
                 println!("frame {} tick {tick} at {at}: fast {fast} paused {all_paused} stopped {:?}", *next - 1, stopped.map(|s| s.len()));
             }
-            m.frame(|sim| {
+            let speed = |sim: u32| {
                 if all_paused || stopped.is_some_and(|st| st.contains(&sim) || animating.is_some_and(|a| a.contains(&sim))) {
                     0.0
                 } else if let Some(v) = held {
@@ -212,7 +220,9 @@ impl AnimReplay {
                 } else {
                     1.0
                 }
-            });
+            };
+            m.frame(speed);
+            each(m, &speed);
         }
     }
 }
