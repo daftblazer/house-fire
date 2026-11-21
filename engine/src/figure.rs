@@ -108,7 +108,13 @@ pub fn sim_names(ngh: &[u8]) -> HashMap<i16, String> {
 /// A Sim's root matrix: its place on the lot (tiles) and its heading, a turn of `heading` eighths
 /// about the vertical.
 pub fn root(x: f32, y: f32, heading: u8) -> Mat4 {
-    let (s, c) = (f32::from(heading) * std::f32::consts::FRAC_PI_4).sin_cos();
+    root_angle(x, y, f32::from(heading) * std::f32::consts::FRAC_PI_4)
+}
+
+/// A Sim's root matrix at a place (tiles), turned `angle` radians about the vertical (the route
+/// follower's facing angle: 0 towards +y, growing towards -x).
+pub fn root_angle(x: f32, y: f32, angle: f32) -> Mat4 {
+    let (s, c) = angle.sin_cos();
     let mut m = skeleton::IDENTITY;
     (m[0], m[1], m[4], m[5], m[12], m[13]) = (c, s, -s, c, x, y);
     m
@@ -284,11 +290,30 @@ pub fn tracks<'a>(catalog: &'a Catalog, stance: &Stance, masks: &'a Masks) -> Ve
     out
 }
 
+/// The tracks the figure animator poses (`animator::FigureAnimator::poses`) as the pose takes
+/// them: the carrying loop and the face with their node weights, the face as a layer.
+pub fn tracks_of<'a>(catalog: &'a Catalog, posed: &[crate::animator::Posed], masks: &'a Masks) -> Vec<Track<'a>> {
+    use crate::animator::Slot;
+    posed
+        .iter()
+        .filter_map(|p| {
+            let anim = catalog.by_id.get(&p.anim)?;
+            let (layer, nodes) = match p.slot {
+                Slot::Carrying => (false, Some(&masks.carry[..])),
+                Slot::Face => (true, Some(&masks.face[..])),
+                _ => (false, None),
+            };
+            Some(Track { anim, place: p.place, weight: p.weight, layer, nodes })
+        })
+        .collect()
+}
+
 /// The place along an animation's frames of a play `at` frames in: a backward play runs from the
-/// last frame down.
+/// last frame down, held on the last frame when it is paused on it and goes on forward (`at` below 0,
+/// `anim::Play`).
 pub fn pose_place(frames: u32, at: f32, backward: bool) -> f32 {
     let last = frames.saturating_sub(1) as f32;
-    if backward { (last - at).max(0.0) } else { at.min(last) }
+    if backward { (last - at).clamp(0.0, last) } else { at.min(last) }
 }
 
 /// The heading (`root`'s eighths) of a Sim by its facing, data field 1 as the save gives it

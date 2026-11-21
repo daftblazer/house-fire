@@ -219,7 +219,7 @@ impl FigureAnimator {
     }
 
     /// One original frame.
-    pub fn frame(&mut self, cat: &Catalog, f: &Frame) {
+    pub fn frame(&mut self, f: &Frame) {
         let dt = WALK_FRAME * f.speed;
         self.stand_place = self.stand.step(self.stand_place, f.speed);
         // (the walking loop starts over when the walker first sets its weight)
@@ -238,6 +238,9 @@ impl FigureAnimator {
             } else if let Some(act) = &mut self.acting {
                 act.place = a.place;
             }
+        } else {
+            // (no play any more: the Sim's interaction is over)
+            self.end_action();
         }
         if let Some(w) = f.walker {
             if w.starts {
@@ -288,7 +291,7 @@ impl FigureAnimator {
     pub fn poses(&self, cat: &Catalog) -> Vec<Posed> {
         let mut out: Vec<Posed> = Vec::new();
         // a base track at weight 1 hides every one before it
-        let mut base = |out: &mut Vec<Posed>, p: Posed| {
+        let base = |out: &mut Vec<Posed>, p: Posed| {
             if p.weight >= 1.0 {
                 out.clear();
             }

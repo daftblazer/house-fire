@@ -12,7 +12,9 @@ use crate::frame::*;
 use crate::scene::{mesh_of, Assets, Class, DrawInfo, Scene, PORTRAIT_BACKDROP, PORTRAIT_BACKDROP_COLOUR};
 use housefire::anim::Catalog;
 use housefire::drawlist::{Kind, Models};
+use housefire::animator::{ActionPlay, Body, FigureAnimator, Frame, Turn, WalkerFrame};
 use housefire::figure::{self, Cast, Rigs};
+use housefire::replay::SimFrame;
 use housefire::lighting::LotLights;
 use housefire::outfit::{Description, Slot};
 use housefire::shader::{name_hash, Shader};
@@ -33,6 +35,10 @@ pub struct Figure {
     pub carrying: bool,
     /// Its mood motive (`figure::FACE_MOTIVE`), the weight of its face track times 100.
     pub mood: f32,
+    /// The tracks its figure animator poses it from (`Animators::apply`); none: the stance's.
+    pub posed: Option<Vec<housefire::animator::Posed>>,
+    /// The angle it faces while it walks or turns (radians, `figure::root_angle`); none: `heading`.
+    pub facing: Option<f32>,
 }
 
 /// The parts of a Sim's outfit in the order the house's draws take them (the records of the
@@ -235,7 +241,8 @@ impl Figure {
         figure::Stance { action: self.play, carrying: self.carrying, mood: self.mood, adult: self.description.adult }
     }
 
-    /// Its bones in the form the renderer takes, at `heading`, each read from fresh streams.
+    /// Its bones in the form the renderer takes, at `heading` (the figure's own angle, when it
+    /// has one, for its own heading), each read from fresh streams.
     fn bone_rows(&self, w: &Wardrobe, heading: u8) -> Vec<Mat3x4> {
         self.bone_rows_kept(w, heading, &mut figure::KeptStreams::default())
     }
@@ -245,8 +252,15 @@ impl Figure {
     fn bone_rows_kept(&self, w: &Wardrobe, heading: u8, kept: &mut figure::KeptStreams) -> Vec<Mat3x4> {
         let nodes = w.rigs.of(&self.description);
         let masks = figure::Masks::new(nodes.len());
-        let tracks = figure::tracks(w.catalog, &self.stance(), &masks);
-        figure::bones_kept(nodes, &tracks, &figure::root(self.place[0], self.place[1], heading), kept).iter().map(figure::rows).collect()
+        let tracks = match &self.posed {
+            Some(posed) => figure::tracks_of(w.catalog, posed, &masks),
+            None => figure::tracks(w.catalog, &self.stance(), &masks),
+        };
+        let root = match self.facing {
+            Some(angle) if heading == self.heading => figure::root_angle(self.place[0], self.place[1], angle),
+            _ => figure::root(self.place[0], self.place[1], heading),
+        };
+        figure::bones_kept(nodes, &tracks, &root, kept).iter().map(figure::rows).collect()
     }
 }
 
@@ -427,46 +441,59 @@ pub fn figures_of(world: &housefire::world::World, cast: &Cast, plays: &[(i16, u
             let heading = figure::heading_of_facing(o.facing());
             let carrying = world.objects().any(|h| h.data.get(housefire::world::DATA_CONTAINER) == Some(&o.id()));
             let mood = o.motives.get(figure::FACE_MOTIVE).copied().unwrap_or(0.0);
-            Some(Figure { id: o.id(), description, place: [o.x16 as f32 / 16.0, o.y16 as f32 / 16.0], heading, play, carrying, mood })
+            Some(Figure { id: o.id(), description, place: [o.x16 as f32 / 16.0, o.y16 as f32 / 16.0], heading, play, carrying, mood, posed: None, facing: None })
         })
         .collect()
 }
 
-/// The animations a Sim shows with none of its own playing, by the description's kind: the
-/// walking loop (the adult woman has her own) and the standing loop.
-fn base_animation(d: &housefire::outfit::Description, walking: bool) -> [&'static str; 2] {
-    match (d.adult, d.male, walking) {
-        (true, true, true) => ["a2o-walking-loop", "a2o-standing-loop"],
-        (true, false, true) => ["a2o-walking-female-loop", "a2o-walking-loop"],
-        (false, _, true) => ["c2o-walking-loop", "a2o-walking-loop"],
-        (true, _, false) => ["a2o-standing-loop", "a2o-standing-loop"],
-        (false, _, false) => ["c2o-standing-loop", "a2o-standing-loop"],
-    }
+/// The Sims' figure animators of a run alone (`play`): one for each Sim, stepped by the frames
+/// each tick held (`Alone::sim_frames`), and the angle each Sim faces while it walks or turns.
+#[derive(Default)]
+pub struct Animators {
+    by_id: HashMap<i16, SimAnimation>,
 }
 
-/// The plays (Sim, animation id, frames along it, backward) of the Sims of a run alone
-/// (`Alone::motions`): an animation played as it is; a walker the walk cycle of its kind at its
-/// time in it; any other Sim its standing loop (held at its first frame).
-pub fn plays_of(world: &housefire::world::World, cast: &Cast, catalog: &housefire::anim::Catalog, motions: &[(i16, housefire::replay::Motion)]) -> Vec<(i16, u32, f32, bool)> {
-    use housefire::replay::Motion;
-    motions
-        .iter()
-        .filter_map(|&(id, motion)| {
-            if let Motion::Playing(anim, place, backward) = motion {
-                return Some((id, anim, place, backward));
-            }
-            let description = cast.description(world.find_object(id)?.person_data.get(31).copied()?)?;
-            let walking = matches!(motion, Motion::Walking(_));
-            let names = base_animation(description, walking);
-            let (anim, id_of) = names.iter().find_map(|n| Some((catalog.by_name(n)?, catalog.id_of(n)?)))?;
-            // a loop: the walk's frames come round at the animation's own rate
-            let at = match motion {
-                Motion::Walking(seconds) => (seconds * anim.rate) % anim.frames.saturating_sub(1).max(1) as f32,
-                _ => 0.0,
+struct SimAnimation {
+    animator: Option<FigureAnimator>,
+    walking: bool,
+    angle: Option<f32>,
+}
+
+impl Animators {
+    /// Steps the Sims' animators by the frames of one tick (`frames`: what each Sim did in it).
+    pub fn step(&mut self, catalog: &housefire::anim::Catalog, world: &housefire::world::World, cast: &Cast, frames: &[SimFrame]) {
+        let holders: std::collections::HashSet<i16> = world.objects().filter_map(|h| h.data.get(housefire::world::DATA_CONTAINER).copied()).collect();
+        for sf in frames {
+            let Some(o) = world.find_object(sf.id) else { continue };
+            let Some(description) = o.person_data.get(31).and_then(|n| cast.description(*n)) else { continue };
+            let state = self.by_id.entry(sf.id).or_insert_with(|| SimAnimation { animator: FigureAnimator::new(catalog, Body { adult: description.adult, male: description.male }), walking: false, angle: None });
+            let walker = sf.walker.map(|w| WalkerFrame { starts: w.starts || !state.walking, speed_fraction: w.speed_fraction, turn: w.turn_gap.map(Turn::of_gap) });
+            state.walking = walker.is_some();
+            // the angle held after a walk while the world's direction still is the eighth it is in
+            state.angle = match sf.walker {
+                Some(w) => Some(w.angle),
+                None => state.angle.filter(|a| (a / std::f32::consts::FRAC_PI_4).round().rem_euclid(8.0) as u8 % 8 == figure::heading_of_facing(o.facing())),
             };
-            Some((id, id_of, at, false))
-        })
-        .collect()
+            let action = sf.action.map(|a| ActionPlay { anim: a.anim, place: a.place, backward: a.backward, serial: a.serial });
+            let (carrying, mood) = (holders.contains(&sf.id), o.motives.get(figure::FACE_MOTIVE).copied().unwrap_or(0.0));
+            let Some(animator) = &mut state.animator else { continue };
+            for k in 0..sf.frames {
+                // (the walk's start and a new route's counts once, in the tick's first frame)
+                let walker = walker.map(|w| WalkerFrame { starts: w.starts && k == 0, ..w });
+                animator.frame(&Frame { speed: 1.0, walker, action, carrying, mood });
+            }
+        }
+    }
+
+    /// Gives each figure the tracks and the angle its animator has.
+    pub fn apply(&self, catalog: &housefire::anim::Catalog, figures: &mut [Figure]) {
+        for f in figures {
+            if let Some(state) = self.by_id.get(&f.id) {
+                f.posed = state.animator.as_ref().map(|a| a.poses(catalog));
+                f.facing = state.angle;
+            }
+        }
+    }
 }
 
 /// The Sim whose portrait a log-mode frame shows: the one whose outfit holds the most of the

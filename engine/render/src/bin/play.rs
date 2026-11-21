@@ -230,6 +230,11 @@ struct Expect {
 /// The player's state around the simulation: the active Sim, the menu, the speed, the camera.
 struct Game<'l> {
     alone: Alone<'l>,
+    /// What the Sims did in the ticks since the last picture, for their figure animators.
+    sim_frames: Vec<Vec<housefire::replay::SimFrame>>,
+    animators: sims::Animators,
+    /// Whether the pictures take the Sims' figures (else `sim_frames` is not kept).
+    figures: bool,
     lib: &'l Library,
     camera: Camera,
     active: Option<i16>,
@@ -594,6 +599,9 @@ impl<'l> Game<'l> {
     /// One tick of the simulation (the dialog, if one opens, taken from the run).
     fn tick(&mut self) {
         self.alone.tick();
+        if self.figures {
+            self.sim_frames.push(self.alone.sim_frames());
+        }
         let now = self.alone.ticks();
         if let Some(s) = &mut self.sound {
             let requests = self.alone.take_sound_requests();
@@ -868,7 +876,7 @@ fn run(args: Args) -> Result<bool, String> {
     let interface = AptAssets::new(&disc);
     let font = interface.fonts.iter().find(|(n, _)| housefire::shader::name_hash(n) == INTERFACE_FONT).map(|(_, f)| f.clone()).ok_or("the interface's font")?;
     let ui = Ui::new(interface.flashes.clone());
-    let mut game = Game { alone, lib: &lib, camera, active: None, target: None, menu: None, dialog: None, names, speed: 1, last_speed: 1, quit: false, expects: Vec::new(), sound: None, ui, hud: Hud::new(1), font, texts: Vec::new(), frames: 0, paused_frames: 0 };
+    let mut game = Game { alone, sim_frames: Vec::new(), animators: sims::Animators::default(), figures: false, lib: &lib, camera, active: None, target: None, menu: None, dialog: None, names, speed: 1, last_speed: 1, quit: false, expects: Vec::new(), sound: None, ui, hud: Hud::new(1), font, texts: Vec::new(), frames: 0, paused_frames: 0 };
     game.sound = make_sound(&disc, &args);
     game.alone.set_sound(game.sound.is_some());
     if let Some(s) = &mut game.sound {
@@ -937,6 +945,7 @@ fn run(args: Args) -> Result<bool, String> {
         let log_scene = drawn_ticks.first().map(|&t| assets.scene(&log, t));
         let skins = log_scene.as_ref().map_or_else(SimSkins::default, SimSkins::from_scene).with_disc(&disc);
         staged = Some((Builder::new(&assets, lot), rigs, cast, skins));
+        game.figures = true;
     }
     let mut painter = Painter::new(&interface);
     let mut input = Input::default();
@@ -1011,8 +1020,14 @@ fn run(args: Args) -> Result<bool, String> {
         if let (Some((builder, rigs, cast, skins)), Some(renderer), Some(lot)) = (&mut staged, &mut renderer, &lot_art) {
             let tick = game.alone.ticks();
             let wardrobe = Wardrobe { rigs, cast, catalog: &catalog, skins, models: &lot.models, shaders: &lot.shaders };
-            let plays = game.alone.catalog().map(|c| sims::plays_of(game.alone.world(), cast, c, &game.alone.motions())).unwrap_or_default();
-            let figures = sims::figures_of(game.alone.world(), cast, &plays);
+            let mut figures = sims::figures_of(game.alone.world(), cast, &[]);
+            // the Sims' animators: stepped by the frames of the ticks since the last picture
+            if let Some(c) = game.alone.catalog() {
+                for frames in std::mem::take(&mut game.sim_frames) {
+                    game.animators.step(c, game.alone.world(), cast, &frames);
+                }
+                game.animators.apply(c, &mut figures);
+            }
             builder.build_with(game.alone.world(), tick, game.view(), Some((&wardrobe, &figures, None)));
             let frame = upload(builder, renderer, &mut mesh_ids, &mut texture_ids);
             // the interface: the movies' pieces and the game's own lines of text over the scene

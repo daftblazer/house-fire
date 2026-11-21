@@ -7,7 +7,7 @@
 //! Not modelled: the run on after a door's walk (state 5, the walker's object data 9) and the
 //! game's other speeds (every frame is the normal speed, factor 1).
 
-use crate::routing::{along_line, direction_angle, facing_direction, turn_frames, turn_towards, walk_rates, walk_step, WALK_FRAME};
+use crate::routing::{along_line, direction_angle, facing_direction, turn_frames, turn_gap, turn_towards, walk_rates, walk_step, WALK_FRAME};
 
 /// Where a walker is in its walk.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -61,6 +61,31 @@ impl Walker {
     /// The speed it carries into its next walk.
     pub fn speed(&self) -> f32 {
         self.speed
+    }
+
+    /// Its speed over its top while it walks its line (the weight of the walking loop,
+    /// `animator`): none once it has arrived.
+    pub fn speed_fraction(&self) -> Option<f32> {
+        (self.phase == Phase::Walking && self.top > 0.0).then(|| self.speed / self.top)
+    }
+
+    /// How far it has still to turn (radians, signed as `routing::turn_gap`) to face what it
+    /// walked to, while it has arrived and turns on the spot; none otherwise.
+    pub fn turn_gap(&self) -> Option<f32> {
+        let Phase::Turning(_) = self.phase else { return None };
+        let f = self.faced?;
+        Some(turn_gap(self.angle, (f.0 - self.at.0, f.1 - self.at.1)))
+    }
+
+    /// The angle it faces (radians, 0 towards +y and growing towards -x), continuous where
+    /// `direction` is the eighth it is in.
+    pub fn angle(&self) -> f32 {
+        self.angle
+    }
+
+    /// Whether its first frame has just run (the Sim's walk begins).
+    pub fn just_started(&self) -> bool {
+        self.frames == 1
     }
 
     /// Whether it has been let go: its routing primitive returns at its next turn.

@@ -1367,6 +1367,11 @@ impl Animator {
         self.plays.0.get(&sim).map(|p| (p.0, &p.1))
     }
 
+    /// The number of `sim`'s current play (`Plays::serial`).
+    pub fn serial(&self, sim: u32) -> Option<u32> {
+        self.plays.serial(sim)
+    }
+
     /// Every Sim's play: the Sim (the key `animate` was given), its animation's id and the play.
     pub fn plays(&self) -> impl Iterator<Item = (u32, u32, &Play)> + '_ {
         self.plays.iter()

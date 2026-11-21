@@ -39,10 +39,44 @@ pub enum Motion {
     /// An animation the Sim's Animate plays (or last played, held, while its interaction goes on):
     /// the animation's id, how many frames along it is and whether it plays backward.
     Playing(u32, f32, bool),
-    /// Walking: seconds into the walk cycle (the walk's animation is the figure's to choose).
-    Walking(f32),
+    /// Walking (what its figure shows of the walk is `Alone::sim_frames`').
+    Walking,
     /// Standing about, in no animation of its own.
     Idle,
+}
+
+/// What one Sim did in a tick, as its figure shows it (`Alone::sim_frames`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SimFrame {
+    /// The Sim's object id.
+    pub id: i16,
+    /// The animation frames the tick held.
+    pub frames: u32,
+    pub walker: Option<SimWalker>,
+    pub action: Option<SimAction>,
+}
+
+/// A Sim's walker at the end of a tick.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SimWalker {
+    /// Its first frame has just run.
+    pub starts: bool,
+    /// Its speed over its top, while it walks.
+    pub speed_fraction: Option<f32>,
+    /// How far it has still to turn on the spot (radians, `routing::turn_gap`), once arrived.
+    pub turn_gap: Option<f32>,
+    /// The angle it faces (radians, `routing::direction_angle`'s).
+    pub angle: f32,
+}
+
+/// A Sim's Animate play at the end of a tick: its animation, how far along (frames), whether
+/// backward and which play it is (`anim::Plays::serial`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SimAction {
+    pub anim: u32,
+    pub place: f32,
+    pub backward: bool,
+    pub serial: u32,
 }
 
 /// What a run alone counts.
@@ -61,8 +95,6 @@ pub struct Tally {
     speeds: BTreeMap<i16, f32>,
     /// The way (a unit step) a Sim's route crosses at the door whose portal it was sent through.
     crossing: BTreeMap<i16, (i32, i32)>,
-    /// How long each walker has walked, in seconds of the walk cycle (the figure's phase).
-    walk_time: BTreeMap<i16, f32>,
     /// Walks planned, arrived, and asked for with no way.
     pub(super) planned: u32,
     pub(super) arrived: u32,
@@ -640,7 +672,7 @@ impl<'l> Alone<'l> {
             .map(|o| {
                 let id = o.id();
                 let motion = if t.walks.contains_key(&id) {
-                    Motion::Walking(t.walk_time.get(&id).copied().unwrap_or(0.0))
+                    Motion::Walking
                 } else {
                     let open = t.sims.get(&id).is_some_and(|s| !s.open.is_empty());
                     match ar.and_then(|a| a.m.play(alone_sim(id))) {
@@ -649,6 +681,29 @@ impl<'l> Alone<'l> {
                     }
                 };
                 (id, motion)
+            })
+            .collect()
+    }
+
+    /// What each Sim on the lot did in the tick just run, for the figure animator
+    /// (`animator::FigureAnimator`): the frames the tick held, its walker's last frame and its
+    /// Animate play as of the tick's end. Call it after each `tick`.
+    pub fn sim_frames(&self) -> Vec<SimFrame> {
+        let (host, ar) = (&self.d.host, self.d.host.anim.as_ref());
+        let Some(t) = host.tally.as_ref() else { return Vec::new() };
+        host.world
+            .objects()
+            .filter(|o| o.person && o.on_lot())
+            .map(|o| {
+                let id = o.id();
+                let walker = t.walks.get(&id).map(|w| SimWalker { starts: w.just_started(), speed_fraction: w.speed_fraction(), turn_gap: w.turn_gap(), angle: w.angle() });
+                let open = t.sims.get(&id).is_some_and(|s| !s.open.is_empty());
+                let action = ar.and_then(|a| {
+                    let sim = alone_sim(id);
+                    let (anim, play) = a.m.play(sim)?;
+                    (open || !play.answered()).then(|| SimAction { anim, place: play.place(), backward: play.backward(), serial: a.m.serial(sim).unwrap_or(0) })
+                });
+                SimFrame { id, frames: self.frames, walker, action }
             })
             .collect()
     }
@@ -809,13 +864,6 @@ impl<'l> Alone<'l> {
             let frames = self.frames;
             for _ in 0..frames {
                 ar.m.frame(|_| 1.0);
-            }
-            if let Some(tally) = &mut d.host.tally {
-                let walkers: Vec<i16> = tally.walks.keys().copied().collect();
-                tally.walk_time.retain(|id, _| walkers.contains(id));
-                for id in walkers {
-                    *tally.walk_time.entry(id).or_default() += frames as f32 * crate::routing::WALK_FRAME;
-                }
             }
         }
         d.host.stopped = false;
