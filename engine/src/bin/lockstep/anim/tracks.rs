@@ -134,10 +134,11 @@ pub fn animator_tracks(log: &housefire::tree_log::Log, d: &Disc, lib: &Library, 
         speeds.entry((r.owner, r.tick)).or_default().push(r.after.abs());
     }
     if std::env::var_os("TRACKS_SPEEDS").is_some() {
-        for r in log.speeds.iter().filter(|r| r.tick <= 2) {
+        for r in log.speeds.iter().filter(|r| r.before != r.after) {
             println!("  speed t{} owner {:x} {} -> {} state {:x?}", r.tick, r.owner, r.before, r.after, r.state);
         }
     }
+    let mut switch_state: BTreeMap<i16, (u32, f32, u32, u32, bool)> = BTreeMap::new();
     let mut carry_seen: BTreeMap<i16, bool> = BTreeMap::new();
     let mut animators: BTreeMap<i16, FigureAnimator> = BTreeMap::new();
     let mut walk_state: BTreeMap<u32, u32> = BTreeMap::new();
@@ -208,6 +209,24 @@ pub fn animator_tracks(log: &housefire::tree_log::Log, d: &Disc, lib: &Library, 
                     WalkerFrame { starts, speed_fraction: speed_fraction(w, walk_speed.entry(w.follower).or_default()), turn: (w.after == 1 || w.after == 3).then(|| Turn::of_gap(gap)) }
                 });
                 let action = frame_plays[j].0.iter().find(|p| p.0 == id).map(|p| ActionPlay { anim: p.1, place: p.2, backward: p.3, serial: p.4 });
+                if std::env::var_os("TRACKS_SWITCH").is_some() {
+                    let st = switch_state.entry(id).or_insert((0, 0.0, 0u32, 0u32, false));
+                    if let Some(a) = action {
+                        if a.serial != st.0 {
+                            if st.0 != 0 {
+                                let has_fade = logged.and_then(|l| l.get(j - from)).is_some_and(|set| set.iter().any(|p| p.anim == st.2));
+                                let same_anim = a.anim == st.2;
+                                let last = catalog.by_id.get(&st.2).map_or(0.0, |x| x.frames as f32 - 1.0);
+                                println!("  switch tick {tick} Sim {id} old {} over {} fade {has_fade} same {same_anim} back {}", names.get(&st.2).cloned().unwrap_or_default(), st.3, st.4);
+                            }
+                            *st = (a.serial, a.place, a.anim, 0, a.backward);
+                        } else {
+                            let last = catalog.by_id.get(&a.anim).map_or(0.0, |x| x.frames as f32 - 1.0);
+                            st.3 = if (!a.backward && a.place >= last) || (a.backward && a.place <= 0.0) { st.3 + 1 } else { 0 };
+                            st.1 = a.place;
+                        }
+                    }
+                }
                 if std::env::var("TRACKS_DEBUG").is_ok_and(|v| v.parse() == Ok(id)) && (std::env::var("TRACKS_LO").ok().and_then(|v| v.parse().ok()).unwrap_or(0)..=std::env::var("TRACKS_HI").ok().and_then(|v| v.parse().ok()).unwrap_or(0)).contains(&tick) {
                     println!("  dbg tick {tick} frame {j}/{frames} walker {walker:?} z {:?} action {action:?}", mine.get(j));
                 }
@@ -228,9 +247,10 @@ pub fn animator_tracks(log: &housefire::tree_log::Log, d: &Disc, lib: &Library, 
                     same += 1;
                     continue;
                 }
+                let k_label = k.clone();
                 let e = differences.entry(k).or_insert((0, tick, String::new()));
                 e.0 += 1;
-                if verbose && e.0 <= 3 {
+                if verbose && (e.0 <= 3 || std::env::var("TRACKS_ALL").is_ok_and(|a| k_label.contains(&a))) {
                     let n = |a: u32| names.get(&a).cloned().unwrap_or_default().replace("a2o-", "").replace("c2o-", "");
                     let ours: Vec<String> = m.iter().map(|p| format!("{}@{:.2}*{:.4}", n(p.anim), p.place, p.weight)).collect();
                     let theirs: Vec<String> = l.iter().map(|p| format!("{}@{:.2}*{:.4}", n(p.anim), p.place, p.weight)).collect();
