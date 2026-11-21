@@ -133,13 +133,23 @@ pub struct Track<'a> {
 /// The node states the tracks leave, posed in order from the default pose: a node's weight is its
 /// track's times its own (`pose::base_weight` for the first track that is not a layer, which is
 /// the base). A track of another node count than `count`, or a node whose channels are not all
-/// decoded, leaves that part as it was.
+/// decoded, leaves that part as it was. Each track reads streams made for this pose alone: a
+/// figure drawn frame after frame keeps them (`node_states_kept`).
 pub fn node_states(count: usize, tracks: &[Track]) -> Vec<NodeState> {
+    node_states_kept(count, tracks, &mut KeptStreams::default())
+}
+
+/// `node_states` with the tracks' streams kept in `kept` from the figure's last pose, as the
+/// original's tracks keep theirs: a stream's window and its blend flag depend on the places it
+/// read before (`anim::RotStream::read`), and the walk's poses come out the logged ones only
+/// read in that order (home-a28.log: all 814 weight-1 walking-loop poses differ, by up to 0.33
+/// in a rotation, when each is read from fresh streams; the lockstep, which keeps them, matches).
+pub fn node_states_kept(count: usize, tracks: &[Track], kept: &mut KeptStreams) -> Vec<NodeState> {
     let mut states = vec![Pose::default(); count];
     let mut based = false;
     for t in tracks.iter().filter(|t| t.anim.nodes.len() == count) {
         let weight = pose::base_weight(t.weight, t.layer, &mut based);
-        let mut streams = TrackStreams::new(t.anim);
+        let streams = kept.streams(t.anim, t.place);
         for (i, state) in states.iter_mut().enumerate() {
             let w = weight * t.nodes.map_or(1.0, |n| n[i]);
             if w == 0.0 {
@@ -149,7 +159,66 @@ pub fn node_states(count: usize, tracks: &[Track]) -> Vec<NodeState> {
             *state = pose::fold(state, &local, Fold::of(w, t.layer));
         }
     }
+    kept.sweep();
     states.iter().map(|p| NodeState { flags: p.flags, rotation: p.rotation, translation: p.translation, scale: p.scale }).collect()
+}
+
+/// The time of one of the original's frames, which moves a track `rate` x this frames on at
+/// the normal speed (`anim::track_advance`; the walker's frame, the same global).
+const FRAME_TIME: f32 = crate::routing::WALK_FRAME;
+
+/// The most frames one pose may stand for before the frames between are not read again: a tick
+/// holds one or two of the original's frames.
+const FRAMES_CAUGHT_UP: f32 = 3.0;
+
+/// A figure's track streams from one pose to the next (presentation state: what it draws, not
+/// what the simulation decides). A track's streams last while its animation does; a new
+/// animation, or a track not posed in a pose, starts afresh.
+#[derive(Default)]
+pub struct KeptStreams {
+    tracks: Vec<KeptTrack>,
+}
+
+struct KeptTrack {
+    name: String,
+    place: f32,
+    streams: TrackStreams,
+    used: bool,
+}
+
+impl KeptStreams {
+    /// The streams of the track playing `anim`, brought to `place`: when the figure is posed once
+    /// for two or three of the original's frames (a tick holds one or two), the places between
+    /// are read first so the windows step as the original's per-frame poses step them.
+    fn streams(&mut self, anim: &Anim, place: f32) -> &mut TrackStreams {
+        let at = match self.tracks.iter().position(|k| k.name == anim.name) {
+            Some(at) => at,
+            None => {
+                self.tracks.push(KeptTrack { name: anim.name.clone(), place, streams: TrackStreams::new(anim), used: false });
+                self.tracks.len() - 1
+            }
+        };
+        let k = &mut self.tracks[at];
+        let gap = place - k.place;
+        let frames = (gap.abs() / (anim.rate * FRAME_TIME)).round();
+        if (2.0..=FRAMES_CAUGHT_UP).contains(&frames) {
+            for step in 1..frames as u32 {
+                let between = k.place + gap * step as f32 / frames;
+                for i in 0..anim.nodes.len() {
+                    k.streams.local(anim, i, between, 0);
+                }
+            }
+        }
+        k.place = place;
+        k.used = true;
+        &mut k.streams
+    }
+
+    /// Forgets the tracks the last pose did not read.
+    fn sweep(&mut self) {
+        self.tracks.retain(|k| k.used);
+        self.tracks.iter_mut().for_each(|k| k.used = false);
+    }
 }
 
 /// The nodes the carrying loop's weights are 1 on (the right arm: the node above its clavicle to
@@ -255,7 +324,12 @@ pub fn rows(m: &Mat4) -> [f32; 12] {
 /// The bone matrices of a Sim on `nodes` posed by `tracks` (none: the skeleton's rest) under
 /// `root`, with the models' unit (`BONE_SCALE`) in them.
 pub fn bones(nodes: &[CharNode], tracks: &[Track], root: &Mat4) -> Vec<Mat4> {
-    let states = node_states(nodes.len(), tracks);
+    bones_kept(nodes, tracks, root, &mut KeptStreams::default())
+}
+
+/// `bones` with the tracks' streams kept from the figure's last pose (`node_states_kept`).
+pub fn bones_kept(nodes: &[CharNode], tracks: &[Track], root: &Mat4, kept: &mut KeptStreams) -> Vec<Mat4> {
+    let states = node_states_kept(nodes.len(), tracks, kept);
     skeleton::bone_matrices(nodes, &states, root, PoseMode { through_rest: false, scale: BONE_SCALE })
 }
 

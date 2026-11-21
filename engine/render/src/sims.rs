@@ -184,6 +184,8 @@ pub struct SimCaches {
     skins: HashMap<String, TextureRef>,
     /// The engine's textures by the looks that make them (`None`: it made none).
     engine_skins: HashMap<LooksKey, Option<TextureRef>>,
+    /// Each drawn Sim's track streams from its last pose (`figure::KeptStreams`).
+    poses: HashMap<i16, figure::KeptStreams>,
 }
 
 /// A skinned batch as a mesh: the model's own positions and normals with the blend weights it
@@ -233,12 +235,18 @@ impl Figure {
         figure::Stance { action: self.play, carrying: self.carrying, mood: self.mood, adult: self.description.adult }
     }
 
-    /// Its bones in the form the renderer takes, at `heading`.
+    /// Its bones in the form the renderer takes, at `heading`, each read from fresh streams.
     fn bone_rows(&self, w: &Wardrobe, heading: u8) -> Vec<Mat3x4> {
+        self.bone_rows_kept(w, heading, &mut figure::KeptStreams::default())
+    }
+
+    /// `bone_rows` with its tracks' streams kept from its last pose (a figure drawn frame after
+    /// frame: the original's windows step as its tracks read them).
+    fn bone_rows_kept(&self, w: &Wardrobe, heading: u8, kept: &mut figure::KeptStreams) -> Vec<Mat3x4> {
         let nodes = w.rigs.of(&self.description);
         let masks = figure::Masks::new(nodes.len());
         let tracks = figure::tracks(w.catalog, &self.stance(), &masks);
-        figure::bones(nodes, &tracks, &figure::root(self.place[0], self.place[1], heading)).iter().map(figure::rows).collect()
+        figure::bones_kept(nodes, &tracks, &figure::root(self.place[0], self.place[1], heading), kept).iter().map(figure::rows).collect()
     }
 }
 
@@ -249,8 +257,9 @@ impl Assets {
     #[allow(clippy::too_many_arguments)]
     pub fn engine_sims(&self, scene: &mut Scene, caches: &mut Caches, cache: &mut SimCaches, w: &Wardrobe, figures: &[Figure], lights: &LotLights, sun: [f32; 3], view: Mat3x4, portrait: Option<i16>) -> SimDraws {
         let mut out = SimDraws::default();
+        cache.poses.retain(|id, _| figures.iter().any(|f| f.id == *id));
         for f in figures {
-            let bones = f.bone_rows(w, f.heading);
+            let bones = f.bone_rows_kept(w, f.heading, cache.poses.entry(f.id).or_default());
             let outfit = w.cast.tables.dress(&f.description);
             let records: Vec<(Slot, usize)> = Slot::ALL.iter().filter_map(|&s| Some((s, w.models.parts.record_by_id(outfit.part(s))?))).collect();
             let skin = Self::skin_of(scene, cache, w, f, &records);
