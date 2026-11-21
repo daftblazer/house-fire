@@ -12,6 +12,7 @@ mod runs;
 mod sims;
 mod skin;
 mod streams;
+mod tracks;
 
 pub use bones::bones;
 pub use draws::draws;
@@ -25,3 +26,4 @@ pub use runs::runs;
 pub use sims::sims;
 pub use skin::skin_study;
 pub use streams::channels;
+pub use tracks::animator_tracks;

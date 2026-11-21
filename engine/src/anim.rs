@@ -1316,9 +1316,15 @@ pub struct Animator {
 /// the Sim. What a frame steps, so that a look one frame ahead copies only these and not the
 /// animations' loads and notes.
 #[derive(Clone, Debug, Default)]
-pub struct Plays(std::collections::BTreeMap<u32, (u32, Play, f32)>);
+pub struct Plays(std::collections::BTreeMap<u32, (u32, Play, f32)>, u32, std::collections::BTreeMap<u32, u32>);
 
 impl Plays {
+    /// The number of the Sim's current play among all the plays started (1 for the first): a
+    /// play that starts anew, even of the same animation, has a number no earlier one had.
+    pub fn serial(&self, sim: u32) -> Option<u32> {
+        self.2.get(&sim).copied()
+    }
+
     /// Every Sim's play: the Sim (the key `Animator::animate` was given), its animation's id and
     /// the play.
     pub fn iter(&self) -> impl Iterator<Item = (u32, u32, &Play)> + '_ {
@@ -1350,6 +1356,8 @@ impl Animator {
             }
             let play = Play::new(anim, self.notes.get(&id).map_or(&[][..], |v| v.as_slice()), backward, wanted);
             self.plays.0.insert(sim, (id, play, anim.rate));
+            self.plays.1 += 1;
+            self.plays.2.insert(sim, self.plays.1);
         }
         self.plays.0.get_mut(&sim).map_or(Poll::Pending, |p| p.1.poll())
     }

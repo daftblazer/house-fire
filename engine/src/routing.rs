@@ -646,6 +646,24 @@ pub fn turn_towards(angle: f32, (dx, dy): (f32, f32), walking: bool, budget: f32
     turned
 }
 
+/// How far a follower facing `angle` has still to turn to go the way `(dx, dy)` (radians, wrapped
+/// to (-pi, pi]; its sign says which way it turns, the one `turn_towards` takes: positive grows
+/// the angle). Zero when it has no way to go (both under a thousandth).
+pub fn turn_gap(angle: f32, (dx, dy): (f32, f32)) -> f32 {
+    use std::f32::consts::{PI, TAU};
+    if dx.abs() < 0.001 && dy.abs() < 0.001 {
+        return 0.0;
+    }
+    let mut gap = (-dx).atan2(dy) - angle;
+    if gap > PI {
+        gap -= TAU;
+    }
+    if gap < -PI {
+        gap += TAU;
+    }
+    gap
+}
+
 /// A point `s` along a line (its points, sixteenths) from leg `i` at fraction `t` of it, never
 /// past its end.
 pub fn along_line(points: &[(f32, f32)], mut i: usize, mut t: f32, mut s: f32) -> (f32, f32) {

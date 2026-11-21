@@ -703,6 +703,11 @@ fn main() -> ExitCode {
     if std::env::var_os("LOCKSTEP_ANIM_POSES").is_some() {
         anim::poses(&log, &d);
     }
+    // (LOCKSTEP_ANIM_TRACKS: the figure animator's tracks from the replay's own state against the
+    // logged poses' animations, places and weights, per Sim and frame; =2 lists differences)
+    if std::env::var_os("LOCKSTEP_ANIM_TRACKS").is_some() {
+        anim::animator_tracks(&log, &d, &lib, &ngh, args.iter().position(|a| a == "--card").and_then(|i| args.get(i + 1)).map(String::as_str));
+    }
     // (LOCKSTEP_ANIM_LOADS: the engine's animations in memory, `anim::Loads`, from the lot's
     // preload sets (house n, LOCKSTEP_HOUSE, default 1: House1Preload and housepre<n>), against
     // each of the original's Animate load asks ('9', from TryAnimate at 800AC7E4) in turn)

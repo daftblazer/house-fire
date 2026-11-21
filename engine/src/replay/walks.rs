@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use crate::routing::{direction_angle, facing_direction, turn_towards, WALK_FRAME};
+use crate::routing::{direction_angle, facing_direction, turn_gap, turn_towards, walk_top, WALK_FRAME};
 use crate::planner::{choose_goal, coarse_way, point_after_goal, refine, Growth, MapRect};
 use crate::tree_log::PlanRec;
 use crate::world::{DATA_FACING, World};
@@ -73,7 +73,42 @@ pub(super) fn leg_at(points: &[(i32, i32)], place: (f32, f32)) -> usize {
     best.1
 }
 
+/// One frame of a route follower as `Replay::turn_followers` turned its person: what the figure
+/// animator takes of a walker (`animator::WalkerFrame`).
+#[derive(Clone, Copy, Debug)]
+pub struct WalkFrame {
+    pub tick: u32,
+    pub follower: u32,
+    /// The person it walks.
+    pub person: i16,
+    /// Its state before and after the frame (1 starting, 2 walking, 3 arrived, 4 done, 5 running on).
+    pub before: u32,
+    pub after: u32,
+    /// The speed factor of the frame (1, or 5 in the fast mode) and the distance the frame moved
+    /// it (sixteenths).
+    pub factor: f32,
+    pub step: f32,
+    /// The walker's top a second (sixteenths): its body's age.
+    pub top: f32,
+    /// How far it had still to turn (radians, signed as `routing::turn_gap`) before the frame and
+    /// after it; zero when it has no way to go.
+    pub gap_before: f32,
+    pub gap_after: f32,
+    /// The gap before the frame not wrapped: the direction's of the turn animation.
+    pub raw_before: f32,
+}
+
 impl<'l> Replay<'l> {
+    /// Starts keeping the route followers' frames (`take_walk_frames`).
+    pub fn trace_walks(&mut self) {
+        self.walk_trace.get_or_insert_with(Vec::new);
+    }
+
+    /// The route followers' frames turned since the last call, in the log's order.
+    pub fn take_walk_frames(&mut self) -> Vec<WalkFrame> {
+        self.walk_trace.as_mut().map(std::mem::take).unwrap_or_default()
+    }
+
     /// The tick's frames of the route followers (the log's 'Z' records; the walks and their
     /// plans are the log's) turn their persons: each follower keeps the angle it faces
     /// (`routing::turn_towards`, from the leg of its plan it is on, or in state 5 the way to its
@@ -128,6 +163,7 @@ impl<'l> Replay<'l> {
                 3 => Some(leg(points.len() - 1)).map(|(x, y)| (x as f32, y as f32)),
                 _ => None,
             };
+            let angle_before = heading.angle;
             if let Some(way) = way {
                 heading.angle = turn_towards(heading.angle, way, f.before.state == 2, WALK_FRAME * f.before.factor, f.before.factor);
                 if f.before.state != 5 {
@@ -138,6 +174,13 @@ impl<'l> Replay<'l> {
                 && let Some(slot) = self.h.world.get_mut(key).data.get_mut(DATA_FACING)
             {
                 *slot = d;
+            }
+            if let (Some(trace), Some(person)) = (&mut self.walk_trace, heading.person) {
+                let age = self.h.world.get(key).file.and_then(|fi| self.lib.file(fi).strings.get(&200)).and_then(|t| t.first()).map(String::as_str);
+                let gap = |angle| way.map_or(0.0, |w| turn_gap(angle, w));
+                let raw = way.map_or(0.0, |(dx, dy)| if dx.abs() < 0.001 && dy.abs() < 0.001 { 0.0 } else { (-dx).atan2(dy) - angle_before });
+                let step = ((f.after.x - f.before.x).powi(2) + (f.after.y - f.before.y).powi(2)).sqrt();
+                trace.push(WalkFrame { tick: f.tick, follower: f.follower, person, before: f.before.state, after: f.after.state, factor: f.before.factor, step, top: walk_top(age), gap_before: gap(angle_before), gap_after: gap(heading.angle), raw_before: raw });
             }
         }
     }

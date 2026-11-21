@@ -2,6 +2,7 @@
 //! logic is each game's own behaviour scripts read from the player's disc (`docs/plan.md`).
 
 pub mod anim;
+pub mod animator;
 pub mod apt;
 pub mod arc;
 pub mod axdump;

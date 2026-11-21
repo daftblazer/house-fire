@@ -100,4 +100,5 @@ pub use counts::{Bench, Counts};
 pub use drive::{DriveReport, Parting, drive};
 pub use run::{Replay, run};
 pub use start::{RunWith, Start};
+pub use walks::WalkFrame;
 pub use study::{atoi, env, has, switches};

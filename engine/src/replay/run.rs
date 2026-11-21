@@ -56,6 +56,9 @@ pub struct Replay<'l> {
     /// The route followers' facing (`Heading`), by follower, and how far into the log's steps of them the run is.
     pub(super) headings: HashMap<u32, Heading>,
     pub(super) heading_at: usize,
+    /// The route followers' frames as they were turned (`WalkFrame`), kept when a study asks
+    /// (`trace_walks`).
+    pub(super) walk_trace: Option<Vec<super::walks::WalkFrame>>,
     pub(super) t: u32,
 }
 
@@ -493,6 +496,7 @@ impl<'l> Replay<'l> {
             time_at,
             t: 0,
             headings: HashMap::new(),
+            walk_trace: None,
             heading_at: 0,
         })
     }
@@ -511,6 +515,30 @@ impl<'l> Replay<'l> {
         let Some(ar) = &self.h.anim else { return Vec::new() };
         let m = ar.animator_for(tick);
         m.iter().filter_map(|(sim, id, play)| Some((*self.ids.get(&sim)?, id, play.place(), play.backward()))).collect()
+    }
+
+    /// The Sims' plays after each frame of `tick` (the frames the log's clock puts in it, as
+    /// `sim_plays` takes the first): per frame, the Sim's object id, its animation's id, the
+    /// play's place, whether it runs backward and the number of the play (`Plays::serial`). The
+    /// run itself is not moved.
+    pub fn frame_plays(&self, tick: u32) -> Vec<Vec<(i16, u32, f32, bool, u32)>> {
+        let Some(ar) = &self.h.anim else { return Vec::new() };
+        let (mut m, mut next) = (ar.m.plays_copy(), ar.next);
+        ar.run_frames(&mut m, &mut next, |f| f.0 < tick);
+        let mut out = Vec::new();
+        while ar.frames.get(next).is_some_and(|f| f.0 == tick) {
+            ar.run_frames_up_to(&mut m, &mut next, 1, |f| f.0 == tick);
+            out.push(m.iter().filter_map(|(sim, id, play)| Some((*self.ids.get(&sim)?, id, play.place(), play.backward(), m.serial(sim)?))).collect());
+        }
+        out
+    }
+
+    /// The animation controller each Sim's tracks belong to (the log's track records name it),
+    /// by the Sim's object id: the one its animator's speed records (`log.speeds`) put at 0x350
+    /// above the Sim's own address.
+    pub fn sim_controllers(&self) -> BTreeMap<i16, u32> {
+        let Some(ar) = &self.h.anim else { return BTreeMap::new() };
+        ar.owner_of.iter().filter_map(|(sim, owner)| Some((*self.ids.get(sim)?, *owner))).collect()
     }
 
     /// The tick the run is at (the last one stepped).
