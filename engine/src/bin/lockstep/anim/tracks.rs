@@ -52,26 +52,15 @@ fn logged_sets(log: &housefire::tree_log::Log, face: u32) -> HashMap<(u32, u32),
 }
 
 /// The walker's speed over its top at a frame, the weight of the walking loop: the speed the
-/// frame ended at (`speed` is the walker's, carried from frame to frame, and from walk to walk).
-/// A walking frame moves the walker by its speed, which grows by `growth` to the top (`walk_step`)
-/// or brakes to stop at the end; the frame that arrives moves it what is left and sets the speed to
-/// what lets it stop there.
+/// frame ended at, by `walk_step` from the speed before (`speed`, the walker's, carried from frame
+/// to frame and from walk to walk) and the way it had still to walk.
 fn speed_fraction(w: &WalkFrame, speed: &mut f32) -> Option<f32> {
     let moved = w.before == 2 || (w.before == 1 && w.after == 2);
     if !moved {
         return None;
     }
     let (top, growth) = walk_rates(w.top);
-    let v = if w.factor != 1.0 {
-        top
-    } else if w.after == 2 {
-        // (the step is the logged place's difference: a float's noise off the speed the
-        // walker grows to)
-        let grown = top.min(*speed + growth);
-        if (w.step - grown).abs() < 1e-3 { grown } else { w.step }
-    } else {
-        walk_step(0.0, top, growth, 1.0, w.step).0
-    };
+    let v = walk_step(*speed, top, growth, w.factor, w.left).0;
     *speed = v;
     Some(v / top)
 }

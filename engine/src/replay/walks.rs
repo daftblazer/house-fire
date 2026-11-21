@@ -50,7 +50,33 @@ pub(super) struct Heading {
     pub(super) angle: f32,
     /// The points of the route it follows, sixteenths.
     pub(super) route: Vec<(i32, i32)>,
+    /// Where the walk along it ends (its first frame out of state 2: the log's), sixteenths, and
+    /// whether it runs on into state 5 (the walker then does not brake).
+    pub(super) walk_end: Option<((f32, f32), bool)>,
     pub(super) state: u32,
+}
+
+/// The length of the route's way from `place` to `end`, which lies on it: along the legs from the
+/// one `place` is on (`leg_at`) to the one `end` is on. A walk whose route the log has not (the
+/// original's own) is taken straight to its end.
+fn path_left(points: &[(i32, i32)], place: (f32, f32), end: (f32, f32)) -> f32 {
+    let at = |i: usize| (points[i].0 as f32, points[i].1 as f32);
+    let dist = |a: (f32, f32), b: (f32, f32)| (a.0 - b.0).hypot(a.1 - b.1);
+    if points.len() < 2 {
+        return dist(place, end);
+    }
+    // the leg `end` is on: the last whose line it is within a hundredth of
+    let on = |i: usize| {
+        let (a, b) = (at(i - 1), at(i));
+        dist(a, end) + dist(end, b) - dist(a, b) < 0.01
+    };
+    let Some(last) = (1..points.len()).rev().find(|&i| on(i)) else { return dist(place, end) };
+    let first = leg_at(points, place);
+    if first >= last {
+        return dist(place, end);
+    }
+    let between: f32 = (first + 1..last).map(|i| dist(at(i - 1), at(i))).sum::<f32>() + dist(at(last - 1), end);
+    dist(place, at(first)) + between
 }
 
 /// The leg of a walk's points a walker at `place` is on: the index of the point it goes to (at
@@ -94,6 +120,10 @@ pub struct WalkFrame {
     /// after it; zero when it has no way to go.
     pub gap_before: f32,
     pub gap_after: f32,
+    /// How far along its route it had still to walk before the frame (sixteenths): to where its
+    /// walk ends, as `walk_step` takes it for the stopping distance; infinite when the walk runs
+    /// on (the walker does not brake) or ends past the log.
+    pub left: f32,
     /// The gap before the frame not wrapped: the direction's of the turn animation.
     pub raw_before: f32,
 }
@@ -147,6 +177,13 @@ impl<'l> Replay<'l> {
                 // begins where it stands
                 let start = ((place.0 + 0.5) as i32, (place.1 + 0.5) as i32);
                 let upto = log.plans.partition_point(|p| p.tick <= f.tick);
+                // (where its walk ends: its first frame out of state 2, in the log's frames to come)
+                let mut later = log.follows[self.heading_at - 1..].iter().filter(|g| g.follower == f.follower);
+                heading.walk_end = later.find(|g| g.before.state == 2 && g.after.state != 2).map(|g| {
+                    // (it runs on when its next states after the walk are 4 and then 5, with no new route between)
+                    let runs_on = later.take_while(|n| n.before.state != 1).any(|n| n.before.state == 4 && n.after.state == 5);
+                    ((g.after.x, g.after.y), runs_on)
+                });
                 heading.route = match self.h.looks.get(&heading.person.unwrap_or(-1)) {
                     Some(&(tick, target)) if tick == f.tick => vec![start, start, target],
                     _ => log.plans[..upto].iter().rfind(|p| p.points.first() == Some(&start)).map(|p| p.points.clone()).unwrap_or_default(),
@@ -180,7 +217,7 @@ impl<'l> Replay<'l> {
                 let gap = |angle| way.map_or(0.0, |w| turn_gap(angle, w));
                 let raw = way.map_or(0.0, |(dx, dy)| if dx.abs() < 0.001 && dy.abs() < 0.001 { 0.0 } else { (-dx).atan2(dy) - angle_before });
                 let step = ((f.after.x - f.before.x).powi(2) + (f.after.y - f.before.y).powi(2)).sqrt();
-                trace.push(WalkFrame { tick: f.tick, follower: f.follower, person, before: f.before.state, after: f.after.state, factor: f.before.factor, step, top: walk_top(age), gap_before: gap(angle_before), gap_after: gap(heading.angle), raw_before: raw });
+                trace.push(WalkFrame { tick: f.tick, follower: f.follower, person, before: f.before.state, after: f.after.state, factor: f.before.factor, step, top: walk_top(age), gap_before: gap(angle_before), gap_after: gap(heading.angle), raw_before: raw, left: heading.walk_end.map_or(f32::INFINITY, |(end, runs_on)| if runs_on { f32::INFINITY } else { path_left(&heading.route, place, end) }) });
             }
         }
     }
