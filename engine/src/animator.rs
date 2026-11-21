@@ -321,3 +321,38 @@ impl FigureAnimator {
         out
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_turn_fades_in_by_the_logged_weights() {
+        // the logged weights of the turn track's first frames (home-tracks.log)
+        let step = WALK_FRAME / TURN_FADE;
+        let logged = [0.0727, 0.2548, 0.4925, 0.7318, 0.9188, 0.9997];
+        for (n, want) in logged.iter().enumerate() {
+            let got = smooth((n + 1) as f32 * step);
+            assert!((got - want).abs() < 1e-4, "frame {}: {got} against {want}", n + 1);
+        }
+    }
+
+    #[test]
+    fn the_action_before_fades_out_in_three_frames() {
+        let step = WALK_FRAME / ACTION_FADE;
+        let logged = [0.7452, 0.2682, 0.0003];
+        for (n, want) in logged.iter().enumerate() {
+            let got = 1.0 - smooth((n + 1) as f32 * step);
+            assert!((got - want).abs() < 1e-4, "frame {}: {got} against {want}", n + 1);
+        }
+        assert!(4.0 * step >= 1.0, "gone on the fourth");
+    }
+
+    #[test]
+    fn a_turn_goes_the_way_of_its_gap() {
+        assert_eq!(Turn::of_gap(-1.5), Turn::Clockwise);
+        assert_eq!(Turn::of_gap(1.5), Turn::CounterClockwise);
+        // no gap: the arrival frame's counter clockwise
+        assert_eq!(Turn::of_gap(0.0), Turn::CounterClockwise);
+    }
+}

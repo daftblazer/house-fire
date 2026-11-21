@@ -168,7 +168,7 @@ pub fn animator_tracks(log: &housefire::tree_log::Log, d: &Disc, lib: &Library, 
             // the last of them, the ones the log poses)
             let from = if tick == 0 { frame_plays.len().saturating_sub(logged_frames) } else { 0 };
             let mut made: Vec<Vec<Posed>> = Vec::new();
-            for j in from..frame_plays.len() {
+            for (j, state) in frame_plays.iter().enumerate().skip(from) {
                 let walker = mine.get(j).map(|w| {
                     let starts = w.before == 1 && follower_state.get(&w.follower).is_none_or(|s| *s != 1);
                     follower_state.insert(w.follower, w.after);
@@ -176,8 +176,8 @@ pub fn animator_tracks(log: &housefire::tree_log::Log, d: &Disc, lib: &Library, 
                     // (the turn on the spot while the walker waits to turn: states 1 and 3)
                     WalkerFrame { starts, speed_fraction, turn: (w.after == 1 || w.after == 3).then(|| Turn::of_gap(w.gap_before)) }
                 });
-                let action = frame_plays[j].0.iter().find(|p| p.0 == id).map(|p| ActionPlay { anim: p.1, place: p.2, backward: p.3, serial: p.4 });
-                let speed = frame_plays[j].1.iter().find(|p| p.0 == id).map_or(1.0, |p| p.1);
+                let action = state.plays.iter().find(|p| p.0 == id).map(|p| ActionPlay { anim: p.1, place: p.2, backward: p.3, serial: p.4 });
+                let speed = state.speeds.iter().find(|p| p.0 == id).map_or(1.0, |p| p.1);
                 animator.frame(&Frame { speed, walker, action, carrying, mood });
                 made.push(animator.poses(&catalog));
             }

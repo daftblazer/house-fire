@@ -66,6 +66,14 @@ pub struct Replay<'l> {
 /// id, the play's place, whether it runs backward and the play's number (`anim::Plays::serial`).
 pub type FramePlay = (i16, u32, f32, bool, u32);
 
+/// What a frame left (`Replay::frame_plays`): the Sims' plays, and the speed it ran each Sim's
+/// animator at by object id.
+#[derive(Clone, Debug, Default)]
+pub struct FrameState {
+    pub plays: Vec<FramePlay>,
+    pub speeds: Vec<(i16, f32)>,
+}
+
 /// The run as `Replay` makes it, to its end.
 /// One run of the club over the log: with bench, timed and not counted. The counts, or `None`
 /// if the log does not start with the lot loaded.
@@ -526,7 +534,7 @@ impl<'l> Replay<'l> {
     /// play's place, whether it runs backward and the number of the play (`Plays::serial`); and the
     /// speed that frame ran each Sim's animator at (the game's: 0 paused or while a Sim's animations
     /// load, 5 fast-forward), by object id. The run itself is not moved.
-    pub fn frame_plays(&self, tick: u32) -> Vec<(Vec<FramePlay>, Vec<(i16, f32)>)> {
+    pub fn frame_plays(&self, tick: u32) -> Vec<FrameState> {
         let Some(ar) = &self.h.anim else { return Vec::new() };
         let (mut m, mut next) = (ar.m.plays_copy(), ar.next);
         ar.run_frames(&mut m, &mut next, |f| f.0 < tick);
@@ -534,7 +542,7 @@ impl<'l> Replay<'l> {
         while ar.frames.get(next).is_some_and(|f| f.0 == tick) {
             ar.run_frames_each(&mut m, &mut next, 1, |f| f.0 == tick, |plays, speed| {
                 let playing = plays.iter().filter_map(|(sim, id, play)| Some((*self.ids.get(&sim)?, id, play.place(), play.backward(), plays.serial(sim)?))).collect();
-                out.push((playing, ar.owner_of.keys().filter_map(|sim| Some((*self.ids.get(sim)?, speed(*sim)))).collect()));
+                out.push(FrameState { plays: playing, speeds: ar.owner_of.keys().filter_map(|sim| Some((*self.ids.get(sim)?, speed(*sim)))).collect() });
             });
         }
         out
