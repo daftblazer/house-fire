@@ -2472,6 +2472,20 @@ fn main() -> ExitCode {
                 }
             }
         }
+        "qstrings" => {
+            // (study) a quick data table of string pointers: each row's string
+            let (Some(entry), Some(table)) = (args.get(3), args.get(4)) else {
+                println!("usage: assets ISO qstrings ENTRY TABLE [LANGUAGE]");
+                return ExitCode::FAILURE;
+            };
+            let q = d.read("quickdat.arc").unwrap_or_default();
+            let Some(img) = arc::entries(&q).unwrap_or_default().into_iter().find(|e| &e.name == entry).and_then(|e| quickdata::Image::read_language(arc::bytes(&q, &e), args.get(5).and_then(|v| v.parse().ok()).unwrap_or(1))) else {
+                return ExitCode::FAILURE;
+            };
+            for (k, s) in img.strings(table).iter().enumerate() {
+                println!("{k}: {s:?}");
+            }
+        }
         "qrows" => {
             // (study) a quick data table's first N rows as words: a pointer shown as ->table[row]
             // (or ->@offset when in no table), followed one level when it points at no table row

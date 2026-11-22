@@ -35,12 +35,39 @@ pub struct Image {
 impl Image {
     /// The main image of a quick data entry, or `None` if `b` is not one.
     pub fn read(b: &[u8]) -> Option<Image> {
-        if be32(b, 0)? != 24 {
+        Self::read_language(b, 0)
+    }
+
+    /// The main image with a language's image after it, as the engine loads them (the
+    /// language's at the main image's size rounded up to 4, both built for the same address);
+    /// `lang` counts from 1, the first language's image, and 0 loads none. The interface's
+    /// strings are in the language images.
+    pub fn read_language(b: &[u8], lang: usize) -> Option<Image> {
+        let (mut data, mut pointers, base) = Self::record(b, 0)?;
+        if !pointers.contains(&0) {
             return None;
         }
-        let w = |k: usize| be32(b, 4 + 4 * k).map(|v| v as usize);
+        if lang > 0 {
+            let (l, lp, _) = Self::record(b, lang)?;
+            let at = (data.len() + 3) & !3;
+            data.resize(at, 0);
+            data.extend_from_slice(&l);
+            pointers.extend(lp.into_iter().map(|p| at + p));
+        }
+        let mut img = Image { data, base, pointers, tables: BTreeMap::new() };
+        img.read_tables()?;
+        Some(img)
+    }
+
+    /// A record of the entry: its data, the offsets of its pointers and the address it was
+    /// built for.
+    fn record(b: &[u8], k: usize) -> Option<(Vec<u8>, HashSet<usize>, u32)> {
+        if be32(b, 0)? != 24 || be32(b, 4)? as usize / 24 <= k {
+            return None;
+        }
+        let w = |j: usize| be32(b, 24 * k + 4 + 4 * j).map(|v| v as usize);
         let (off, size, foff, fsize) = (w(0)?, w(1)?, w(2)?, w(3)?);
-        let base = be32(b, 20)?;
+        let base = be32(b, 24 * k + 20)?;
         let data = b.get(off..off + size)?.to_vec();
         let fix = b.get(foff..foff + fsize)?;
         let mut pointers = HashSet::new();
@@ -63,10 +90,15 @@ impl Image {
                 k => pointers.extend((0..k).map(|j| (v & !3) + 4 * j)),
             }
         }
-        if pointers.iter().any(|&p| p + 4 > data.len()) || !pointers.contains(&0) {
+        if pointers.iter().any(|&p| p + 4 > data.len()) {
             return None;
         }
-        let mut img = Image { data, base, pointers, tables: BTreeMap::new() };
+        Some((data, pointers, base))
+    }
+
+    /// Reads the table directory of the main image.
+    fn read_tables(&mut self) -> Option<()> {
+        let img = self;
         let n = img.u32(4)? as usize;
         for t in 0..n.min(4096) {
             let d = 8 + 20 * t;
@@ -76,7 +108,7 @@ impl Image {
             let table = Table { rows: img.ptr(d + 4).unwrap_or(0), count: img.u32(d + 12)? as usize, row_size: img.u32(d + 16)? as usize, names: img.ptr(d + 8).unwrap_or(0) };
             img.tables.insert(name, table);
         }
-        Some(img)
+        Some(())
     }
 
     pub fn u32(&self, o: usize) -> Option<u32> {
@@ -90,6 +122,19 @@ impl Image {
         }
         let t = self.u32(o)?.checked_sub(self.base)? as usize;
         (t <= self.data.len()).then_some(t)
+    }
+
+    /// The zero-ended UTF-16 (big endian) string the pointer at `o` points to.
+    pub fn wide_string(&self, o: usize) -> Option<String> {
+        let b = self.data.get(self.ptr(o)?..)?;
+        let units: Vec<u16> = b.chunks_exact(2).map(|c| u16::from_be_bytes([c[0], c[1]])).take_while(|&u| u != 0).collect();
+        Some(String::from_utf16_lossy(&units))
+    }
+
+    /// A string table of the interface (a language image's): each row points at a pointer to
+    /// the row's string.
+    pub fn strings(&self, table: &str) -> Vec<String> {
+        self.rows(table).map(|r| self.ptr(r).and_then(|p| self.wide_string(p)).unwrap_or_default()).collect()
     }
 
     /// The row of a table with this name (the row names the descriptor's third word points at,
