@@ -253,7 +253,7 @@ impl Shop {
         self.moving = false;
         self.screen = mv.to;
         self.item_hidden = false;
-        let mut calls = self.entry(mv, game, font);
+        let calls = self.entry(mv, game, font);
         match mv.to {
             Screen::Place => {
                 if let Some(s) = self.shown(game) {
@@ -280,7 +280,6 @@ impl Shop {
         if mv.to == Screen::Sections {
             self.lozenges = false;
         }
-        calls.shrink_to_fit();
         (calls, follow)
     }
 
