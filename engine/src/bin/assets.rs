@@ -4383,7 +4383,7 @@ fn apt(d: &Disc, args: &[String]) -> ExitCode {
 
 /// `assets ISO uilog LOG [FROM [TO]]`: the interface records of a log by the game's frame (from
 /// FROM to TO): the movies loaded, the game's calls into them (each argument's text), the
-/// commands they send back, the pad's changes, the values they read (each name printed when its value changes)
+/// commands they send back, the pad's changes, the world's objects added and removed, the values they read (each name printed when its value changes)
 /// and the strings the game draws (printed when a frame's set differs from the last one's).
 fn uilog(args: &[String]) -> ExitCode {
     let Some(log) = args.first().and_then(|p| housefire::tree_log::read_log(p)) else {
@@ -4396,6 +4396,17 @@ fn uilog(args: &[String]) -> ExitCode {
     let mut lines: Vec<(u32, u8, String)> = Vec::new();
     for l in log.movie_loads.iter().filter(|r| within(r.frame)) {
         lines.push((l.frame, 0, format!("load {} (from {:08X})", l.path, l.caller)));
+    }
+    // the world's objects added and removed (the 'L' lists), at the frame of their tick's start
+    let frame_of = |tick: u32| log.clock.iter().find(|c| c.0 == tick).map(|c| c.3);
+    for w in log.lists.windows(2) {
+        let Some(f) = frame_of(w[1].tick).filter(|&f| within(f)) else { continue };
+        let added: Vec<i16> = w[1].ids.iter().filter(|i| !w[0].ids.contains(i)).copied().collect();
+        let gone: Vec<i16> = w[0].ids.iter().filter(|i| !w[1].ids.contains(i)).copied().collect();
+        if !added.is_empty() || !gone.is_empty() {
+            let at: Vec<String> = added.iter().map(|&id| log.places.iter().find(|p| p.id == id && p.tick >= w[1].tick).map_or(format!("{id}"), |p| format!("{id} at ({}, {}) level {}", p.x, p.y, p.level))).collect();
+            lines.push((f, 0, format!("objects tick {}: added [{}], removed {gone:?}", w[1].tick, at.join(", "))));
+        }
     }
     for c in log.movie_calls.iter().filter(|r| within(r.frame)) {
         let a: Vec<String> = c.args.iter().map(|(w, t)| if t.is_empty() { format!("{w:#x}") } else { format!("{t:?}") }).collect();
