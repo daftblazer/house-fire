@@ -32,6 +32,7 @@ mod directions;
 mod frame_draws;
 mod hud;
 mod lot;
+mod pause;
 mod set_to_next;
 mod sim_textures;
 mod variables;
@@ -656,6 +657,12 @@ fn main() -> ExitCode {
     if std::env::var_os("LOCKSTEP_HUD").is_some() {
         let opt = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1));
         hud::hud(&log, &d, &lib, &ngh, opt("--card").map(String::as_str), opt("--lot").and_then(|v| v.parse().ok()).unwrap_or(-1));
+    }
+    // (LOCKSTEP_PAUSE: the pause screen's feed to the Apt movies against the log's, driven by
+    // the log's pad; with the run's --card and --lot)
+    if std::env::var_os("LOCKSTEP_PAUSE").is_some() {
+        let opt = |name: &str| args.iter().position(|a| a == name).and_then(|i| args.get(i + 1));
+        pause::pause(&log, &d, &lib, opt("--card").map(String::as_str), opt("--lot").and_then(|v| v.parse().ok()).unwrap_or(-1));
     }
     // (LOCKSTEP_ANIM_CHANNELS: every logged scale or translation read ('%') through the
     // engine's `anim::channel3` on its logged window: the same bits, close, or different)

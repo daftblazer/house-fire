@@ -119,6 +119,24 @@ pub struct Ui {
     calls: Vec<Call>,
     /// Every command the movies sent, for a check against the log's.
     pub sent: Vec<Command>,
+    /// Keeps what the game side did, for a check against the log (`take_record`).
+    pub record: bool,
+    /// The calls made into the movies and the movies loaded since the last `take_record`.
+    made: Vec<(String, Vec<String>)>,
+    loaded: Vec<String>,
+    /// The pad's buttons held at the last `pad`.
+    held: u16,
+}
+
+/// The pad's buttons as the game reads them (PADStatus).
+pub mod pad {
+    pub const LEFT: u16 = 0x0001;
+    pub const RIGHT: u16 = 0x0002;
+    pub const DOWN: u16 = 0x0004;
+    pub const UP: u16 = 0x0008;
+    pub const A: u16 = 0x0100;
+    pub const B: u16 = 0x0200;
+    pub const START: u16 = 0x1000;
 }
 
 fn args(a: &[&str]) -> Vec<Value> {
@@ -134,7 +152,7 @@ impl Ui {
         player.set_extern("_lang", Value::str("en"));
         player.set_extern("_sku", Value::str("us"));
         player.set_extern("_enable_debug", Value::str("0"));
-        Ui { player, frame: 0, first: true, announce: false, pause: Pause::Closed, menu: None, menu_gone: false, calls: Vec::new(), sent: Vec::new() }
+        Ui { player, frame: 0, first: true, announce: false, pause: Pause::Closed, menu: None, menu_gone: false, calls: Vec::new(), sent: Vec::new(), record: false, made: Vec::new(), loaded: Vec::new(), held: 0 }
     }
 
     /// The game's frame the interface is at (the next to be run).
@@ -262,8 +280,33 @@ impl Ui {
         self.pause = Pause::Closed;
     }
 
+    /// The pad as the game reads it this frame (the buttons held): Start opens the pause screen,
+    /// and while it is open the arrows, A and B go to the movies as keys.
+    pub fn pad(&mut self, buttons: u16, hud: &mut Hud) {
+        let pressed = buttons & !self.held;
+        self.held = buttons;
+        if pressed & pad::START != 0 {
+            self.open_pause(hud);
+            return;
+        }
+        if !self.paused() {
+            return;
+        }
+        for (b, k) in [(pad::LEFT, keys::LEFT), (pad::RIGHT, keys::RIGHT), (pad::UP, keys::UP), (pad::DOWN, keys::DOWN), (pad::A, keys::A), (pad::B, keys::B)] {
+            if pressed & b != 0 {
+                self.press(k);
+            }
+        }
+    }
+
+    /// The calls made into the movies (name, arguments) and the movies loaded since the last
+    /// take, while `record` is on.
+    pub fn take_record(&mut self) -> (Vec<(String, Vec<String>)>, Vec<String>) {
+        (std::mem::take(&mut self.made), std::mem::take(&mut self.loaded))
+    }
+
     /// The answers the game gives the movies' reads this frame.
-    fn answers(&self, f: &Feed) -> Vec<(String, String)> {
+    pub fn answers(&self, f: &Feed) -> Vec<(String, String)> {
         let mut out: Vec<(String, String)> = Vec::new();
         for name in ["om", "ma", "ra", "ct", "two_player"] {
             if let Some(v) = f.hud.answer(name, f.view) {
@@ -288,6 +331,9 @@ impl Ui {
     /// Loads the movies that asked for it (the game loads what a movie's `loadMovie` names).
     fn load_pending(&mut self) {
         for name in self.player.pending_loads() {
+            if self.record {
+                self.loaded.push(name.clone());
+            }
             self.player.load(&name);
         }
     }
@@ -296,6 +342,9 @@ impl Ui {
         let a: Vec<Value> = c.args.iter().map(|s| Value::str(s)).collect();
         if self.player.trace {
             eprintln!("ui: frame {} call {}({:?})", self.frame, c.name, c.args);
+        }
+        if self.record {
+            self.made.push((c.name.to_string(), c.args.clone()));
         }
         if !self.player.call(c.name, &a) {
             self.player.note_stub(format!("call of {}: no such function", c.name));
