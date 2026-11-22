@@ -189,6 +189,8 @@ fn pad_bit(key: u32) -> Option<u16> {
         keys::RIGHT => pad::RIGHT,
         keys::UP => pad::UP,
         keys::DOWN => pad::DOWN,
+        keys::A => pad::A,
+        keys::B => pad::B,
         _ => return None,
     })
 }

@@ -309,10 +309,10 @@ const GOALS_HOUSE: (f32, f32) = (0.51, 0.175);
 const GOALS_STATUS: (f32, f32) = (0.80348957, 0.67);
 
 /// The careers screen: the title (centred on 0.48, top 0.058084413), the "all careers" line and
-/// the career lines' centre, first middle y and pitch.
+/// the career lines' right end (they are drawn right-aligned, snap x 0), first middle y and pitch.
 const CAREERS_TITLE: (f32, f32) = (0.48, 0.058084413);
 const CAREERS_ALL: (f32, f32) = (0.48, 0.18);
-const CAREERS_CENTRE: f32 = 0.42656252;
+const CAREERS_RIGHT: f32 = 0.42656252;
 const CAREERS_FIRST_Y: f32 = 0.278;
 const CAREERS_PITCH: f32 = 0.0535;
 
@@ -359,7 +359,8 @@ const BIG_OVER_SMALL: f32 = 7.0 / 6.0;
 /// The widths of lines as the game measured them, in pixels, for the strings the pause screen
 /// of Mom's house draws. The font's glyph columns do not give a width (the advance is not the
 /// columns, `docs/assets.md`), so these come from the log (pause-c.log): a line with an aligned
-/// point (size words) is twice its distance to its place; a plain line of a list that is
+/// point (size words) is twice its distance to its place, or once for a line drawn right-aligned
+/// (snap x 0: the careers' labels, whose aligned point is their right end); a plain line of a list that is
 /// centred on a place the movie reports (the options' labels on `list_item1_x`, their values on
 /// `arrows_x`) or on 0.33 (the goals' lines) is twice that distance. "10" is the width that
 /// puts the volume values where the game does (they are not centred on `arrows_x`).
@@ -368,19 +369,19 @@ const MEASURED: &[(&str, Face, f32)] = &[
     ("All Careers", Face::Big, 105.0909),
     ("BACK", Face::Big, 45.0303),
     ("CANCEL", Face::Big, 66.2727),
-    ("Counter Culture:", Face::Big, 302.4243),
+    ("Counter Culture:", Face::Big, 151.2122),
     ("FREE WILL", Face::Big, 96.2424),
-    ("Fashion Victim:", Face::Big, 269.5758),
-    ("Gangster:", Face::Big, 169.4545),
-    ("Jock:", Face::Big, 96.7273),
-    ("Mad Scientist:", Face::Big, 252.7273),
+    ("Fashion Victim:", Face::Big, 134.7879),
+    ("Gangster:", Face::Big, 84.7272),
+    ("Jock:", Face::Big, 48.3636),
+    ("Mad Scientist:", Face::Big, 126.3637),
     ("Mom's House", Face::Big, 120.4243),
-    ("Movie Star:", Face::Big, 204.8485),
+    ("Movie Star:", Face::Big, 102.4243),
     ("ON", Face::Big, 28.4243),
     ("OPTIONS", Face::Big, 72.2273),
     // (not a line the log drew big: the read `item_width`, 0.385038, is the widest label's)
     ("SOUND EFFECTS VOLUME", Face::Big, 246.4243),
-    ("Paramilitary:", Face::Big, 220.8485),
+    ("Paramilitary:", Face::Big, 110.4243),
     ("Press the R Button for double", Face::Big, 233.2727),
     ("SELECT", Face::Big, 59.8561),
     ("UNLOCKED", Face::Big, 89.2651),
@@ -925,7 +926,9 @@ impl Pause {
                 title(out, text.icon(Section::Careers), CAREERS_TITLE.0, CAREERS_TITLE.1);
                 centred(out, text.live(live::ALL_CAREERS), Face::Big, HALF_BIG, CAREERS_ALL.0, CAREERS_ALL.1, true);
                 for (k, (_, name)) in text.careers.iter().enumerate() {
-                    centred(out, &format!("{name}:"), Face::Big, HALF_BIG, CAREERS_CENTRE, CAREERS_FIRST_Y + k as f32 * CAREERS_PITCH, true);
+                    let s = format!("{name}:");
+                    let w = width(font, &s, Face::Big);
+                    line(out, &s, CAREERS_RIGHT - w / SCREEN.0, CAREERS_FIRST_Y + k as f32 * CAREERS_PITCH - HALF_BIG, Some(w), Some(2.0 * HALF_BIG * SCREEN.1));
                 }
                 if self.ready_at.is_some() {
                     button(out, text.live(live::BACK), BACK_CENTRED);

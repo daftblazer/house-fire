@@ -145,11 +145,17 @@ fn native_pictures(log: &Log, disc: &Disc, assets: &AptAssets, card: Option<&str
             hud.hide_dialog();
             dialog_open = false;
         }
-        if opens.contains(&n) {
-            ui.open_pause(&mut hud);
-        }
-        if closes.contains(&n) {
-            ui.close_pause(&mut hud, &view);
+        if log.pads.is_empty() {
+            if opens.contains(&n) {
+                ui.open_pause(&mut hud);
+            }
+            if closes.contains(&n) {
+                ui.close_pause(&mut hud, &view);
+            }
+        } else {
+            // a log with the pad (0x81 records): the pause screen runs from it, as LOCKSTEP_PAUSE runs it
+            let buttons = log.pads.iter().take_while(|p| p.frame <= n).last().map_or(0, |p| p.buttons);
+            ui.pad(buttons, &mut hud);
         }
         let speed = if ui.paused() { Speed::Paused } else { speed_at(tick) };
         let texts = ui.step(&mut Feed { hud: &mut hud, view: &view, speed, measure: &measure });
