@@ -80,13 +80,21 @@ impl Dialog {
 
 /// Where the movies say their bars and buttons are, as fractions of the screen: the commands
 /// `money_bar_x`, `time_bar_y`, `dialog_title_bar_x`, `dialog_button_accept_y`, ...
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Layout {
     pub money: (f32, f32),
     pub time: (f32, f32),
     pub title: (f32, f32),
     pub accept: (f32, f32),
     pub decline: (f32, f32),
+}
+
+impl Default for Layout {
+    /// Before a movie reports a place: the dialog's buttons are at (-1, -1) (the pause screen's
+    /// dialogs draw their labels there until their movie says where, frame 2604 of pause-c.log).
+    fn default() -> Layout {
+        Layout { money: (0.0, 0.0), time: (0.0, 0.0), title: (0.0, 0.0), accept: (-1.0, -1.0), decline: (-1.0, -1.0) }
+    }
 }
 
 /// What the HUD shows of the lot for one player: their Sim's motives (the overall mood is
@@ -97,12 +105,22 @@ pub struct PlayerView {
     pub hour: i32,
     pub minute: i32,
     pub funds: i32,
+    /// The lot's house (its global 10) and, for each of that house's goals in its list's order,
+    /// whether the player has met it (the pause screen's goals list).
+    pub house: usize,
+    pub goals_met: Vec<bool>,
+    /// The levels the household's Sims have reached in the seven careers the pause screen lists.
+    /// The engine has no careers yet: all 0.
+    pub career_levels: [i32; 7],
 }
 
 /// The lot's global with the funds (the HUD's money text reads the game's account 0,
 /// `fn_800BC920`; the lot's global 13 holds 1,030 in the home lot, as the HUD shows).
 /// Unverified: that this global is the account the manager's getter reads.
 const GLOBAL_FUNDS: usize = 13;
+
+/// The lot's global with the house's number (the goals' lists are by it).
+const GLOBAL_HOUSE: usize = 10;
 
 impl PlayerView {
     /// The view of the Sim `sim` of the world; `None` if there is no such Sim.
@@ -113,7 +131,9 @@ impl PlayerView {
             *m = *v;
         }
         let g = |i: usize| i32::from(world.globals.get(i).copied().unwrap_or(0));
-        Some(PlayerView { motives, hour: g(0), minute: g(5), funds: g(GLOBAL_FUNDS) - world.funds_spent })
+        let house = usize::try_from(g(GLOBAL_HOUSE)).unwrap_or(0);
+        let goals_met = world.goals.houses.get(house).map(|marks| marks.iter().map(|&m| world.goals.is_met(m)).collect()).unwrap_or_default();
+        Some(PlayerView { motives, hour: g(0), minute: g(5), funds: g(GLOBAL_FUNDS) - world.funds_spent, house, goals_met, career_levels: [0; 7] })
     }
 
     /// The overall mood the HUD's meter shows (`fn_80088890`: entry 3 of the motives, cut to a
@@ -434,9 +454,14 @@ impl Hud {
 
     /// The funds line ("$ 1,030"), centred on the money bar's place (the pause screen draws it too).
     pub fn funds_text(&self, view: &PlayerView, measure: &Measure, out: &mut Vec<Text>) {
-        let funds = format!("$ {}", thousands(view.funds));
+        self.funds_line(view.funds, self.layout.money, measure, out);
+    }
+
+    /// An amount of money as a funds line centred on a place.
+    pub fn funds_line(&self, amount: i32, at: (f32, f32), measure: &Measure, out: &mut Vec<Text>) {
+        let funds = format!("$ {}", thousands(amount));
         let w = measure.hud_width(&funds) / SCREEN.0;
-        line(out, &funds, self.layout.money.0 - w / 2.0, self.layout.money.1 - TEXT_HEIGHT / 2.0, Some(w * SCREEN.0), Some(TEXT_HEIGHT * SCREEN.1));
+        line(out, &funds, at.0 - w / 2.0, at.1 - TEXT_HEIGHT / 2.0, Some(w * SCREEN.0), Some(TEXT_HEIGHT * SCREEN.1));
     }
 
     /// The answer of the HUD's handler (`Screen_Read`, 0x8008BFDC) to a movie's read of a game
@@ -509,7 +534,7 @@ mod tests {
     fn view(mood: f32) -> PlayerView {
         let mut motives = [0.0; 16];
         motives[MOOD] = mood;
-        PlayerView { motives, hour: 7, minute: 4, funds: 1030 }
+        PlayerView { motives, hour: 7, minute: 4, funds: 1030, house: 1, goals_met: Vec::new(), career_levels: [0; 7] }
     }
 
     #[test]

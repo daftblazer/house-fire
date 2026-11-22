@@ -1,7 +1,7 @@
 
 use crate::disc::Disc;
 use crate::goals::Goals;
-use crate::save::{LotChunks, Neighbour, memory_card_file, read_goal_marks, read_lot_globals, read_neighbourhood_data, read_lots, read_neighbours};
+use crate::save::{LotChunks, Neighbour, memory_card_file, read_goal_marks, read_families, read_lot_globals, read_neighbourhood_data, read_lots, read_neighbours};
 use super::study::has;
 
 /// The save a run starts from: its lots, their globals and the neighbours, and which lot the
@@ -21,6 +21,8 @@ pub struct Start {
     pub goals: Goals,
     /// The neighbourhood's data (scope 34), as saved.
     pub neighbourhood: Vec<i16>,
+    /// The families of the save (the pause screen shows the family's funds).
+    pub families: Vec<crate::save::Family>,
 }
 
 impl Start {
@@ -54,6 +56,7 @@ impl Start {
         let house = usize::try_from(lot_index).ok().and_then(|i| disc_lots.get(i).cloned());
         let met = read_goal_marks(&ngh).map_err(|e| format!("the goals: {e:?}"))?;
         let neighbourhood = read_neighbourhood_data(&ngh).map_err(|e| format!("the neighbourhood's data: {e:?}"))?;
+        let families = read_families(&ngh).unwrap_or_default();
         let quick = disc.read("quickdat.arc").unwrap_or_default();
         let houses = crate::arc::entries(&quick)
             .unwrap_or_default()
@@ -62,7 +65,7 @@ impl Start {
             .and_then(|e| crate::quickdata::Image::read(crate::arc::bytes(&quick, &e)))
             .map(|img| crate::quickdata::house_goals(&img))
             .unwrap_or_default();
-        Ok(Start { lots, lot_globals, neighbours, index, card_lot, house, goals: Goals { houses, met }, neighbourhood })
+        Ok(Start { lots, lot_globals, neighbours, index, card_lot, house, goals: Goals { houses, met }, neighbourhood, families })
     }
 
     /// The neighbourhood (its data, scope 34, and the neighbours) from another save, a memory card's: a disc lot (the
@@ -77,6 +80,13 @@ impl Start {
         self.neighbourhood = read_neighbourhood_data(&ngh).map_err(|e| format!("the neighbourhood's data: {e:?}"))?;
         self.neighbours = read_neighbours(&ngh).map_err(|e| format!("the neighbours: {e:?}"))?;
         Ok(())
+    }
+
+    /// The funds the save keeps for the family of the lot's house: the second word of its
+    /// record (the pause screen's second funds line; 0 for a house with no family).
+    pub fn family_funds(&self) -> i32 {
+        let house = i32::from(self.globals().get(10).copied().unwrap_or(0));
+        self.families.iter().find(|f| f.house == house).map_or(0, |f| f.words[1])
     }
 
     pub fn lot(&self) -> &LotChunks {

@@ -11,9 +11,10 @@
 use std::rc::Rc;
 
 use super::Flash;
+use super::pause::{Game, Pause, Press, Settings};
 use super::player::{Command, Player};
 use super::value::Value;
-use crate::hud::{Call, Hud, Measure, PlayerView, SCREEN, Speed, Text, line};
+use crate::hud::{Call, Hud, Measure, PlayerView, SCREEN, Speed, Text};
 
 /// The keys the wrapper's `keys` clip knows (`Key.getCode`, read from its actions): the
 /// arrows, A, B and the triangle.
@@ -30,40 +31,6 @@ pub mod keys {
 /// The buttons the pause screen makes and hides (`drawButton(name, "-1", "-1", ".1")`, 0x800A7614
 /// and the seven after it), in the game's order.
 const PAUSE_BUTTONS: [&str; 8] = ["accept", "decline", "walls", "alt2", "flipper1", "flipper2", "rotate", "background"];
-
-/// The pause screen's two visible buttons: where the game puts them (fractions of the screen,
-/// `drawButton` at 0x800A5018 and 0x800A504C) and their labels.
-const PAUSE_ACCEPT: (&str, f32, f32) = ("SELECT", 0.4, 0.905);
-const PAUSE_DECLINE: (&str, f32, f32) = ("BACK", 0.7, 0.905);
-
-/// What the game measured of the pause screen's own strings, as the log has it (the pause screen
-/// of ui-menu.log): the width as a fraction of the screen. A button's is the width `drawButton`
-/// was given, and its label is drawn that wide, centred on the button's place; the title's is the
-/// movie's `title_bar_width` read, and the title is that wide, centred on the middle. The font's
-/// glyph columns do not give these (the advance is not the columns, `docs/assets.md`) and the
-/// strings are fixed.
-const PAUSE_WIDTHS: [(&str, f32); 3] = [("GOALS", 0.102652), ("SELECT", 0.093525), ("BACK", 0.070360)];
-
-/// The pause screen's title ("GOALS" for the first section): centred on the middle, its top at
-/// this fraction of the screen (the log's line, `0.1861`; the movie's title bar place is not
-/// reported).
-const PAUSE_TITLE_Y: f32 = 0.1861;
-
-/// The pause screen's font is the HUD's at 14 where the HUD's is 13: its lines are 14/13 of the
-/// HUD's (the "SELECT" line's height 17.2 pixels against 15.9).
-const PAUSE_SIZE_RATIO: f32 = 14.0 / 13.0;
-
-/// The game frames the pause screen's two buttons come after the movie's `draw_main` (2064 and
-/// 2066 in the log).
-const BUTTON_DELAY: u32 = 2;
-
-/// How the pause screen stands.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Pause {
-    Closed,
-    /// Open: the frame its buttons are drawn at (`draw_main` was heard), once heard.
-    Open { buttons_at: Option<u32> },
-}
 
 /// The interaction menu as a list of pills: the rows' pitch (pixels), and how far a pill reaches
 /// left of its label's centre beyond half the label (the A picture) and right of it (the pill's
@@ -111,7 +78,15 @@ pub struct Ui {
     first: bool,
     /// The HUD was shown and its `showHUD` is still to be called.
     announce: bool,
-    pause: Pause,
+    /// The pause screen's state while it is up.
+    pause: Option<Pause>,
+    /// The pause screen's strings and the save's funds, and the options it keeps between visits.
+    game: Game,
+    settings: Settings,
+    /// The speed the HUD was last given outside the frame the pause screen opened in (the speed
+    /// buttons follow the pause a frame later).
+    speed_seen: Speed,
+    opened_at: Option<u32>,
     menu: Option<Menu>,
     /// The menu's pill is hidden again by the next frame's calls.
     menu_gone: bool,
@@ -152,7 +127,7 @@ impl Ui {
         player.set_extern("_lang", Value::str("en"));
         player.set_extern("_sku", Value::str("us"));
         player.set_extern("_enable_debug", Value::str("0"));
-        Ui { player, frame: 0, first: true, announce: false, pause: Pause::Closed, menu: None, menu_gone: false, calls: Vec::new(), sent: Vec::new(), record: false, made: Vec::new(), loaded: Vec::new(), held: 0 }
+        Ui { player, frame: 0, first: true, announce: false, pause: None, game: Game::default(), settings: Settings::default(), speed_seen: Speed::Normal, opened_at: None, menu: None, menu_gone: false, calls: Vec::new(), sent: Vec::new(), record: false, made: Vec::new(), loaded: Vec::new(), held: 0 }
     }
 
     /// The game's frame the interface is at (the next to be run).
@@ -175,7 +150,17 @@ impl Ui {
 
     /// Whether the pause screen is up.
     pub fn paused(&self) -> bool {
-        self.pause != Pause::Closed
+        self.pause.is_some()
+    }
+
+    /// The pause screen's strings and the save's funds (from the disc and the save).
+    pub fn set_game(&mut self, game: Game) {
+        self.game = game;
+    }
+
+    /// The game's options as the options screen keeps them.
+    pub fn settings(&self) -> Settings {
+        self.pause.as_ref().map_or(self.settings, Pause::settings)
     }
 
     /// A key goes down and up (the pad or keyboard, as the game passes it to the movies).
@@ -262,7 +247,8 @@ impl Ui {
         for b in PAUSE_BUTTONS {
             self.calls.push(Call { name: "drawButton", args: vec![b.into(), "-1".into(), "-1".into(), ".1".into()] });
         }
-        self.pause = Pause::Open { buttons_at: None };
+        self.pause = Some(Pause::new(self.settings));
+        self.opened_at = Some(self.frame);
     }
 
     /// The pause screen closes (B): its buttons destroyed, the HUD back (0x800A77F0 to 0x800A7960).
@@ -277,11 +263,14 @@ impl Ui {
         }
         self.calls.push(Call { name: "resetButtonContext", args: Vec::new() });
         hud.resume(view);
-        self.pause = Pause::Closed;
+        if let Some(p) = self.pause.take() {
+            self.settings = p.settings();
+        }
     }
 
     /// The pad as the game reads it this frame (the buttons held): Start opens the pause screen,
-    /// and while it is open the arrows, A and B go to the movies as keys.
+    /// and while it is open the arrows, A and B reach the movie that has the focus two frames
+    /// later (`Pause::pad`).
     pub fn pad(&mut self, buttons: u16, hud: &mut Hud) {
         let pressed = buttons & !self.held;
         self.held = buttons;
@@ -289,13 +278,9 @@ impl Ui {
             self.open_pause(hud);
             return;
         }
-        if !self.paused() {
-            return;
-        }
-        for (b, k) in [(pad::LEFT, keys::LEFT), (pad::RIGHT, keys::RIGHT), (pad::UP, keys::UP), (pad::DOWN, keys::DOWN), (pad::A, keys::A), (pad::B, keys::B)] {
-            if pressed & b != 0 {
-                self.press(k);
-            }
+        let frame = self.frame;
+        if let Some(p) = &mut self.pause {
+            p.pad(pressed, frame);
         }
     }
 
@@ -318,12 +303,8 @@ impl Ui {
                 out.push((name.to_string(), v));
             }
         }
-        if self.paused() {
-            // the pause movie's reads (0x800A60D4): the mode of play, whether the lot can be
-            // built on, and the title's width
-            out.push(("pause_mode".into(), "resident".into()));
-            out.push(("pause_enable_buy_build".into(), "true".into()));
-            out.push(("title_bar_width".into(), format!("{:.6}", pause_width(f.measure, PAUSE_TITLE))));
+        if let Some(p) = &self.pause {
+            out.extend(p.answers(f.view, &self.game, f.measure.font));
         }
         out
     }
@@ -351,6 +332,86 @@ impl Ui {
         }
     }
 
+    /// The commands the movies sent, as the game's handlers take them one at a time: the pause
+    /// screen's first, which makes its calls at once, and the commands those bring are heard
+    /// before the HUD's turn with this one. A section's `draw_X` "false" is heard after the
+    /// calls the game makes around it (the log has it last: 1884, 1971, 2120). `late` is a drain
+    /// after the movies' frame: the game's calls then count for one movie frame less before a
+    /// button movie they ask for starts (1973 asks, 1976 reports).
+    fn drain(&mut self, f: &mut Feed, late: bool) {
+        let mut pending: std::collections::VecDeque<Command> = self.player.take_commands().into();
+        let mut held: Vec<Command> = Vec::new();
+        while let Some(c) = pending.pop_front() {
+            if c.name.starts_with("draw_") && c.argument == "false" {
+                held.push(c);
+            } else {
+                self.hear(c, f, late);
+            }
+            let mut fresh: std::collections::VecDeque<Command> = self.player.take_commands().into();
+            fresh.append(&mut pending);
+            pending = fresh;
+        }
+        for c in held {
+            self.hear(c, f, late);
+        }
+    }
+
+    fn hear(&mut self, c: Command, f: &mut Feed, late: bool) {
+        let calls = match &mut self.pause {
+            Some(p) => p.command(&c.name, &c.argument, self.frame, &self.game.text, f.measure.font),
+            None => Vec::new(),
+        };
+        if late {
+            self.player.cache_ticks -= 1;
+        }
+        for call in &calls {
+            self.make(call);
+        }
+        if late {
+            self.player.cache_ticks += 1;
+        }
+        let fresh = self.player.take_commands();
+        for fc in fresh {
+            self.hear(fc, f, late);
+        }
+        f.hud.command(&c.name, &c.argument);
+        self.sent.push(c);
+    }
+
+    /// The presses of the pad that are due: a key to the movie that has the focus, the pause
+    /// screen closing, the options screen leaving.
+    fn presses(&mut self, f: &mut Feed) {
+        let Some(due) = self.pause.as_mut().map(|p| p.due(self.frame)) else { return };
+        for press in due {
+            match press {
+                Press::Key(k) => {
+                    self.press(k);
+                    self.drain(f, false);
+                }
+                Press::Close => self.close_pause(f.hud, f.view),
+                Press::Back => {
+                    let (calls, late) = self.pause.as_mut().map(|p| (p.back(), p.late_back())).unwrap_or_default();
+                    if late {
+                        // (the buy and build screens' calls come after the frame's loads)
+                        self.calls.extend(calls);
+                    } else {
+                        for c in &calls {
+                            self.make(c);
+                        }
+                        self.drain(f, false);
+                    }
+                }
+                Press::OptionsLeave { keep } => {
+                    if let Some(p) = &mut self.pause {
+                        // (the options screen's calls come after the frame's loads)
+                        let calls = p.leave_options(keep);
+                        self.calls.extend(calls);
+                    }
+                }
+            }
+        }
+    }
+
     /// One presentation frame: the movies run a frame, load what they asked for, the game hears
     /// what they sent and makes its calls; the lines of text it draws are given back.
     pub fn step(&mut self, f: &mut Feed) -> Vec<Text> {
@@ -374,41 +435,35 @@ impl Ui {
             self.player.call("loadFunctions", &args(&["hud"]));
         }
         self.player.frame = self.frame;
+        // the speed buttons follow the pause screen's opening a frame later
+        let frame = self.frame;
+        let speed = if self.opened_at.take_if(|at| *at == frame).is_some() { self.speed_seen } else { f.speed };
+        self.speed_seen = speed;
         let answers = self.answers(f);
         self.player.set_answers(answers);
+        self.presses(f);
         self.player.advance();
+        self.drain(f, false);
         self.player.tick_loads();
+        self.drain(f, true);
         self.load_pending();
-        for c in self.player.take_commands() {
-            f.hud.command(&c.name, &c.argument);
-            if c.name == "draw_main"
-                && let Pause::Open { buttons_at: at @ None } = &mut self.pause
-            {
-                *at = Some(self.frame + BUTTON_DELAY);
-            }
-            self.sent.push(c);
-        }
+        self.drain(f, false);
         let mut calls = std::mem::take(&mut self.calls);
-        calls.extend(f.hud.update(f.view, f.speed, std::mem::take(&mut self.announce)));
+        calls.extend(f.hud.update(f.view, speed, std::mem::take(&mut self.announce)));
         let (draw, mut texts) = f.hud.draw(f.view, f.measure);
         calls.extend(draw);
-        if let Pause::Open { buttons_at: Some(at) } = self.pause
-            && at == self.frame
-        {
-            for (label, x, y) in [PAUSE_ACCEPT, PAUSE_DECLINE] {
-                let w = pause_width(f.measure, label);
-                calls.push(Call { name: "drawButton", args: vec![if label == "SELECT" { "accept" } else { "decline" }.into(), format!("{x:.6}"), format!("{y:.6}"), format!("{w:.6}")] });
-            }
-        }
         self.menu_calls(f, &mut calls);
         for c in &calls {
             self.make(c);
         }
+        self.drain(f, false);
         self.menu_texts(f, &mut texts);
-        if let Pause::Open { buttons_at: Some(at) } = self.pause
-            && at <= self.frame
-        {
-            self.pause_texts(f, &mut texts);
+        if let Some(p) = &self.pause {
+            p.texts(f.view, &self.game, f.measure.font, &f.hud.layout(), self.frame, &mut texts);
+            if p.funds_shown() {
+                f.hud.funds_text(f.view, f.measure, &mut texts);
+                f.hud.funds_line(self.game.family_funds, f.hud.layout().time, f.measure, &mut texts);
+            }
         }
         self.frame += 1;
         texts
@@ -441,34 +496,7 @@ impl Ui {
         }
     }
 
-    /// The pause screen's own lines: the title, the two buttons' labels and the funds in the
-    /// place the HUD's clock has.
-    fn pause_texts(&self, f: &Feed, out: &mut Vec<Text>) {
-        f.hud.funds_text(f.view, f.measure, out);
-        let h = crate::hud::TEXT_HEIGHT * PAUSE_SIZE_RATIO;
-        let hh = Some(h * SCREEN.1);
-        let tw = pause_width(f.measure, PAUSE_TITLE) * SCREEN.0;
-        out.push(Text { text: PAUSE_TITLE.into(), x: 0.5 - tw / SCREEN.0 / 2.0, y: PAUSE_TITLE_Y, shadow: false, width: Some(tw), height: hh, plain: true });
-        for (label, x, y) in [PAUSE_ACCEPT, PAUSE_DECLINE] {
-            let w = pause_width(f.measure, label) * SCREEN.0;
-            line(out, label, x - w / SCREEN.0 / 2.0, y - h / 2.0, Some(w), hh);
-        }
-    }
-
     pub fn display_list(&self) -> Vec<super::display::DisplayItem> {
         self.player.display_list()
     }
 }
-
-/// A pause string's width, a fraction of the screen: the log's for the strings it has, else the
-/// HUD's measure at the pause's size.
-fn pause_width(measure: &Measure, text: &str) -> f32 {
-    match PAUSE_WIDTHS.iter().find(|w| w.0 == text) {
-        Some(&(_, w)) => w,
-        None => measure.hud_width(text) * PAUSE_SIZE_RATIO / SCREEN.0,
-    }
-}
-
-/// The pause screen's title: the first section's (the section's own name comes with the
-/// movie's section picker, which is not read).
-const PAUSE_TITLE: &str = "GOALS";

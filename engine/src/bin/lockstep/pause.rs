@@ -12,6 +12,7 @@
 //! differences (default 6).
 
 use crate::*;
+use housefire::apt::pause::{Game, GameText};
 use housefire::apt::ui::{Feed, Ui};
 use housefire::hud::{Hud, Measure, PlayerView, Speed};
 use housefire::replay::{Replay, RunWith, Start};
@@ -126,6 +127,7 @@ pub fn pause(log: &Log, d: &Disc, lib: &Library, card: Option<&str>, lot_index: 
         }
     };
     let mut ui = Ui::new(flashes);
+    ui.set_game(Game { text: GameText::read(&d.read("quickdat.arc").unwrap_or_default()).unwrap_or_default(), family_funds: start.family_funds() });
     ui.set_frame(f0);
     let mut hud = Hud::new(1);
     let mut tally = Tally { limit: std::env::var("LOCKSTEP_PAUSE_SHOW").ok().and_then(|v| v.parse().ok()).unwrap_or(6), ..Tally::default() };

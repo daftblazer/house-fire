@@ -131,10 +131,15 @@ impl Image {
         Some(String::from_utf16_lossy(&units))
     }
 
+    /// The interface string a word of a row holds: the word at `o` points at a pointer to it.
+    pub fn text(&self, o: usize) -> Option<String> {
+        self.wide_string(self.ptr(o)?)
+    }
+
     /// A string table of the interface (a language image's): each row points at a pointer to
     /// the row's string.
     pub fn strings(&self, table: &str) -> Vec<String> {
-        self.rows(table).map(|r| self.ptr(r).and_then(|p| self.wide_string(p)).unwrap_or_default()).collect()
+        self.rows(table).map(|r| self.text(r).unwrap_or_default()).collect()
     }
 
     /// The row of a table with this name (the row names the descriptor's third word points at,

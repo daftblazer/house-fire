@@ -14,6 +14,7 @@ pub mod host;
 pub mod geometry;
 mod img;
 pub mod movie;
+pub mod pause;
 pub mod play;
 pub mod player;
 pub mod texture;

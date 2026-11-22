@@ -2211,7 +2211,11 @@ fn main() -> ExitCode {
             };
             let pats: Vec<Vec<u8>> = match q.strip_prefix("0x").and_then(|h| u32::from_str_radix(h, 16).ok()) {
                 Some(w) => vec![w.to_be_bytes().to_vec(), w.to_le_bytes().to_vec()],
-                None => vec![q.as_bytes().to_vec(), q.to_ascii_uppercase().into_bytes()],
+                None => match q.strip_prefix("w:") {
+                    // UTF-16 text, either byte order
+                    Some(t) => vec![t.encode_utf16().flat_map(u16::to_be_bytes).collect(), t.encode_utf16().flat_map(u16::to_le_bytes).collect()],
+                    None => vec![q.as_bytes().to_vec(), q.to_ascii_uppercase().into_bytes()],
+                },
             };
             let find = |b: &[u8]| -> Vec<usize> { pats.iter().flat_map(|p| b.windows(p.len()).enumerate().filter(|(_, w)| w == &p.as_slice()).map(|(i, _)| i).collect::<Vec<_>>()).collect() };
             for path in d.files().keys() {
@@ -2484,6 +2488,84 @@ fn main() -> ExitCode {
             };
             for (k, s) in img.strings(table).iter().enumerate() {
                 println!("{k}: {s:?}");
+            }
+        }
+        "qtext" => {
+            // (study) a table's rows with each word that points at an interface string shown as it
+            let (Some(entry), Some(table)) = (args.get(3), args.get(4)) else {
+                println!("usage: assets ISO qtext ENTRY TABLE [N]");
+                return ExitCode::FAILURE;
+            };
+            let n = args.get(5).and_then(|v| v.parse::<usize>().ok()).unwrap_or(4);
+            let q = d.read("quickdat.arc").unwrap_or_default();
+            let Some(img) = arc::entries(&q).unwrap_or_default().into_iter().find(|e| &e.name == entry).and_then(|e| quickdata::Image::read_language(arc::bytes(&q, &e), 1)) else {
+                return ExitCode::FAILURE;
+            };
+            let Some(t) = img.tables.get(table.as_str()).copied() else { return ExitCode::FAILURE };
+            for r in img.rows(table).take(n) {
+                let words: Vec<String> = (0..t.row_size / 4).map(|k| img.text(r + 4 * k).filter(|s| !s.is_empty()).map_or_else(|| format!("{:08x}", img.u32(r + 4 * k).unwrap_or(0)), |s| format!("{s:?}"))).collect();
+                println!("{}", words.join(" "));
+            }
+        }
+        "textwidths" => {
+            // (study) every text record of a log with size words: the string, its font words, the
+            // width in pixels two ends of the aligned point give (2 (x_aligned - x), a centred line's)
+            let Some(log) = args.get(3).and_then(|p| housefire::tree_log::read_log(p)) else { return ExitCode::FAILURE };
+            // with a frame (and optionally a last one) every record of those frames, in full
+            let frames: Option<(u32, u32)> = args.get(4).and_then(|f| f.parse().ok()).map(|a| (a, args.get(5).and_then(|f| f.parse().ok()).unwrap_or(a)));
+            for t in log.text_draws.iter().filter(|t| frames.map_or(t.size_words != [0; 4], |(a, b)| (a..=b).contains(&t.frame))) {
+                let sw = t.size_words.map(f32::from_bits);
+                println!("{}\t{:.4}\t{:.4}\t{}\t{}\t{:?}\t{}\t{}\t{:?}", t.frame, 2.0 * (sw[2] - t.x) * 640.0, (sw[2] - t.x) * 640.0, t.font_words[2], sw[2], t.text, t.x, t.y, sw);
+            }
+        }
+        "glyphcols" => {
+            // (study) the glyph columns of the characters of a text in the interface font
+            let fonts = housefire::apt::read_fonts(&d.read("fonts.arc").unwrap_or_default());
+            let Some(font) = fonts.into_iter().find(|(n, _)| housefire::shader::name_hash(n) == 0x67f664fb).and_then(|(_, f)| f.ok()) else { return ExitCode::FAILURE };
+            for t in &args[3..] {
+                let cols: Vec<String> = t.chars().map(|c| format!("{c}:{}", font.glyph(c as u32).map_or(-1, |g| (g.x1 - g.x0) as i32))).collect();
+                if std::env::var_os("GLYPH_BOXES").is_some() {
+                    for c in t.chars() {
+                        if let Some(g) = font.glyph(c as u32) {
+                            println!("{c} x0 {} x1 {} page {} row {}", g.x0, g.x1, g.page, g.row);
+                        }
+                    }
+                }
+                println!("{t:?} {}", cols.join(" "));
+            }
+        }
+        "qword" => {
+            // (study) the offsets of an entry's image (with the first language) that hold a word
+            let (Some(entry), Some(v)) = (args.get(3), args.get(4).and_then(|v| u32::from_str_radix(v, 16).ok())) else {
+                println!("usage: assets ISO qword ENTRY HEXWORD");
+                return ExitCode::FAILURE;
+            };
+            let q = d.read("quickdat.arc").unwrap_or_default();
+            let Some(img) = arc::entries(&q).unwrap_or_default().into_iter().find(|e| &e.name == entry).and_then(|e| quickdata::Image::read_language(arc::bytes(&q, &e), 1)) else {
+                return ExitCode::FAILURE;
+            };
+            let hits: Vec<String> = (0..img.data.len() / 4).map(|k| 4 * k).filter(|&o| img.u32(o) == Some(v)).map(|o| format!("{o:x}")).collect();
+            println!("{}", hits.join(" "));
+        }
+        "qat" => {
+            // (study) the words at an offset of an entry's image (with the first language), each
+            // a number, a pointer (its offset) or an interface string
+            let (Some(entry), Some(at), Some(n)) = (args.get(3), args.get(4).and_then(|v| usize::from_str_radix(v, 16).ok()), args.get(5).and_then(|v| v.parse::<usize>().ok())) else {
+                println!("usage: assets ISO qat ENTRY HEXOFFSET WORDS");
+                return ExitCode::FAILURE;
+            };
+            let q = d.read("quickdat.arc").unwrap_or_default();
+            let Some(img) = arc::entries(&q).unwrap_or_default().into_iter().find(|e| &e.name == entry).and_then(|e| quickdata::Image::read_language(arc::bytes(&q, &e), 1)) else {
+                return ExitCode::FAILURE;
+            };
+            for k in 0..n {
+                let o = at + 4 * k;
+                let w = img.u32(o).unwrap_or(0);
+                match (img.ptr(o), img.text(o)) {
+                    (Some(p), Some(t)) if !t.is_empty() => println!("{o:x}: {w:08x} -> {p:x} text {t:?}"),
+                    (Some(p), _) => println!("{o:x}: {w:08x} -> {p:x}"),
+                    _ => println!("{o:x}: {w:08x}"),
+                }
             }
         }
         "qrows" => {
@@ -4440,7 +4522,7 @@ fn uilog(args: &[String]) -> ExitCode {
     }
     let mut by_frame: std::collections::BTreeMap<u32, Vec<String>> = std::collections::BTreeMap::new();
     for t in log.text_draws.iter().filter(|r| within(r.frame)) {
-        by_frame.entry(t.frame).or_default().push(format!("{:?} at ({:.3}, {:.3})", t.text, t.x, t.y));
+        by_frame.entry(t.frame).or_default().push(format!("{:?} at ({:.3}, {:.3}){}", t.text, t.x, t.y, if std::env::var_os("UILOG_SIZES").is_some() { format!(" size {:?}", t.size_words.map(f32::from_bits)) } else { String::new() }));
     }
     let mut shown: Vec<String> = Vec::new();
     for (f, texts) in by_frame {
