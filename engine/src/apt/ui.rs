@@ -86,7 +86,10 @@ pub struct Ui {
     /// The speed the HUD was last given outside the frame the pause screen opened in (the speed
     /// buttons follow the pause a frame later).
     speed_seen: Speed,
+    speed_before: Speed,
     opened_at: Option<u32>,
+    /// The pause screen closed in this frame (the HUD's speed is what it was before the pause).
+    closing: bool,
     menu: Option<Menu>,
     /// The menu's pill is hidden again by the next frame's calls.
     menu_gone: bool,
@@ -127,7 +130,7 @@ impl Ui {
         player.set_extern("_lang", Value::str("en"));
         player.set_extern("_sku", Value::str("us"));
         player.set_extern("_enable_debug", Value::str("0"));
-        Ui { player, frame: 0, first: true, announce: false, pause: None, game: Game::default(), settings: Settings::default(), speed_seen: Speed::Normal, opened_at: None, menu: None, menu_gone: false, calls: Vec::new(), sent: Vec::new(), record: false, made: Vec::new(), loaded: Vec::new(), held: 0 }
+        Ui { player, frame: 0, first: true, announce: false, pause: None, game: Game::default(), settings: Settings::default(), speed_seen: Speed::Normal, speed_before: Speed::Normal, opened_at: None, closing: false, menu: None, menu_gone: false, calls: Vec::new(), sent: Vec::new(), record: false, made: Vec::new(), loaded: Vec::new(), held: 0 }
     }
 
     /// The game's frame the interface is at (the next to be run).
@@ -249,6 +252,7 @@ impl Ui {
         }
         self.pause = Some(Pause::new(self.settings));
         self.opened_at = Some(self.frame);
+        self.speed_before = self.speed_seen;
     }
 
     /// The pause screen closes (B): its buttons destroyed, the HUD back (0x800A77F0 to 0x800A7960).
@@ -256,13 +260,23 @@ impl Ui {
         if !self.paused() {
             return;
         }
-        self.calls.push(Call { name: "hidePause", args: Vec::new() });
-        self.calls.push(Call { name: "setButtonContext", args: vec!["pause".into()] });
-        for b in PAUSE_BUTTONS {
-            self.calls.push(Call { name: "destroyButton", args: vec![b.into()] });
-        }
-        self.calls.push(Call { name: "resetButtonContext", args: Vec::new() });
+        let calls = Self::close_calls();
+        self.calls.extend(calls);
+        self.leave(hud, view);
+    }
+
+    /// The calls that take the pause screen away.
+    fn close_calls() -> Vec<Call> {
+        let mut calls = vec![Call { name: "hidePause", args: Vec::new() }, Call { name: "setButtonContext", args: vec!["pause".into()] }];
+        calls.extend(PAUSE_BUTTONS.map(|b| Call { name: "destroyButton", args: vec![b.into()] }));
+        calls.push(Call { name: "resetButtonContext", args: Vec::new() });
+        calls
+    }
+
+    /// The pause screen is gone: the HUD is back, the options are kept.
+    fn leave(&mut self, hud: &mut Hud, view: &PlayerView) {
         hud.resume(view);
+        self.closing = true;
         if let Some(p) = self.pause.take() {
             self.settings = p.settings();
         }
@@ -374,6 +388,22 @@ impl Ui {
         for fc in fresh {
             self.hear(fc, f, late);
         }
+        if c.name == "pauseDone" && c.argument == "true" && self.pause.is_some() {
+            // the main row's movie says the player is done: the game takes the pause screen away
+            let calls = Self::close_calls();
+            for call in &calls {
+                self.make(call);
+            }
+            self.leave(f.hud, f.view);
+            let back = f.hud.update(f.view, self.speed_before, false);
+            for call in &back {
+                self.make(call);
+            }
+            let fresh = self.player.take_commands();
+            for fc in fresh {
+                self.hear(fc, f, late);
+            }
+        }
         f.hud.command(&c.name, &c.argument);
         self.sent.push(c);
     }
@@ -388,8 +418,11 @@ impl Ui {
                     self.press(k);
                     self.drain(f, false);
                 }
-                Press::Close => self.close_pause(f.hud, f.view),
                 Press::Back => {
+                    if self.pause.as_ref().is_some_and(Pause::dialog) {
+                        self.press(keys::TRIANGLE);
+                        self.drain(f, false);
+                    }
                     let (calls, late) = self.pause.as_mut().map(|p| (p.back(), p.late_back())).unwrap_or_default();
                     if late {
                         // (the buy and build screens' calls come after the frame's loads)
@@ -437,7 +470,7 @@ impl Ui {
         self.player.frame = self.frame;
         // the speed buttons follow the pause screen's opening a frame later
         let frame = self.frame;
-        let speed = if self.opened_at.take_if(|at| *at == frame).is_some() { self.speed_seen } else { f.speed };
+        let mut speed = if self.opened_at.take_if(|at| *at == frame).is_some() { self.speed_seen } else { f.speed };
         self.speed_seen = speed;
         let answers = self.answers(f);
         self.player.set_answers(answers);
@@ -448,6 +481,9 @@ impl Ui {
         self.drain(f, true);
         self.load_pending();
         self.drain(f, false);
+        if std::mem::take(&mut self.closing) {
+            speed = self.speed_before;
+        }
         let mut calls = std::mem::take(&mut self.calls);
         calls.extend(f.hud.update(f.view, speed, std::mem::take(&mut self.announce)));
         let (draw, mut texts) = f.hud.draw(f.view, f.measure);
@@ -464,6 +500,9 @@ impl Ui {
                 f.hud.funds_text(f.view, f.measure, &mut texts);
                 f.hud.funds_line(self.game.family_funds, f.hud.layout().time, f.measure, &mut texts);
             }
+        }
+        if std::env::var_os("PAUSE_DEBUG").is_some() && self.frame == 2883 {
+            eprintln!("DEBUG stubs {:#?}", self.player.stubs);
         }
         self.frame += 1;
         texts

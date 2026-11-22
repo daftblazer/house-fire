@@ -266,7 +266,7 @@ const BUTTON_WIDTH: f32 = 0.103551;
 /// What the dialog's title bar reads (`dialog_title_bar_width`, frame 2599), the dialog's box
 /// (`dialog_x`, `dialog_box_width`, `dialog_box_height`) and the quit dialog's 3-button row.
 const DIALOG_TITLE_WIDTH: f32 = 0.117188;
-const DIALOG_BOX: (f32, f32, f32) = (0.15, 0.7, 0.55);
+const DIALOG_BOX: (f32, f32, f32, f32) = (0.15, 0.7, 0.55, 0.18);
 
 /// The options screen's box (reads of frame 2457).
 const OPTIONS_BOX: (f32, f32) = (0.75, 0.6);
@@ -477,8 +477,6 @@ fn draw_button(name: &'static str, at: (f32, f32), w: f32) -> Call {
 pub enum Press {
     /// The key goes to the movie that has the focus.
     Key(u32),
-    /// B on the main row: the pause screen closes.
-    Close,
     /// B in a section (but the options): the game itself takes the main row back (none of the
     /// movies has a `keyPress_circle`).
     Back,
@@ -492,6 +490,12 @@ pub enum Press {
 enum Focus {
     Main,
     Section(Section),
+}
+
+impl Focus {
+    fn dialog(self) -> bool {
+        matches!(self, Focus::Section(Section::Save | Section::Quit))
+    }
 }
 
 /// The pause screen's state while it is up.
@@ -583,7 +587,8 @@ impl Pause {
                 continue;
             }
             let press = match (self.focus, key) {
-                (Focus::Main, keys::B) => Press::Close,
+                // (B is the triangle's key to the movies: `p_main` answers with `pauseDone`)
+                (Focus::Main, keys::B) => Press::Key(keys::TRIANGLE),
                 (Focus::Section(Section::Options), keys::B) => Press::OptionsLeave { keep: false },
                 (Focus::Section(_), keys::B) => Press::Back,
                 (Focus::Section(Section::Options), keys::A) => Press::OptionsLeave { keep: true },
@@ -601,7 +606,7 @@ impl Pause {
     pub fn due(&mut self, frame: u32) -> Vec<Press> {
         let mut out = Vec::new();
         while self.waiting.front().is_some_and(|w| w.0 <= frame) {
-            let (_, press) = self.waiting.pop_front().unwrap_or((0, Press::Close));
+            let (_, press) = self.waiting.pop_front().unwrap_or((0, Press::Back));
             if self.focus == Focus::Section(Section::Options)
                 && let Press::Key(k) = press
             {
@@ -627,6 +632,12 @@ impl Pause {
             out.push(press);
         }
         out
+    }
+
+    /// Whether the section the game is on is a dialog (B is the triangle key to its movie, which
+    /// answers with `dialog_key_press`).
+    pub fn dialog(&self) -> bool {
+        self.focus.dialog()
     }
 
     /// Whether the calls of leaving the section the game is on come after the frame's loads (the
@@ -706,6 +717,7 @@ impl Pause {
             "option_button_accept_ready" => self.option_buttons = argument == "true",
             "option_button_accept_x" if num < 0.0 => self.option_buttons = false,
             "current_item" => self.item = argument.parse().unwrap_or(0),
+            "dialog_key_press" if argument == "cancel" && self.focus.dialog() => calls.push(make("hideDialog", &[])),
             "list_item1_x" => self.list[0].0 = num,
             "list_item1_y" => self.list[0].1 = num,
             "list_item2_x" => self.list[1].0 = num,
@@ -754,7 +766,8 @@ impl Pause {
             Section::Goals | Section::Careers => [back(), vec![destroy("decline")]].concat(),
             Section::Options => Vec::new(),
             Section::Buy | Section::Build => [vec![make("showMainPause", &[]), make("showMainPause", &[])], dpad("0", "0", "1", "1"), dpad("0", "0", "1", "1")].concat(),
-            Section::Save | Section::Quit => [vec![make("hideDialog", &[]), make("showMainPause", &[]), make("showMainPause", &[])], dpad("0", "0", "1", "1"), dpad("0", "0", "1", "1")].concat(),
+            // (the dialog's own `hideDialog` is made as the answer to its cancel)
+            Section::Save | Section::Quit => [vec![make("showMainPause", &[]), make("showMainPause", &[])], dpad("0", "0", "1", "1"), dpad("0", "0", "1", "1")].concat(),
         }
     }
 
@@ -800,6 +813,11 @@ impl Pause {
                 put("title_bar_width", f(title_width(font, text.live(live::SEATING))));
             }
             Focus::Section(Section::Build) => {
+                // (the title bar width is the main row's: the build screen reads it before its
+                // own title is known)
+                put("title_bar_width", f(title_width(font, text.icon(Section::Build))));
+                put("current_item", "0".into());
+                put("current_section_max", String::new());
                 put("number_of_sections", BUILD_COUNTS.0.to_string());
                 put("max_items", BUILD_COUNTS.1.to_string());
             }
@@ -808,12 +826,13 @@ impl Pause {
                 put("number_of_buttons", if s == Section::Save { "2" } else { "3" }.into());
                 put("is_critical_dialog", if s == Section::Save { "0" } else { "1" }.into());
                 put("dialog_x", f(DIALOG_BOX.0));
-                put("dialog_y", f(0.0));
+                put("dialog_y", f(DIALOG_BOX.3));
                 put("dialog_box_width", f(DIALOG_BOX.1));
                 put("dialog_box_height", f(DIALOG_BOX.2));
                 put("dialog_title_bar_width", f(DIALOG_TITLE_WIDTH));
                 put("button_width", f(width(font, text.live(live::SAVE_AND_QUIT), Face::Dialog) / SCREEN.0));
                 put("button_height", String::new());
+                put("UI_button_height", String::new());
             }
         }
         out
