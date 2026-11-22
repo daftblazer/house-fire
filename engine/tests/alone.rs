@@ -68,6 +68,8 @@ fn a_purchase_is_in_the_world_at_the_next_tick() {
     let with = RunWith { card_lot: start.card_lot, goals: start.goals.clone(), neighbourhood: start.neighbourhood.clone(), cat: None };
     let catalog = housefire::catalog::Catalog::read(&lib, &d.read("quickdat.arc").unwrap_or_default()).expect("the catalogue");
     let item = catalog.items(0).first().expect("a seat").clone();
+    // (buy-a.log: 9 sections, 46 items in the first, which opens on the $79 "Recalled Folding Chair")
+    assert_eq!((catalog.buy.len(), catalog.items(0).len(), item.name.as_str()), (9, 46, "Recalled Folding Chair"));
     assert_eq!(item.price, 79);
     let mut a = Alone::new(&log, &lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, with, 1).expect("a run");
     let sim = a.world().objects().filter(|o| o.person).map(|o| o.id()).min().expect("a Sim");

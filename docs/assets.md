@@ -3790,8 +3790,7 @@ handler exists), `done_loading` (the load bar's end, not in the sandbox) and a l
 `LOCKSTEP_PAUSE=1 lockstep LOG ISO --card CARD` (`bin/lockstep/pause.rs`, pause-c.log: the pause
 from the first Start to the last `hidePause`) runs `Ui` from the pad alone and compares, frame
 by frame, the movies loaded, the calls, the commands, the reads' answers and the text lines:
-14,004 differences before this work, 25 after (23 commands of the buy screen's movie, 2 in a
-6th decimal; below). The code is `apt/pause.rs` (`Pause`: the screen's state, `GameText`: the
+14,004 differences before this work, 2 after (both in a 6th decimal; below). The code is `apt/pause.rs` (`Pause`: the screen's state, `GameText`: the
 disc's strings) with `Ui` around it.
 
 **How the game runs it** (all measured in the log):
@@ -3816,8 +3815,7 @@ disc's strings) with `Ui` around it.
   ("decline"); `p_main` is loaded again.
 - **Buy, Build.** Open: the `DPad*` calls only. B: 8 frames later (2112 to 2120) the game
   calls `showMainPause` twice and the `DPad*` twice, after the frame's loads. Their insides
-  (the catalog) are a later packet: the answers (`number_of_sections`, `max_items`) are the
-  log's (`BUY_COUNTS`, `BUILD_COUNTS`).
+  are "Buy and Build" below.
 - **Options.** The game's own screen: `showOption`, `setButtonContext("option")`; its two
   buttons are drawn when the movie says `done_display`; B or A leaves with `hideOption`,
   `destroyButton` x2, `showPause`, `showMainPause`, the `DPad*`; `pause` and `p_main` load
@@ -3853,14 +3851,86 @@ break (any limit in a range the log's breaks fix: `GOAL_WRAP_*`, `DIALOG_WRAP`);
 appearing 4 frames after `p_goals_ready`; the build screen's buttons 10 frames after its load;
 the button width 0.103551 (`UI_button_width`, `goal_status_width`, the options' buttons).
 
-**Left over.** `p_buy`'s timeline loops in ours (frames 2041 to 2109: `current_section`,
-`p_buy_ready` again, 23 commands; the game's movie is silent after 2029: something keeps it
-from looping that is not logged); two `dialog_button_accept_x` in the 6th decimal (0.382599
-against 0.382600: the movie's arithmetic in doubles against the game's floats). The keys the
+**Left over.** Two `dialog_button_accept_x` in the 6th decimal (0.382599 against 0.382600:
+the movie's arithmetic in doubles against the game's floats). (The `p_buy` loop that was left
+over here was the player's: an Apt `GotoFrame` is `gotoAndStop`, and `GotoFrame2` plays only
+with its flag's bit 0; `vm.rs` now stops the clip, and `p_buy` stays on its frame 7 as the
+game's does. The HUD's lockstep is unchanged, 284.) The keys the
 log has no frame of (Up and Down in the goals, the options' arrows, A on the options) are the
 movies' own as far as they have handlers and are not checked. Unverified: that a goal's
 reveal is its definition's third word; the second funds line's name in the game (the household's
 worth: "Household Net Worth" is a string of the budget, not drawn here).
+
+#### Buy and Build
+
+`LOCKSTEP_PAUSE=1 lockstep buy-a.log ISO --card CARD` (the session: Buy, an item, place mode,
+the chair placed, back out; Build, the wall tool, its two place screens, back out) was 7,997
+differences before, 3 after (the reads `ma`, `ra`, `ct` of frame 1853, below). The code is
+`apt/buy.rs` (`Shop`, one per screen, in `Pause`), `catalog.rs` (the catalogue), and in `Ui`
+the funds and the purchases.
+
+**The catalogue** (`catalog.rs`, nothing from the log). An object file's definition (OBJD) has
+the price (field 16), the category bits (field 38: 1 seating and beds, 2 surfaces, 4 appliances,
+8 electronics, 16 plumbing, 32 decorative, 64 miscellaneous, 128 lighting, 256 skill building:
+nine categories, `number_of_sections` 9), the catalogue strings' id (field 39) and the motive
+effects the info window shows (fields 80 to 86: hunger, comfort, hygiene, bladder, energy, fun,
+room; the chair's 2 is at 81, comfort, the motive 6, `infoWindowMotive1`). The strings the game
+shows are quick data's, not the object file's (the PC's "Metal Dining Chair" is "Recalled
+Folding Chair" here, the $79 chair of the log): `SimsObjects`' `ResFile` table has a row for
+each file, named by its stem (the table's row names), whose seventh word points at the file's
+catalogue records, each a chunk id, a name, a description and a kind, in the language image.
+Items are listed cheapest first (the log's first is the cheapest of the 46), a multi-tile
+object once (its leader), and an object whose field 35 is not 0 (one of the 47 seats; the
+Club Chair, 275) is kept out, which makes the first category 46 (`max_items`); taken to be a
+lock until something unlocks it (unverified). The order of the other eight categories is the
+PC game's (the log never leaves the first); build's eight section names are guessed from the
+string table, only "Walls" is the log's, and build lists only the wall tool (70, the
+preview's estimate too).
+
+**What the game does** (`delay`, `target`, `Shop::entry`): it reads the pad itself. A and B on
+these screens are not keys to the movie. Buy: A on the sections 8 frames to the item list
+(`hideBuildBuySections`, `showBuildBuyItems`, `showInfoDialog`, two `drawButton`s, the arrows'
+calls; the arrows' four calls again every frame while it is up), A on the list 8 frames to
+place mode (`Event::Reserve`: the price is out of the funds from then on, 2110), A in place
+mode at once to the placed screen (`Event::Purchase`), B there at once to a blank screen and 8
+frames on to the list, B on the list 8 frames to the sections. Build: A on the sections at
+once, the list drops its item and the `DPad*` calls the frame of the press and the place
+screen comes 8 later; A on that at once to the preview, B back, B again to the blank screen
+and 8 on to the list. `showInfoDialog`'s movie starts a frame later than the call (the lozenges'
+`motivesUp` comes 3 frames after it); `Ui` defers the call. The place screens' button widths
+are what the game passes `drawButton`, from `LABELS` (the draws' size words and the calls'
+arguments); the face is 41.2424/45.0303 of the big one (BACK).
+
+**The purchase.** The `Ui` never changes the world: placing hands the owner a `Purchase`
+(`Ui::take_purchases`: the object's GUID, price, place in sixteenths of a tile, level and
+facing) and `Alone::buy` queues it for the simulation's next tick (`Alone::take_bought` gives
+the ids): the object is made as CreateObjectInstance makes one, at the place, its init run, and
+the price goes to `funds_spent`. The place is the game's cursor (the camera's: `Ui::set_cursor`,
+tiles) snapped to its tile's middle: the log's (29.37, 8.57) is (472, 136), level 1 (the
+cursor's z, 0.25). Until the world has it the screens show the funds less the price, and the
+household's worth (the second funds line) more by it (45,551 to 45,630: the object counts at
+its price). Facing is 0 (no rotate in the log); the cursor's moves and Rotate are not built.
+
+**Not built:** building walls and floors (the preview's BUILD), the sections other than the
+first, moving between items (Left and Right) beyond the log's, Sell, Rotate, WALLS Up/Down, the
+description's scrolling.
+
+**The pictures** (ui-check, pause-c.log's seven frames): within 4 76.07% to 88.81%, over 87 to
+102. The options dialog's body is in the game's picture twice over: its panel is 0.96 opaque
+over the world where the shape gives 0.81 once (two places with different pictures under
+them: 0.81 and 0.19 make 0.96), and drawing the three pieces of the box twice takes frame 2500
+from 12% to 80%; what draws the second is not known (`Ui::display_list`). The volumes' "10" is
+drawn at its own width (18.15 pixels), from the place the game worked out with a width of its
+own (7.13: `VOLUME_CENTRING_PER_CHAR`, one string's fit), which is the real rule of its
+squeeze. The labels' colour was already right; the careers' pips are the movie's. Not done:
+the goals' tick (not in `p_goals`; the game draws it) and the spinning number. The 15 more
+pixels "over" are the options panel's drop shadow (9 of them in its bottom row, one level too
+dark where the game's is the threshold) and the info window's.
+
+**Left over (buy-a.log).** The reads `ma`, `ra` and `ct` at 1853 are answered "" and then
+"false" in the game (the HUD read them at its start, 1257, the same way; pause-c.log's pause
+opens 14 frames earlier and has no such reads: a periodic check of the HUD, 596 frames on, is
+a guess); ours answers "false" once.
 
 ### Left over
 

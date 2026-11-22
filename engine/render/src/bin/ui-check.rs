@@ -233,6 +233,24 @@ fn main() -> ExitCode {
                 (player.display_list(), game_text::lines(&assets, &log.text_draws, frame.saturating_sub(lag)))
             }
         };
+        if std::env::var_os("HF_UI_ITEMS").is_some() {
+            // (study) the frame's display list, back to front
+            for it in &list {
+                println!("item {frame} {} char {} {:?} depth {} clip {} layer {:?} m {:?} color {:?} text {:?}", it.movie, it.character, it.kind, it.depth, it.clip_depth, it.layer, it.matrix, it.color, it.text);
+                if let Some((_, flash)) = assets.flashes.iter().find(|(n, _)| **n == *it.movie)
+                    && let Some(housefire::apt::movie::Character::Shape { geometry, .. }) = flash.movie.characters.get(it.character as usize)
+                    && let Some(shape) = flash.geometry.shape(*geometry)
+                {
+                    for f in &shape.fills {
+                        match f {
+                            housefire::apt::geometry::Fill::Solid { color, triangles } => println!("    solid {color:08x} {} triangles", triangles.len()),
+                            housefire::apt::geometry::Fill::Textured { color, image, triangles, .. } => println!("    textured {color:08x} image {image} {} triangles", triangles.len()),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
         let mut drawing = painter.draw(&mut pass, &list);
         for run in &runs {
             painter.text(&mut pass, &mut drawing, run);

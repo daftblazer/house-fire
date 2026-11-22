@@ -296,9 +296,9 @@ const DIALOG_BOX: (f32, f32, f32, f32) = (0.15, 0.7, 0.55, 0.18);
 /// The options screen's box (reads of frame 2457).
 const OPTIONS_BOX: (f32, f32) = (0.75, 0.6);
 
-/// The buy and build screens' counts, which the catalog gives (a later packet): the sections
-/// and the items of the first (reads of frames 2028 to 2029 and 2171 to 2172).
-const BUY_COUNTS: (u32, u32) = (9, 46);
+/// The build screen's counts (the buy screen's are the catalogue's): its sections and the items
+/// of the first, "Walls" (reads of frames 2171 to 2172; the build items are not read from the
+/// disc yet).
 const BUILD_COUNTS: (u32, u32) = (8, 4);
 
 /// The goals list: the box's width (the read `goal_item_width`, 0.423153).
@@ -339,6 +339,12 @@ const CAREERS_PITCH: f32 = 0.0535;
 
 /// The options rows' values drawn at the volumes' rows are this much lower than their labels.
 const VOLUME_DROP: f32 = 0.008;
+
+/// The width, per character, the game centres a volume's number with (pixels, small face): the
+/// "10" of frame 2500 starts at 466.38, which is `arrows_x` less half of 7.1312 pixels, and is
+/// drawn 18.15 wide (its glyph columns at the small face's scale), so the game's width for it
+/// is not the drawn one. Fitted to that one string; the other numbers are the same rule's guess.
+const VOLUME_CENTRING_PER_CHAR: f32 = 7.1312 / 2.0;
 
 /// The dialog's text block: its first line's top, the pitch from the first line to the second
 /// and the pitch after it (19.96 and 20 pixels), and half the glyph box of the quit dialog's
@@ -407,7 +413,8 @@ const MEASURED: &[(&str, Face, f32)] = &[
     ("SELECT", Face::Big, 59.8561),
     ("UNLOCKED", Face::Big, 89.2651),
     ("speed.", Face::Big, 49.356),
-    ("10", Face::Small, 7.1312),
+    // (its glyph columns, 35, at the small face's scale: ON's 47 columns are 24.3712 pixels)
+    ("10", Face::Small, 18.1488),
     // the buy screen's info window (frame 2030: "BUY" a button label, "$ 79" the item's price, "2" a motive lozenge)
     ("BUY", Face::Big, 30.9091),
     ("$ 79", Face::Big, 78.9091),
@@ -694,6 +701,11 @@ impl Pause {
         out
     }
 
+    /// Whether the options screen is the section.
+    pub fn on_options(&self) -> bool {
+        self.focus == Focus::Section(Section::Options)
+    }
+
     /// Whether the section the game is on is a dialog (B is the triangle key to its movie, which
     /// answers with `dialog_key_press`).
     pub fn dialog(&self) -> bool {
@@ -914,9 +926,10 @@ impl Pause {
                 put("item_width", f(widest / SCREEN.0));
             }
             Focus::Section(Section::Buy) => {
-                put("number_of_sections", BUY_COUNTS.0.to_string());
+                // (the catalogue's: its categories and the items of the section the screen is on)
+                put("number_of_sections", crate::catalog::BUY_CATEGORIES.len().to_string());
                 put("current_section_max", String::new());
-                put("max_items", BUY_COUNTS.1.to_string());
+                put("max_items", game.catalog.items(self.shop.as_ref().map_or(0, Shop::section)).len().to_string());
                 put("title_bar_width", f(title_width(font, text.live(live::SEATING))));
                 if let Some(shop) = &self.shop {
                     out.extend(shop.answers(game, font));
@@ -1031,8 +1044,21 @@ impl Pause {
                         let y2 = self.list[0].1 + k as f32 * pitch;
                         let (face, half, shadow) = if k == self.item { (Face::Big, HALF_BIG, true) } else { (Face::Small, HALF_SMALL, false) };
                         centred(out, &label, face, half, self.list[0].0, y2, shadow);
-                        let drop = if k >= OPTION_ROWS - 2 { VOLUME_DROP } else { 0.0 };
-                        centred(out, &value, face, half, self.arrows_x, y2 + drop, shadow);
+                        if k >= OPTION_ROWS - 2 {
+                            // a volume's number is drawn at its own width from a place the game
+                            // worked out with a width of its own (`VOLUME_CENTRING_PER_CHAR`)
+                            let w = width(font, &value, face);
+                            let by = VOLUME_CENTRING_PER_CHAR * value.chars().count() as f32 * if face == Face::Big { BIG_OVER_SMALL } else { 1.0 };
+                            let (x, y) = (self.arrows_x - by / SCREEN.0 / 2.0, y2 + VOLUME_DROP - half);
+                            let h = Some(2.0 * half * SCREEN.1);
+                            if shadow {
+                                line(out, &value, x, y, Some(w), h);
+                            } else {
+                                out.push(Text { text: value.clone(), x, y, shadow: false, width: Some(w), height: h, plain: true });
+                            }
+                        } else {
+                            centred(out, &value, face, half, self.arrows_x, y2, shadow);
+                        }
                     }
                     if self.option_buttons {
                         button(out, text.accept(), ACCEPT_AT);

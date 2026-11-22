@@ -199,6 +199,11 @@ impl Shop {
         self.screen
     }
 
+    /// The section the screen is on.
+    pub fn section(&self) -> usize {
+        self.section
+    }
+
     /// Whether the pause screen's own back (to the main row) is what B does here.
     pub fn leaves(&self) -> bool {
         self.screen == Screen::Sections && !self.moving
@@ -313,7 +318,7 @@ impl Shop {
     }
 
     /// The text of a string of the live-mode table.
-    fn s<'a>(game: &'a Game, k: usize) -> &'a str {
+    fn s(game: &Game, k: usize) -> &str {
         game.text.live_at(k)
     }
 
@@ -579,5 +584,80 @@ impl Shop {
             (Kind::Buy, Between) => section_title(out),
             _ => section_title(out),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::apt::ui::keys::{A, B};
+    use crate::catalog::{Catalog, Item};
+
+    fn font() -> Font {
+        Font { name: "f".into(), latin: 1, size: 12, line: 37, max_code: 0x7f, map: Vec::new(), pages: Vec::new(), glyphs: Vec::new(), tail: [0; 6] }
+    }
+
+    fn game() -> Game {
+        let item = Item { guid: 0x7504_1efb, name: "Chair".into(), description: "A chair.".into(), price: 79, effects: vec![(6, 2)] };
+        Game { catalog: Catalog { buy: vec![vec![item]] }, ..Game::default() }
+    }
+
+    fn move_of(p: &(u32, Press)) -> Move {
+        match p.1 {
+            Press::Shop(m) | Press::ShopNow(m) => m,
+            _ => panic!("not a move"),
+        }
+    }
+
+    #[test]
+    fn a_press_brings_the_next_screen_after_the_games_delay() {
+        let mut s = Shop::new(Kind::Buy);
+        let out = s.key(A, 2019);
+        assert_eq!(out.len(), 1);
+        assert_eq!((out[0].0, move_of(&out[0])), (2027, Move { from: Screen::Sections, to: Screen::Items }));
+        // (a press while a change is on its way is not taken)
+        assert!(s.key(A, 2020).is_empty());
+        // build's list opens at once; its place mode comes 8 frames after the press and the list
+        // drops its item as the press comes
+        let mut b = Shop::new(Kind::Build);
+        assert_eq!(b.key(A, 2683)[0].0, 2683);
+        b.apply(Move { from: Screen::Sections, to: Screen::Items }, 2683, &game(), &font(), (0.0, 0.0));
+        let out = b.key(A, 2766);
+        assert_eq!(out.iter().map(|p| p.0).collect::<Vec<_>>(), vec![2766, 2774]);
+    }
+
+    #[test]
+    fn only_the_first_screen_leaves_for_the_main_row() {
+        let mut s = Shop::new(Kind::Buy);
+        assert!(s.leaves());
+        s.apply(Move { from: Screen::Sections, to: Screen::Items }, 10, &game(), &font(), (0.0, 0.0));
+        assert!(!s.leaves());
+        assert_eq!(s.key(B, 100)[0].0, 108);
+    }
+
+    #[test]
+    fn place_mode_holds_the_price_and_placing_hands_the_object_over() {
+        let g = game();
+        let mut s = Shop::new(Kind::Buy);
+        s.apply(Move { from: Screen::Sections, to: Screen::Items }, 10, &g, &font(), (0.0, 0.0));
+        s.apply(Move { from: Screen::Items, to: Screen::Place }, 20, &g, &font(), (0.0, 0.0));
+        assert_eq!(s.take_events(), vec![Event::Reserve(79)]);
+        // placed on the cursor's tile (29.37, 8.57), its middle
+        s.apply(Move { from: Screen::Place, to: Screen::Placed }, 30, &g, &font(), (29.37, 8.57));
+        assert_eq!(s.take_events(), vec![Event::Purchase(Purchase { guid: 0x7504_1efb, price: 79, at: (472, 136), level: 1, facing: 0 })]);
+        // B puts the list back after a pause of its own
+        let (_, follow) = s.apply(Move { from: Screen::Placed, to: Screen::Between }, 40, &g, &font(), (0.0, 0.0));
+        assert_eq!(follow.len(), 1);
+        assert_eq!(follow[0].0, 48);
+    }
+
+    #[test]
+    fn the_info_window_asks_for_the_items_motives() {
+        let g = game();
+        let mut s = Shop::new(Kind::Buy);
+        s.apply(Move { from: Screen::Sections, to: Screen::Items }, 10, &g, &font(), (0.0, 0.0));
+        let a = s.answers(&g, &font());
+        assert!(a.contains(&("numberOfInfoLozenges".to_string(), "1".to_string())));
+        assert!(a.contains(&("infoWindowMotive1".to_string(), "6".to_string())));
     }
 }

@@ -34,6 +34,11 @@ pub mod keys {
 /// and the seven after it), in the game's order.
 const PAUSE_BUTTONS: [&str; 8] = ["accept", "decline", "walls", "alt2", "flipper1", "flipper2", "rotate", "background"];
 
+/// The characters of the options movie's dialog body: the box's left and right edge and its
+/// middle (`leftBox`, `middleBox`, `rightBox`).
+const OPTIONS_BODY: [u32; 3] = [28, 31, 34];
+
+
 /// The interaction menu as a list of pills: the rows' pitch (pixels), and how far a pill reaches
 /// left of its label's centre beyond half the label (the A picture) and right of it (the pill's
 /// end): read off the pause screen's SELECT pill (spans 183 to 305 pixels for a label 59.9 wide
@@ -617,7 +622,24 @@ impl Ui {
         }
     }
 
+    /// What the movies show, back to front. On the options screen the dialog's body (the three
+    /// pieces of its box) is in the picture twice over: the game's panel is 0.96 opaque over the
+    /// world where the shapes give 0.81 once (measured on frame 2500 of pause-c.log at two
+    /// places with different pictures under them: 0.81 and 0.19 make 0.96 when stacked). What
+    /// puts the second copy there is not known.
     pub fn display_list(&self) -> Vec<super::display::DisplayItem> {
-        self.player.display_list()
+        let list = self.player.display_list();
+        if !self.pause.as_ref().is_some_and(Pause::on_options) {
+            return list;
+        }
+        let mut out = Vec::with_capacity(list.len() + 3);
+        for i in list {
+            let twice = &*i.movie == "options" && OPTIONS_BODY.contains(&i.character);
+            if twice {
+                out.push(i.clone());
+            }
+            out.push(i);
+        }
+        out
     }
 }
