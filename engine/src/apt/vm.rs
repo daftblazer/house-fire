@@ -146,10 +146,17 @@ impl Player {
                         None => cx.stack.push(v),
                     }
                 }
-                Instr::GotoFrame(n) => self.goto_target(cx.target, *n as usize),
-                Instr::GotoFrame2(_) => {
+                Instr::GotoFrame(n) => {
+                    // (the Apt action is `gotoAndStop`: a script that plays on has a `Play` after it;
+                    // `p_buy`'s frame 1 sends the movie to frame 7 and it stays, as buy-a.log has it)
+                    self.goto_target(cx.target, *n as usize);
+                    self.clips[cx.target].playing = false;
+                }
+                Instr::GotoFrame2(flags) => {
                     let v = cx.pop();
                     self.goto_value(cx.target, &v);
+                    // (bit 0 is the play flag: 0 stops at the frame, as `gotoAndStop` does)
+                    self.clips[cx.target].playing = flags & 1 != 0;
                 }
                 Instr::End => {}
                 Instr::Unknown(op) => {

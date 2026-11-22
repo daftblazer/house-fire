@@ -16,6 +16,8 @@ use std::collections::VecDeque;
 
 use super::font::Font;
 use crate::hud::{Call, PlayerView, SCREEN, Text, line};
+use super::buy::{Event, Kind, Move, Screen, Shop};
+use crate::catalog::Catalog;
 use crate::quickdata::Image;
 
 /// The sections of the pause screen's icon row, in the row's order (the movie's
@@ -77,7 +79,7 @@ struct GoalText {
 }
 
 /// Positions in `LiveModeMenuUIStrings` of the strings the pause screen draws.
-mod live {
+pub(super) mod live {
     pub const ALL_CAREERS: usize = 25;
     pub const AUTO_CENTER: usize = 28;
     pub const BACK: usize = 29;
@@ -160,6 +162,16 @@ impl GameText {
         Some(GameText { live, global, houses, careers })
     }
 
+    /// A string of `LiveModeMenuUIStrings` by its position.
+    pub(super) fn live_at(&self, k: usize) -> &str {
+        self.live(k)
+    }
+
+    /// A string of `GlobalStrings` by its position.
+    pub(super) fn global_at(&self, k: usize) -> &str {
+        self.global(k)
+    }
+
     fn live(&self, k: usize) -> &str {
         self.live.get(k).map_or("", String::as_str)
     }
@@ -200,6 +212,15 @@ pub struct Game {
     /// The family's funds as the save keeps them (the pause screen's second funds line, drawn
     /// at the clock's place; the household's worth).
     pub family_funds: i32,
+    /// The buy screen's objects.
+    pub catalog: Catalog,
+}
+
+impl Game {
+    /// The game's strings and catalogue from `quickdat.arc`'s bytes and the object files.
+    pub fn new(quick: &[u8], lib: &crate::library::Library, family_funds: i32) -> Game {
+        Game { text: GameText::read(quick).unwrap_or_default(), family_funds, catalog: Catalog::read(lib, quick).unwrap_or_default() }
+    }
 }
 
 /// The game's options (the options screen's six rows).
@@ -258,8 +279,8 @@ impl Settings {
 /// pause screen draws at: a line is placed with its middle on a y the movies or the layout give,
 /// its top is that y less this. Measured: a face record's y against its aligned y (the buttons'
 /// 0.905: 0.88582385; the selected option's 0.268527: 0.24661142).
-const HALF_SMALL: f32 = 0.0191761;
-const HALF_BIG: f32 = 0.0219156;
+pub(super) const HALF_SMALL: f32 = 0.0191761;
+pub(super) const HALF_BIG: f32 = 0.0219156;
 
 /// The width the wrapper gives the buttons of the options screen, the width of a goal's status
 /// label and of a dialog's button (the reads `UI_button_width`, `goal_status_width` and the
@@ -332,8 +353,8 @@ const MAIN_TITLE_Y: f32 = 0.18608442;
 
 /// The buy and build screens' title: its top; the build screen draws its buttons this many game
 /// frames after its movie's load (2169 to 2179).
-const SECTION_TITLE_Y: f32 = 0.05308442;
-const BUILD_BUTTONS_DELAY: u32 = 10;
+pub(super) const SECTION_TITLE_Y: f32 = 0.05308442;
+pub(super) const BUILD_BUTTONS_DELAY: u32 = 10;
 
 /// The main row's two buttons: where the game puts them (0x800A5018 and 0x800A504C) and the
 /// back button of the sections that draw one.
@@ -347,7 +368,7 @@ const CANCEL_AT: (f32, f32) = (0.65, 0.9);
 /// The faces the pause screen draws its lines in: the big size (a selected row, a title line, a
 /// button), the small one (the rows that are not selected) and the dialog's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Face {
+pub(super) enum Face {
     Big,
     Small,
     Dialog,
@@ -387,6 +408,10 @@ const MEASURED: &[(&str, Face, f32)] = &[
     ("UNLOCKED", Face::Big, 89.2651),
     ("speed.", Face::Big, 49.356),
     ("10", Face::Small, 7.1312),
+    // the buy screen's info window (frame 2030: "BUY" a button label, "$ 79" the item's price, "2" a motive lozenge)
+    ("BUY", Face::Big, 30.9091),
+    ("$ 79", Face::Big, 78.9091),
+    ("2", Face::Big, 10.0),
     ("AUTO CENTER", Face::Small, 116.8712),
     ("Do fun stuff to raise your", Face::Small, 165.1363),
     ("Eat enough food to fill your", Face::Small, 181.2727),
@@ -420,6 +445,7 @@ const TITLES: &[(&str, f32)] = &[
     ("SAVE", 0.078030),
     ("QUIT", 0.071780),
     ("Seating/Beds", 0.180208),
+    ("Walls", 0.081818),
     // the buttons' labels, as the game gave `drawButton` their width
     ("SELECT", 0.093525),
     ("BACK", 0.070360),
@@ -447,7 +473,7 @@ fn approx_width(font: &Font, text: &str, face: Face) -> f32 {
 }
 
 /// A line's width in pixels in a face.
-fn width(font: &Font, text: &str, face: Face) -> f32 {
+pub(super) fn width(font: &Font, text: &str, face: Face) -> f32 {
     let get = |f: Face| MEASURED.iter().find(|m| m.0 == text && m.1 == f).map(|m| m.2);
     get(face)
         .or_else(|| match face {
@@ -459,16 +485,16 @@ fn width(font: &Font, text: &str, face: Face) -> f32 {
 }
 
 /// A title's width as a fraction of the screen.
-fn title_width(font: &Font, text: &str) -> f32 {
+pub(super) fn title_width(font: &Font, text: &str) -> f32 {
     TITLES.iter().find(|t| t.0 == text).map_or_else(|| width(font, text, Face::Big) / SCREEN.0, |t| t.1)
 }
 
 /// The calls the game makes; a helper for a call with strings.
-fn make(name: &'static str, args: &[&str]) -> Call {
+pub(super) fn make(name: &'static str, args: &[&str]) -> Call {
     Call { name, args: args.iter().map(|s| s.to_string()).collect() }
 }
 
-fn dpad(up: &str, down: &str, left: &str, right: &str) -> Vec<Call> {
+pub(super) fn dpad(up: &str, down: &str, left: &str, right: &str) -> Vec<Call> {
     vec![make("DPadUp", &[up]), make("DPadDown", &[down]), make("DPadLeft", &[left]), make("DPadRight", &[right])]
 }
 
@@ -476,7 +502,7 @@ fn destroy(button: &'static str) -> Call {
     make("destroyButton", &[button])
 }
 
-fn draw_button(name: &'static str, at: (f32, f32), w: f32) -> Call {
+pub(super) fn draw_button(name: &'static str, at: (f32, f32), w: f32) -> Call {
     Call { name: "drawButton", args: vec![name.into(), format!("{:.6}", at.0), format!("{:.6}", at.1), format!("{:.6}", w)] }
 }
 
@@ -491,6 +517,10 @@ pub enum Press {
     /// The options screen (the game's own, reading the pad in the frame): A takes the options as
     /// they stand, B puts them back; either leaves.
     OptionsLeave { keep: bool },
+    /// The buy or build screen changes screen (the game's own handling of A and B there).
+    Shop(Move),
+    /// What the game does the frame a press on the build list is on its way.
+    ShopNow(Move),
 }
 
 /// Where the pad's presses go.
@@ -548,6 +578,8 @@ pub struct Pause {
     /// The title bar width the movie last read, for a title that is placed before its own
     /// width is read (the build screen's).
     title_width: f32,
+    /// The buy or build screen's state while one is the section.
+    shop: Option<Shop>,
 }
 
 /// The game's frames from a pad change to the movie's key (the options screen reads the pad
@@ -582,6 +614,7 @@ impl Pause {
             arrows_x: 0.0,
             quit_buttons: [(0.0, 0.0); 3],
             title_width: 0.0,
+            shop: None,
         }
     }
 
@@ -600,6 +633,17 @@ impl Pause {
         }
         for (bit, key) in [(pad::LEFT, keys::LEFT), (pad::RIGHT, keys::RIGHT), (pad::UP, keys::UP), (pad::DOWN, keys::DOWN), (pad::A, keys::A), (pad::B, keys::B)] {
             if pressed & bit == 0 {
+                continue;
+            }
+            if let (Focus::Section(Section::Buy | Section::Build), keys::A | keys::B) = (self.focus, key)
+                && let Some(shop) = &mut self.shop
+            {
+                // the game's own handling: the screen it leads to, after its delay
+                if key == keys::B && shop.leaves() {
+                    self.waiting.push_back((frame + CATALOG_BACK_DELAY, Press::Back));
+                } else {
+                    self.waiting.extend(shop.key(key, frame));
+                }
                 continue;
             }
             let press = match (self.focus, key) {
@@ -689,6 +733,30 @@ impl Pause {
         calls
     }
 
+    /// The buy or build screen changes screen: the calls the game makes. A change may bring
+    /// another after it (the pause after place mode).
+    pub fn shop_apply(&mut self, mv: Move, frame: u32, game: &Game, font: &Font, cursor: (f32, f32)) -> Vec<Call> {
+        let Some(shop) = &mut self.shop else { return Vec::new() };
+        let (calls, follow) = shop.apply(mv, frame, game, font, cursor);
+        self.waiting.extend(follow);
+        calls
+    }
+
+    /// What the game does the frame a press on the build list is on its way.
+    pub fn shop_now(&mut self, mv: Move) -> Vec<Call> {
+        self.shop.as_mut().map(|s| s.now(mv)).unwrap_or_default()
+    }
+
+    /// The calls the buy screen's item list makes every frame.
+    pub fn shop_frame_calls(&self, game: &Game, font: &Font, frame: u32) -> Vec<Call> {
+        self.shop.as_ref().map(|s| s.frame_calls(game, font, frame)).unwrap_or_default()
+    }
+
+    /// What the buy or build screen asks of the caller since the last call.
+    pub fn shop_events(&mut self) -> Vec<Event> {
+        self.shop.as_mut().map(Shop::take_events).unwrap_or_default()
+    }
+
     /// The game's handler of a command of a pause screen's movie (`Screen_Command`, the
     /// screens' vtable slot 0x44): what it makes of it and the calls it makes at once.
     pub fn command(&mut self, name: &str, argument: &str, frame: u32, text: &GameText, font: &Font) -> Vec<Call> {
@@ -743,6 +811,16 @@ impl Pause {
                     calls.extend(Self::close_calls(s));
                 }
             }
+            "motivesUp" => {
+                if let Some(shop) = &mut self.shop {
+                    shop.set_lozenges(argument == "true");
+                }
+            }
+            "current_section" => {
+                if let Some(shop) = &mut self.shop {
+                    shop.set_section(argument.parse().unwrap_or(0));
+                }
+            }
             "list_item1_x" => self.list[0].0 = num,
             "list_item1_y" => self.list[0].1 = num,
             "list_item2_x" => self.list[1].0 = num,
@@ -763,6 +841,11 @@ impl Pause {
                     self.item = 0;
                     self.arrows_x = 0.0;
                     self.kept = self.settings;
+                    self.shop = match s {
+                        Section::Buy => Some(Shop::new(Kind::Buy)),
+                        Section::Build => Some(Shop::new(Kind::Build)),
+                        _ => None,
+                    };
                     calls.extend(Self::open_calls(s, font, text));
                 }
             }
@@ -835,15 +918,20 @@ impl Pause {
                 put("current_section_max", String::new());
                 put("max_items", BUY_COUNTS.1.to_string());
                 put("title_bar_width", f(title_width(font, text.live(live::SEATING))));
+                if let Some(shop) = &self.shop {
+                    out.extend(shop.answers(game, font));
+                }
             }
             Focus::Section(Section::Build) => {
                 // (the title bar width is the main row's: the build screen reads it before its
                 // own title is known)
                 put("title_bar_width", f(title_width(font, text.icon(Section::Build))));
-                put("current_item", "0".into());
                 put("current_section_max", String::new());
                 put("number_of_sections", BUILD_COUNTS.0.to_string());
                 put("max_items", BUILD_COUNTS.1.to_string());
+                if let Some(shop) = &self.shop {
+                    out.extend(shop.answers(game, font));
+                }
             }
             Focus::Section(s @ (Section::Save | Section::Quit)) => {
                 put("UI_button_width", f(BUTTON_WIDTH));
@@ -972,13 +1060,9 @@ impl Pause {
                     }
                 }
             }
-            Focus::Section(s @ (Section::Buy | Section::Build)) => {
-                let (name, w) = if s == Section::Buy { (text.live(live::SEATING), title_width(font, text.live(live::SEATING))) } else { (text.live(live::WALLS), self.title_width) };
-                out.push(Text { text: name.to_string(), x: 0.5 - w / 2.0, y: SECTION_TITLE_Y, shadow: false, width: Some(w * SCREEN.0), height: Some(2.0 * HALF_BIG * SCREEN.1), plain: true });
-                let buttons = if s == Section::Buy { self.buttons } else { frame >= self.opened_at + BUILD_BUTTONS_DELAY };
-                if buttons {
-                    button(out, text.live(live::SELECT), SELECT_AT);
-                    button(out, text.live(live::BACK), BACK_AT);
+            Focus::Section(Section::Buy | Section::Build) => {
+                if let Some(shop) = &self.shop {
+                    shop.texts(game, font, self.buttons, frame, self.opened_at, out);
                 }
             }
         }
@@ -1027,7 +1111,7 @@ impl Pause {
 
 /// A text broken into lines of at most `limit` glyph columns, a word at a time (single spaces
 /// between words; the strings' double spaces keep an empty word between).
-fn wrap(font: &Font, text: &str, limit: f32) -> Vec<String> {
+pub(super) fn wrap(font: &Font, text: &str, limit: f32) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
     for word in text.split(' ') {
         match lines.last_mut() {

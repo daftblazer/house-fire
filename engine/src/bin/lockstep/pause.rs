@@ -12,7 +12,7 @@
 //! differences (default 6).
 
 use crate::*;
-use housefire::apt::pause::{Game, GameText};
+use housefire::apt::pause::Game;
 use housefire::apt::ui::{Feed, Ui};
 use housefire::hud::{Hud, Measure, PlayerView, Speed};
 use housefire::replay::{Replay, RunWith, Start};
@@ -127,7 +127,7 @@ pub fn pause(log: &Log, d: &Disc, lib: &Library, card: Option<&str>, lot_index: 
         }
     };
     let mut ui = Ui::new(flashes);
-    ui.set_game(Game { text: GameText::read(&d.read("quickdat.arc").unwrap_or_default()).unwrap_or_default(), family_funds: start.family_funds() });
+    ui.set_game(Game::new(&d.read("quickdat.arc").unwrap_or_default(), lib, start.family_funds()));
     ui.set_frame(f0);
     let mut hud = Hud::new(1);
     let mut tally = Tally { limit: std::env::var("LOCKSTEP_PAUSE_SHOW").ok().and_then(|v| v.parse().ok()).unwrap_or(6), ..Tally::default() };
@@ -143,6 +143,9 @@ pub fn pause(log: &Log, d: &Disc, lib: &Library, card: Option<&str>, lot_index: 
         let Some(view) = PlayerView::of(world, sim) else { break };
         if n == show_at {
             ui.begin_play(&mut hud, &view);
+        }
+        if let Some(c) = log.cams.iter().take_while(|c| c.tick <= tick).last() {
+            ui.set_cursor((c.cursor_at[0], c.cursor_at[1]));
         }
         let buttons = log.pads.iter().take_while(|p| p.frame <= n).last().map_or(0, |p| p.buttons);
         ui.record = within(n);

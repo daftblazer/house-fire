@@ -11,7 +11,9 @@
 use std::rc::Rc;
 
 use super::Flash;
+use super::buy::Event;
 use super::pause::{Game, Pause, Press, Settings};
+use crate::catalog::Purchase;
 use super::player::{Command, Player};
 use super::value::Value;
 use crate::hud::{Call, Hud, Measure, PlayerView, SCREEN, Speed, Text};
@@ -104,6 +106,21 @@ pub struct Ui {
     loaded: Vec<String>,
     /// The pad's buttons held at the last `pad`.
     held: u16,
+    /// Where the game's cursor is on the lot, in tiles (where place mode starts).
+    cursor: (f32, f32),
+    /// The price of the object being placed, held back from the funds shown until the world's
+    /// funds have changed from what they were when it was taken (`base`): (price, base).
+    reserve: Option<(i32, i32)>,
+    /// What the household has spent on purchases the world has taken (its worth counts them).
+    spent: i32,
+    /// The real funds of the frame being run.
+    funds_seen: i32,
+    /// The objects placed and not yet taken by the owner.
+    purchases: Vec<Purchase>,
+    /// A call whose movie only acts on it a frame later (`showInfoDialog`: the info window's
+    /// motive lozenges start a frame after the game's call, 2027 and 2029), made at the end of the
+    /// next frame.
+    deferred: Vec<Call>,
 }
 
 /// The pad's buttons as the game reads them (PADStatus).
@@ -130,7 +147,7 @@ impl Ui {
         player.set_extern("_lang", Value::str("en"));
         player.set_extern("_sku", Value::str("us"));
         player.set_extern("_enable_debug", Value::str("0"));
-        Ui { player, frame: 0, first: true, announce: false, pause: None, game: Game::default(), settings: Settings::default(), speed_seen: Speed::Normal, speed_before: Speed::Normal, opened_at: None, closing: false, menu: None, menu_gone: false, calls: Vec::new(), sent: Vec::new(), record: false, made: Vec::new(), loaded: Vec::new(), held: 0 }
+        Ui { player, frame: 0, first: true, announce: false, pause: None, game: Game::default(), settings: Settings::default(), speed_seen: Speed::Normal, speed_before: Speed::Normal, opened_at: None, closing: false, menu: None, menu_gone: false, calls: Vec::new(), sent: Vec::new(), record: false, made: Vec::new(), loaded: Vec::new(), held: 0, cursor: (0.0, 0.0), reserve: None, spent: 0, funds_seen: 0, purchases: Vec::new(), deferred: Vec::new() }
     }
 
     /// The game's frame the interface is at (the next to be run).
@@ -282,6 +299,17 @@ impl Ui {
         }
     }
 
+    /// Where the game's cursor is on the lot, in tiles: place mode starts there.
+    pub fn set_cursor(&mut self, tile: (f32, f32)) {
+        self.cursor = tile;
+    }
+
+    /// The purchases the player has placed since the last call, for the simulation to apply
+    /// (`Alone::buy`): the screen itself changes nothing.
+    pub fn take_purchases(&mut self) -> Vec<Purchase> {
+        std::mem::take(&mut self.purchases)
+    }
+
     /// The pad as the game reads it this frame (the buttons held): Start opens the pause screen,
     /// and while it is open the arrows, A and B reach the movie that has the focus two frames
     /// later (`Pause::pad`).
@@ -341,8 +369,16 @@ impl Ui {
         if self.record {
             self.made.push((c.name.to_string(), c.args.clone()));
         }
-        if !self.player.call(c.name, &a) {
-            self.player.note_stub(format!("call of {}: no such function", c.name));
+        if c.name == "showInfoDialog" {
+            self.deferred.push(c.clone());
+            return;
+        }
+        self.dispatch(c.name, &a);
+    }
+
+    fn dispatch(&mut self, name: &'static str, a: &[Value]) {
+        if !self.player.call(name, a) {
+            self.player.note_stub(format!("call of {name}: no such function"));
         }
     }
 
@@ -434,6 +470,28 @@ impl Ui {
                         self.drain(f, false);
                     }
                 }
+                Press::ShopNow(mv) => {
+                    let calls = self.pause.as_mut().map(|p| p.shop_now(mv)).unwrap_or_default();
+                    for c in &calls {
+                        self.make(c);
+                    }
+                    self.drain(f, false);
+                }
+                Press::Shop(mv) => {
+                    let cursor = self.cursor;
+                    if let Some(p) = &mut self.pause {
+                        // (the screens' calls come after the frame's loads)
+                        let calls = p.shop_apply(mv, self.frame, &self.game, f.measure.font, cursor);
+                        self.calls.extend(calls);
+                        for e in p.shop_events() {
+                            match e {
+                                Event::Reserve(price) => self.reserve = Some((price, self.funds_seen)),
+                                Event::Release => self.reserve = None,
+                                Event::Purchase(p) => self.purchases.push(p),
+                            }
+                        }
+                    }
+                }
                 Press::OptionsLeave { keep } => {
                     if let Some(p) = &mut self.pause {
                         // (the options screen's calls come after the frame's loads)
@@ -443,11 +501,27 @@ impl Ui {
                 }
             }
         }
+        // (what the open screen's list makes every frame, after the change of screen of the frame)
+        let frame_calls = self.pause.as_ref().map(|p| p.shop_frame_calls(&self.game, f.measure.font, self.frame)).unwrap_or_default();
+        self.calls.extend(frame_calls);
     }
 
     /// One presentation frame: the movies run a frame, load what they asked for, the game hears
     /// what they sent and makes its calls; the lines of text it draws are given back.
-    pub fn step(&mut self, f: &mut Feed) -> Vec<Text> {
+    pub fn step(&mut self, outer: &mut Feed) -> Vec<Text> {
+        // the funds as the screen shows them: the price of the object being placed is already taken
+        let mut view = outer.view.clone();
+        self.funds_seen = view.funds;
+        if let Some((price, base)) = self.reserve {
+            if view.funds == base {
+                view.funds -= price;
+            } else {
+                self.spent += price;
+                self.reserve = None;
+            }
+        }
+        let mut inner = Feed { hud: &mut *outer.hud, view: &view, speed: outer.speed, measure: outer.measure };
+        let f = &mut inner;
         if self.first {
             self.first = false;
             self.player.frame = self.frame;
@@ -489,16 +563,27 @@ impl Ui {
         let (draw, mut texts) = f.hud.draw(f.view, f.measure);
         calls.extend(draw);
         self.menu_calls(f, &mut calls);
+        let earlier = std::mem::take(&mut self.deferred);
         for c in &calls {
             self.make(c);
+        }
+        for c in &earlier {
+            let a: Vec<Value> = c.args.iter().map(|s| Value::str(s)).collect();
+            self.dispatch(c.name, &a);
         }
         self.drain(f, false);
         self.menu_texts(f, &mut texts);
         if let Some(p) = &self.pause {
             p.texts(f.view, &self.game, f.measure.font, &f.hud.layout(), self.frame, &mut texts);
             if p.funds_shown() {
-                f.hud.funds_text(f.view, f.measure, &mut texts);
-                f.hud.funds_line(self.game.family_funds, f.hud.layout().time, f.measure, &mut texts);
+                // (the price of an object whose place mode has just begun is already taken)
+                let shown = match self.reserve {
+                    Some((price, base)) if self.funds_seen == base => base - price,
+                    _ => self.funds_seen,
+                };
+                f.hud.funds_line(shown, f.hud.layout().money, f.measure, &mut texts);
+                let worth = self.game.family_funds + self.spent + self.reserve.map_or(0, |r| r.0);
+                f.hud.funds_line(worth, f.hud.layout().time, f.measure, &mut texts);
             }
         }
         self.frame += 1;

@@ -7,6 +7,7 @@
 
 pub mod actions;
 pub mod bundle;
+pub mod buy;
 pub mod display;
 pub mod dump;
 pub mod font;

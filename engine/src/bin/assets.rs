@@ -2713,6 +2713,47 @@ fn main() -> ExitCode {
                 }
             }
         }
+        "arcsave" => {
+            // (study) one archive entry's bytes into a file
+            let (Some(name), Some(entry), Some(out)) = (args.get(3), args.get(4), args.get(5)) else {
+                println!("usage: assets ISO arcsave ARCHIVE ENTRY OUT");
+                return ExitCode::FAILURE;
+            };
+            let q = d.read(name).unwrap_or_default();
+            let Some(e) = arc::entries(&q).unwrap_or_default().into_iter().find(|e| &e.name == entry) else {
+                return ExitCode::FAILURE;
+            };
+            let _ = std::fs::write(out, arc::bytes(&q, &e));
+        }
+        "buycatalog" => {
+            // (study) the buy catalogue: the items of each category, cheapest first
+            let lib = housefire::library::Library::bustin_out(&d);
+            let Some(c) = housefire::catalog::Catalog::read(&lib, &d.read("quickdat.arc").unwrap_or_default()) else { return ExitCode::FAILURE };
+            for (k, items) in c.buy.iter().enumerate() {
+                println!("category {k}: {} items", items.len());
+                for i in items.iter().take(args.get(3).and_then(|v| v.parse().ok()).unwrap_or(3)) {
+                    println!("  {:08x} {} ${} {:?}", i.guid, i.name, i.price, i.effects);
+                }
+            }
+        }
+        "catalog" => {
+            // (study) the object files whose catalog strings (CTSS) contain TEXT: path, the
+            // strings and each definition's fields
+            let Some(t) = args.get(3) else {
+                println!("usage: assets ISO catalog TEXT");
+                return ExitCode::FAILURE;
+            };
+            let lib = housefire::library::Library::bustin_out(&d);
+            for f in lib.files().iter().filter(|f| f.catalog.values().flatten().any(|s| s.contains(t.as_str()))) {
+                println!("{}", f.path);
+                for (id, v) in &f.catalog {
+                    println!("  CTSS {id}: {v:?}");
+                }
+                for def in &f.definitions {
+                    println!("  OBJD {} v{} {:?}", def.id, def.version, def.fields);
+                }
+            }
+        }
         "objdef" => {
             // an object definition's SimsObjects row and its ResData row, as words (study)
             let Some(guid) = args.get(3).and_then(|g| u32::from_str_radix(g, 16).ok()) else {

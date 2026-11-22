@@ -932,7 +932,7 @@ fn run(args: Args) -> Result<bool, String> {
     let interface = AptAssets::new(&disc);
     let font = interface.fonts.iter().find(|(n, _)| housefire::shader::name_hash(n) == INTERFACE_FONT).map(|(_, f)| f.clone()).ok_or("the interface's font")?;
     let mut ui = Ui::new(interface.flashes.clone());
-    ui.set_game(PauseGame { text: GameText::read(&disc.read("quickdat.arc").unwrap_or_default()).unwrap_or_default(), family_funds: start.family_funds() });
+    ui.set_game(PauseGame::new(&disc.read("quickdat.arc").unwrap_or_default(), &lib, start.family_funds()));
     let mut game = Game { alone, sim_frames: Default::default(), first_shown: 0, frames_ready: 0, animators: sims::Animators::default(), placed: Vec::new(), figures: false, lib: &lib, camera, active: None, target: None, menu: None, dialog: None, names, speed: 1, last_speed: 1, quit: false, expects: Vec::new(), sound: None, ui, hud: Hud::new(1), font, texts: Vec::new(), frames: 0, paused_frames: 0 };
     game.sound = make_sound(&disc, &args);
     game.alone.set_sound(game.sound.is_some());

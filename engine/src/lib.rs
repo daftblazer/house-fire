@@ -8,6 +8,7 @@ pub mod arc;
 pub mod axdump;
 pub mod autonomy;
 pub mod bhav;
+pub mod catalog;
 pub mod cfmt;
 pub mod disc;
 pub mod draw;

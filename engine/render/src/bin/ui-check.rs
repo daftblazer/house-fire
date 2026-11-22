@@ -111,7 +111,7 @@ fn native_pictures(log: &Log, disc: &Disc, assets: &AptAssets, card: Option<&str
     };
     let last = wanted.iter().max().copied()?.saturating_sub(lag);
     let mut ui = Ui::new(assets.flashes.clone());
-    ui.set_game(housefire::apt::pause::Game { text: housefire::apt::pause::GameText::read(&disc.read("quickdat.arc").unwrap_or_default()).unwrap_or_default(), family_funds: start.family_funds() });
+    ui.set_game(housefire::apt::pause::Game::new(&disc.read("quickdat.arc").unwrap_or_default(), &lib, start.family_funds()));
     ui.set_frame(f0);
     if std::env::var_os("HF_UI_LOGREADS").is_some() {
         ui.player_mut().set_reads(log.movie_reads.iter().map(|r| (r.frame, r.name.clone(), r.value.clone())));
