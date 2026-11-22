@@ -1,10 +1,10 @@
-//! Picking: what a click on the picture points at. Each clickable object's place is projected
-//! through the camera and the nearest within a radius (in pixels of the picture) is taken; with
-//! none, the click is a ray from the eye through the point, cut with the floor's plane.
+//! Picking: what a click on the picture points at. Each candidate's place (the Sims and the
+//! objects drawn) is projected through the camera and the nearest within a radius (in pixels of
+//! the picture) that the caller accepts is taken; with none, the click is a ray from the eye
+//! through the point, cut with the floor's plane.
 
 use crate::frame::Mat3x4;
 use housefire::scene::Camera;
-use housefire::world::{Object, World};
 
 /// How near a click must be to an object's projected place, in pixels of the 640x448 picture.
 pub const PICK_RADIUS: f32 = 24.0;
@@ -49,17 +49,17 @@ pub fn floor_at(view: &Mat3x4, projection: &[f32; 6], pixel: (f32, f32), size: (
 
 /// The object whose place is nearest the pixel and within `PICK_RADIUS`, among those `clickable`
 /// says (the ones with a menu); else the floor under it if that is on the lot (`lot` tiles).
-pub fn pick(world: &World, view: &Mat3x4, projection: &[f32; 6], pixel: (f32, f32), size: (f32, f32), lot: (f32, f32), clickable: impl Fn(&Object) -> bool) -> Pick {
-    let mut best: Option<(f32, i16)> = None;
-    for o in world.objects().filter(|o| o.on_lot() && clickable(o)) {
-        let at = [o.x16 as f32 / 16.0, o.y16 as f32 / 16.0, if o.person { SIM_HEIGHT } else { OBJECT_HEIGHT }];
-        let Some((sx, sy)) = project(view, projection, at, size) else { continue };
-        let d = f32::hypot(sx - pixel.0, sy - pixel.1);
-        if d <= PICK_RADIUS && best.is_none_or(|(b, _)| d < b) {
-            best = Some((d, o.id()));
-        }
-    }
-    if let Some((_, id)) = best {
+pub fn pick(candidates: &[(i16, [f32; 3])], view: &Mat3x4, projection: &[f32; 6], pixel: (f32, f32), size: (f32, f32), lot: (f32, f32), mut accept: impl FnMut(i16) -> bool) -> Pick {
+    let mut near: Vec<(f32, i16)> = candidates
+        .iter()
+        .filter_map(|&(id, at)| {
+            let (sx, sy) = project(view, projection, at, size)?;
+            let d = f32::hypot(sx - pixel.0, sy - pixel.1);
+            (d <= PICK_RADIUS).then_some((d, id))
+        })
+        .collect();
+    near.sort_by(|a, b| a.0.total_cmp(&b.0));
+    if let Some(&(_, id)) = near.iter().find(|&&(_, id)| accept(id)) {
         return Pick::Object(id);
     }
     match floor_at(view, projection, pixel, size) {

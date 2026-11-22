@@ -840,8 +840,8 @@ impl<'l> Alone<'l> {
 
     /// The interactions of `target`'s pie menu for `sim`, by the engine's checks as the original's
     /// menu runs them (docs/simulation.md, "The player's commands"): the table's first tree, then
-    /// each interaction's guard in the table's order ("hide menu" taken as a no), and for a person
-    /// "get social eligibility" first. The checks run as the Sim's, on the target.
+    /// each interaction's guard in the table's order ("hide menu" taken as a no; the debug
+    /// entries, flag 0x80, left out), and for a person "get social eligibility" first. The checks run as the Sim's, on the target.
     pub fn menu(&mut self, sim: i16, target: i16) -> Vec<MenuEntry> {
         let (lib, host) = (self.lib, &mut self.d.host);
         let (Some(sk), Some(t)) = (host.world.find(sim), host.world.find_object(target)) else { return Vec::new() };
@@ -862,7 +862,8 @@ impl<'l> Alone<'l> {
         }
         let names = lib.file(f).pie_strings.get(&table);
         let mut out = Vec::new();
-        for e in lib.table(f, table) {
+        // (the entries flagged 0x80, the debug ones, left out as the original's list builder does)
+        for e in lib.table(f, table).iter().filter(|e| e.flags & 0x80 == 0) {
             if check(host, e.guard) {
                 let name = usize::try_from(e.string_index).ok().and_then(|i| names.and_then(|n| n.get(i))).cloned().unwrap_or_else(|| format!("interaction {}", e.action));
                 out.push(MenuEntry { action: e.action, name });

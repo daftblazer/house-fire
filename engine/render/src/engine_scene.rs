@@ -911,6 +911,8 @@ pub struct Builder<'a> {
     caches: Caches,
     sim_cache: crate::sims::SimCaches,
     pub scene: Scene,
+    /// The objects the last frame drew, by leader, and where (tiles: the group's middle).
+    pub placed: Vec<(i16, [f32; 2])>,
 }
 
 /// What a `Builder` frame was made of, for a log.
@@ -927,7 +929,7 @@ pub struct Counts {
 impl<'a> Builder<'a> {
     pub fn new(assets: &'a Assets, lot: &'a Lot) -> Builder<'a> {
         let frame = Frame { camera: Camera { view: IDENTITY, projection: [0.0; 6] }, draws: Vec::new(), backdrop: None };
-        Builder { assets, lot, caches: Caches { transient_floors: true, ..Caches::default() }, sim_cache: Default::default(), scene: Scene { frame, drawn: Vec::new(), all: Vec::new(), meshes: Vec::new(), transient: Vec::new(), textures: Vec::new() } }
+        Builder { assets, lot, caches: Caches { transient_floors: true, ..Caches::default() }, sim_cache: Default::default(), placed: Vec::new(), scene: Scene { frame, drawn: Vec::new(), all: Vec::new(), meshes: Vec::new(), transient: Vec::new(), textures: Vec::new() } }
     }
 
     /// The frame of `world` on `tick` seen through `camera` (a view and a projection): in
@@ -948,6 +950,7 @@ impl<'a> Builder<'a> {
         scene.frame.camera = Camera { view, projection };
         scene.frame.backdrop = None;
         let plan = self.lot.plan(world, &view, &housefire::drawlist::Plays::at(tick));
+        self.placed = plan.placements.iter().map(|p| (p.leader, [p.x, p.y])).collect();
         let lighting = |d: &Planned, mat: MaterialFactors| lighting_for(&plan.lights.of(d), &view, mat);
         let made = self.assets.engine_draws(scene, &mut self.caches, &Inputs { draws: &plan.draws, models: &plan.models, shaders: &self.lot.shaders, lighting: &lighting, view });
         let floors: Vec<(usize, FloorDraws)> = plan.floors.iter().zip(self.assets.engine_floors(scene, &mut self.caches, &plan.floors, &self.lot.shaders, plan.terrain, view)).map(|(st, f)| (st.room, f)).collect();

@@ -15,7 +15,7 @@
 //!   middle of the picture (or chooses), B closes, Y changes the Sim, D-pad moves in a menu.
 //!
 //! --script: lines of `TICK command`, applied as the input would be at that tick (`pick ID`, `zoom DISTANCE`,
-//! `floor X Y`, `focus`, `menu`, `choose N` or `choose @ACTION`, `answer N`, `pause` (the pause screen opens or closes), `key CODE` (a key to the dialog's or pause screen's movie: 37 to 40 the arrows, 88 A, 79 B), `speed K`, `sim ID`,
+//! `floor X Y`, `focus`, `menu`, `close` (Esc), `menus` (every drawn object's menu printed), `choose N` or `choose @ACTION`, `answer N`, `pause` (the pause screen opens or closes), `key CODE` (a key to the dialog's or pause screen's movie: 37 to 40 the arrows, 88 A, 79 B), `speed K`, `sim ID`,
 //! `expect SIM TREE WITHIN`, `quit`); with --headless no window is made (and no GPU unless --shot
 //! is given). --shot: the picture of a tick (with the interface) saved as PNG.
 //! Each command queued is printed: `play: tick T sim S target O action A (name)`.
@@ -28,7 +28,6 @@ use housefire::library::Library;
 use housefire::replay::{Alone, DialogAsk, MenuEntry, RunWith, Start, atoi};
 use housefire::scene::Camera;
 use housefire::tree_log::{Log, read_log};
-use housefire::world::{Object, World};
 use housefire_render::audio::Sound;
 use housefire_render::engine_scene::{self, Builder, Lot};
 use housefire_render::frame::{Frame, Mat3x4, TRANSIENT_MESH};
@@ -175,6 +174,8 @@ enum Cmd {
     /// A key code for the dialog's or the pause screen's movie (an arrow).
     Key(u32),
     Quit,
+    /// Every drawn object's menu for the active Sim, printed (a check of the menus).
+    Menus,
     /// A check of the run: the Sim's stack must enter the tree within so many ticks of now.
     Expect(i16, i32, u32),
 }
@@ -191,6 +192,8 @@ fn parse_line(line: &str) -> Option<(u32, Cmd)> {
         "pick" => Cmd::Pick(n(&mut w)? as i16),
         "floor" => Cmd::Floor(f(&mut w)?, f(&mut w)?),
         "menu" => Cmd::Menu,
+        "close" => Cmd::Close,
+        "menus" => Cmd::Menus,
         "pause" => Cmd::TogglePause,
         "key" => Cmd::Key(n(&mut w)? as u32),
         "focus" => Cmd::FocusSim,
@@ -238,6 +241,8 @@ struct Game<'l> {
     /// The frames of the ticks run not yet shown.
     frames_ready: u32,
     animators: sims::Animators,
+    /// The objects the last picture drew (`Builder::placed`): what a click can point at.
+    placed: Vec<(i16, [f32; 2])>,
     /// Whether the pictures take the Sims' figures (else `sim_frames` is not kept).
     figures: bool,
     lib: &'l Library,
@@ -313,11 +318,6 @@ impl<'l> Game<'l> {
         (self.camera.view(), Camera::projection(self.camera.distance))
     }
 
-    /// Whether a click on this object means something: a Sim, or an object with a menu.
-    fn clickable(world: &World, lib: &Library, o: &Object) -> bool {
-        o.person || lib.table_of(o.file, o.person, world.definition(o)).table.is_some()
-    }
-
     fn next_sim(&mut self) {
         let h = self.household();
         if h.is_empty() {
@@ -337,7 +337,8 @@ impl<'l> Game<'l> {
         let Some(sim) = self.active else { return };
         let items = self.alone.menu(sim, target);
         let listed: Vec<String> = items.iter().map(|e| format!("{} {}", e.action, e.name)).collect();
-        println!("play: tick {} menu of object {target} for sim {sim}: [{}]", self.alone.ticks(), listed.join(", "));
+        let file = self.alone.world().find_object(target).and_then(|o| o.file).map_or("?", |f| self.lib.file(f).path.as_str());
+        println!("play: tick {} menu of object {target} ({file}) for sim {sim}: [{}]", self.alone.ticks(), listed.join(", "));
         self.target = Some(target);
         let names: Vec<String> = self.menu_names(&items);
         self.ui.show_menu(names, 0, (at.0 as f32, at.1 as f32));
@@ -539,6 +540,15 @@ impl<'l> Game<'l> {
                     self.open_menu(t, at);
                 }
             }
+            Cmd::Menus => {
+                let Some(sim) = self.active else { return };
+                for (id, at) in self.placed.clone() {
+                    let items = self.alone.menu(sim, id);
+                    let file = self.alone.world().find_object(id).and_then(|o| o.file).map_or("?", |f| self.lib.file(f).path.as_str());
+                    let listed: Vec<String> = items.iter().map(|e| format!("{} {}", e.action, e.name)).collect();
+                    println!("play: tick {} drawn object {id} ({file}) at ({:.1}, {:.1}) level {} for sim {sim}: [{}]", self.alone.ticks(), at[0], at[1], self.alone.world().find_object(id).map_or(0, |o| o.level), listed.join(", "));
+                }
+            }
             Cmd::Pick(id) => {
                 let at = self.screen_of(id);
                 self.click_object(id, at);
@@ -563,9 +573,15 @@ impl<'l> Game<'l> {
         }
         let (view, proj) = self.view();
         let world = self.alone.world();
-        let lib = self.lib;
         let size = world.walls.size();
-        let hit = pick::pick(world, &view, &proj, (x, y), (WIDTH as f32, HEIGHT as f32), (size.0 as f32, size.1 as f32), |o| Self::clickable(world, lib, o));
+        // the Sims, and the objects the last picture drew that have something in their menu for
+        // the active Sim (the controllers and the like, drawn or not, take no clicks)
+        let household = self.household();
+        let mut candidates: Vec<(i16, [f32; 3])> = world.objects().filter(|o| o.person && o.on_lot()).map(|o| (o.id(), [o.x16 as f32 / 16.0, o.y16 as f32 / 16.0, pick::SIM_HEIGHT])).collect();
+        candidates.extend(self.placed.iter().map(|&(id, p)| (id, [p[0], p[1], pick::OBJECT_HEIGHT])));
+        let active = self.active;
+        let alone = &mut self.alone;
+        let hit = pick::pick(&candidates, &view, &proj, (x, y), (WIDTH as f32, HEIGHT as f32), (size.0 as f32, size.1 as f32), |id| household.contains(&id) || active.is_some_and(|sim| !alone.menu(sim, id).is_empty()));
         match hit {
             Pick::Object(id) => self.click_object(id, (x as i32, y as i32)),
             Pick::Floor(p) => self.go_here(p),
@@ -876,13 +892,16 @@ fn run(args: Args) -> Result<bool, String> {
     let catalog = housefire::anim::Catalog::read(&disc, house);
     let with = RunWith { card_lot: start.card_lot, goals: start.goals.clone(), neighbourhood: start.neighbourhood.clone(), cat: (!log.tracks.is_empty()).then(|| catalog.clone()) };
     let mut alone = Alone::new(&log, &lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, with, args.seed).ok_or("the log does not start with the lot loaded")?;
+    // (the run alone silences the panics it catches in a stack's turn; the sandbox prints every
+    // one, so a crash of its own is not silent either)
+    std::panic::set_hook(Box::new(|info| eprintln!("play: panic: {info}")));
     alone.set_player(true);
     let camera = first_camera(&log)?;
     let names = engine_scene::save_file(&disc, args.card.as_deref().map(std::path::Path::new)).map(|ngh| housefire::figure::sim_names(&ngh)).unwrap_or_default();
     let interface = AptAssets::new(&disc);
     let font = interface.fonts.iter().find(|(n, _)| housefire::shader::name_hash(n) == INTERFACE_FONT).map(|(_, f)| f.clone()).ok_or("the interface's font")?;
     let ui = Ui::new(interface.flashes.clone());
-    let mut game = Game { alone, sim_frames: Default::default(), first_shown: 0, frames_ready: 0, animators: sims::Animators::default(), figures: false, lib: &lib, camera, active: None, target: None, menu: None, dialog: None, names, speed: 1, last_speed: 1, quit: false, expects: Vec::new(), sound: None, ui, hud: Hud::new(1), font, texts: Vec::new(), frames: 0, paused_frames: 0 };
+    let mut game = Game { alone, sim_frames: Default::default(), first_shown: 0, frames_ready: 0, animators: sims::Animators::default(), placed: Vec::new(), figures: false, lib: &lib, camera, active: None, target: None, menu: None, dialog: None, names, speed: 1, last_speed: 1, quit: false, expects: Vec::new(), sound: None, ui, hud: Hud::new(1), font, texts: Vec::new(), frames: 0, paused_frames: 0 };
     game.sound = make_sound(&disc, &args);
     game.alone.set_sound(game.sound.is_some());
     if let Some(s) = &mut game.sound {
@@ -1046,6 +1065,7 @@ fn run(args: Args) -> Result<bool, String> {
                 game.animators.apply(c, &mut figures);
             }
             builder.build_with(game.alone.world(), tick, game.view(), Some((&wardrobe, &figures, None)));
+            game.placed.clone_from(&builder.placed);
             let frame = upload(builder, renderer, &mut mesh_ids, &mut texture_ids);
             // the interface: the movies' pieces and the game's own lines of text over the scene
             let list = game.ui.display_list();

@@ -377,3 +377,18 @@ frames in that object's file. Not saved by the engine at all: the sleep counts, 
   buy and build modes) is not there.
 - The HUD's house icon in the pause screen's icon row is not drawn (the log-fed picture has the
   same hole).
+- QC of the menus (2026-11-21, `play` scripts: `menus`, then `pick`, `choose`, `expect` for each
+  entry). Of the 106 objects drawn on the home lot, 33 have a menu for the player's Sim; 39 of
+  their 41 entries start when chosen. Not working:
+  - The pause screen's sections: Goals opens an empty panel; Buy and Build show only their
+    category icons (no catalogue, no mode); the fourth icon opens a panel titled "GOALS" with
+    placeholder rows; Options, Save and Quit do nothing.
+  - Turn On for table lamp 108 (on end table 42, room 3) and wall lamp 109: the route has no
+    way. The table's routing slot gives no places; the wall lamp's one goal is its own place on
+    the wall (`REPLAY_ALONE_SHOW_NO_WAY`).
+  - Not checked against the original: which entries each menu should show (no log holds a menu
+    with more than one entry); e.g. the stove, the alarm clock, the grandfather clock and the
+    scooter show none, the fridge only Have A Snack.
+  Fixed then: a menu taller than the screen crashed `play` (silently: the run alone's panic
+  hook); a click took the nearest object with a table, drawn or not (the social interactions'
+  controllers gave 216 entries); the debug entries (table flag 0x80) were listed.

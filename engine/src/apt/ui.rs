@@ -199,8 +199,9 @@ impl Ui {
         let w = measure.plain_width(&m.entries[i]);
         let rows = m.entries.len() as f32;
         let (half_w, tall) = (w / 2.0, (rows - 1.0) * MENU_PITCH);
-        let x = m.at.0.clamp(MENU_MARGIN + PILL_LEFT + half_w, SCREEN.0 - MENU_MARGIN - PILL_RIGHT - half_w);
-        let y0 = m.at.1.clamp(MENU_MARGIN + PILL_HALF_HEIGHT, SCREEN.1 - MENU_MARGIN - PILL_HALF_HEIGHT - tall);
+        // kept on the screen; a row or a menu wider or taller than it starts at its left or top
+        let x = m.at.0.min(SCREEN.0 - MENU_MARGIN - PILL_RIGHT - half_w).max(MENU_MARGIN + PILL_LEFT + half_w);
+        let y0 = m.at.1.min(SCREEN.1 - MENU_MARGIN - PILL_HALF_HEIGHT - tall).max(MENU_MARGIN + PILL_HALF_HEIGHT);
         let y = y0 + i as f32 * MENU_PITCH;
         ((x, y), w, [x - half_w - PILL_LEFT, y - PILL_HALF_HEIGHT, x + half_w + PILL_RIGHT, y + PILL_HALF_HEIGHT])
     }
