@@ -292,7 +292,7 @@ pub(super) fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, c
         let tile = |p: (i32, i32)| (p.0 >> 4, p.1 >> 4);
         let occupied = |p: (i32, i32)| {
             world.objects().any(|x| {
-                !x.person && x.id() != o.id() && x.on_lot() && x.level == 1 && tile((x.x16, x.y16)) == tile(p)
+                !x.person && x.data[crate::world::DATA_FLAGS] & 0x4 == 0 && x.id() != o.id() && x.on_lot() && x.level == 1 && tile((x.x16, x.y16)) == tile(p)
             })
         };
         // a person faces the way it last stepped (its last two logged places before the step,
@@ -707,7 +707,7 @@ pub(super) fn routing(log: &Log, lib: &Library, world: &World, loaded: &World, c
         let Some(o) = world.find_object(s.stack_object) else { continue };
         let target = log.places.iter().rfind(|p| p.id == o.id() && p.tick <= s.tick).map_or((o.x16, o.y16), |p| (p.x, p.y));
         let tile = |p: (i32, i32)| (p.0 >> 4, p.1 >> 4);
-        let occupied = |p: (i32, i32)| world.objects().any(|x| !x.person && x.id() != o.id() && (o.leader == 0 || x.leader != o.leader) && x.on_lot() && x.level == 1 && tile((x.x16, x.y16)) == tile(p));
+        let occupied = |p: (i32, i32)| world.objects().any(|x| !x.person && x.data[crate::world::DATA_FLAGS] & 0x4 == 0 && x.id() != o.id() && (o.leader == 0 || x.leader != o.leader) && x.on_lot() && x.level == 1 && tile((x.x16, x.y16)) == tile(p));
         let rw = RequestWorld { walls, at: target, occupied: &occupied, obstacles: &[] };
         let same = |native: &[Goal], scored: bool, bits: bool| {
             native.len() == pl.goals.len()

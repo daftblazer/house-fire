@@ -249,7 +249,7 @@ impl DriveHost<'_> {
         let Some(t) = self.world.find_object(so) else { return PrimResult::True };
         let (at, facing, target_is_door, target_id, leader) = ((t.x16, t.y16), t.facing(), t.door, t.id(), t.leader);
         let tile = |p: (i32, i32)| (p.0 >> 4, p.1 >> 4);
-        let busy: std::collections::HashSet<(i32, i32)> = self.world.objects().filter(|x| !x.person && x.id() != target_id && (leader == 0 || x.leader != leader) && x.on_lot() && x.level == 1).map(|x| tile((x.x16, x.y16))).collect();
+        let busy: std::collections::HashSet<(i32, i32)> = self.world.objects().filter(|x| !x.person && x.data[crate::world::DATA_FLAGS] & 0x4 == 0 && x.id() != target_id && (leader == 0 || x.leader != leader) && x.on_lot() && x.level == 1).map(|x| tile((x.x16, x.y16))).collect();
         let occupied = |p: (i32, i32)| busy.contains(&tile(p));
         let obstacles = super::super::route_map::obstacles(&self.world, id, Some(target_id), &[], &super::super::route_map::rooms_of(&self.world, &[from, at]), &|o| (o.x16, o.y16));
         let rw = RequestWorld { walls: &self.world.walls, at, occupied: &occupied, obstacles: &obstacles };

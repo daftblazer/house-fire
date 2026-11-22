@@ -175,7 +175,8 @@ impl RequestWorld<'_> {
 
 /// A routing slot's request natively (`docs/simulation.md`, "The planner's request, logged"): its
 /// open places, each with its score. A slot of one proximity offers its places (`slot_places`)
-/// that lie in the object's room and that no other object stands on, in the order of the bits; one
+/// that lie in the object's room and that no other object stands on (one that is no obstacle,
+/// flag 0x4, as a window or a painting on the tile's wall, does not), in the order of the bits; one
 /// of a range its area (`slot_area`) of places in the object's room, strictly inside no blocking
 /// obstacle and on no wall's rectangle, from which the builder's pick (`slot_pick`, up to
 /// `REQUEST_CAP`, drawing from `rng`) takes the goals when there are more than the cap. A

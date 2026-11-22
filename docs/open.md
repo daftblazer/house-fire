@@ -383,9 +383,17 @@ frames in that object's file. Not saved by the engine at all: the sleep counts, 
   - The pause screen's sections: Goals opens an empty panel; Buy and Build show only their
     category icons (no catalogue, no mode); the fourth icon opens a panel titled "GOALS" with
     placeholder rows; Options, Save and Quit do nothing.
-  - Turn On for table lamp 108 (on end table 42, room 3) and wall lamp 109: the route has no
-    way. The table's routing slot gives no places; the wall lamp's one goal is its own place on
-    the wall (`REPLAY_ALONE_SHOW_NO_WAY`).
+  - Turn On for wall lamp 109: the route has no way. Its routing slot names no direction
+    (flags 0, offset 0, proximity 16), so its one goal is its own place (360, 376), and kitchen
+    counter 52 stands on that tile. The original probably fails the same way, but this is unproven:
+    no log has the lamp chosen. A recording of the original choosing it would settle it.
+    (Table lamp 108, fixed 2026-11-21: its end table's one open slot place was "occupied" by
+    window 92 on the tile's wall. A slot place is now closed only by an object that is an
+    obstacle, so not by flag 0x4 objects such as windows and paintings. The log-driven routing
+    checks keep their figures; the free run's "no way" count fell from 14 to 8.)
+  - The routing slots' x/y offsets are not used (`routing::slot_places`). The club's dance
+    floor's no-direction slots carry them ((48, 16), (16, 16), (0, 32)...); the run alone takes
+    the object's own place, a stand-in.
   - Not checked against the original: which entries each menu should show (no log holds a menu
     with more than one entry); e.g. the stove, the alarm clock, the grandfather clock and the
     scooter show none, the fridge only Have A Snack.
