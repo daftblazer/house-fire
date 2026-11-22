@@ -145,6 +145,7 @@ fn main() -> ExitCode {
         }
         "apt" => return apt(&d, &args[3..]),
         "apt-play" => return apt_play(&d, &args[3..]),
+        "uilog" => return uilog(&args[3..]),
         "sounds" => return sounds(&d, &args[3..]),
         "sound-calls" => return sound_calls(&d, &args[3..]),
         "textures" => {
@@ -4378,4 +4379,54 @@ fn apt(d: &Disc, args: &[String]) -> ExitCode {
     println!("opcodes used: {}", total.opcodes.iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>().join(", "));
     println!("apt: movies {}, fonts {}, unknown {unknown}", flashes.iter().filter(|(_, r)| r.is_ok()).count(), fonts.iter().filter(|(_, r)| r.is_ok()).count());
     if unknown == 0 { ExitCode::SUCCESS } else { ExitCode::from(1) }
+}
+
+/// `assets ISO uilog LOG [FROM [TO]]`: the interface records of a log by the game's frame (from
+/// FROM to TO): the movies loaded, the game's calls into them (each argument's text), the
+/// commands they send back, the pad's changes, the values they read (each name printed when its value changes)
+/// and the strings the game draws (printed when a frame's set differs from the last one's).
+fn uilog(args: &[String]) -> ExitCode {
+    let Some(log) = args.first().and_then(|p| housefire::tree_log::read_log(p)) else {
+        println!("usage: assets ISO uilog LOG [FROM [TO]]");
+        return ExitCode::from(2);
+    };
+    let from: u32 = args.get(1).and_then(|v| v.parse().ok()).unwrap_or(0);
+    let to: u32 = args.get(2).and_then(|v| v.parse().ok()).unwrap_or(u32::MAX);
+    let within = |f: u32| f >= from && f <= to;
+    let mut lines: Vec<(u32, u8, String)> = Vec::new();
+    for l in log.movie_loads.iter().filter(|r| within(r.frame)) {
+        lines.push((l.frame, 0, format!("load {} (from {:08X})", l.path, l.caller)));
+    }
+    for c in log.movie_calls.iter().filter(|r| within(r.frame)) {
+        let a: Vec<String> = c.args.iter().map(|(w, t)| if t.is_empty() { format!("{w:#x}") } else { format!("{t:?}") }).collect();
+        lines.push((c.frame, 1, format!("call {:08X} {}({}) from {:08X}", c.screen, c.name, a.join(", "), c.caller)));
+    }
+    for p in log.pads.iter().filter(|r| within(r.frame)) {
+        lines.push((p.frame, 0, format!("pad {:04X} stick {:?} c {:?} triggers {:?}", p.buttons, p.stick, p.c_stick, p.triggers)));
+    }
+    for c in log.movie_commands.iter().filter(|r| within(r.frame)) {
+        lines.push((c.frame, 2, format!("command {:08X} {:?} {:?}", c.screen, c.command, c.argument)));
+    }
+    let mut last: std::collections::HashMap<&str, &String> = std::collections::HashMap::new();
+    for r in log.movie_reads.iter().filter(|r| r.frame <= to) {
+        if last.insert(&r.name, &r.value) != Some(&r.value) && within(r.frame) {
+            lines.push((r.frame, 3, format!("read {} = {:?}", r.name, r.value)));
+        }
+    }
+    let mut by_frame: std::collections::BTreeMap<u32, Vec<String>> = std::collections::BTreeMap::new();
+    for t in log.text_draws.iter().filter(|r| within(r.frame)) {
+        by_frame.entry(t.frame).or_default().push(format!("{:?} at ({:.3}, {:.3})", t.text, t.x, t.y));
+    }
+    let mut shown: Vec<String> = Vec::new();
+    for (f, texts) in by_frame {
+        if texts != shown {
+            lines.push((f, 4, format!("text [{}]", texts.join("; "))));
+            shown = texts;
+        }
+    }
+    lines.sort_by_key(|l| (l.0, l.1));
+    for (f, _, l) in lines {
+        println!("{f} {l}");
+    }
+    ExitCode::SUCCESS
 }

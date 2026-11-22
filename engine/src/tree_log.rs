@@ -694,6 +694,20 @@ pub struct MovieCallRec {
     pub args: Vec<(u32, String)>,
 }
 
+/// Pad 0's status after a PADRead (0x81, 80129648, once a frame), logged when it changed: what
+/// the player pressed. `buttons` as the game reads them (0x0001 left, 0x0002 right, 0x0004 down,
+/// 0x0008 up, 0x0010 Z, 0x0020 R, 0x0040 L, 0x0100 A, 0x0200 B, 0x0400 X, 0x0800 Y, 0x1000 Start).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PadRec {
+    pub tick: u32,
+    pub frame: u32,
+    pub buttons: u16,
+    /// The stick, the C stick (x, y each) and the triggers (l, r).
+    pub stick: [i8; 2],
+    pub c_stick: [i8; 2],
+    pub triggers: [u8; 2],
+}
+
 /// An Apt movie loaded ('\\', Apt_LoadMovie 80104AD0): its path, the caller, the game's frame
 /// counter; the tick.
 #[derive(Clone, Debug, Default)]
@@ -930,6 +944,8 @@ pub struct Log {
     pub movie_calls: Vec<MovieCallRec>,
     /// The Apt movies loaded ('\\'), in order.
     pub movie_loads: Vec<MovieLoadRec>,
+    /// Pad 0's changes (0x81), in order.
+    pub pads: Vec<PadRec>,
     /// The Apt movies' reads of the game's values ('\''), in order.
     pub movie_reads: Vec<MovieReadRec>,
     /// The strings the game draws (0x80), in order.
@@ -2132,6 +2148,14 @@ pub fn read_log(path: &str) -> Option<Log> {
                 let (caller, frame) = (r.u32(), r.u32());
                 let Some(path) = r.text() else { break };
                 log.movie_loads.push(MovieLoadRec { tick: log.ticks, caller, frame, path });
+            }
+            0x81 => {
+                if !r.has(16) {
+                    break;
+                }
+                let frame = r.u32();
+                let b: Vec<u8> = (0..12).map(|_| r.u8()).collect();
+                log.pads.push(PadRec { tick: log.ticks, frame, buttons: u16::from_be_bytes([b[0], b[1]]), stick: [b[2] as i8, b[3] as i8], c_stick: [b[4] as i8, b[5] as i8], triggers: [b[6], b[7]] });
             }
             b'\'' => {
                 if !r.has(8) {
