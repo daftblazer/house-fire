@@ -151,7 +151,11 @@ impl GameText {
             })
             .collect();
         let careers = image("SimsCareers")
-            .map(|c| c.rows("Career").filter_map(|r| Some((c.u32(r)?, c.text(r + 8)?))).filter(|(id, _)| CAREER_IDS.contains(id)).collect())
+            .map(|c| {
+                let mut careers: Vec<(u32, String)> = c.rows("Career").filter_map(|r| Some((c.u32(r)?, c.text(r + 8)?))).filter(|(id, _)| CAREER_IDS.contains(id)).collect();
+                careers.sort_by_key(|c| c.0);
+                careers
+            })
             .unwrap_or_default();
         Some(GameText { live, global, houses, careers })
     }
@@ -315,10 +319,13 @@ const CAREERS_PITCH: f32 = 0.0535;
 /// The options rows' values drawn at the volumes' rows are this much lower than their labels.
 const VOLUME_DROP: f32 = 0.008;
 
-/// The dialog's text block: its first line's top and the lines' pitch; the buttons' row of the
-/// dialog (the positions come from the movie).
+/// The dialog's text block: its first line's top, the pitch from the first line to the second
+/// and the pitch after it (19.96 and 20 pixels), and half the glyph box of the quit dialog's
+/// three buttons (6/7 of the small size's).
 const DIALOG_TEXT_TOP: f32 = 0.30892858;
-const DIALOG_LINE_PITCH: f32 = 0.0445617;
+const DIALOG_FIRST_PITCH: f32 = 0.0445617;
+const DIALOG_LINE_PITCH: f32 = 20.0 / 448.0;
+const HALF_QUIT_BUTTON: f32 = HALF_SMALL * 6.0 / 7.0;
 
 /// The title of the pause's main row: its top (the movie's title bar place is not reported).
 const MAIN_TITLE_Y: f32 = 0.18608442;
@@ -496,6 +503,10 @@ impl Focus {
     fn dialog(self) -> bool {
         matches!(self, Focus::Section(Section::Save | Section::Quit))
     }
+
+    fn filter_dialog(self) -> Focus {
+        if self.dialog() { self } else { Focus::Main }
+    }
 }
 
 /// The pause screen's state while it is up.
@@ -650,8 +661,8 @@ impl Pause {
     /// the movies' `draw_main`).
     pub fn back(&mut self) -> Vec<Call> {
         match self.focus {
-            Focus::Section(s) => Self::close_calls(s),
-            Focus::Main => Vec::new(),
+            Focus::Section(s) if !matches!(s, Section::Save | Section::Quit) => Self::close_calls(s),
+            _ => Vec::new(),
         }
     }
 
@@ -664,6 +675,10 @@ impl Pause {
         self.kept = self.settings;
         self.focus = Focus::Main;
         self.option_buttons = false;
+        // the pause movies load again: the main row starts over
+        self.started = false;
+        self.main_shown = false;
+        self.buttons = false;
         let mut calls = vec![make("hideOption", &[]), destroy("accept"), destroy("decline"), make("resetButtonContext", &[]), make("showPause", &[]), make("showMainPause", &[])];
         calls.extend(dpad("0", "0", "1", "1"));
         calls
@@ -717,7 +732,12 @@ impl Pause {
             "option_button_accept_ready" => self.option_buttons = argument == "true",
             "option_button_accept_x" if num < 0.0 => self.option_buttons = false,
             "current_item" => self.item = argument.parse().unwrap_or(0),
-            "dialog_key_press" if argument == "cancel" && self.focus.dialog() => calls.push(make("hideDialog", &[])),
+            // (a dialog's cancel: the game takes the main row back at once)
+            "dialog_key_press" if argument == "cancel" => {
+                if let Focus::Section(s) = self.focus.filter_dialog() {
+                    calls.extend(Self::close_calls(s));
+                }
+            }
             "list_item1_x" => self.list[0].0 = num,
             "list_item1_y" => self.list[0].1 = num,
             "list_item2_x" => self.list[1].0 = num,
@@ -766,8 +786,7 @@ impl Pause {
             Section::Goals | Section::Careers => [back(), vec![destroy("decline")]].concat(),
             Section::Options => Vec::new(),
             Section::Buy | Section::Build => [vec![make("showMainPause", &[]), make("showMainPause", &[])], dpad("0", "0", "1", "1"), dpad("0", "0", "1", "1")].concat(),
-            // (the dialog's own `hideDialog` is made as the answer to its cancel)
-            Section::Save | Section::Quit => [vec![make("showMainPause", &[]), make("showMainPause", &[])], dpad("0", "0", "1", "1"), dpad("0", "0", "1", "1")].concat(),
+            Section::Save | Section::Quit => [vec![make("hideDialog", &[]), make("showMainPause", &[]), make("showMainPause", &[])], dpad("0", "0", "1", "1"), dpad("0", "0", "1", "1")].concat(),
         }
     }
 
@@ -932,9 +951,10 @@ impl Pause {
                     title(out, text.icon(s), t.0, t.1 - HALF_BIG);
                     self.dialog_lines(s, text, font, out);
                     let dialog_button = |out: &mut Vec<Text>, label: &str, at: (f32, f32), face: Face| centred(out, label, face, HALF_SMALL, at.0, at.1, true);
+                    let quit_button = |out: &mut Vec<Text>, label: &str, at: (f32, f32)| centred(out, label, Face::Dialog, HALF_QUIT_BUTTON, at.0, at.1, true);
                     if s == Section::Quit {
                         for (label, at) in [(text.live(live::SAVE_AND_QUIT), self.quit_buttons[0]), (text.live(live::JUST_QUIT), self.quit_buttons[1]), (text.global(global::CANCEL), self.quit_buttons[2])] {
-                            dialog_button(out, label, at, Face::Dialog);
+                            quit_button(out, label, at);
                         }
                     }
                     dialog_button(out, text.global(global::YES), hud.accept, Face::Dialog);
@@ -992,7 +1012,7 @@ impl Pause {
         for (k, l) in lines.iter().enumerate() {
             let w = width(font, l, Face::Dialog);
             let x = 0.5 - block / SCREEN.0 / 2.0;
-            let y = DIALOG_TEXT_TOP + k as f32 * DIALOG_LINE_PITCH;
+            let y = DIALOG_TEXT_TOP + if k == 0 { 0.0 } else { DIALOG_FIRST_PITCH + (k - 1) as f32 * DIALOG_LINE_PITCH };
             line(out, l, x, y, Some(w), Some(2.0 * HALF_SMALL * SCREEN.1));
         }
     }
