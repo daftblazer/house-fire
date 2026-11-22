@@ -593,6 +593,10 @@ impl Pause {
     pub fn pad(&mut self, pressed: u16, frame: u32) {
         use super::ui::{keys, pad};
         let options = self.focus == Focus::Section(Section::Options);
+        if pressed & pad::START != 0 && self.focus == Focus::Main {
+            // Start on the main row is the triangle's: `p_main` answers with `pauseDone`
+            self.waiting.push_back((frame + KEY_DELAY, Press::Key(keys::TRIANGLE)));
+        }
         for (bit, key) in [(pad::LEFT, keys::LEFT), (pad::RIGHT, keys::RIGHT), (pad::UP, keys::UP), (pad::DOWN, keys::DOWN), (pad::A, keys::A), (pad::B, keys::B)] {
             if pressed & bit == 0 {
                 continue;
@@ -1032,4 +1036,71 @@ fn wrap(font: &Font, text: &str, limit: f32) -> Vec<String> {
         }
     }
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::apt::ui::{keys, pad};
+
+    #[test]
+    fn the_pad_reaches_the_movies_two_frames_later() {
+        let mut p = Pause::new(Settings::default());
+        p.pad(pad::RIGHT, 100);
+        assert!(p.due(101).is_empty());
+        assert_eq!(p.due(102), vec![Press::Key(keys::RIGHT)]);
+    }
+
+    #[test]
+    fn b_is_the_triangles_key_on_the_main_row_and_a_press_of_the_game_in_a_section() {
+        let mut p = Pause::new(Settings::default());
+        p.pad(pad::B, 10);
+        assert_eq!(p.due(12), vec![Press::Key(keys::TRIANGLE)]);
+        p.focus = Focus::Section(Section::Goals);
+        p.pad(pad::B, 20);
+        assert_eq!(p.due(22), vec![Press::Back]);
+        // the catalogs take longer to give the main row back
+        p.focus = Focus::Section(Section::Buy);
+        p.pad(pad::B, 30);
+        assert!(p.due(37).is_empty());
+        assert_eq!(p.due(38), vec![Press::Back]);
+    }
+
+    #[test]
+    fn the_options_screen_reads_the_pad_in_the_frame_and_keeps_what_was_set() {
+        let mut p = Pause::new(Settings::default());
+        p.focus = Focus::Section(Section::Options);
+        p.pad(pad::RIGHT, 50);
+        p.pad(pad::DOWN, 50);
+        assert_eq!(p.due(50).len(), 2);
+        // the first row is free will: right toggled it; B puts it back
+        assert!(!p.settings().free_will);
+        p.leave_options(false);
+        assert!(p.settings().free_will);
+    }
+
+    #[test]
+    fn the_volumes_stay_within_their_range() {
+        let mut s = Settings::default();
+        s.step(4, 1);
+        assert_eq!(s.sound_volume, VOLUME_MAX);
+        for _ in 0..20 {
+            s.step(5, -1);
+        }
+        assert_eq!(s.music_volume, 0);
+    }
+
+    #[test]
+    fn a_section_is_named_by_its_command() {
+        assert_eq!(Section::of_command("draw_career"), Some(Section::Careers));
+        assert_eq!(Section::of_command("draw_main"), None);
+    }
+
+    #[test]
+    fn the_calls_of_taking_the_main_row_back() {
+        let names = |s: Section| Pause::close_calls(s).iter().map(|c| c.name).collect::<Vec<_>>();
+        assert_eq!(names(Section::Goals), ["showMainPause", "DPadUp", "DPadDown", "DPadLeft", "DPadRight", "destroyButton"]);
+        assert_eq!(names(Section::Buy).iter().filter(|n| **n == "showMainPause").count(), 2);
+        assert_eq!(names(Section::Save)[0], "hideDialog");
+    }
 }

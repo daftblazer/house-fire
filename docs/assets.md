@@ -3742,7 +3742,8 @@ send in these frames are the log's (checked: 2064 to 2066 the same, in the same 
 screen's own lines (title "GOALS", the labels, the funds line) are drawn by the game: their
 widths are the log's numbers (the title bar's `title_bar_width` 0.102652, the buttons'
 `drawButton` widths 0.093525 and 0.070360, the label drawn that wide and centred on the button),
-not a measure (the glyph columns do not give them). The title is always the first section's.
+not a measure (the glyph columns do not give them). The sections the pad opens and closes are in the next subsection ("The pause screen's sections"):
+this paragraph is the open, and the first title.
 
 **The interaction menu.** Its pill is not a movie's piece and has no movie traffic: the log's
 only record of the floor menu is the 0x80 text "Go Here" (a plain draw, no shadow pass, dark
@@ -3776,13 +3777,90 @@ the same frame):
 What is left of the native gap: 1920's pill and text are in the world picture (the log-fed run
 draws its text over the game's, `over` 585; the native run draws nothing for the menu, `over` 5);
 2100's second funds line "$ 45,566" (the family's funds in the pause screen, at the clock's place)
-is not drawn: the save's family record of the home (house 1) has 16,727 and 45,551 as its first two
-words, 45,551 15 less than the game's number, unverified as the source and not used; the
+is not drawn here; pause-c.log's is "$ 45,551", the second word of the save's family record
+of the home (house 1: 16,727 and 45,551), which the sections' study draws (`Start::family_funds`); the
 dialog's title, button and box measures (`dialog_title_bar_width`, `UI_button_width`,
 `dialog_box_height`) are fitted to Mom's dialog, the one the logs read in play (named in
 `hud.rs`). The commands of 1209 to 1340 match the log's except `wrapper_ready` (before the log's
 handler exists), `done_loading` (the load bar's end, not in the sandbox) and a late
 `hud_draw_info_text`.
+
+#### The pause screen's sections
+
+`LOCKSTEP_PAUSE=1 lockstep LOG ISO --card CARD` (`bin/lockstep/pause.rs`, pause-c.log: the pause
+from the first Start to the last `hidePause`) runs `Ui` from the pad alone and compares, frame
+by frame, the movies loaded, the calls, the commands, the reads' answers and the text lines:
+14,004 differences before this work, 25 after (23 commands of the buy screen's movie, 2 in a
+6th decimal; below). The code is `apt/pause.rs` (`Pause`: the screen's state, `GameText`: the
+disc's strings) with `Ui` around it.
+
+**How the game runs it** (all measured in the log):
+
+- The pad's presses reach the movie that has the focus 2 game frames after the pad changed
+  (1882 A, 1884 the commands), the options screen in the frame itself (2540). The game maps B
+  to the triangle's key (the movies' `keyPress_triangle`; no movie has a `keyPress_circle`).
+- A movie's command is heard by the pause screen's handler first and by the HUD's after it:
+  the calls the pause handler makes for it, and the commands those bring, come before the HUD's
+  turn (`draw_goals` at 1884: the buttons' `-0.8` commands, then `draw_goals`). The study reads the HUD's
+  order. A section's `draw_X` "false" comes last of the commands of its frame (1971, 2120).
+- **Main row.** `p_main` sends `current_main_menu` (the icon's index, which names the title) and
+  `pause_starting`; on `p_main_ready` the game draws the SELECT and BACK buttons
+  (`drawButton`), whose results come back 3 frames on (it is a call after the movies' start; a
+  call after the movies' frame takes 4). A (`keyPress_x`) makes `p_main` send `draw_<section>`
+  and ask for the section's movie. B (or Start) is `keyPress_triangle`: `pauseDone`, and the
+  game takes the pause screen away in that handler (`hidePause`, the 8 `destroyButton`,
+  `showHUD`, the speed buttons).
+- **Goals, Careers.** The open: `destroyButton` of the two buttons, the pad's four `DPad*`
+  (1, 1, 0, 0 for goals; 0, 0, 0, 0 for careers) and `drawButton("decline", ".5", ...)` for
+  BACK. B: the game calls `showMainPause`, the four `DPad*` (0, 0, 1, 1) and `destroyButton`
+  ("decline"); `p_main` is loaded again.
+- **Buy, Build.** Open: the `DPad*` calls only. B: 8 frames later (2112 to 2120) the game
+  calls `showMainPause` twice and the `DPad*` twice, after the frame's loads. Their insides
+  (the catalog) are a later packet: the answers (`number_of_sections`, `max_items`) are the
+  log's (`BUY_COUNTS`, `BUILD_COUNTS`).
+- **Options.** The game's own screen: `showOption`, `setButtonContext("option")`; its two
+  buttons are drawn when the movie says `done_display`; B or A leaves with `hideOption`,
+  `destroyButton` x2, `showPause`, `showMainPause`, the `DPad*`; `pause` and `p_main` load
+  again (the open's 2 + 2 frames). The settings are `Settings` (the game's defaults; Up and Down
+  move the row, Left and Right change it, B puts them back).
+- **Save, Quit.** The dialog movie (`dialog`): the open calls `showDialog`; B is its triangle
+  key (`dialog_key_press` "cancel") and the game answers in that handler with `hideDialog` and
+  the main row's calls. The quit dialog has the 3-button row (`bt_N_x/y`) and the 2-button
+  row's labels (YES, CANCEL) at the places the dialog's buttons report.
+- **Reads** are answered by `Pause::answers`: the titles' widths (`title_bar_width`), the
+  goals' (`goal_*`: 5 goals listed, the item width, the house's name's width), the careers'
+  (`career_value_0` to `6`: 0, the engine has no careers), the options' (`number_item`, the
+  box, `item_width` the widest label), the dialogs'.
+
+**Where the data comes from.** The strings are the first language image's tables of
+`quickdat.arc`'s `SimsUI` (`quickdata::Image::read_language`: the strings are UTF-16 behind a
+pointer to a pointer; `assets qstrings`, `qtext`, `qat` print them): `LiveModeMenuUIStrings`
+(titles, labels, the dialogs' text; by position, the tables are in the order of the game's
+keys), `GlobalStrings`, `HouseData` (a house's name and its goals' records: text and the
+definition's third word, non-zero for goals kept out of the list until met: Mom's house lists
+5 of its 14), `SimsCareers` (ids 17 to 23). A goal's tokens (`<The1><R1><Button1>`) are filled
+for the GameCube. The funds line at the clock's place is the family's funds in the save
+(`Family::words[1]`, 45,551 here; `Start::family_funds`). The goals met are the world's
+(`PlayerView::goals_met`).
+
+**Fitted or taken from the log** (each named in `pause.rs` with its source): the widths of the
+lines the font cannot give (the advance is not the columns, `MEASURED`: the width the log's
+size words or the places the movies report give, by string and face; `TITLES`: the movies'
+`title_bar_width` reads; a line the log never drew gets the columns at a scale, rough); the
+half heights of the two sizes (`HALF_SMALL`, `HALF_BIG`); the lists' places (goals, careers,
+the dialog's text, which the movies do not report); where the goals' and the dialog's lines
+break (any limit in a range the log's breaks fix: `GOAL_WRAP_*`, `DIALOG_WRAP`); the goals' text
+appearing 4 frames after `p_goals_ready`; the build screen's buttons 10 frames after its load;
+the button width 0.103551 (`UI_button_width`, `goal_status_width`, the options' buttons).
+
+**Left over.** `p_buy`'s timeline loops in ours (frames 2041 to 2109: `current_section`,
+`p_buy_ready` again, 23 commands; the game's movie is silent after 2029: something keeps it
+from looping that is not logged); two `dialog_button_accept_x` in the 6th decimal (0.382599
+against 0.382600: the movie's arithmetic in doubles against the game's floats). The keys the
+log has no frame of (Up and Down in the goals, the options' arrows, A on the options) are the
+movies' own as far as they have handlers and are not checked. Unverified: that a goal's
+reveal is its definition's third word; the second funds line's name in the game (the household's
+worth: "Household Net Worth" is a string of the budget, not drawn here).
 
 ### Left over
 

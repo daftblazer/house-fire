@@ -288,7 +288,7 @@ impl Ui {
     pub fn pad(&mut self, buttons: u16, hud: &mut Hud) {
         let pressed = buttons & !self.held;
         self.held = buttons;
-        if pressed & pad::START != 0 {
+        if pressed & pad::START != 0 && !self.paused() {
             self.open_pause(hud);
             return;
         }
@@ -500,9 +500,6 @@ impl Ui {
                 f.hud.funds_text(f.view, f.measure, &mut texts);
                 f.hud.funds_line(self.game.family_funds, f.hud.layout().time, f.measure, &mut texts);
             }
-        }
-        if std::env::var_os("PAUSE_DEBUG").is_some() && self.frame == 2883 {
-            eprintln!("DEBUG stubs {:#?}", self.player.stubs);
         }
         self.frame += 1;
         texts

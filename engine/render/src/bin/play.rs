@@ -21,7 +21,8 @@
 //! Each command queued is printed: `play: tick T sim S target O action A (name)`.
 
 use ash::vk;
-use housefire::apt::ui::{DialogButton, Feed, Ui, keys};
+use housefire::apt::pause::{Game as PauseGame, GameText};
+use housefire::apt::ui::{DialogButton, Feed, Ui, keys, pad};
 use housefire::disc::Disc;
 use housefire::hud::{Dialog, Hud, Measure, PlayerView, Speed};
 use housefire::library::Library;
@@ -181,6 +182,17 @@ enum Cmd {
 }
 
 /// A script's line: `TICK command args`.
+/// The pad's button a movie's key code stands for (the arrows).
+fn pad_bit(key: u32) -> Option<u16> {
+    Some(match key {
+        keys::LEFT => pad::LEFT,
+        keys::RIGHT => pad::RIGHT,
+        keys::UP => pad::UP,
+        keys::DOWN => pad::DOWN,
+        _ => return None,
+    })
+}
+
 fn parse_line(line: &str) -> Option<(u32, Cmd)> {
     let line = line.split('#').next()?.trim();
     let mut w = line.split_whitespace();
@@ -406,19 +418,27 @@ impl<'l> Game<'l> {
         }
     }
 
-    /// The pause screen opens or closes (Space, Start); the simulation stands still while it is up.
-    fn toggle_pause(&mut self) {
-        let Some(view) = self.view_of_player() else { return };
-        if self.ui.paused() {
-            self.ui.close_pause(&mut self.hud, &view);
-            self.speed = self.last_speed.max(1);
-        } else {
+    /// A pad button goes down (the keyboard's keys and the pad's are mapped to the Wii's, as the
+    /// game reads them: `Ui::pad`). Start opens the pause screen; once it is up the game's own
+    /// handlers run it, and the simulation stands still while it is up.
+    fn pad(&mut self, bits: u16) {
+        let was = self.ui.paused();
+        self.ui.pad(bits, &mut self.hud);
+        self.pause_changed(was);
+    }
+
+    /// The simulation's speed follows the pause screen: it stops when it opens and goes back to
+    /// what it was when it closes.
+    fn pause_changed(&mut self, was: bool) {
+        let now = self.ui.paused();
+        if !was && now {
             self.close_menu();
-            self.ui.open_pause(&mut self.hud);
             if self.speed > 0 {
                 self.last_speed = self.speed;
             }
             self.speed = 0;
+        } else if was && !now {
+            self.speed = self.last_speed.max(1);
         }
     }
 
@@ -452,7 +472,11 @@ impl<'l> Game<'l> {
             _ => Speed::Fastest,
         };
         let measure = Measure { font: &self.font };
+        // (the pad's buttons come up a frame after they went down)
+        self.ui.pad(0, &mut self.hud);
+        let was = self.ui.paused();
         self.texts = self.ui.step(&mut Feed { hud: &mut self.hud, view: &view, speed, measure: &measure });
+        self.pause_changed(was);
         if let Some(key) = self.hud.take_dialog_key() {
             self.answer(usize::from(key != "accept"));
         }
@@ -479,12 +503,17 @@ impl<'l> Game<'l> {
             return;
         }
         if self.ui.paused() {
-            // the pause screen has the keys: the pad's to its movie, B closes it
+            // the pause screen has the pad: A, B, Start and the arrows go to the game's handlers
             match cmd {
                 Cmd::Quit => self.quit = true,
-                Cmd::Close | Cmd::TogglePause => self.toggle_pause(),
-                Cmd::Confirm | Cmd::Click(..) => self.ui.press(keys::A),
-                Cmd::Key(k) => self.ui.press(k),
+                Cmd::Close => self.pad(pad::B),
+                Cmd::TogglePause => self.pad(pad::START),
+                Cmd::Confirm | Cmd::Click(..) => self.pad(pad::A),
+                Cmd::Key(k) => {
+                    if let Some(bit) = pad_bit(k) {
+                        self.pad(bit);
+                    }
+                }
                 Cmd::Speed(k) if k > 0 => self.last_speed = k.min(3),
                 _ => {}
             }
@@ -498,7 +527,7 @@ impl<'l> Game<'l> {
                     self.last_speed = self.speed;
                 }
             }
-            Cmd::TogglePause => self.toggle_pause(),
+            Cmd::TogglePause => self.pad(pad::START),
             Cmd::NextSim => self.next_sim(),
             Cmd::SetSim(id) => self.active = Some(id),
             Cmd::FocusSim => {
@@ -900,7 +929,8 @@ fn run(args: Args) -> Result<bool, String> {
     let names = engine_scene::save_file(&disc, args.card.as_deref().map(std::path::Path::new)).map(|ngh| housefire::figure::sim_names(&ngh)).unwrap_or_default();
     let interface = AptAssets::new(&disc);
     let font = interface.fonts.iter().find(|(n, _)| housefire::shader::name_hash(n) == INTERFACE_FONT).map(|(_, f)| f.clone()).ok_or("the interface's font")?;
-    let ui = Ui::new(interface.flashes.clone());
+    let mut ui = Ui::new(interface.flashes.clone());
+    ui.set_game(PauseGame { text: GameText::read(&disc.read("quickdat.arc").unwrap_or_default()).unwrap_or_default(), family_funds: start.family_funds() });
     let mut game = Game { alone, sim_frames: Default::default(), first_shown: 0, frames_ready: 0, animators: sims::Animators::default(), placed: Vec::new(), figures: false, lib: &lib, camera, active: None, target: None, menu: None, dialog: None, names, speed: 1, last_speed: 1, quit: false, expects: Vec::new(), sound: None, ui, hud: Hud::new(1), font, texts: Vec::new(), frames: 0, paused_frames: 0 };
     game.sound = make_sound(&disc, &args);
     game.alone.set_sound(game.sound.is_some());
