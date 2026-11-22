@@ -195,6 +195,11 @@ impl Sound {
         self.front.music(name);
     }
 
+    /// The options' volumes (0 to 10 each).
+    pub fn volumes(&mut self, sound: u8, music: u8) {
+        self.front.volumes(sound, music);
+    }
+
     /// A tick of the simulation has run: its requests, the camera and the world's places.
     pub fn tick(&mut self, tick: u32, requests: &[SoundRequest], camera: &Camera, world: &World) {
         self.front.set_camera(camera);

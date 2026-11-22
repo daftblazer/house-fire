@@ -174,11 +174,13 @@ pub struct SoundPlayer<'b> {
     free: Vec<usize>,
     handles: HashMap<u32, usize>,
     plays: u32,
+    /// The options' sound volume as a gain on every params call's volume.
+    gain: f32,
 }
 
 impl<'b> SoundPlayer<'b> {
     pub fn new(bank: &'b SoundBank) -> SoundPlayer<'b> {
-        SoundPlayer { bank, aram: new_aram(), next_byte: 0, ax: Vec::new(), free: Vec::new(), handles: HashMap::new(), plays: 0 }
+        SoundPlayer { bank, aram: new_aram(), next_byte: 0, ax: Vec::new(), free: Vec::new(), handles: HashMap::new(), plays: 0, gain: 1.0 }
     }
 
     /// The sample memory the voices read from.
@@ -314,7 +316,13 @@ impl<'b> SoundPlayer<'b> {
             }
         }
         let (x, volume) = (f(1), f(2));
-        ax.pending = Some(if volume < SILENT { mix_of(0.0, 64) } else { mix_of(volume, pan_of(x, volume)) });
+        let heard = volume * self.gain;
+        ax.pending = Some(if heard < SILENT { mix_of(0.0, 64) } else { mix_of(heard, pan_of(x, volume)) });
+    }
+
+    /// The options' sound volume, as a gain on the volumes the params calls give from now on.
+    pub fn set_gain(&mut self, gain: f32) {
+        self.gain = gain;
     }
 
     /// The play on a handle ends and its voice is left as it is: the levels it was taking are

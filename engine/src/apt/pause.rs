@@ -513,6 +513,15 @@ pub(super) fn draw_button(name: &'static str, at: (f32, f32), w: f32) -> Call {
     Call { name: "drawButton", args: vec![name.into(), format!("{:.6}", at.0), format!("{:.6}", at.1), format!("{:.6}", w)] }
 }
 
+/// What the player asks of the game in the pause screen's dialogs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Request {
+    /// The save's YES: the game is saved on the memory card.
+    Save,
+    /// The quit's SAVE AND QUIT or JUST QUIT: the lot is left (for the front end's menu).
+    Quit { save_first: bool },
+}
+
 /// What a press does once the game has it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Press {
@@ -570,6 +579,10 @@ pub struct Pause {
     option_buttons: bool,
     /// The dialog's movie says it is up.
     dialog_ready: bool,
+    /// The dialog's button that has the focus (`dialog_current_button`, from 1).
+    dialog_button: u32,
+    /// What the player chose in the dialogs, for the game's side to do.
+    requests: Vec<Request>,
     /// The goals list's selected goal.
     goal: usize,
     /// The options' selected row, the options as they stand and as they were when the screen
@@ -613,6 +626,8 @@ impl Pause {
             ready_at: None,
             option_buttons: false,
             dialog_ready: false,
+            dialog_button: 1,
+            requests: Vec::new(),
             goal: 0,
             item: 0,
             settings,
@@ -623,6 +638,11 @@ impl Pause {
             title_width: 0.0,
             shop: None,
         }
+    }
+
+    /// What the player has chosen in the dialogs since the last call.
+    pub fn take_requests(&mut self) -> Vec<Request> {
+        std::mem::take(&mut self.requests)
     }
 
     pub fn settings(&self) -> Settings {
@@ -818,6 +838,23 @@ impl Pause {
             "option_button_accept_x" if num < 0.0 => self.option_buttons = false,
             "current_item" => self.item = argument.parse().unwrap_or(0),
             // (a dialog's cancel: the game takes the main row back at once)
+            "dialog_current_button" => self.dialog_button = argument.parse().unwrap_or(1),
+            // (a dialog's accept on its first buttons: the save's YES, the quit's SAVE AND QUIT
+            // and JUST QUIT; their last button, NO or CANCEL, is a cancel)
+            "dialog_key_press" if argument == "accept" => {
+                if let Focus::Section(s) = self.focus.filter_dialog() {
+                    let request = match (s, self.dialog_button) {
+                        (Section::Save, 1) => Some(Request::Save),
+                        (Section::Quit, 1) => Some(Request::Quit { save_first: true }),
+                        (Section::Quit, 2) => Some(Request::Quit { save_first: false }),
+                        _ => None,
+                    };
+                    self.requests.extend(request);
+                    if !matches!(request, Some(Request::Quit { .. })) {
+                        calls.extend(Self::close_calls(s));
+                    }
+                }
+            }
             "dialog_key_press" if argument == "cancel" => {
                 if let Focus::Section(s) = self.focus.filter_dialog() {
                     calls.extend(Self::close_calls(s));

@@ -3,7 +3,7 @@
 //! with the game's own interface over it: the HUD, the dialog and the pause screen are the Apt
 //! movies run by the engine's feed (`housefire::apt::ui`), the interaction menu its pills.
 //!
-//! Usage: play LOG ISO --card CARD [--lot N --hood CARD] [--seed N] [--script FILE]
+//! Usage: play LOG ISO --card CARD [--lot N --hood CARD] [--seed N] [--script FILE] [--save-to CARD]
 //!             [--headless] [--ticks N] [--shot TICK FILE] [--mute] [--wav FILE] [--device]
 //!
 //! The log is read for the start only (as `replay --alone`) and for the first camera. Controls:
@@ -21,7 +21,7 @@
 //! Each command queued is printed: `play: tick T sim S target O action A (name)`.
 
 use ash::vk;
-use housefire::apt::pause::Game as PauseGame;
+use housefire::apt::pause::{Game as PauseGame, Request, Settings};
 use housefire::apt::ui::{DialogButton, Feed, Ui, keys, pad};
 use housefire::disc::Disc;
 use housefire::hud::{Dialog, Hud, Measure, PlayerView, Speed};
@@ -109,6 +109,8 @@ struct Args {
     mute: bool,
     /// A headless run's sound, mixed and written as a WAV (a window plays through the device).
     wav: Option<PathBuf>,
+    /// Where the pause screen's save writes the card (never the card the run started from).
+    save_to: Option<PathBuf>,
     /// A headless run plays through the device too (it runs faster than real time, so this only
     /// checks that a device opens).
     device: bool,
@@ -116,7 +118,7 @@ struct Args {
 
 fn args() -> Option<Args> {
     let a: Vec<String> = std::env::args().collect();
-    let mut out = Args { log: a.get(1)?.clone(), iso: a.get(2)?.clone(), card: None, hood: None, lot: -1, seed: 1, script: None, headless: false, ticks: None, shot: None, mute: false, wav: None, device: false };
+    let mut out = Args { log: a.get(1)?.clone(), iso: a.get(2)?.clone(), card: None, hood: None, lot: -1, seed: 1, script: None, headless: false, ticks: None, shot: None, mute: false, wav: None, device: false, save_to: None };
     let mut i = 3;
     while i < a.len() {
         match a[i].as_str() {
@@ -126,6 +128,7 @@ fn args() -> Option<Args> {
             "--seed" => out.seed = atoi(a.get(i + 1)?) as u64,
             "--script" => out.script = Some(a.get(i + 1)?.into()),
             "--ticks" => out.ticks = Some(a.get(i + 1)?.parse().ok()?),
+            "--save-to" => out.save_to = Some(a.get(i + 1)?.into()),
             "--headless" | "--mute" | "--device" => {
                 match a[i].as_str() {
                     "--mute" => out.mute = true,
@@ -285,6 +288,12 @@ struct Game<'l> {
     /// The frames run with the simulation standing still (the pause screen up): a script's and
     /// a shot's ticks count them too, so a script can press keys in the pause screen.
     paused_frames: u32,
+    /// The card the pause screen's save writes over (the start's, then each save's) and the
+    /// lot's place in its file, and where the save goes.
+    card: Option<(Vec<u8>, usize)>,
+    save_to: Option<PathBuf>,
+    /// The options as the run last took them.
+    settings: Settings,
 }
 
 impl<'l> Game<'l> {
@@ -461,6 +470,25 @@ impl<'l> Game<'l> {
 
     /// One frame of the interface: the movies run, the game feeds them, and a button the player
     /// pressed on the dialog is answered. Keeps the lines of text the game drew.
+    /// The pause screen's save: the world on the card, written to `--save-to`.
+    fn save(&mut self) {
+        let (Some((card, lot)), Some(path)) = (&self.card, &self.save_to) else {
+            println!("play: save asked at tick {} (no --card and --save-to: nothing written)", self.clock());
+            return;
+        };
+        let (lot, path) = (*lot, path.clone());
+        match self.alone.save(card, lot) {
+            Ok(bytes) => {
+                match std::fs::write(&path, &bytes) {
+                    Ok(()) => println!("play: saved at tick {} to {}", self.clock(), path.display()),
+                    Err(e) => eprintln!("play: writing {}: {e}", path.display()),
+                }
+                self.card = Some((bytes, lot));
+            }
+            Err(e) => eprintln!("play: the save: {e}"),
+        }
+    }
+
     fn frame_ui(&mut self) {
         self.frames += 1;
         let Some(view) = self.view_of_player() else { return };
@@ -483,6 +511,25 @@ impl<'l> Game<'l> {
         // what the player bought on the buy screen is made by the simulation's next tick
         for purchase in self.ui.take_purchases() {
             self.alone.buy(purchase);
+        }
+        for request in self.ui.take_requests() {
+            match request {
+                Request::Save => self.save(),
+                Request::Quit { save_first } => {
+                    if save_first {
+                        self.save();
+                    }
+                    println!("play: quit from the pause screen at tick {}", self.clock());
+                    self.quit = true;
+                }
+            }
+        }
+        let settings = self.ui.settings();
+        if settings != self.settings {
+            self.settings = settings;
+            if let Some(sound) = &mut self.sound {
+                sound.volumes(settings.sound_volume, settings.music_volume);
+            }
         }
         self.pause_changed(was);
         if let Some(key) = self.hud.take_dialog_key() {
@@ -868,7 +915,7 @@ fn upload(builder: &mut Builder, renderer: &mut Renderer, mesh_ids: &mut Vec<hou
 
 fn main() -> ExitCode {
     let Some(args) = args() else {
-        eprintln!("usage: play LOG ISO --card CARD [--lot N --hood CARD] [--seed N] [--script FILE] [--headless] [--ticks N] [--shot TICK FILE] [--mute] [--wav FILE] [--device]");
+        eprintln!("usage: play LOG ISO --card CARD [--lot N --hood CARD] [--seed N] [--script FILE] [--headless] [--ticks N] [--shot TICK FILE] [--mute] [--wav FILE] [--device] [--save-to CARD]");
         return ExitCode::from(2);
     };
     match run(args) {
@@ -939,7 +986,13 @@ fn run(args: Args) -> Result<bool, String> {
     let font = interface.fonts.iter().find(|(n, _)| housefire::shader::name_hash(n) == INTERFACE_FONT).map(|(_, f)| f.clone()).ok_or("the interface's font")?;
     let mut ui = Ui::new(interface.flashes.clone());
     ui.set_game(PauseGame::new(&disc.read("quickdat.arc").unwrap_or_default(), &lib, start.family_funds()));
-    let mut game = Game { alone, sim_frames: Default::default(), first_shown: 0, frames_ready: 0, animators: sims::Animators::default(), placed: Vec::new(), figures: false, lib: &lib, camera, active: None, target: None, menu: None, dialog: None, names, speed: 1, last_speed: 1, quit: false, expects: Vec::new(), sound: None, ui, hud: Hud::new(1), font, texts: Vec::new(), frames: 0, paused_frames: 0 };
+    let mut game = Game { alone, sim_frames: Default::default(), first_shown: 0, frames_ready: 0, animators: sims::Animators::default(), placed: Vec::new(), figures: false, lib: &lib, camera, active: None, target: None, menu: None, dialog: None, names, speed: 1, last_speed: 1, quit: false, expects: Vec::new(), sound: None, ui, hud: Hud::new(1), font, texts: Vec::new(), frames: 0, paused_frames: 0, card: None, save_to: args.save_to.clone(), settings: Settings::default() };
+    if let (Some(card), Some(to)) = (&args.card, &args.save_to) {
+        if std::fs::canonicalize(card).ok() == std::fs::canonicalize(to).ok() {
+            return Err("--save-to is the card the run starts from: give another file".into());
+        }
+        game.card = std::fs::read(card).ok().map(|b| (b, start.index));
+    }
     game.sound = make_sound(&disc, &args);
     game.alone.set_sound(game.sound.is_some());
     if let Some(s) = &mut game.sound {

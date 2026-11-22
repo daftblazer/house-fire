@@ -12,7 +12,7 @@ use std::rc::Rc;
 
 use super::Flash;
 use super::buy::Event;
-use super::pause::{Game, Pause, Press, Settings};
+use super::pause::{Game, Pause, Press, Request, Settings};
 use crate::catalog::Purchase;
 use super::player::{Command, Player};
 use super::value::Value;
@@ -122,6 +122,8 @@ pub struct Ui {
     funds_seen: i32,
     /// The objects placed and not yet taken by the owner.
     purchases: Vec<Purchase>,
+    /// The dialogs' requests not yet taken.
+    requests: Vec<Request>,
     /// A call whose movie only acts on it a frame later (`showInfoDialog`: the info window's
     /// motive lozenges start a frame after the game's call, 2027 and 2029), made at the end of the
     /// next frame.
@@ -152,7 +154,7 @@ impl Ui {
         player.set_extern("_lang", Value::str("en"));
         player.set_extern("_sku", Value::str("us"));
         player.set_extern("_enable_debug", Value::str("0"));
-        Ui { player, frame: 0, first: true, announce: false, pause: None, game: Game::default(), settings: Settings::default(), speed_seen: Speed::Normal, speed_before: Speed::Normal, opened_at: None, closing: false, menu: None, menu_gone: false, calls: Vec::new(), sent: Vec::new(), record: false, made: Vec::new(), loaded: Vec::new(), held: 0, cursor: (0.0, 0.0), reserve: None, spent: 0, funds_seen: 0, purchases: Vec::new(), deferred: Vec::new() }
+        Ui { player, frame: 0, first: true, announce: false, pause: None, game: Game::default(), settings: Settings::default(), speed_seen: Speed::Normal, speed_before: Speed::Normal, opened_at: None, closing: false, menu: None, menu_gone: false, calls: Vec::new(), sent: Vec::new(), record: false, made: Vec::new(), loaded: Vec::new(), held: 0, cursor: (0.0, 0.0), reserve: None, spent: 0, funds_seen: 0, purchases: Vec::new(), requests: Vec::new(), deferred: Vec::new() }
     }
 
     /// The game's frame the interface is at (the next to be run).
@@ -299,7 +301,8 @@ impl Ui {
     fn leave(&mut self, hud: &mut Hud, view: &PlayerView) {
         hud.resume(view);
         self.closing = true;
-        if let Some(p) = self.pause.take() {
+        if let Some(mut p) = self.pause.take() {
+            self.requests.extend(p.take_requests());
             self.settings = p.settings();
         }
     }
@@ -307,6 +310,16 @@ impl Ui {
     /// Where the game's cursor is on the lot, in tiles: place mode starts there.
     pub fn set_cursor(&mut self, tile: (f32, f32)) {
         self.cursor = tile;
+    }
+
+    /// What the player chose in the pause screen's dialogs since the last call (the save, the
+    /// quit), for the game's side to do.
+    pub fn take_requests(&mut self) -> Vec<Request> {
+        let mut out = std::mem::take(&mut self.requests);
+        if let Some(p) = &mut self.pause {
+            out.extend(p.take_requests());
+        }
+        out
     }
 
     /// The purchases the player has placed since the last call, for the simulation to apply

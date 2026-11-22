@@ -170,6 +170,11 @@ impl<'b> SoundFront<'b> {
         self.started.push(Started { tick, event: name.to_ascii_lowercase(), sample: self.sample_name(id) });
     }
 
+    /// The options' volumes (0 to 10 each).
+    pub fn volumes(&mut self, sound: u8, music: u8) {
+        self.out.push(Command::Volumes { sound, music });
+    }
+
     /// Music: the stream called `name` (`loadloop`, `sbo_pop1`), or none.
     pub fn music(&mut self, name: Option<&str>) {
         let index = name.and_then(|n| self.bank.find(n)).map(|i| i as u32);

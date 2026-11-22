@@ -380,9 +380,25 @@ frames in that object's file. Not saved by the engine at all: the sleep counts, 
 - QC of the menus (2026-11-21, `play` scripts: `menus`, then `pick`, `choose`, `expect` for each
   entry). Of the 106 objects drawn on the home lot, 33 have a menu for the player's Sim; 39 of
   their 41 entries start when chosen. Not working:
-  - The pause screen's sections: Goals opens an empty panel; Buy and Build show only their
-    category icons (no catalogue, no mode); the fourth icon opens a panel titled "GOALS" with
-    placeholder rows; Options, Save and Quit do nothing.
+  - The pause screen's sections (stage 10, 2026-11-21): Goals, Careers, Options, Save, Quit,
+    Buy and Build are fed as the game feeds them (lock-pause, lock-buy); what is left:
+    - Save writes the card (`play --save-to CARD`, never the start's card), but the game's
+      memory card dialog ("Please wait / Saving to the Memory Card in Slot A", `mu_*` calls,
+      save-a.log frames 2131-2136) is not shown: the pause screen comes back at once.
+    - Quit ends `play`. The game's way out (the load bar, then the front end's `f_menu`,
+      quit-a.log frames 2196-2268) is not there, since the front end is not run after a lot.
+    - The options: only the two volumes are applied (to the mixer; a straight line from 0 to 10,
+      the game's curve not measured). Free Will (what the game sets: the Sims' autonomy level?),
+      Auto Center and the fast forward toggle are kept but not applied; a recording of each,
+      with the Sims' person data probed, would show what they change. Rumble has no device.
+    - Build: only the Wall Tool's screens; no walls or floors are built, and the other Build
+      sections, Sell, Rotate, Walls Up/Down, the description's scrolling and the cursor's moves
+      are not there. The Buy catalogue's order past its first category is a guess.
+    - The pictures (ui-pause, 88.81% within 4): the goals' met tick and the spinning number
+      (the game draws them, not `p_goals`); the options panel's body drawn twice to match its
+      opacity (why the game has a second copy is not known); the panels' soft shadow edges.
+    - lock-buy's 3: the reads `ma`, `ra`, `ct` at frame 1853 (the game answers "" then
+      "false"). lock-pause's 2: `dialog_button_accept_x` in the sixth decimal.
   - Turn On for wall lamp 109: the route has no way. Its routing slot names no direction
     (flags 0, offset 0, proximity 16), so its one goal is its own place (360, 376), and kitchen
     counter 52 stands on that tile. The original probably fails the same way, but this is unproven:

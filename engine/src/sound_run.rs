@@ -24,6 +24,14 @@ pub enum Command {
     /// Play the stream at this bank index as the music (a stream replaces the one playing), or
     /// stop the music.
     Music(Option<u32>),
+    /// The options' volumes (0 to 10 each): the sounds' and the music's.
+    Volumes { sound: u8, music: u8 },
+}
+
+/// The gain of an options volume (0 to 10). The game's own curve is not known: a straight line
+/// from silence to full is taken (docs/open.md, "The options' volumes").
+pub fn volume_gain(v: u8) -> f32 {
+    f32::from(v.min(10)) / 10.0
 }
 
 /// Samples in half of a music buffer (0.34 s of a 48 kHz stream).
@@ -43,6 +51,9 @@ struct Channel {
     half: usize,
     voice: Voice,
 }
+
+/// The music voices' volume at full (the stream's level is in its send levels).
+const MUSIC_VOL: u16 = 0x7FFF;
 
 struct Music {
     channels: Vec<Channel>,
@@ -81,7 +92,7 @@ impl Music {
             v.cur = base;
             v.loop_addr = base;
             v.end = base + 2 * HALF as u32 - 1;
-            v.vol = 0x7FFF;
+            v.vol = MUSIC_VOL;
             v.mixer_control = 3;
             // a stereo stream's channels go to their own side, a mono one to both
             (v.send_vol[0], v.send_vol[1]) = match (n, ch) {
@@ -128,12 +139,13 @@ pub struct SoundRun<'b> {
     player: SoundPlayer<'b>,
     mixer: Mixer,
     music: Option<Music>,
+    music_gain: f32,
     frames: u64,
 }
 
 impl<'b> SoundRun<'b> {
     pub fn new(bank: &'b SoundBank) -> SoundRun<'b> {
-        SoundRun { bank, player: SoundPlayer::new(bank), mixer: Mixer::new(), music: None, frames: 0 }
+        SoundRun { bank, player: SoundPlayer::new(bank), mixer: Mixer::new(), music: None, music_gain: 1.0, frames: 0 }
     }
 
     /// Does what a command asks, between two frames.
@@ -145,7 +157,22 @@ impl<'b> SoundRun<'b> {
             Command::Stop { handle } => self.player.stop(handle),
             Command::Params { handle, words } => self.player.params(handle, &words),
             Command::Music(None) => self.music = None,
-            Command::Music(Some(i)) => self.music = Music::new(self.bank, i as usize, self.player.aram_mut()),
+            Command::Music(Some(i)) => {
+                self.music = Music::new(self.bank, i as usize, self.player.aram_mut());
+                self.set_music_gain(self.music_gain);
+            }
+            Command::Volumes { sound, music } => {
+                self.player.set_gain(volume_gain(sound));
+                self.set_music_gain(volume_gain(music));
+            }
+        }
+    }
+
+    /// The music's voices at `gain` of their full volume.
+    fn set_music_gain(&mut self, gain: f32) {
+        self.music_gain = gain;
+        for c in self.music.iter_mut().flat_map(|m| m.channels.iter_mut()) {
+            c.voice.vol = (f32::from(MUSIC_VOL) * gain) as u16;
         }
     }
 
