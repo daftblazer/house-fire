@@ -186,15 +186,13 @@ pub struct Shop {
     /// The movie has sent `motivesUp`: the lozenges' amounts are drawn.
     lozenges: bool,
     events: Vec<Event>,
-    /// The price is held back.
-    reserved: Option<i32>,
     /// The frame the screen was entered at (its per-frame calls start the frame after).
     entered: u32,
 }
 
 impl Shop {
     pub fn new(kind: Kind) -> Shop {
-        Shop { kind, screen: Screen::Sections, section: 0, item: 0, moving: false, item_hidden: false, lozenges: false, events: Vec::new(), reserved: None, entered: 0 }
+        Shop { kind, screen: Screen::Sections, section: 0, item: 0, moving: false, item_hidden: false, lozenges: false, events: Vec::new(), entered: 0 }
     }
 
     pub fn screen(&self) -> Screen {
@@ -300,19 +298,14 @@ impl Shop {
     }
 
     /// The width of a place-mode label in pixels, and what the game passes `drawButton` for it.
-    fn label(font: &Font, s: &str, game: &Game) -> (f32, f32) {
+    fn label(font: &Font, s: &str) -> (f32, f32) {
         LABELS.iter().find(|l| l.0 == s).map_or_else(
             || {
                 let px = width(font, s, Face::Big) * PLACE_OVER_BIG;
-                let _ = game;
                 (px, px * 0.9 / SCREEN.0)
             },
             |l| (l.1, l.2),
         )
-    }
-
-    fn button(&self, name: &'static str, at: (f32, f32), label: &str, font: &Font, game: &Game) -> Call {
-        draw_button(name, at, Self::label(font, label, game).1)
     }
 
     fn hide_all() -> Vec<Call> {
@@ -339,7 +332,7 @@ impl Shop {
         };
         let arrows = || self.arrows(game, font);
         let place_buttons = |kind: Kind, to: Screen, price_label: Option<&str>| -> Vec<Call> {
-            let b = |name: &'static str, x: f32, y: f32, label: &str| draw_button(name, (x, y), Self::label(font, label, game).1);
+            let b = |name: &'static str, x: f32, y: f32, label: &str| draw_button(name, (x, y), Self::label(font, label).1);
             let mut c = Self::hide_all();
             c.push(make("placeTitleBarWidth", &[]));
             match (kind, to) {
@@ -368,14 +361,14 @@ impl Shop {
             (Kind::Buy, Sections, Items) => {
                 let mut c = vec![make("hideBuildBuySections", &[]), make("showBuildBuyItems", &[]), make("hideButton", &["accept"]), draw_button("decline", at::BACK, ITEM_BACK_WIDTH)];
                 c.extend(dpad("0", "0", "1", "1"));
-                c.extend([make("showInfoDialog", &[]), draw_button("accept", at::BUY, Self::label(font, t(45), game).1)]);
+                c.extend([make("showInfoDialog", &[]), draw_button("accept", at::BUY, Self::label(font, t(45)).1)]);
                 c.extend(arrows());
                 c
             }
             (Kind::Buy, Between, Items) => {
                 let mut c = vec![make("showBuildBuyItems", &[]), make("hideButton", &["accept"]), draw_button("decline", at::BACK, ITEM_BACK_WIDTH)];
                 c.extend(dpad("0", "0", "1", "1"));
-                c.extend([make("showInfoDialog", &[]), draw_button("accept", at::BUY, Self::label(font, t(45), game).1)]);
+                c.extend([make("showInfoDialog", &[]), draw_button("accept", at::BUY, Self::label(font, t(45)).1)]);
                 c.extend(arrows());
                 c
             }
@@ -497,7 +490,7 @@ impl Shop {
         let title = |out: &mut Vec<Text>, s: &str, w: f32, top: f32| out.push(Text { text: s.to_string(), x: 0.5 - w / 2.0, y: top, shadow: false, width: Some(w * SCREEN.0), height: Some(2.0 * HALF_BIG * SCREEN.1), plain: true });
         // a label centred on a place: the button's top is its y less half the glyph box
         let label = |out: &mut Vec<Text>, s: &str, centre: f32, y: f32, px: f32, half: f32| line(out, s, centre - px / SCREEN.0 / 2.0, y - half, Some(px), Some(2.0 * half * SCREEN.1));
-        let place_label = |out: &mut Vec<Text>, s: &str, at: (f32, f32)| label(out, s, at.0, at.1, Self::label(font, s, game).0, HALF_PLACE);
+        let place_label = |out: &mut Vec<Text>, s: &str, at: (f32, f32)| label(out, s, at.0, at.1, Self::label(font, s).0, HALF_PLACE);
         let section_title = |out: &mut Vec<Text>| match self.kind {
             Kind::Buy => {
                 let name = t(BUY_CATEGORIES[self.section.min(BUY_CATEGORIES.len() - 1)].1);
@@ -557,7 +550,7 @@ impl Shop {
                 let name = t(105);
                 title(out, name, Self::place_title_width(name, font), at::TITLE_Y);
                 let price = format!("$ {}", self.shown(game).map_or(0, |s| s.price));
-                label(out, &price, at::BUY_PRICE.0, at::BUY_PRICE.1, Self::label(font, &price, game).0, HALF_SMALL);
+                label(out, &price, at::BUY_PRICE.0, at::BUY_PRICE.1, Self::label(font, &price).0, HALF_SMALL);
                 for (s, p) in [(t(104), (0.31, at::ROW_LOW)), (t(126), (0.58, at::ROW_HIGH)), (t(176), (0.58, at::ROW_LOW)), (t(140), (0.86, at::ROW_HIGH)), (game.text.global_at(14), (0.86, at::ROW_LOW))] {
                     place_label(out, s, p);
                 }
@@ -576,7 +569,7 @@ impl Shop {
             }
             (Kind::Build, Preview) => {
                 let price = format!("≈ $ {}", self.shown(game).map_or(0, |s| s.price));
-                label(out, &price, at::BUILD_PRICE.0, at::BUILD_PRICE.1, Self::label(font, &price, game).0, HALF_SMALL);
+                label(out, &price, at::BUILD_PRICE.0, at::BUILD_PRICE.1, Self::label(font, &price).0, HALF_SMALL);
                 let name = t(39);
                 title(out, name, Self::place_title_width(name, font), at::TITLE_Y);
                 for (s, p) in [(t(live::BUILD), (0.325, at::ROW_LOW)), (t(112), (0.605, at::ROW_HIGH)), (t(176), (0.605, at::ROW_LOW)), (t(live::BACK), (0.89, at::ROW_LOW))] {

@@ -16,7 +16,7 @@ use std::collections::VecDeque;
 
 use super::font::Font;
 use crate::hud::{Call, PlayerView, SCREEN, Text, line};
-use super::buy::{Event, Kind, Move, Screen, Shop};
+use super::buy::{Event, Kind, Move, Shop};
 use crate::catalog::Catalog;
 use crate::quickdata::Image;
 

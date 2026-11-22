@@ -21,7 +21,7 @@
 //! Each command queued is printed: `play: tick T sim S target O action A (name)`.
 
 use ash::vk;
-use housefire::apt::pause::{Game as PauseGame, GameText};
+use housefire::apt::pause::Game as PauseGame;
 use housefire::apt::ui::{DialogButton, Feed, Ui, keys, pad};
 use housefire::disc::Disc;
 use housefire::hud::{Dialog, Hud, Measure, PlayerView, Speed};
@@ -476,8 +476,14 @@ impl<'l> Game<'l> {
         let measure = Measure { font: &self.font };
         // (the pad's buttons come up a frame after they went down)
         self.ui.pad(0, &mut self.hud);
+        // (place mode starts at the game's cursor, which the camera follows)
+        self.ui.set_cursor((self.camera.target[0], self.camera.target[1]));
         let was = self.ui.paused();
         self.texts = self.ui.step(&mut Feed { hud: &mut self.hud, view: &view, speed, measure: &measure });
+        // what the player bought on the buy screen is made by the simulation's next tick
+        for purchase in self.ui.take_purchases() {
+            self.alone.buy(purchase);
+        }
         self.pause_changed(was);
         if let Some(key) = self.hud.take_dialog_key() {
             self.answer(usize::from(key != "accept"));

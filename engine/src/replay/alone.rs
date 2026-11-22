@@ -553,6 +553,10 @@ pub struct Alone<'l> {
     /// The frames the tick in hand follows (the clock's).
     frames: u32,
     tick: u32,
+    /// The player's purchases the next tick makes.
+    purchases: Vec<crate::catalog::Purchase>,
+    /// The ids of the objects the purchases made, not yet taken.
+    bought: Vec<i16>,
 }
 
 /// A dialog open for the player (Dialog, opcode 36): who asked, and its node's operand.
@@ -624,7 +628,7 @@ impl<'l> Alone<'l> {
             d.host.world.rng.state = v;
         }
         d.host.world.run_made = true;
-        Some(Alone { d, lib, clock: crate::routing::FrameClock::default(), frames: 0, tick: 0 })
+        Some(Alone { d, lib, clock: crate::routing::FrameClock::default(), frames: 0, tick: 0, purchases: Vec::new(), bought: Vec::new() })
     }
 
     /// Study (REPLAY_ALONE_SHOW_TREE=OBJECT:TREE,..., or OBJECT:c for its constants, at the tick
@@ -824,18 +828,52 @@ impl<'l> Alone<'l> {
     /// A deliberate difference of the played run, for lockstep to skip (docs/plan.md, "The
     /// playable sandbox").
     pub fn make_object(&mut self, guid: u32, at: (i32, i32), level: i32) -> Option<i16> {
+        let id = self.create_at(guid, at, level)?;
+        self.d.host.player_targets.push(id);
+        Some(id)
+    }
+
+    /// An object of the definition with `guid` at a place (sixteenths) and level, as
+    /// CreateObjectInstance makes one, its init function run on it.
+    fn create_at(&mut self, guid: u32, at: (i32, i32), level: i32) -> Option<i16> {
         let host = &mut self.d.host;
         let k = crate::primitives::make_of_guid(&mut host.world, guid)?;
         let o = host.world.get_mut(k);
         (o.x16, o.y16, o.level) = (at.0, at.1, level);
         let id = o.id();
         let file = o.file;
-        host.player_targets.push(id);
         if let Some(init) = host.world.function_tree(k, 0) {
             host.me = k;
             host.run_check(init, file, id, &[]);
         }
         Some(id)
+    }
+
+    /// The player's purchase (the buy screen's `Event::Purchase`): the next tick makes the
+    /// object where it was placed, facing as asked, and takes its price from the household's
+    /// funds. The screen changes nothing itself.
+    pub fn buy(&mut self, purchase: crate::catalog::Purchase) {
+        self.purchases.push(purchase);
+    }
+
+    /// The ids of the objects the purchases have made since the last call.
+    pub fn take_bought(&mut self) -> Vec<i16> {
+        std::mem::take(&mut self.bought)
+    }
+
+    /// The purchases waiting: the objects made and their prices taken.
+    fn make_purchases(&mut self) {
+        for p in std::mem::take(&mut self.purchases) {
+            let Some(id) = self.create_at(p.guid, p.at, p.level) else { continue };
+            let host = &mut self.d.host;
+            if let Some(k) = host.world.find(id)
+                && let Some(f) = host.world.get_mut(k).data.get_mut(crate::world::DATA_FACING)
+            {
+                *f = p.facing;
+            }
+            host.world.funds_spent += p.price;
+            self.bought.push(id);
+        }
     }
 
     /// The interactions of `target`'s pie menu for `sim`, by the engine's checks as the original's
@@ -875,6 +913,7 @@ impl<'l> Alone<'l> {
     /// One tick: the animations' frames at the normal speed, then the simulation's pass.
     pub fn tick(&mut self) {
         self.tick += 1;
+        self.make_purchases();
         if i64::from(self.tick) == super::study::env("REPLAY_ALONE_SHOW_TREE_AT").map_or(1, |v| super::study::atoi(&v)) {
             self.show_trees();
         }

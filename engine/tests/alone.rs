@@ -52,3 +52,33 @@ fn a_run_alone_is_saved_and_loaded_the_same() {
         assert!(diff.is_empty(), "tick {tick}: {diff:?}");
     }
 }
+
+/// A purchase the buy screen hands over is made by the next tick: the object is in the world at
+/// the place and facing it was given, and the funds are its price lower.
+#[test]
+fn a_purchase_is_in_the_world_at_the_next_tick() {
+    let (Some(iso), Some(log), Some(card)) = (env("HOUSEFIRE_BUSTIN_ISO"), env("HOUSEFIRE_HOME_LOG"), env("HOUSEFIRE_CARD")) else {
+        println!("alone: skipped (HOUSEFIRE_BUSTIN_ISO, HOUSEFIRE_HOME_LOG, HOUSEFIRE_CARD not all set)");
+        return;
+    };
+    let d = Disc::open(&iso).expect("the disc");
+    let lib = Library::bustin_out(&d);
+    let log = read_log(log.to_str().unwrap()).expect("the log");
+    let start = Start::read(&d, card.to_str(), -1).expect("the start");
+    let with = RunWith { card_lot: start.card_lot, goals: start.goals.clone(), neighbourhood: start.neighbourhood.clone(), cat: None };
+    let catalog = housefire::catalog::Catalog::read(&lib, &d.read("quickdat.arc").unwrap_or_default()).expect("the catalogue");
+    let item = catalog.items(0).first().expect("a seat").clone();
+    assert_eq!(item.price, 79);
+    let mut a = Alone::new(&log, &lib, (start.lot(), start.house.as_ref()), start.globals(), &start.neighbours, with, 1).expect("a run");
+    let sim = a.world().objects().filter(|o| o.person).map(|o| o.id()).min().expect("a Sim");
+    let before = housefire::hud::PlayerView::of(a.world(), sim).expect("a view").funds;
+    a.buy(housefire::catalog::Purchase { guid: item.guid, price: item.price, at: (472, 136), level: 1, facing: 2 });
+    // (nothing changes before the tick)
+    assert_eq!(housefire::hud::PlayerView::of(a.world(), sim).unwrap().funds, before);
+    a.tick();
+    let ids = a.take_bought();
+    assert_eq!(ids.len(), 1);
+    let o = a.world().find_object(ids[0]).expect("the object");
+    assert_eq!((o.guid, o.x16, o.y16, o.level, o.facing()), (item.guid, 472, 136, 1, 2));
+    assert_eq!(housefire::hud::PlayerView::of(a.world(), sim).unwrap().funds, before - 79);
+}
